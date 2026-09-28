@@ -43,6 +43,15 @@ Es deliberado: una prueba que toma sus expectativas del archivo que valida pasa
 siempre y no sirve para nada. El oraculo independiente es lo unico que hace
 fallar la suite cuando alguien elimina una clausula obligatoria del inventario.
 
+## Límite conocido de la suite
+
+La suite prueba que **toda cláusula obligatoria del análisis esté cubierta** y que no se inventen
+cláusulas. No prueba **completitud de la notación**: un elemento UML que no figure en la lista
+obligatoria del análisis podría faltar del inventario sin que ninguna prueba falle.
+
+Es un límite inherente a tener un oráculo, y por eso el inventario declara además sus exclusiones
+explícitas: nombrar lo que queda fuera es lo único que evita que la ausencia se lea como olvido.
+
 ## Convenciones
 
 - Los contratos y sus pruebas viven en el repositorio; no hay dependencias

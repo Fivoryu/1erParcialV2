@@ -98,8 +98,12 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 - **Hallazgo:** la sección 8.3 de los contratos sobredeclara. Declara 23 elementos soportados y, contra el
   modelo de datos, solo 18 se sostienen, 2 a medias y 3 no (enumeraciones sin literales, modificadores
   estáticos y abstractos, y multiplicidades sin cotas). Además omite las notas UML, que el análisis exige.
-- **Pendiente de verificar:** la exactitud de las citas `archivo:línea` del mapeo de persistencia, extraído
-  por un subagente. Verificación independiente delegada a `gentle-ai-verify`.
+- **Verificación independiente:** delegada a `gentle-ai-verify` y devuelta **VERIFIED**. Confirmó las 13 citas
+  de esquema físico, las 3 de mapeo lógico, las 3 ausencias declaradas (literales de enumeración, notas,
+  estereotipos), los dos soportes parciales (multiplicidad y visibilidad) y las cifras del documento contra
+  el artefacto. Reprodujo la mutación por su cuenta y restauró el artefacto con el mismo SHA-256.
+- **Hallazgo nuevo de la verificación:** el documento lógico y el esquema físico divergen en varios nombres
+  de columna. Se registra como GAP-09 en vez de resolverse en silencio.
 - **Queda abierto:** ratificación del docente (GAP-01) y roundtrip contra Enterprise Architect (GAP-07).
 
 ### T3 — Dialecto XMI de Enterprise Architect caracterizado con fixture real
