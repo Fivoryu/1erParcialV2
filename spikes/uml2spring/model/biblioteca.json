@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "spike-1",
+  "model": {
+    "name": "Biblioteca",
+    "basePackage": "com.example.biblioteca",
+    "classes": [
+      {
+        "id": "cls-autor",
+        "name": "Autor",
+        "abstract": false,
+        "attributes": [
+          {
+            "id": "attr-autor-nombre",
+            "name": "nombre",
+            "type": "String",
+            "visibility": "private",
+            "required": true
+          },
+          {
+            "id": "attr-autor-nacionalidad",
+            "name": "nacionalidad",
+            "type": "String",
+            "visibility": "private",
+            "required": false
+          }
+        ]
+      },
+      {
+        "id": "cls-libro",
+        "name": "Libro",
+        "abstract": false,
+        "attributes": [
+          {
+            "id": "attr-libro-titulo",
+            "name": "titulo",
+            "type": "String",
+            "visibility": "private",
+            "required": true
+          },
+          {
+            "id": "attr-libro-anio",
+            "name": "anio",
+            "type": "Integer",
+            "visibility": "private",
+            "required": false
+          }
+        ]
+      }
+    ],
+    "associations": [
+      {
+        "id": "ass-autor-libro",
+        "name": "escribe",
+        "ends": [
+          {
+            "classId": "cls-autor",
+            "role": "autor",
+            "multiplicity": "EXACTLY_ONE",
+            "navigable": true
+          },
+          {
+            "classId": "cls-libro",
+            "role": "libros",
+            "multiplicity": "ZERO_OR_MANY",
+            "navigable": true
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -177,6 +177,23 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
   Flyway y configuración PostgreSQL; compila, arranca y responde.
 - **Evidencia:** `mvn package` en verde; arranque con `GET /actuator/health` = `UP`; dos corridas con el mismo
   modelo producen el mismo hash del árbol generado (RNF-04); CRUD básico contra PostgreSQL en contenedor.
+- **Verificado:** 13 de 13 pasos en verde, con `mvn -B -o package` **sin red**: huella idéntica en dos corridas
+  (12 archivos), `BUILD SUCCESS`, salud `UP`, Flyway aplicando `v1`, CRUD con `POST`/`GET` sobre ambos recursos
+  y la clave foránea resuelta (`libro.autor.id`), `libro.autor_id` con `NOT NULL` en PostgreSQL, y limpieza
+  confirmada (36 → 36 contenedores, sin huérfanos). Suite del emisor: 20 pruebas.
+- **Hallazgos:** el spike encontró tres defectos que la revisión de escritorio no veía, y los tres se
+  corrigieron:
+  1. `GET /api/libro` devolvía **HTTP 500**: un `@ManyToOne` perezoso serializado fuera de la transacción con
+     `open-in-view: false`. El `POST` andaba porque la entidad ya estaba en memoria; el listado no. Se resuelve
+     con `EAGER` y el costo declarado (N+1); un generador definitivo debe devolver DTO dentro de la transacción;
+  2. el build **necesitaba red** con Spring Boot 3.5.0, que gestiona Flyway 11.7.2 y no estaba en caché. Se pasó
+     a **3.4.5**, cuyo conjunto completo (Flyway 10.20.1, Hibernate 6.6.13, driver 42.7.5) sí está: un spike que
+     depende de la red no es reproducible;
+  3. un **JVM huérfano** de la corrida fallida mantenía el jar bloqueado en Windows y el `repackage` fallaba con
+     un error ajeno al código. El arnés ahora termina huérfanos del spike y verifica la muerte del proceso.
+- **Nota de método:** la primera delegación de esta tarea a un worker falló sin producir nada (tarea demasiado
+  grande para una corrida). Se partió en dos: el emisor —donde vive el contrato— lo escribí yo, y la evidencia
+  de extremo a extremo quedó en un arnés reproducible.
 - **Depende de:** T1; idealmente T2, porque T2 define qué clases son legales.
 - **Fuera de alcance:** plantillas definitivas, perfiles de generación, targets, empaquetado de artefactos.
 
@@ -217,6 +234,6 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 | T1 — Baseline del repositorio | **hecho** | Commit raíz `90f4f4a` en `main`; rama `feat/incremento-0-contrato-y-riesgos`; `.gitignore` + `.gitattributes` + `README.md` |
 | T2 — Línea base UML 2.5 | **hecho** | `03-linea-base-uml.{md,v1.json,schema.json}`; `tools/contract-tests/` 15/15; mutación verificada |
 | T3 — Dialecto XMI de EA | **hecho** | `tools/xmi-inventory/` (suite en verde, 0 tags sin clasificar); `04-dialecto-xmi-ea.md`; 23 evidenciados / 9 sin evidencia; 3 afirmaciones falsificadas y corregidas |
-| T4 — Spike UML→Spring Boot | pendiente | — |
+| T4 — Spike UML→Spring Boot | **hecho** | `spikes/uml2spring/`; 13/13 pasos de extremo a extremo; huella estable en dos corridas; 3 defectos encontrados y corregidos |
 | T5 — Viabilidad de IA local | pendiente | — |
 | T6 — Acta de cierre | pendiente | — |
