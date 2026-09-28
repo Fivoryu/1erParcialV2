@@ -91,7 +91,7 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
   - `docs/puds/contratos/03-linea-base-uml.v1.json` como inventario machine-checkable;
   - `docs/puds/contratos/03-linea-base-uml.schema.json` como esquema del inventario;
   - `tools/contract-tests/` con la suite que lo verifica.
-- **Evidencia:** `python -m pytest tools/contract-tests -q` en verde (15 pruebas) y prueba de mutación que
+- **Evidencia:** `python -m pytest tools/contract-tests -q` en verde, 0 fallos, y prueba de mutación que
   demuestra que la suite falla cuando el inventario elimina una cláusula obligatoria.
 - **Verificado:** esquema válido contra draft 2020-12; 25 cláusulas cubiertas; 32 constructos con 23
   soportados y 9 no; 10 celdas de mapeo en `NONE` de 96, todas con motivo; ninguna cita de origen rota.
@@ -118,7 +118,8 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
   de elemento, fijada por un test.
 - **Verificado:** 0 tags sin clasificar; familias medidas (953 propietarios de EA, 153 UML, 66 estructura, 3
   andamiaje = 81,1 % de carga propietaria); 23 constructos de UML-BL-1 evidenciados con valor y 9 declarados
-  sin evidencia con motivo (fijado en el oráculo del test); 37 pruebas en verde en `tools/`; prueba de mutación
+  sin evidencia con motivo (fijado en el oráculo del test); suites de contrato y de inventario en verde, 0
+  fallos; prueba de mutación
   que falla por dos lados al declarar evidenciado un constructo cuyo indicador nunca vale `true`.
 - **Hallazgos que cambian decisiones:**
   1. las constantes de enumeración se serializan como `ownedAttribute` y no como `ownedLiteral`, que no aparece
@@ -150,8 +151,16 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
      «43,4 %»;
   3. «el modelo no lleva notas» era **falso**: se buscaba solo elementos llamados `documentation` y se ignoraba
      que la descripción viaja como **atributo**. Es el hallazgo 7.
-  También se corrigió el conteo de pruebas del contrato (18 del inventario, 33 en total, no «32») y el ámbito
-  de las cifras de `visibility` (46 en el modelo, 70 en todo el documento).
+- **Segunda ronda de verificación:** confirmó las tres correcciones con conteos propios sobre el XML crudo, y
+  encontró dos defectos más. Uno nuevo: el contrato llegó a mostrar tres cifras distintas de pruebas para la
+  misma suite (32, 18 y 22, con 23 reales), así que los conteos salieron de la prosa. Y uno heredado del mismo
+  vicio que ya se había corregido: `findings.diagrams.elements = 29` mezclaba los 18 elementos colocados en el
+  diagrama con los 11 del espejo de metadatos, porque **dos contenedores distintos se llaman `elements`**.
+  Ahora la métrica está separada, el desglose está fijado por un test y la tabla de definición/duplicado
+  también dejó de ser una cifra sin assert.
+  También se corrigió el ámbito de las cifras de `visibility` (46 en el modelo, 70 en todo el documento) y
+  desaparecieron los conteos de pruebas escritos en prosa, que llegaron a estar mal de tres formas distintas
+  para la misma suite.
 - **Correcciones al artefacto de T2:** las notas de BL-CMP-01, BL-CMP-02 y BL-CMP-03 se ajustaron con lo
   medido, incluida una sobredeclaración propia (los 32 bloques `stereotype` están vacíos y cuelgan de atributo
   y operación, no de clasificadores). GAP-10 se reescribió: el canal de notas está caracterizado, lo que falta
@@ -207,7 +216,7 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 | --- | --- | --- |
 | T1 — Baseline del repositorio | **hecho** | Commit raíz `90f4f4a` en `main`; rama `feat/incremento-0-contrato-y-riesgos`; `.gitignore` + `.gitattributes` + `README.md` |
 | T2 — Línea base UML 2.5 | **hecho** | `03-linea-base-uml.{md,v1.json,schema.json}`; `tools/contract-tests/` 15/15; mutación verificada |
-| T3 — Dialecto XMI de EA | **hecho** | `tools/xmi-inventory/` (22 pruebas, 0 tags sin clasificar); `04-dialecto-xmi-ea.md`; 23 evidenciados / 9 sin evidencia; 3 afirmaciones falsificadas y corregidas |
+| T3 — Dialecto XMI de EA | **hecho** | `tools/xmi-inventory/` (suite en verde, 0 tags sin clasificar); `04-dialecto-xmi-ea.md`; 23 evidenciados / 9 sin evidencia; 3 afirmaciones falsificadas y corregidas |
 | T4 — Spike UML→Spring Boot | pendiente | — |
 | T5 — Viabilidad de IA local | pendiente | — |
 | T6 — Acta de cierre | pendiente | — |

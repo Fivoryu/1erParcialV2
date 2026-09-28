@@ -9,7 +9,7 @@
 | Artefacto | Rol |
 | --- | --- |
 | [`tools/xmi-inventory/xmi_inventory.py`](../../../tools/xmi-inventory/xmi_inventory.py) | Arnés que deriva el inventario del dialecto desde el propio archivo |
-| [`tools/xmi-inventory/test_xmi_inventory.py`](../../../tools/xmi-inventory/test_xmi_inventory.py) | 32 pruebas con oráculo propio |
+| [`tools/xmi-inventory/test_xmi_inventory.py`](../../../tools/xmi-inventory/test_xmi_inventory.py) | Oráculo propio: particiona la línea base y refuta la evidencia declarada |
 | [`docs/fixtures/xmi/Prueba3.xml`](../../fixtures/xmi/Prueba3.xml) | Evidencia medida: export real de EA 16 |
 | [`03-linea-base-uml.v1.json`](03-linea-base-uml.v1.json) | Línea base UML que este dialecto debe poder transportar |
 
@@ -116,7 +116,7 @@ se miden sobre el subárbol semántico `Model` y excluyen los duplicados de la e
 | BL-CMP-01 Nota de modelo | Atributos `documentation` en bloques de elemento y de diagrama | 12 |
 | BL-CMP-03 Estereotipo | Bloques `stereotype` en la extensión | 32 |
 | BL-CMP-04 Identificador estable | Identificadores `EAID_` en `Model` | 139 |
-| BL-CMP-05 Disposición visual separada | Elementos de diagrama con geometría | 18 de 29 |
+| BL-CMP-05 Disposición visual separada | Elementos colocados en el diagrama con geometría | 18 de 18 |
 
 Y **9 constructos que este fixture no puede evidenciar**. No es una lista de pendientes: es el límite de la
 medición, y un fixture que no ejerce algo no prueba nada sobre ese algo, ni a favor ni en contra. La partición
@@ -290,7 +290,7 @@ bloque con contenido **sí** se reporta, con su nombre y su recuento. La pérdid
 
 | Comprobación | Resultado | Fecha |
 | --- | --- | --- |
-| Suite del inventario | 18 pruebas, 0 fallos (33 con las 15 de contrato) | 2026-09-28 |
+| Suite del inventario y de contrato | Pasa entera, 0 fallos (`python -m pytest tools -q`) | 2026-09-28 |
 | Tags sin clasificar | 0 | 2026-09-28 |
 | Partición de la línea base | 23 evidenciados + 9 declarados sin evidencia = 32 | 2026-09-28 |
 | Prueba de mutación: declarar `BL-FEA-05` evidenciado por `isStatic` | Falla por dos lados y solo por esos dos | 2026-09-28 |

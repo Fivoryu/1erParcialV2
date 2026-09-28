@@ -52,7 +52,7 @@ python -m pytest tools/contract-tests -q
 python tools/contract-tests/baseline_summary.py
 ```
 
-**Evidencia medida (2026-09-28):** `15 passed` sobre tres archivos de contrato. El oráculo de la suite es
+**Evidencia medida (2026-09-28):** la suite pasa entera, 0 fallos, sobre tres archivos de contrato. El oráculo de la suite es
 independiente: transcribe a mano las cláusulas obligatorias del análisis y **no** las lee del inventario, de
 modo que la suite falla si alguien elimina una cláusula obligatoria.
 
@@ -217,7 +217,7 @@ decidir: la suite es el contrato, no la conversación.
 | Comprobación | Resultado | Fecha |
 | --- | --- | --- |
 | Esquema válido contra JSON Schema draft 2020-12 | Correcto | 2026-09-28 |
-| Suite de contrato | 15 pruebas, 0 fallos | 2026-09-28 |
+| Suite de contrato | Pasa entera, 0 fallos | 2026-09-28 |
 | Citas de origen existentes en disco | 32 constructos, ninguna cita rota | 2026-09-28 |
 | Prueba de mutación sobre la cláusula `NOTES` | Falló la prueba correcta y solo esa | 2026-09-28 |
 | Verificación independiente de citas, ausencias y cifras | 4 conjuntos de afirmaciones, todas confirmadas; artefacto restaurado byte a byte | 2026-09-28 |

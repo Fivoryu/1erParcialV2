@@ -251,7 +251,13 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
     enumerations: list[dict] = []
     profile_stereotypes: list[str] = []
 
-    def walk(element: ET.Element, subtree: str, context: str, parent_tag: str) -> None:
+    def walk(
+        element: ET.Element,
+        subtree: str,
+        context: str,
+        parent_tag: str,
+        inside_diagram: bool,
+    ) -> None:
         nonlocal type_refs_without_target
 
         tag = _tag(element)
@@ -262,6 +268,11 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
 
         if tag in ("Model", "Extension"):
             subtree = tag
+        # Dos contenedores distintos se llaman `elements`: el del diagrama, con los
+        # elementos colocados, y el espejo de metadatos de la extension. Contarlos
+        # juntos producia un 29 que no era ni uno ni otro.
+        if tag == "diagram":
+            inside_diagram = True
 
         family = _classify(tag, xmi_type, context)
         family_counts[family] += 1
@@ -392,10 +403,13 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
             if attributes.get("name", "").strip():
                 totals["namedAssociationEnds"] += 1
 
-        if subtree == "Extension" and tag == "element" and parent_tag == "elements":
-            totals["diagram_elements"] += 1
-            if attributes.get("geometry"):
-                totals["diagram_elements_with_geometry"] += 1
+        if subtree == "Extension" and tag == "element":
+            if inside_diagram:
+                totals["diagram_placed_elements"] += 1
+                if attributes.get("geometry"):
+                    totals["diagram_placed_with_geometry"] += 1
+            else:
+                totals["metadata_mirror_elements"] += 1
         if subtree == "Extension" and tag == "connector":
             totals["connectors"] += 1
 
@@ -403,9 +417,9 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
         if family == "uml-element":
             next_context = "uml"
         for child in element:
-            walk(child, subtree, next_context, tag)
+            walk(child, subtree, next_context, tag, inside_diagram)
 
-    walk(root, "", "", "")
+    walk(root, "", "", "", False)
 
     declared = STRUCTURAL_TAGS | UML_TAGS | EA_TAGS
     undeclared = sorted(tag for tag in tag_counts if tag not in declared)
@@ -488,8 +502,9 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
                 "named": totals["namedAssociationEnds"],
             },
             "diagrams": {
-                "elements": totals["diagram_elements"],
-                "withGeometry": totals["diagram_elements_with_geometry"],
+                "placedElements": totals["diagram_placed_elements"],
+                "withGeometry": totals["diagram_placed_with_geometry"],
+                "metadataMirrorElements": totals["metadata_mirror_elements"],
                 "connectors": totals["connectors"],
             },
         },
@@ -576,7 +591,10 @@ def render(inventory: dict) -> str:
     ends = findings["associationEnds"]
     lines.append(f"Extremos     : {ends['total']} totales, {ends['named']} con nombre de rol")
     dia = findings["diagrams"]
-    lines.append(f"Diagrama     : {dia['elements']} elementos ({dia['withGeometry']} con geometria), {dia['connectors']} conectores")
+    lines.append(
+        f"Diagrama     : {dia['placedElements']} elementos colocados ({dia['withGeometry']} con geometria),"
+        f" {dia['connectors']} conectores, {dia['metadataMirrorElements']} entradas del espejo de metadatos"
+    )
 
     return "\n".join(lines)
 

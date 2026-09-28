@@ -298,6 +298,37 @@ def test_visibility_is_written_with_inconsistent_case(inventory: dict[str, Any])
     assert visibility == {"public": 70, "private": 17, "Public": 16}
 
 
+def test_the_two_elements_containers_are_not_lumped(inventory: dict[str, Any]) -> None:
+    """Two different containers are called `elements`: the diagram's placed elements
+    and the extension's metadata mirror. Counting them together produced a 29 that
+    was neither figure. Same defect the classifier metric had."""
+    diagrams = inventory["findings"]["diagrams"]
+    assert diagrams["placedElements"] == 18
+    assert diagrams["withGeometry"] == 18
+    assert diagrams["metadataMirrorElements"] == 11
+    assert diagrams["connectors"] == 8
+
+
+def test_definition_and_duplicate_table_is_pinned(inventory: dict[str, Any]) -> None:
+    """Section 2.1 of the contract quotes this table. An unasserted metric that
+    backs a published figure is how the previous errors survived."""
+    by_subtree = inventory["umlTypesBySubtree"]
+    model = by_subtree["Model"]
+    assert model["uml:Class"] == 8
+    assert model["uml:Interface"] == 1
+    assert model["uml:Enumeration"] == 1
+    assert model["uml:Package"] == 1
+    assert model["uml:Property"] == 33
+
+    extension = by_subtree["Extension"]
+    assert extension["uml:Class"] == 8
+    assert extension["uml:Package"] == 4
+    assert extension["uml:PrimitiveType"] == 10
+    assert extension["uml:Property"] == 2
+    assert extension["uml:Comment"] == 1
+    assert extension["uml:Stereotype"] == 1
+
+
 def test_the_partition_has_the_declared_size() -> None:
     """The counts quoted in the contract are pinned here. Hand-editing them in prose
     already produced one wrong figure, so the number lives where it can fail."""
