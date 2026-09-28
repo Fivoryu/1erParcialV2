@@ -1,0 +1,76 @@
+{
+  "base": "http://localhost:3000",
+  "capturedAt": "2026-09-23T04:49:25.352Z",
+  "report": [
+    {
+      "name": "01-login",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\01-login.png"
+    },
+    {
+      "name": "01-proyectos",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\01-proyectos.png"
+    },
+    {
+      "name": "01-editor",
+      "ok": true,
+      "detail": "proyecto 7591dd13-fbcc-459f-88c9-de1b458ac588 de 71 tarjetas"
+    },
+    {
+      "name": "02-clasificadores",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\02-clasificadores.png"
+    },
+    {
+      "name": "05-disposicion",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\05-disposicion.png"
+    },
+    {
+      "name": "06-validacion",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\06-validacion.png"
+    },
+    {
+      "name": "07-ia-texto",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\07-ia-texto.png"
+    },
+    {
+      "name": "08-voz",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\08-voz.png"
+    },
+    {
+      "name": "09-foto",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\09-foto.png"
+    },
+    {
+      "name": "10-miembros",
+      "ok": false,
+      "detail": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('menuitem', { name: 'File', exact: true })\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" role=\"menuitem\" aria-haspopup=\"menu\" aria-expanded=\"false\" class=\"menu-bar__trigger\" aria-controls=\"_r_1_-popup-file\">File</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"dialog\" data-open=\"true\" aria-modal=\"true\" aria-hidden=\"false\" aria-labelledby=\"_r_6_\" class=\"ai-proposal-surface\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"dialog\" data-open=\"true\" aria-modal=\"true\" aria-hidden=\"false\" aria-labelledby=\"_r_6_\" class=\"ai-proposal-surface\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    56 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div role=\"dialog\" data-open=\"true\" aria-modal=\"true\" aria-hidden=\"false\" aria-labelledby=\"_r_6_\" class=\"ai-proposal-surface\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "name": "11-sincronizacion",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\11-sincronizacion.png"
+    },
+    {
+      "name": "12-importar-xmi",
+      "ok": false,
+      "detail": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('menuitem', { name: 'File', exact: true })\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" role=\"menuitem\" aria-haspopup=\"menu\" aria-expanded=\"false\" class=\"menu-bar__trigger\" aria-controls=\"_r_1_-popup-file\">File</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"dialog\" data-open=\"true\" aria-modal=\"true\" aria-hidden=\"false\" aria-labelledby=\"_r_6_\" class=\"ai-proposal-surface\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"dialog\" data-open=\"true\" aria-modal=\"true\" aria-hidden=\"false\" aria-labelledby=\"_r_6_\" class=\"ai-proposal-surface\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div role=\"dialog\" data-open=\"true\" aria-modal=\"true\" aria-hidden=\"false\" aria-labelledby=\"_r_6_\" class=\"ai-proposal-surface\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "name": "12-exportar-xmi",
+      "ok": false,
+      "detail": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('menuitem', { name: 'File', exact: true })\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" role=\"menuitem\" aria-haspopup=\"menu\" aria-expanded=\"false\" class=\"menu-bar__trigger\" aria-controls=\"_r_1_-popup-file\">File</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"dialog\" data-open=\"true\" aria-modal=\"true\" aria-hidden=\"false\" aria-labelledby=\"_r_6_\" class=\"ai-proposal-surface\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"dialog\" data-open=\"true\" aria-modal=\"true\" aria-hidden=\"false\" aria-labelledby=\"_r_6_\" class=\"ai-proposal-surface\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    56 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div role=\"dialog\" data-open=\"true\" aria-modal=\"true\" aria-hidden=\"false\" aria-labelledby=\"_r_6_\" class=\"ai-proposal-surface\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "name": "13-health-backend-generado",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\13-health-backend-generado.png"
+    }
+  ]
+}

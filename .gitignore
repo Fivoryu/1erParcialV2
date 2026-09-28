@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# 1erParcialV2 — Diagramador colaborativo de clases UML 2.5
+#
+# Decisión de versionado (T1, Incremento 0):
+#   Este repositorio es un MONOREPO. `backend/`, `web/`, `mobile/`, `tools/` y
+#   `spikes/` viven DENTRO de este mismo repositorio y se versionan como código
+#   fuente. NO se repiten los repositorios git anidados de la versión anterior.
+#   Si en algún momento un submódulo se justifica, entra por `git submodule` y
+#   queda registrado en .gitmodules, nunca por un `.git` escondido en el árbol.
+# ---------------------------------------------------------------------------
+
+# Dependencias
+node_modules/
+
+# Entornos y cachés de Python
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Artefactos de build
+dist/
+build/
+target/
+*.egg-info/
+
+# Estado local del runtime de Pi
+.atl/
+.codegraph/
+.pi/
+
+# Artefactos accidentales de redirección en Windows
+nul
+-b
+
+# Archivos de bloqueo de Office: aparecen al abrir un .docx o .doc
+~$*
+
+# Enterprise Architect: archivo de bloqueo local, no es contenido del modelo
+*.ldb
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Configuración local con valores de entorno; se versiona el ejemplo
+.env
+!.env.example

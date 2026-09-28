@@ -1,0 +1,28 @@
+# Normalización de finales de línea — repositorio políglota con Docker y WSL.
+#
+# Regla general: contenido en LF dentro del repositorio.
+# Excepción: los fixtures de Enterprise Architect quedan byte-exactos, porque son
+# evidencia medida y su tamaño/hash no debe cambiar por la plataforma.
+# Ojo: `-text` desactiva toda conversión de finales de línea para esa ruta, así que
+# el `eol=lf` que se hereda de la regla general queda declarado pero inerte.
+# Excepción: PowerShell de Windows conserva CRLF, porque Windows PowerShell 5.1
+# tiene problemas conocidos con LF en here-strings y continuaciones de línea.
+
+* text=auto eol=lf
+
+# Binarios: git no los inspecciona ni los convierte
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.pdf  binary
+*.docx binary
+*.eapx binary
+
+# Evidencia medida: byte-exacta en cualquier plataforma
+docs/fixtures/** -text
+
+# Scripts: LF para contenedores Linux, CRLF para PowerShell de Windows
+*.sh  text eol=lf
+*.ps1 text eol=crlf

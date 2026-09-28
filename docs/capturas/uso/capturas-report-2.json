@@ -1,0 +1,57 @@
+{
+  "base": "http://localhost:3000",
+  "projectId": "7591dd13-fbcc-459f-88c9-de1b458ac588",
+  "capturedAt": "2026-09-23T04:52:26.836Z",
+  "report": [
+    {
+      "name": "setup",
+      "ok": true,
+      "detail": "proyecto 7591dd13-fbcc-459f-88c9-de1b458ac588"
+    },
+    {
+      "name": "06-validacion",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\06-validacion.png"
+    },
+    {
+      "name": "11-sincronizacion",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\11-sincronizacion.png"
+    },
+    {
+      "name": "07-ia-texto",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\07-ia-texto.png"
+    },
+    {
+      "name": "08-voz",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\08-voz.png"
+    },
+    {
+      "name": "09-foto",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\09-foto.png"
+    },
+    {
+      "name": "cerrar-panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "10-miembros",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\10-miembros.png"
+    },
+    {
+      "name": "12-importar-xmi",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\12-importar-xmi.png"
+    },
+    {
+      "name": "12-exportar-xmi",
+      "ok": true,
+      "detail": "D:\\Universidad\\Proyectos\\2doSemestre2026\\sw1\\1erParcial\\docs\\capturas\\uso\\12-exportar-xmi.png"
+    }
+  ]
+}
