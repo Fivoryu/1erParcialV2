@@ -28,7 +28,7 @@ intercambio XMI.
 ## 2. Qué declara y qué no
 
 **Declara** 32 constructos: 23 soportados y 9 que quedan nombrados sin soporte declarado, cada uno con su
-motivo. Declara además 5 exclusiones explícitas de la superficie de UML 2.5 y 9 huecos abiertos con
+motivo. Declara además 5 exclusiones explícitas de la superficie de UML 2.5 y 10 huecos abiertos con
 responsable.
 
 **No declara** compatibilidad con UML 2.5 completo. Nada que no aparezca en `constructs` está soportado,
@@ -182,6 +182,7 @@ dialecto. La pérdida real del intercambio es materia de T3 y de Q3, no de esta 
 | GAP-07 | El roundtrip contra EA no se puede verificar: el servidor no responde | Q3, RF-09, RNF-05 | Equipo con EA abierto |
 | GAP-08 | El mapeo no documenta dirección ni retorno del parámetro | BL-FEA-02, BL-FEA-03, contrato de operaciones | Equipo (revisión del mapeo) |
 | GAP-09 | El documento lógico y el esquema físico discrepan en varios nombres de columna | BL-CLS-06, BL-CMP-05, capa de persistencia | Equipo (revisión del mapeo) |
+| GAP-10 | El fixture de EA no trae ninguna nota de modelo, así que su roundtrip no está caracterizado | BL-CMP-01, política de notas | Equipo con un fixture que contenga notas |
 
 ## 8. Exclusiones explícitas
 
@@ -220,4 +221,5 @@ decidir: la suite es el contrato, no la conversación.
 | Citas de origen existentes en disco | 32 constructos, ninguna cita rota | 2026-09-28 |
 | Prueba de mutación sobre la cláusula `NOTES` | Falló la prueba correcta y solo esa | 2026-09-28 |
 | Verificación independiente de citas, ausencias y cifras | 4 conjuntos de afirmaciones, todas confirmadas; artefacto restaurado byte a byte | 2026-09-28 |
+| Refinamiento desde la caracterización del dialecto XMI (T3) | 3 notas corregidas y GAP-10 agregado | 2026-09-28 |
 | Ratificación con el docente | Pendiente (GAP-01) | — |

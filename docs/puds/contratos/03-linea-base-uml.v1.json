@@ -576,7 +576,7 @@
         "docs/puds/datos/02-esquema-fisico.sql#L73-L500",
         "docs/puds/datos/01-mapeo-base-de-datos.md#L29-L41"
       ],
-      "notes": "Cláusula 'notas y restricciones' del análisis, separada aquí en NOTES y CONSTRAINTS para que ninguna tape a la otra. Ver GAP-03."
+      "notes": "Cláusula 'notas y restricciones' del análisis, separada aquí en NOTES y CONSTRAINTS para que ninguna tape a la otra. El fixture no ejercita este mapeo: los 67 bloques documentation están vacíos y el único uml:Comment del archivo pertenece al perfil, así que no hay evidencia de cómo lleva EA una nota de modelo. Ver GAP-03 y GAP-10."
     },
     {
       "id": "BL-CMP-02",
@@ -597,7 +597,7 @@
         "docs/puds/contratos/01-contratos-transversales.md#8-3",
         "docs/fixtures/xmi/Prueba3.xml"
       ],
-      "notes": "El dueño es polimórfico, así que la restricción puede colgar de un clasificador o de una relación sin cambiar el esquema."
+      "notes": "El dueño es polimórfico, así que la restricción puede colgar de un clasificador o de una relación sin cambiar el esquema. El dialecto tampoco está ejercitado: los 16 bloques constraints del fixture cuelgan de la extensión del conector y están vacíos, y el árbol UML no lleva ninguna restricción."
     },
     {
       "id": "BL-CMP-03",
@@ -619,7 +619,7 @@
         "docs/puds/datos/01-mapeo-base-de-datos.md#L85",
         "docs/fixtures/xmi/Prueba3.xml"
       ],
-      "notes": "El fixture real de EA trae 32 apariciones del bloque stereotype, así que el dialecto los emite y el modelo no los puede recibir. Ver GAP-04."
+      "notes": "Corrección de precisión respecto de la primera versión de esta nota: los 32 bloques stereotype del fixture están vacíos y cuelgan solo de bloques de atributo y operación, ninguno de un clasificador. Lo único que se aplica dentro del árbol UML es el estereotipo interno _lineStyle de EA, sobre 8 elementos. El modelo no tiene entidad de estereotipo y este fixture tampoco trae un estereotipo de usuario que recibir. Ver GAP-04."
     },
     {
       "id": "BL-CMP-04",
@@ -701,7 +701,7 @@
     },
     {
       "id": "GAP-02",
-      "description": "La enumeración no tiene dónde guardar sus literales, así que no puede materializarse como Java enum pese a que la sección 8.3 de contratos lo declara.",
+      "description": "La enumeración no tiene dónde guardar sus literales, así que no puede materializarse como Java enum pese a que la sección 8.3 de contratos lo declara. El dialecto de EA sí entrega las constantes, pero serializadas como ownedAttribute y no como ownedLiteral, de modo que un importador que busque la forma estándar también las pierde.",
       "blocks": ["BL-CLS-04", "BL-CLS-05", "generación de enumeraciones", "RF-10 y RF-11 para modelos con enums"],
       "owner": "Equipo, en el diseño de datos del Ciclo 1"
     },
@@ -746,6 +746,12 @@
       "description": "El documento lógico de datos y el esquema físico no coinciden en varios nombres de columna. El lógico dice namespace_classifier_id, connector_path_id, detected_element_id, cascade_group_id y loss_item_id; el físico dice namespace_id, path_id, detected_id, cascade_id y loss_id. Esta línea base cita el esquema físico porque es el que se ejecuta, pero la divergencia no está resuelta.",
       "blocks": ["BL-CLS-06", "BL-CMP-05", "implementación de la capa de persistencia", "revisión del mapeo de datos"],
       "owner": "Equipo, en la revisión del mapeo de datos"
+    },
+    {
+      "id": "GAP-10",
+      "description": "El fixture de Enterprise Architect no contiene ninguna nota de modelo, así que no está caracterizado cómo las lleva el dialecto. Los 67 bloques documentation están vacíos y el único uml:Comment del archivo pertenece al perfil.",
+      "blocks": ["BL-CMP-01", "política de notas del intercambio", "roundtrip de notas"],
+      "owner": "Equipo, con un fixture de Enterprise Architect que contenga notas"
     }
   ]
 }

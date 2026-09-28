@@ -116,8 +116,28 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
     preservación/descarte y los huecos.
 - **Evidencia:** salida reproducible del inventario sobre `docs/fixtures/xmi/Prueba3.xml`, con conteo por tipo
   de elemento, fijada por un test.
+- **Verificado:** 0 tags sin clasificar; familias medidas (953 propietarios de EA, 153 UML, 66 estructura, 3
+  andamiaje = 81,1 % de carga propietaria); 23 constructos de UML-BL-1 evidenciados con valor y 9 declarados
+  sin evidencia con motivo; suite del inventario en verde (32 pruebas en `tools/`); prueba de mutación que falla
+  por dos lados al declarar evidenciado un constructo cuyo indicador nunca vale `true`.
+- **Hallazgos que cambian decisiones:**
+  1. las constantes de enumeración se serializan como `ownedAttribute` y no como `ownedLiteral`, que no aparece
+     ni una vez: un importador estándar las pierde en silencio, y la persistencia tampoco las guarda;
+  2. `isNavigable` no existe en el árbol UML, solo en bloques `modifiers` de EA, y siempre en `false`: quien
+     descarte la extensión elige mal el lado propietario de la relación generada;
+  3. la extensión es mayoritariamente andamiaje vacío (`documentation` 67/67, `stereotype` 32/32,
+     `constraints` 16/16, `styleex` 43, `tags` 78, `options` 21);
+  4. `visibility` se escribe `public` 70 veces, `private` 17 y `Public` 16: una comparación sensible a
+     mayúsculas pierde 16 valores;
+  5. hay 4 referencias de tipo sin destino, y los tipos apuntan a tres espacios (`EAJava_`, `EAID_`, `EAnone_`)
+     con el mismo concepto escrito de dos formas;
+  6. `Model` no está limpio: 8 bloques `_lineStyle` de EA viven dentro del subárbol UML.
+- **Correcciones al artefacto de T2:** tres notas del inventario de la línea base se ajustaron con lo medido,
+  incluida una sobredeclaración propia (los 32 bloques `stereotype` están vacíos y cuelgan de atributo y
+  operación, no de clasificadores). Se agregó GAP-10.
 - **Depende de:** T1 (para ubicar el arnés).
-- **Queda abierto:** roundtrip contra EA en vivo — el servidor MCP no responde.
+- **Queda abierto:** roundtrip contra EA en vivo (GAP-07); notas de modelo sin caracterizar (GAP-10); 9
+  constructos sin evidencia, que necesitan un fixture que los ejerza o una decisión explícita de no soportarlos.
 
 ### T4 — Spike determinista UML→Spring Boot de cuatro capas
 
@@ -166,7 +186,7 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 | --- | --- | --- |
 | T1 — Baseline del repositorio | **hecho** | Commit raíz `90f4f4a` en `main`; rama `feat/incremento-0-contrato-y-riesgos`; `.gitignore` + `.gitattributes` + `README.md` |
 | T2 — Línea base UML 2.5 | **hecho** | `03-linea-base-uml.{md,v1.json,schema.json}`; `tools/contract-tests/` 15/15; mutación verificada |
-| T3 — Dialecto XMI de EA | pendiente | — |
+| T3 — Dialecto XMI de EA | **hecho** | `tools/xmi-inventory/` (32 pruebas, 0 tags sin clasificar); `04-dialecto-xmi-ea.md`; 23 evidenciados / 9 sin evidencia |
 | T4 — Spike UML→Spring Boot | pendiente | — |
 | T5 — Viabilidad de IA local | pendiente | — |
 | T6 — Acta de cierre | pendiente | — |
