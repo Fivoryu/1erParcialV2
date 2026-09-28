@@ -48,7 +48,6 @@ BL1_PATH = REPO_ROOT / "docs" / "puds" / "contratos" / "03-linea-base-uml.v1.jso
 BASELINE_EVIDENCE: dict[str, tuple[tuple[str, ...], int]] = {
     # Clasificadores
     "BL-CLS-01": (("semantic", "type:Class"), 8),
-    "BL-CLS-02": (("semantic", "classesAbstract"), 1),
     "BL-CLS-03": (("semantic", "type:Interface"), 1),
     "BL-CLS-04": (("semantic", "type:Enumeration"), 1),
     "BL-CLS-05": (("findings", "enumerations"), 1),
@@ -70,6 +69,7 @@ BASELINE_EVIDENCE: dict[str, tuple[tuple[str, ...], int]] = {
     "BL-REL-08": (("findings", "associationEnds", "named"), 10),
     "BL-REL-10": (("findings", "associationEnds", "total"), 10),
     # Complementarios
+    "BL-CMP-01": (("findings", "notes", "documentationAttributes"), 12),
     "BL-CMP-03": (("findings", "stereotypes", "blocks"), 32),
     "BL-CMP-04": (("semantic", "identifierPrefixes", "EAID"), 139),
     "BL-CMP-05": (("findings", "diagrams", "withGeometry"), 18),
@@ -84,14 +84,14 @@ BASELINE_EVIDENCE: dict[str, tuple[tuple[str, ...], int]] = {
 # --------------------------------------------------------------------------
 
 NOT_EVIDENCED: dict[str, str] = {
+    "BL-CLS-02": "No hay ninguna uml:Class con isAbstract='true' en todo el documento. El unico clasificador abstracto del fixture es la interfaz ProcesadorPago, que ya es evidencia de BL-CLS-03.",
     "BL-FEA-04": "No existe ningun tag defaultValue en el documento, ni bloque de EA equiparable. El fixture no ejercita valores predeterminados.",
     "BL-FEA-05": "La bandera isStatic aparece 33 veces en el modelo y las 33 valen false. Presencia de la bandera no es evidencia de la capacidad.",
-    "BL-FEA-06": "La bandera isAbstract vale true una sola vez y sobre un clasificador, no sobre un miembro. Ningun miembro la ejercita en true.",
+    "BL-FEA-06": "isAbstract solo vale true dos veces en todo el documento, sobre una interfaz y sobre un bloque properties de EA. Ningun miembro, ni atributo ni operacion, lo ejercita en true.",
     "BL-VIS-03": "El modelo solo lleva visibilidad public y private. No hay un solo valor protected.",
     "BL-VIS-04": "El modelo solo lleva visibilidad public y private. No hay un solo valor package.",
     "BL-REL-06": "No hay ningun elemento uml:Dependency en el subarbol semantico Model.",
     "BL-REL-09": "El atributo isNavigable no aparece ni una vez en el subarbol UML: vive solo en los bloques modifiers de EA, y en los 16 casos vale false.",
-    "BL-CMP-01": "El unico uml:Comment del documento pertenece al perfil, no al modelo. El modelo no lleva ninguna nota.",
     "BL-CMP-02": "No hay ninguna restriccion UML. Los 16 bloques constraints de EA cuelgan de connector/source y connector/target, y estan vacios.",
 }
 
@@ -250,14 +250,7 @@ def test_enumeration_literals_are_not_serialized_as_uml_literals(
     assert enumeration["literals"] == ["PENDIENTE", "CONFIRMADA", "CANCELADA", "COMPLETADA"]
 
 
-def test_documentation_and_stereotype_blocks_are_empty_scaffolding(
-    inventory: dict[str, Any],
-) -> None:
-    documentation = inventory["findings"]["documentation"]
-    assert documentation["blocks"] == 67
-    assert documentation["empty"] == 67
-    assert documentation["longest"] == 0
-
+def test_stereotype_blocks_are_empty_scaffolding(inventory: dict[str, Any]) -> None:
     stereotypes = inventory["findings"]["stereotypes"]
     assert stereotypes["blocks"] == 32
     assert stereotypes["withPayload"] == 0
@@ -273,7 +266,9 @@ def test_constraints_travel_empty_in_the_connector_extension(
     assert constraints["byParent"] == {"source": 8, "target": 8}
 
 
-def test_model_carries_no_note(inventory: dict[str, Any]) -> None:
+def test_the_uml_comment_channel_is_absent_from_the_model(inventory: dict[str, Any]) -> None:
+    """The standard channel is absent from the model. This does NOT mean the
+    fixture carries no notes: see test_ea_does_carry_model_element_notes."""
     comments = inventory["findings"]["comments"]
     assert comments["total"] == 1
     assert comments["insideProfile"] == 1
@@ -301,6 +296,74 @@ def test_visibility_is_written_with_inconsistent_case(inventory: dict[str, Any])
     normalise before comparing, and this test keeps the hazard visible."""
     visibility = inventory["findings"]["visibilityCase"]
     assert visibility == {"public": 70, "private": 17, "Public": 16}
+
+
+def test_the_partition_has_the_declared_size() -> None:
+    """The counts quoted in the contract are pinned here. Hand-editing them in prose
+    already produced one wrong figure, so the number lives where it can fail."""
+    assert len(BASELINE_EVIDENCE) == 23
+    assert len(NOT_EVIDENCED) == 9
+
+
+def test_ea_blocks_are_measured_with_children_in_mind(inventory: dict[str, Any]) -> None:
+    """An earlier version called `tags` empty because it only looked at attributes
+    and text. It has 8 children. Emptiness means no attributes, no text and no
+    children, and the aggregate is 43.4%, not 'mostly'."""
+    totals = inventory["findings"]["eaTotals"]
+    assert totals["elements"] == 953
+    assert totals["empty"] == 414
+
+    payload = inventory["eaBlockPayload"]
+    assert payload["documentation"]["elements"] == 67
+    assert payload["documentation"]["empty"] == 66
+    assert payload["tags"]["elements"] == 78
+    assert payload["tags"]["withChildren"] == 8
+    assert payload["tags"]["empty"] == 70
+    for tag, count in (
+        ("styleex", 43),
+        ("stereotype", 32),
+        ("constraints", 16),
+        ("options", 21),
+        ("initial", 21),
+        ("behaviour", 11),
+    ):
+        assert payload[tag]["empty"] == count, f"{tag} is not fully empty"
+
+
+@pytest.fixture(scope="module")
+def payload() -> dict:
+    return build_inventory(DEFAULT_FIXTURE)["eaBlockPayload"]
+
+
+@pytest.fixture(scope="module")
+def notes() -> dict:
+    return build_inventory(DEFAULT_FIXTURE)["findings"]["notes"]
+
+
+def test_ea_does_carry_model_element_notes(notes: dict) -> None:
+    """An earlier version of the contract asserted the fixture carries no model
+    note. It does: EA describes model elements in a documentation ATTRIBUTE of
+    its own element blocks, which is not an element and was never looked at."""
+    assert notes["documentationAttributes"] == 12
+    assert notes["byParent"] == {"element": 11, "diagram": 1}
+    assert notes["documentationValueAttributes"] == 1
+    assert notes["umlComments"] == 1
+    assert notes["umlCommentsOnModelElements"] == 0
+    assert len(notes["examples"]) == 3
+    assert all(text.strip() for text in notes["examples"])
+
+
+def test_no_abstract_class_exists_in_the_fixture(inventory: dict[str, Any]) -> None:
+    """The single abstract classifier is an interface. An earlier version of the
+    harness counted it as an abstract class by lumping every classifier kind into
+    one metric, which made a false claim survive."""
+    semantic = inventory["semantic"]
+    assert semantic.get("classesAbstract") is None
+    assert semantic["otherClassifiersAbstract"] == 1
+
+
+def test_ownership_of_the_notes_channel_is_declared(notes: dict) -> None:
+    assert notes["documentationAttributes"] > 0, "if notes disappear, the import rule must change"
 
 
 def test_declared_owning_side_ends_all_carry_a_role_name(inventory: dict[str, Any]) -> None:

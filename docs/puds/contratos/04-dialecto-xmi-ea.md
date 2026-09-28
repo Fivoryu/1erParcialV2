@@ -27,7 +27,6 @@ asociaciones, 1 interfaz, 1 enumeración, 1 generalización, 1 realización y 1 
 **No se puede concluir** de este archivo:
 
 - cómo se comporta el roundtrip contra EA en vivo (GAP-07);
-- cómo lleva EA las notas de modelo, porque no hay ninguna;
 - ninguna capacidad que el fixture **no ejerza**. Que una etiqueta aparezca no prueba la capacidad.
 
 > **Regla de lectura de este documento:** aparición de una etiqueta **no** es evidencia de la capacidad.
@@ -90,12 +89,12 @@ Clasificar por etiqueta y no por contexto produce conclusiones falsas en los tre
 
 ## 3. Qué lleva realmente el modelo
 
-23 de los 32 constructos de UML-BL-1 quedan **evidenciados por medición**, con el valor exacto:
+23 de los 32 constructos de UML-BL-1 quedan **evidenciados por medición**, con el valor exacto. Los valores
+se miden sobre el subárbol semántico `Model` y excluyen los duplicados de la extensión:
 
 | Constructo | Hecho medido | Valor |
 | --- | --- | ---: |
 | BL-CLS-01 Clase | `uml:Class` en `Model` | 8 |
-| BL-CLS-02 Clase abstracta | Clases con `isAbstract="true"` | 1 |
 | BL-CLS-03 Interfaz | `uml:Interface` | 1 |
 | BL-CLS-04 Enumeración | `uml:Enumeration` | 1 |
 | BL-CLS-05 Literal de enumeración | Literales de `EstadoReserva` | 4 |
@@ -104,8 +103,8 @@ Clasificar por etiqueta y no por contexto produce conclusiones falsas en los tre
 | BL-FEA-01 Atributo | `ownedAttribute` en `Model` | 23 |
 | BL-FEA-02 Operación | `ownedOperation` | 11 |
 | BL-FEA-03 Parámetro | `ownedParameter` | 11 |
-| BL-VIS-01 Visibilidad pública | `visibility="public"` | 46 |
-| BL-VIS-02 Visibilidad privada | `visibility="private"` | 17 |
+| BL-VIS-01 Visibilidad pública | `visibility="public"` en `Model` (70 en todo el documento) | 46 |
+| BL-VIS-02 Visibilidad privada | `visibility="private"` en `Model` (17 en todo el documento) | 17 |
 | BL-REL-01 Asociación | `uml:Association` | 6 |
 | BL-REL-02 Agregación | `aggregation="shared"` | 1 |
 | BL-REL-03 Composición | `aggregation="composite"` | 1 |
@@ -114,23 +113,25 @@ Clasificar por etiqueta y no por contexto produce conclusiones falsas en los tre
 | BL-REL-07 Multiplicidad | `upperValue` (con 4 `LiteralUnlimitedNatural` para `*`) | 33 |
 | BL-REL-08 Nombre de rol | Extremos de asociación con nombre | 10 de 10 |
 | BL-REL-10 Extremo de relación | Extremos en total | 10 |
+| BL-CMP-01 Nota de modelo | Atributos `documentation` en bloques de elemento y de diagrama | 12 |
 | BL-CMP-03 Estereotipo | Bloques `stereotype` en la extensión | 32 |
 | BL-CMP-04 Identificador estable | Identificadores `EAID_` en `Model` | 139 |
 | BL-CMP-05 Disposición visual separada | Elementos de diagrama con geometría | 18 de 29 |
 
 Y **9 constructos que este fixture no puede evidenciar**. No es una lista de pendientes: es el límite de la
-medición, y un fixture que no ejerce algo no prueba nada sobre ese algo, ni a favor ni en contra.
+medición, y un fixture que no ejerce algo no prueba nada sobre ese algo, ni a favor ni en contra. La partición
+está definida y fijada en el oráculo de `test_xmi_inventory.py`, no en esta tabla:
 
 | Constructo | Por qué el fixture no lo evidencia |
 | --- | --- |
+| BL-CLS-02 Clase abstracta | No hay ninguna `uml:Class` con `isAbstract="true"`. El único clasificador abstracto es la interfaz `ProcesadorPago` |
 | BL-FEA-04 Valor predeterminado | No existe ningún tag `defaultValue`, ni bloque de EA equiparable |
 | BL-FEA-05 Miembro estático | `isStatic` aparece 33 veces y las 33 valen `false` |
-| BL-FEA-06 Miembro abstracto | `isAbstract` es `true` una sola vez, sobre un clasificador, nunca sobre un miembro |
+| BL-FEA-06 Miembro abstracto | `isAbstract` vale `true` dos veces en todo el documento, sobre una interfaz y sobre un bloque `properties`; ningún miembro lo ejerce |
 | BL-VIS-03 Visibilidad protegida | El modelo solo lleva `public` y `private` |
 | BL-VIS-04 Visibilidad de paquete | El modelo solo lleva `public` y `private` |
 | BL-REL-06 Dependencia | No hay ningún `uml:Dependency` en `Model` |
 | BL-REL-09 Navegabilidad | `isNavigable` **no aparece en el árbol UML**; solo en bloques `modifiers`, y en 16 casos vale `false` |
-| BL-CMP-01 Nota UML | El único `uml:Comment` pertenece al perfil: el modelo no lleva notas |
 | BL-CMP-02 Restricción | Los 16 bloques `constraints` cuelgan de la extensión del conector y están vacíos |
 
 ## 4. Los cinco hallazgos que cambian la política
@@ -153,22 +154,32 @@ Esto importa más de lo que parece: BL-REL-09 alimenta la **selección del lado 
 generada. Si el importador descarta la extensión, la generación elige el lado equivocado y nadie se enterará
 hasta ver el código emitido.
 
-### 4.3 La extensión es, en su mayoría, andamiaje vacío
+### 4.3 Una parte grande de la extensión es andamiaje vacío
 
-| Bloque | Bloques | Vacíos | Con texto |
-| --- | ---: | ---: | ---: |
-| `documentation` | 67 | 67 | 0 |
-| `stereotype` | 32 | 32 | 0 |
-| `constraints` | 16 | 16 | 0 |
-| `styleex` | 43 | 43 | 0 |
-| `tags` | 78 | 78 | 0 |
-| `options` | 21 | 21 | 0 |
-| `initial` | 21 | 21 | 0 |
+Vacío significa sin atributos, sin texto **y sin hijos**. Medir solo atributos y texto fue un error de la
+primera versión de este contrato: hacía parecer vacío a `tags`, que lleva 8 hijos dentro.
 
-De los 953 elementos propietarios, una parte considerable no lleva ni un atributo ni un carácter. Eso es
-buena noticia para la política de descarte —lo que está vacío no se pierde al descartarlo— y mala noticia
-para dos conclusiones: que exista un bloque `constraints` no significa que haya restricciones, y que exista
-un bloque `stereotype` no significa que haya estereotipos aplicados.
+| Bloque | Bloques | Con atributos | Con hijos | Vacíos |
+| --- | ---: | ---: | ---: | ---: |
+| `styleex` | 43 | 0 | 0 | 43 |
+| `stereotype` | 32 | 0 | 0 | 32 |
+| `options` | 21 | 0 | 0 | 21 |
+| `initial` | 21 | 0 | 0 | 21 |
+| `constraints` | 16 | 0 | 0 | 16 |
+| `behaviour` | 11 | 0 | 0 | 11 |
+| `paths` | 1 | 0 | 0 | 1 |
+| `documentation` | 67 | 1 | 0 | 66 |
+| `tags` | 78 | 0 | 8 | 70 |
+| `style` | 78 | 27 | 0 | 51 |
+| `xrefs` | 78 | 21 | 0 | 57 |
+
+**414 de los 953 elementos propietarios (43,4 %) no llevan nada.** No es "la mayoría": la mayoría lleva algo.
+Y los contenedores `links`, `parameters`, `attributes` y `operations` **no** están vacíos, están llenos de
+hijos; llamarlos andamiaje era otro error.
+
+Lo que sí se sostiene, y es lo que importa: que exista un bloque `constraints` **no** significa que haya
+restricciones (los 16 están vacíos), y que exista un bloque `stereotype` **no** significa que haya
+estereotipos aplicados (los 32 están vacíos).
 
 ### 4.4 Hay datos que solo existen en la extensión
 
@@ -179,6 +190,7 @@ un bloque `stereotype` no significa que haya estereotipos aplicados.
 | Orden y hoja/raíz | `modifiers/isOrdered`, `isLeaf`, `isRoot` | Se pierde (y en UML solo `isOrdered` está duplicado) |
 | Tipo de retorno de la operación | bloques `operation/type` | Se pierde si no se resolvió antes por el árbol UML |
 | Dirección del parámetro | `properties/direction` | Se pierde |
+| **Notas de modelo** | Atributo `documentation` de los bloques de elemento | Se pierden las 12 notas descritas |
 
 Y al revés: `isOrdered` aparece **dos veces** (33 en `Model`, 16 en `Extension`). Un importador tiene que
 decidir cuál manda, y esa decisión debe ser explícita, no la que salga primero.
@@ -190,7 +202,29 @@ decidir cuál manda, y esa decisión debe ser explícita, no la que salga primer
 - Los tipos apuntan a tres espacios distintos: `EAJava_` (12), `EAID_` (13, nuestras propias clases) y
   `EAnone_` (2). `EAJava_DateTime` y `EAnone_DateTime` son el mismo concepto escrito dos veces.
 - **`visibility` se escribe con dos criterios de mayúsculas**: `public` (70), `private` (17) y **`Public`
-  (16)**. Una comparación sensible a mayúsculas pierde 16 valores sin decir nada.
+  (16)**. Una comparación sensible a mayúsculas pierde 16 valores sin decir nada. De los 70 `public`, 46 están
+  en el modelo y 24 en la extensión.
+
+### 4.6 Las notas de modelo existen, en un canal propietario
+
+La primera versión de este contrato afirmó que el fixture no traía ninguna nota de modelo. **Era falso.** EA
+describe los elementos del modelo con un **atributo `documentation`** dentro de sus propios bloques:
+
+| Canal | Apariciones | Dónde |
+| --- | ---: | --- |
+| Atributo `documentation` | 12 | 11 en bloques de elemento, 1 en el del diagrama |
+| Elemento `documentation` con `value` | 1 | Bloque `documentation` de la extensión |
+| `uml:Comment` en el modelo | 0 | El único `uml:Comment` del archivo pertenece al perfil |
+
+Textos reales medidos: «Agente inmobiliario que publica inmuebles.», «Cliente que realiza reservas de
+inmuebles.». Describen elementos del modelo, no la herramienta.
+
+El error fue buscar solo elementos llamados `documentation` e ignorar que la descripción viaja como
+**atributo**. La consecuencia importa: el canal estándar (`uml:Comment`) **no aparece en el modelo**, así que
+un consumidor que solo lea UML pierde las 12 notas sin enterarse.
+
+Y los 8 `tags` con hijos guardan `_lineStyle="orthogonalR"`: el estilo de ruteo del conector. Eso es
+presentación, no un estereotipo de usuario, y pertenece al layout.
 
 ## 5. Política de intercambio
 
@@ -201,6 +235,7 @@ decidir cuál manda, y esa decisión debe ser explícita, no la que salga primer
 | Estructura UML semántica | `packagedElement`, `ownedAttribute`, `ownedOperation`, `ownedParameter`, `ownedEnd`, `generalization`, `general`, `memberEnd`, `lowerValue`, `upperValue`, `type` | Es el modelo canónico |
 | Identificadores | `xmi:id` con prefijo `EAID_` / `EAPK_` | Trazabilidad y correlación entre importaciones |
 | Geometría del diagrama | `diagrams/diagram/elements/element` con `geometry`, más `coords`, `bounds`, `containment` | Alimenta el layout compartido, que BL-CMP-05 declara soportado |
+| Notas de modelo | Atributo `documentation` de los bloques de elemento y de diagrama | Es el único canal con contenido de nota que el fixture ejerce |
 | Estilo representable | `appearance`, `labels`, `style` con valor | Presentación del diagrama compartido |
 
 ### 5.2 Leer y normalizar
@@ -218,7 +253,8 @@ decidir cuál manda, y esa decisión debe ser explícita, no la que salga primer
 
 | Qué | Motivo |
 | --- | --- |
-| Andamiaje vacío (`documentation`, `stereotype`, `constraints`, `styleex`, `tags`, `options`, `initial`, `behaviour`, `links`, `parameters`, `attributes`, `operations`, `paths`) | No lleva contenido. Se cuentan, para que "cero pérdida" sea medible y no una afirmación |
+| Andamiaje vacío (`styleex` 43, `stereotype` 32, `options` 21, `initial` 21, `constraints` 16, `behaviour` 11, `paths` 1) | No lleva contenido. 414 de los 953 elementos propietarios están vacíos. Se cuentan, para que "cero pérdida" sea medible y no una afirmación |
+| `style` y `xrefs` cuando están vacíos | 51 de 78 y 57 de 78 no llevan nada. Se descartan esos, no el bloque entero: los que llevan valor se preservan |
 | Metadatos de EA (`project`, `times`, `flags`, `code`, `model.ea_guid`, `ea_localid`, `packageproperties`, `matrixitems`, `swimlanes`, `style1`, `style2`) | Autor, fechas y configuración de la herramienta, sin equivalencia en el modelo |
 
 **Regla de honestidad:** descartar un bloque vacío no es una pérdida y no se reporta como tal; descartar un
@@ -237,16 +273,16 @@ bloque con contenido **sí** se reporta, con su nombre y su recuento. La pérdid
    `protected` y `package` se registra como no reconocido en vez de descartarse. *(§4.5)*
 6. **Una referencia de tipo sin `idref` no se convierte en un tipo vacío.** Se registra como no resuelta y se
    cuenta. *(§4.5)*
-7. **Las notas no se importan desde `documentation`.** Los 67 bloques están vacíos y el único comentario del
-   archivo pertenece al perfil: en este dialecto una nota de modelo no está caracterizada, así que no se
-   inventa un mapeo para ella. *(GAP-10)*
+7. **Las notas se leen del atributo `documentation`** de los bloques de elemento y de diagrama, y del elemento
+   `documentation` con `value`. El canal estándar, `uml:Comment`, **no aparece en el modelo**: un consumidor que
+   solo lea UML pierde las 12 notas sin enterarse. *(§4.6)*
 
 ## 7. Huecos de esta caracterización
 
 | id | Hueco | Qué bloquea |
 | --- | --- | --- |
 | GAP-07 | El roundtrip contra EA en vivo no se puede verificar: el servidor de EA no responde | Q3, RF-09, RNF-05 |
-| GAP-10 | El fixture no contiene ninguna nota de modelo, así que la forma en que EA las lleva no está caracterizada | La política de notas, y el mapeo XMI de BL-CMP-01 |
+| GAP-10 | Las notas de modelo viajan solo en un canal propietario (atributo `documentation`) y el canal estándar `uml:Comment` no aparece en el modelo | Un consumidor que solo lea UML pierde las 12 notas; el roundtrip de notas sigue sin verificar |
 | — | 9 constructos sin evidencia (§3) | Cada uno necesita un fixture que los ejerza, o una decisión explícita de no soportarlos |
 | — | El dialecto está caracterizado con **un solo** archivo | Un diagrama de despliegue o de paquetes anidados puede traer formas que este fixture no tiene |
 
@@ -254,10 +290,11 @@ bloque con contenido **sí** se reporta, con su nombre y su recuento. La pérdid
 
 | Comprobación | Resultado | Fecha |
 | --- | --- | --- |
-| Suite del inventario | 32 pruebas, 0 fallos (junto con las 15 de contrato) | 2026-09-28 |
+| Suite del inventario | 18 pruebas, 0 fallos (33 con las 15 de contrato) | 2026-09-28 |
 | Tags sin clasificar | 0 | 2026-09-28 |
 | Partición de la línea base | 23 evidenciados + 9 declarados sin evidencia = 32 | 2026-09-28 |
 | Prueba de mutación: declarar `BL-FEA-05` evidenciado por `isStatic` | Falla por dos lados y solo por esos dos | 2026-09-28 |
+| Verificación independiente | Falsificó tres afirmaciones: clase abstracta inexistente, `documentation`/`tags` mal medidos como vacíos, y «el modelo no lleva notas». Las tres se corrigieron en el arnés y en este documento | 2026-09-28 |
 | Roundtrip contra Enterprise Architect en vivo | Pendiente (GAP-07) | — |
 
 ## 9. Trazabilidad

@@ -118,23 +118,44 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
   de elemento, fijada por un test.
 - **Verificado:** 0 tags sin clasificar; familias medidas (953 propietarios de EA, 153 UML, 66 estructura, 3
   andamiaje = 81,1 % de carga propietaria); 23 constructos de UML-BL-1 evidenciados con valor y 9 declarados
-  sin evidencia con motivo; suite del inventario en verde (32 pruebas en `tools/`); prueba de mutación que falla
-  por dos lados al declarar evidenciado un constructo cuyo indicador nunca vale `true`.
+  sin evidencia con motivo (fijado en el oráculo del test); 37 pruebas en verde en `tools/`; prueba de mutación
+  que falla por dos lados al declarar evidenciado un constructo cuyo indicador nunca vale `true`.
 - **Hallazgos que cambian decisiones:**
   1. las constantes de enumeración se serializan como `ownedAttribute` y no como `ownedLiteral`, que no aparece
      ni una vez: un importador estándar las pierde en silencio, y la persistencia tampoco las guarda;
   2. `isNavigable` no existe en el árbol UML, solo en bloques `modifiers` de EA, y siempre en `false`: quien
      descarte la extensión elige mal el lado propietario de la relación generada;
-  3. la extensión es mayoritariamente andamiaje vacío (`documentation` 67/67, `stereotype` 32/32,
-     `constraints` 16/16, `styleex` 43, `tags` 78, `options` 21);
+  3. una parte grande de la extensión es andamiaje vacío: **414 de 953 elementos propietarios (43,4 %)**:
+     `styleex` 43/43, `stereotype` 32/32, `options` 21/21, `initial` 21/21, `constraints` 16/16, `behaviour`
+     11/11, `documentation` 66/67 y `tags` 70/78. Que exista un bloque `constraints` **no** significa que haya
+     restricciones;
   4. `visibility` se escribe `public` 70 veces, `private` 17 y `Public` 16: una comparación sensible a
      mayúsculas pierde 16 valores;
   5. hay 4 referencias de tipo sin destino, y los tipos apuntan a tres espacios (`EAJava_`, `EAID_`, `EAnone_`)
      con el mismo concepto escrito de dos formas;
-  6. `Model` no está limpio: 8 bloques `_lineStyle` de EA viven dentro del subárbol UML.
-- **Correcciones al artefacto de T2:** tres notas del inventario de la línea base se ajustaron con lo medido,
-  incluida una sobredeclaración propia (los 32 bloques `stereotype` están vacíos y cuelgan de atributo y
-  operación, no de clasificadores). Se agregó GAP-10.
+  6. `Model` no está limpio: 8 bloques `_lineStyle` de EA viven dentro del subárbol UML;
+  7. las notas de modelo **sí** existen y viajan en un canal propietario: 12 atributos `documentation` en
+     bloques de elemento y de diagrama, con textos reales como «Cliente que realiza reservas de inmuebles.»,
+     y el canal estándar `uml:Comment` no aparece en el modelo, así que un consumidor que solo lea UML pierde
+     las notas sin enterarse;
+  8. `tags` no está vacío: 8 de sus 78 bloques llevan `_lineStyle="orthogonalR"`, que es ruteo de conector y
+     pertenece al layout.
+- **Verificación independiente:** falsificó **tres afirmaciones** y las tres se corrigieron en el arnés y en
+  el contrato:
+  1. `BL-CLS-02` (clase abstracta) estaba mal evidenciado: no hay ninguna `uml:Class` abstracta; la métrica
+     mezclaba todas las clases de clasificador y por eso el test no podía verlo. Ahora es una métrica separada
+     y el constructo pasó a la lista de no evidenciados;
+  2. «andamiaje vacío» medía solo atributos y texto, **ignorando hijos**: llamaba vacío a `tags`, que lleva 8.
+     La medición ahora exige sin atributos, sin texto **y** sin hijos, y el titular pasó de «la mayoría» a
+     «43,4 %»;
+  3. «el modelo no lleva notas» era **falso**: se buscaba solo elementos llamados `documentation` y se ignoraba
+     que la descripción viaja como **atributo**. Es el hallazgo 7.
+  También se corrigió el conteo de pruebas del contrato (18 del inventario, 33 en total, no «32») y el ámbito
+  de las cifras de `visibility` (46 en el modelo, 70 en todo el documento).
+- **Correcciones al artefacto de T2:** las notas de BL-CMP-01, BL-CMP-02 y BL-CMP-03 se ajustaron con lo
+  medido, incluida una sobredeclaración propia (los 32 bloques `stereotype` están vacíos y cuelgan de atributo
+  y operación, no de clasificadores). GAP-10 se reescribió: el canal de notas está caracterizado, lo que falta
+  es la persistencia y el roundtrip.
 - **Depende de:** T1 (para ubicar el arnés).
 - **Queda abierto:** roundtrip contra EA en vivo (GAP-07); notas de modelo sin caracterizar (GAP-10); 9
   constructos sin evidencia, que necesitan un fixture que los ejerza o una decisión explícita de no soportarlos.
@@ -186,7 +207,7 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 | --- | --- | --- |
 | T1 — Baseline del repositorio | **hecho** | Commit raíz `90f4f4a` en `main`; rama `feat/incremento-0-contrato-y-riesgos`; `.gitignore` + `.gitattributes` + `README.md` |
 | T2 — Línea base UML 2.5 | **hecho** | `03-linea-base-uml.{md,v1.json,schema.json}`; `tools/contract-tests/` 15/15; mutación verificada |
-| T3 — Dialecto XMI de EA | **hecho** | `tools/xmi-inventory/` (32 pruebas, 0 tags sin clasificar); `04-dialecto-xmi-ea.md`; 23 evidenciados / 9 sin evidencia |
+| T3 — Dialecto XMI de EA | **hecho** | `tools/xmi-inventory/` (22 pruebas, 0 tags sin clasificar); `04-dialecto-xmi-ea.md`; 23 evidenciados / 9 sin evidencia; 3 afirmaciones falsificadas y corregidas |
 | T4 — Spike UML→Spring Boot | pendiente | — |
 | T5 — Viabilidad de IA local | pendiente | — |
 | T6 — Acta de cierre | pendiente | — |

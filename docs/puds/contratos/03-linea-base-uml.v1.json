@@ -569,14 +569,14 @@
       "mappings": [
         { "target": "persistence", "value": "NONE", "reason": "No existe tabla ni columna para uml:Comment en el esquema físico; el comentario de catálogo de PostgreSQL no representa una nota UML." },
         { "target": "generation", "value": "NONE", "reason": "Sin nota persistida no hay documentación de origen que emitir en el artefacto generado." },
-        { "target": "xmi", "value": "ownedComment con annotatedElement" }
+        { "target": "xmi", "value": "uml:Comment con annotatedElement para el canal estándar; el dialecto de EA lleva además la nota como atributo documentation de sus bloques de elemento, que es el canal que el fixture sí ejerce" }
       ],
       "sources": [
         "docs/analisis-enunciado-parcial-1.md#6",
         "docs/puds/datos/02-esquema-fisico.sql#L73-L500",
         "docs/puds/datos/01-mapeo-base-de-datos.md#L29-L41"
       ],
-      "notes": "Cláusula 'notas y restricciones' del análisis, separada aquí en NOTES y CONSTRAINTS para que ninguna tape a la otra. El fixture no ejercita este mapeo: los 67 bloques documentation están vacíos y el único uml:Comment del archivo pertenece al perfil, así que no hay evidencia de cómo lleva EA una nota de modelo. Ver GAP-03 y GAP-10."
+      "notes": "Cláusula 'notas y restricciones' del análisis, separada aquí en NOTES y CONSTRAINTS para que ninguna tape a la otra. El dialecto lleva las notas de modelo en un atributo documentation propio, del que el fixture trae 12 casos con texto real; el canal estándar uml:Comment no aparece en el modelo. Lo que falta es la persistencia, no la caracterización del dialecto. Ver GAP-03 y GAP-10."
     },
     {
       "id": "BL-CMP-02",
@@ -749,7 +749,7 @@
     },
     {
       "id": "GAP-10",
-      "description": "El fixture de Enterprise Architect no contiene ninguna nota de modelo, así que no está caracterizado cómo las lleva el dialecto. Los 67 bloques documentation están vacíos y el único uml:Comment del archivo pertenece al perfil.",
+      "description": "Las notas de modelo viajan solo en un canal propietario: el dialecto de EA las lleva como atributo documentation de sus bloques de elemento (12 casos con texto real en el fixture) y no como uml:Comment, que no aparece en el modelo. Un consumidor que solo lea UML pierde las notas, y el roundtrip de notas sigue sin verificar.",
       "blocks": ["BL-CMP-01", "política de notas del intercambio", "roundtrip de notas"],
       "owner": "Equipo, con un fixture de Enterprise Architect que contenga notas"
     }

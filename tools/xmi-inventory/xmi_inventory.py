@@ -242,6 +242,12 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
     constraint_paths: collections.Counter[str] = collections.Counter()
     comments: list[dict] = []
     visibility_case: collections.Counter[str] = collections.Counter()
+
+    # Canales de notas. Buscar solo elementos llamados `documentation` fue un error
+    # real de la primera version: EA tambien describe elementos del modelo con un
+    # ATRIBUTO documentation, que no es un elemento y por eso nunca se miraba.
+    note_attribute_parents: collections.Counter[str] = collections.Counter()
+    note_examples: list[str] = []
     enumerations: list[dict] = []
     profile_stereotypes: list[str] = []
 
@@ -276,6 +282,12 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
                 stats[f"attr:{key}"] += 1
             if (element.text or "").strip():
                 stats["withText"] += 1
+            if len(element):
+                stats["withChildren"] += 1
+            # Vacio significa sin atributos, sin texto Y sin hijos. Mirar solo
+            # atributos y texto hacia que `tags` pareciera vacio con 8 hijos dentro.
+            if not attributes and not (element.text or "").strip() and not len(element):
+                stats["empty"] += 1
             if subtree == "Model":
                 leak_counts[tag] += 1
 
@@ -288,9 +300,13 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
             if xmi_type:
                 short = xmi_type.split(":")[-1]
                 semantic[f"type:{short}"] += 1
-                if xmi_type in ("uml:Class", "uml:Interface", "uml:Enumeration", "uml:Package"):
+                if xmi_type == "uml:Class":
+                    semantic["classes"] += 1
                     if attributes.get("isAbstract") == "true":
                         semantic["classesAbstract"] += 1
+                elif xmi_type in ("uml:Interface", "uml:Enumeration", "uml:Package"):
+                    if attributes.get("isAbstract") == "true":
+                        semantic["otherClassifiersAbstract"] += 1
                 if xmi_type in ("uml:Property", "uml:Operation") and attributes.get("isAbstract") == "true":
                     semantic["membersAbstract"] += 1
                 if xmi_type in ("uml:Property", "uml:Operation") and attributes.get("isStatic") == "true":
@@ -319,12 +335,15 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
         if "visibility" in attributes:
             visibility_case[attributes["visibility"]] += 1
 
+        # ---- canales de notas, buscados en atributos ademas de elementos ----
+        note_text = attributes.get("documentation", "").strip()
+        if note_text:
+            note_attribute_parents[parent_tag] += 1
+            if len(note_examples) < 3:
+                note_examples.append(note_text)
+
         if tag == "documentation":
-            length = len((element.text or "").strip())
             totals["documentation_blocks"] += 1
-            if length == 0:
-                totals["documentation_empty"] += 1
-            totals["documentation_longest"] = max(totals["documentation_longest"], length)
             if attributes.get("value"):
                 totals["documentation_with_value_attribute"] += 1
 
@@ -426,11 +445,25 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
             "navigabilityAttributesInModel": semantic.get("navigabilityAttributesInModel", 0),
         },
         "findings": {
+            "eaTotals": {
+                "elements": sum(stats.get("elements", 0) for stats in ea_payload.values()),
+                "empty": sum(stats.get("empty", 0) for stats in ea_payload.values()),
+            },
             "documentation": {
-                "blocks": totals["documentation_blocks"],
-                "empty": totals["documentation_empty"],
+                # Una sola definicion de vacio en todo el artefacto: la del payload,
+                # que exige sin atributos, sin texto y sin hijos. Tener dos medidas
+                # distintas de lo mismo ya produjo un informe que se contradecia.
+                "blocks": ea_payload["documentation"].get("elements", 0),
+                "empty": ea_payload["documentation"].get("empty", 0),
                 "withValueAttribute": totals["documentation_with_value_attribute"],
-                "longest": totals["documentation_longest"],
+            },
+            "notes": {
+                "documentationAttributes": sum(note_attribute_parents.values()),
+                "byParent": dict(note_attribute_parents.most_common()),
+                "documentationValueAttributes": totals["documentation_with_value_attribute"],
+                "examples": note_examples,
+                "umlComments": len(comments),
+                "umlCommentsOnModelElements": sum(1 for c in comments if not c["insideProfile"]),
             },
             "stereotypes": {
                 "blocks": sum(stereotype_parents.values()),
@@ -506,18 +539,28 @@ def render(inventory: dict) -> str:
     lines.append(f"Tags ambiguos por contexto: {inventory['ambiguousTags']}")
     lines.append("")
 
-    lines.append("Carga real de los bloques de EA (elementos | con atributos | con texto):")
+    lines.append("Carga real de los bloques de EA (elementos | con atributos | con hijos | vacios):")
     for tag, stats in inventory["eaBlockPayload"].items():
         keys = sorted(key[5:] for key in stats if key.startswith("attr:"))
         lines.append(
             f"  {tag:22} {stats.get('elements', 0):4} | {stats.get('withAttributes', 0):4} |"
-            f" {stats.get('withText', 0):3}  {', '.join(keys[:4])}"
+            f" {stats.get('withChildren', 0):3} | {stats.get('empty', 0):4}  {', '.join(keys[:4])}"
         )
     lines.append("")
 
     findings = inventory["findings"]
     doc = findings["documentation"]
-    lines.append(f"documentation: {doc['blocks']} bloques, {doc['empty']} vacios, texto maximo {doc['longest']}")
+    lines.append(f"documentation: {doc['blocks']} bloques, {doc['empty']} vacios, {doc['withValueAttribute']} con value")
+    notes = findings["notes"]
+    lines.append(
+        f"NOTAS        : {notes['documentationAttributes']} atributos documentation en {notes['byParent']}"
+    )
+    lines.append(
+        f"               {notes['documentationValueAttributes']} con value, {notes['umlComments']} uml:Comment"
+        f" (en elementos del modelo {notes['umlCommentsOnModelElements']})"
+    )
+    for example in notes["examples"]:
+        lines.append(f"               ejemplo: {example[:78]!r}")
     ste = findings["stereotypes"]
     lines.append(f"stereotype   : {ste['blocks']} bloques, payload en {ste['withPayload']}, padres {ste['byParent']}")
     con = findings["constraints"]
