@@ -71,8 +71,14 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
   anterior, donde `backend/`, `web/` y `mobile/` eran repositorios git anidados.
 - **Entregable:** estructura raíz decidida y documentada; `.gitignore` definitivo; commit raíz con la
   documentación heredada; rama de trabajo del incremento.
-- **Evidencia:** `git log --stat` del commit raíz; `git rev-parse --show-toplevel` idéntico desde
-  `backend/`, `web/` y `mobile/`; ausencia de directorios `.git` anidados; `git status` limpio.
+- **Evidencia:** `git log --stat` del commit raíz; ausencia de directorios `.git` anidados; `git status`
+  limpio; rama de trabajo creada desde el commit raíz.
+- **Verificado:** commit raíz `90f4f4a`, 168 archivos, working tree limpio, `find . -name .git` sin
+  resultados fuera de la raíz, `.gitattributes` con finales de línea normalizados y fixtures de EA
+  byte-exactos (disco `\r\n` conservado, no convertido a `\n`).
+- **Pendiente de verificar:** que `git rev-parse --show-toplevel` sea idéntico desde `backend/`, `web/` y
+  `mobile/`. Esas carpetas todavía no existen; la comprobación se hace cuando T2–T5 creen la primera y se
+  cierra formalmente en T6.
 - **Depende de:** nada.
 - **Gate:** requiere autorización explícita del usuario para commitear (política de seguridad del arnés).
 
@@ -147,7 +153,7 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 
 | Tarea | Estado | Evidencia |
 | --- | --- | --- |
-| T1 — Baseline del repositorio | pendiente | — |
+| T1 — Baseline del repositorio | **hecho** | Commit raíz `90f4f4a` en `main`; rama `feat/incremento-0-contrato-y-riesgos`; `.gitignore` + `.gitattributes` + `README.md` |
 | T2 — Línea base UML 2.5 | pendiente | — |
 | T3 — Dialecto XMI de EA | pendiente | — |
 | T4 — Spike UML→Spring Boot | pendiente | — |
