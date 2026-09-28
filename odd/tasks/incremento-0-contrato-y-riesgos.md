@@ -247,6 +247,16 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
   Incremento 1 definida.
 - **Evidencia:** los cuatro riesgos con veredicto (cerrado / abierto / no evaluable) y su evidencia enlazada;
   decisiones registradas; pendientes con responsable.
+- **Verificado:** el acta existe en `docs/puds/cierre/02-cierre-incremento-0.md` con los cuatro riesgos y su
+  veredicto (cerrado, cerrado con límite, cerrado, cerrado con condiciones), los 12 pendientes con responsable,
+  y la decisión de entrada al Incremento 1 con su plan en `odd/tasks/incremento-1-modelo-y-editor.md`.
+- **Nota operativa, para que no sorprenda:** durante T5 se tocó el entorno de la máquina. El modelo
+  `qwen3.5-0.8b-gguf:Q4_0` quedó con **contexto explícito 4096** en Docker Model Runner. No es un valor nuevo:
+  es el default documentado de llama.cpp, y se fijó explícitamente porque `--context-size -1`, que la
+  documentación describe como "reset al default", **rompe el motor** en la versión 1.2.6.
+- **Riesgo residual del incremento, sin adorno:** se cierra **sin una sola línea de código de producto**.
+  `backend/`, `web/` y `mobile/` no existen, y las secciones 2.4, 2.5, 3 y 4-5 del documento son heredadas del
+  intento anterior. Hasta que exista código, ese documento no puede presentarse como estado de este trabajo.
 
 ## 6. Lo que este incremento NO cierra
 
@@ -270,4 +280,8 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 | T3 — Dialecto XMI de EA | **hecho** | `tools/xmi-inventory/` (suite en verde, 0 tags sin clasificar); `04-dialecto-xmi-ea.md`; 23 evidenciados / 9 sin evidencia; 3 afirmaciones falsificadas y corregidas |
 | T4 — Spike UML→Spring Boot | **hecho** | `spikes/uml2spring/`; 13/13 pasos; huella estable; 3 defectos de desarrollo + 3 falsificaciones de la verificación, todas corregidas |
 | T5 — Viabilidad de IA local | **hecho** | `docs/puds/verificacion/02-viabilidad-ia-local.md`; `tools/local-ai-bench/`; latencia ≈ 2,2 s + tok/32; ASR y visión declarados como no medidos |
-| T6 — Acta de cierre | pendiente | — |
+| T6 — Acta de cierre | **hecho** | `docs/puds/cierre/02-cierre-incremento-0.md`; 4 riesgos con veredicto, 12 pendientes con responsable, entrada al Incremento 1 definida |
+
+**Incremento 0 cerrado el 2026-09-28.** Los cuatro riesgos tempranos están derribados y cada uno con evidencia
+medida. El producto todavía no tiene código: eso es el Incremento 1, con el plan en
+[`incremento-1-modelo-y-editor.md`](incremento-1-modelo-y-editor.md).
