@@ -113,10 +113,18 @@ def load_model(path: pathlib.Path) -> dict:
 
 def validate_model(document: dict) -> None:
     """Falla cerrado ante formas que el spike no soporta. Preferimos un error claro
-    antes que elegir en silencio un lado propietario equivocado."""
+    antes que elegir en silencio un lado propietario equivocado.
+
+    La validacion de claves desconocidas es generica a proposito: asi cualquier
+    caracteristica UML que el modelo exprese de mas (una enumeracion, una
+    generalizacion, un estereotipo) falla ruidosamente en vez de ser ignorada.
+    Una verificacion independiente comprobo que antes se ignoraban.
+    """
+    _reject_unknown_keys(document, {"schemaVersion", "model"}, "documento")
     model = document.get("model")
     if not model:
         raise ModelError("el documento no tiene 'model'")
+    _reject_unknown_keys(model, {"name", "basePackage", "classes", "associations"}, "model")
     for field in ("name", "basePackage", "classes", "associations"):
         if field not in model:
             raise ModelError(f"al modelo le falta '{field}'")
@@ -127,18 +135,39 @@ def validate_model(document: dict) -> None:
     if len(by_id) != len(model["classes"]):
         raise ModelError("hay identificadores de clase repetidos")
 
+    # Dos clases con el mismo nombre colapsan rutas de archivo y duplican el
+    # CREATE TABLE, y el artefacto sale incompleto sin ningun error.
+    names = [klass["name"] for klass in model["classes"]]
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise ModelError(f"hay nombres de clase repetidos: {repeated}")
+
     for klass in model["classes"]:
+        _reject_unknown_keys(klass, {"id", "name", "abstract", "attributes"}, f"clase '{klass.get('name')}'")
         if klass.get("abstract"):
             raise ModelError(f"'{klass['name']}': el spike no emite clases abstractas todavia")
         for attribute in klass["attributes"]:
+            _reject_unknown_keys(
+                attribute,
+                {"id", "name", "type", "visibility", "required"},
+                f"atributo '{klass['name']}.{attribute.get('name')}'",
+            )
             if attribute["type"] not in JAVA_TYPES:
                 raise ModelError(f"'{klass['name']}.{attribute['name']}': tipo no soportado '{attribute['type']}'")
 
     for association in model["associations"]:
+        _reject_unknown_keys(
+            association, {"id", "name", "ends"}, f"asociacion '{association.get('name')}'"
+        )
         ends = association["ends"]
         if len(ends) != 2:
             raise ModelError(f"'{association['name']}': se esperan exactamente dos extremos")
         for end in ends:
+            _reject_unknown_keys(
+                end,
+                {"classId", "role", "multiplicity", "navigable"},
+                f"extremo '{end.get('role')}' de '{association['name']}'",
+            )
             if end["classId"] not in by_id:
                 raise ModelError(f"'{association['name']}': extremo sobre una clase inexistente")
             if end["multiplicity"] not in TO_ONE + TO_MANY:
@@ -148,6 +177,24 @@ def validate_model(document: dict) -> None:
             raise ModelError(
                 f"'{association['name']}': el spike solo emite asociaciones uno-a-muchos"
             )
+
+        many, one = owning_side(association)
+        # Un extremo a uno no navegable significa que la clase del lado muchos no
+        # puede referenciar a la otra: no habria clave foranea. El spike no modela
+        # esa forma, y antes la ignoraba en silencio.
+        if not one["navigable"]:
+            raise ModelError(
+                f"'{association['name']}': el spike no soporta un extremo a uno no navegable "
+                f"(extremo '{one['role']}')"
+            )
+
+
+def _reject_unknown_keys(node: dict, allowed: set[str], where: str) -> None:
+    unknown = sorted(set(node) - allowed)
+    if unknown:
+        raise ModelError(
+            f"{where}: el spike no soporta {unknown}; se rechaza en vez de ignorarlo"
+        )
 
 
 def owning_side(association: dict) -> tuple[dict, dict]:
@@ -202,6 +249,7 @@ def render_files(document: dict) -> dict[str, str]:
             )
 
     files: dict[str, str] = {
+        ".gitignore": "target/\n",
         "pom.xml": _pom(model),
         f"src/main/java/{package_path}/{application}.java": _application(package, application, model),
         "src/main/resources/application.yml": _application_yml(model),
@@ -438,10 +486,6 @@ def _entity(package: str, klass: dict, relations: list[dict]) -> str:
             lines.append(f"    private List<{target}> {field} = new ArrayList<>();")
             lines.append("")
 
-    lines.append(f"    protected {name}() {{")
-    lines.append("    }")
-    lines.append("")
-
     parameters = []
     for attribute in klass["attributes"]:
         parameters.append(f"{JAVA_TYPES[attribute['type']]} {attribute['name']}")
@@ -450,15 +494,25 @@ def _entity(package: str, klass: dict, relations: list[dict]) -> str:
             parameters.append(f"{relation['target']['name']} {relation['field']}")
     signature = ", ".join(parameters)
 
-    lines.append(f"    public {name}({signature}) {{")
-    for attribute in klass["attributes"]:
-        lines.append(f"        this.{attribute['name']} = {attribute['name']};")
-    for relation in relations:
-        if relation["kind"] == "owning":
-            lines.append(f"        this.{relation['field']} = {relation['field']};")
-    lines.append("    }")
+    # Una clase sin atributos y sin relacion propietaria no tiene argumentos. Emitir
+    # el constructor protegido y ademas el publico sin parametros produce dos
+    # constructores identicos y javac rechaza el archivo. Se descubrio por una
+    # verificacion independiente, no leyendo.
+    if parameters:
+        lines.append(f"    protected {name}() {{")
+        lines.append("    }")
+        lines.append("")
+        lines.append(f"    public {name}({signature}) {{")
+        for attribute in klass["attributes"]:
+            lines.append(f"        this.{attribute['name']} = {attribute['name']};")
+        for relation in relations:
+            if relation["kind"] == "owning":
+                lines.append(f"        this.{relation['field']} = {relation['field']};")
+        lines.append("    }")
+    else:
+        lines.append(f"    public {name}() {{")
+        lines.append("    }")
     lines.append("")
-
     lines.append("    public Long getId() {")
     lines.append("        return id;")
     lines.append("    }")

@@ -10,7 +10,7 @@
 
 | Paso | Resultado | Evidencia |
 | --- | --- | --- |
-| Determinismo | PASA | 12 archivos; dos corridas con la misma huella `e139a1ee54b0c94a1fcd67a58028c08d474c66059d4c814637d28d90755dbd2d` |
+| Determinismo | PASA | 13 archivos; dos corridas con la misma huella `e9d2ee2bf0c54fb7ad435ff4abb1f3d995f2a21edf22cd6f8af95c383c0ce14b` |
 | Compilación | PASA | `[INFO] BUILD SUCCESS` con `mvn -B -o package` (sin red) |
 | PostgreSQL | PASA | Contenedor `uml2spring-spike-pg` escuchando en 55432 |
 | Arranque | PASA | `GET /actuator/health` → `{"status":"UP"}` |
@@ -34,6 +34,11 @@ Dos cosas que la tabla dice y conviene leer despacio:
   disco ni de la descarga del momento.
 
 ## 2. Tres defectos reales que el spike encontró
+
+> **Naturaleza de esta sección:** es el registro de lo que pasó **durante el desarrollo**, no una afirmación
+> reproducible desde este commit. Los tres se observaron ejecutando y el código actual contiene sus
+> correcciones (`EAGER`, `-o`, `kill_stale_apps`), pero los fallos originales ya no existen y no se pueden
+> volver a reproducir. Se conserva porque explica por qué el código es como es.
 
 Un spike que solo confirma no sirve. Estos tres aparecieron **ejecutando**, y ninguno se habría visto en una
 revisión de escritorio:
@@ -83,10 +88,15 @@ Esto es un spike, y lo que **no** prueba es tan importante como lo que prueba:
 | --- | --- |
 | El emisor está en **Python** | Lo probado son las reglas de emisión y el determinismo del artefacto, no el runtime del generador. El generador real vivirá en el backend Java |
 | Extremo a uno `EAGER` | N+1 al listar. Un generador definitivo devuelve DTO dentro de la transacción |
-| Solo asociaciones **uno-a-muchos** | Un extremo a uno contra otro, o una asociación no navegable en el lado muchos, hacen fallar el emisor con error explícito. Falla cerrado en vez de elegir mal |
-| Sin clases abstractas, sin enumeraciones, sin herencia | El emisor las rechaza; no se probaron |
+| Solo asociaciones **uno-a-muchos** | Un extremo a uno contra otro hace fallar el emisor con error explícito |
+| Un extremo a uno **no navegable** se rechaza | Significaría que no hay clave foránea. Antes se ignoraba en silencio: lo comprobó una verificación independiente |
+| Un extremo muchos **no navegable** sí es válido | Significa no poder recorrer de uno a muchos, y se refleja omitiendo la colección inversa. No es un error, aunque la versión anterior de esta tabla decía que lo era |
+| Sin clases abstractas, enumeraciones, herencia ni estereotipos | Se rechazan de forma **genérica**: cualquier clave del modelo que el spike no soporte hace fallar la validación en vez de ignorarse. Antes las enumeraciones y las generalizaciones se ignoraban en silencio mientras esta tabla afirmaba lo contrario |
+| La **cota inferior** del lado muchos no se refleja | `1..*` y `0..*` producen el mismo artefacto: la colección no registra el mínimo. Es un límite declarado y fijado por un test |
+| Los errores de referencia devuelven **500**, no 404 ni 400 | Pedir un `autorId` inexistente u omitirlo no está mapeado. El contrato de errores es materia de CU-20 |
 | Un solo modelo de entrada | Dos clases y una asociación. Nada prueba aún un dominio más grande |
 | El proyecto generado **no trae pruebas** | La verificación del artefacto generado es materia de CU-20, fuera de este spike |
+| El proyecto generado **sí** trae `.gitignore` | Evita que un `target/` con rutas absolutas embebidas se versione por accidente |
 | Rutas REST en singular (`/api/libro`) | Decisión para evitar un pluralizador. No es una decisión de producto |
 
 ## 5. Qué cambia para el generador definitivo
@@ -99,12 +109,52 @@ Esto es un spike, y lo que **no** prueba es tan importante como lo que prueba:
    antes de escribir plantillas.
 4. **Los defectos aparecen ejecutando.** Tres de tres se encontraron corriendo, no leyendo.
 
-## 6. Cómo se reproduce
+## 6. Lo que la verificación independiente falsificó
+
+Una verificación independiente atacó este reporte con sus propias herramientas y encontró **una afirmación
+falsa y dos bordes sin declarar**. Los tres se corrigieron en el emisor, no solo en el texto.
+
+### 6.1 La tabla de límites era optimista
+
+Decía que una asociación no navegable en el lado muchos hacía fallar al emisor. **No fallaba:** salía con
+código 0. Y decía que las enumeraciones y la herencia se rechazaban, cuando el emisor las **ignoraba en
+silencio** y producía tablas que nadie había pedido. Solo `abstract` se validaba.
+
+**Corrección:** la validación ahora es **genérica** —cualquier clave que el spike no soporte hace fallar el
+emisor nombrando la clave— y el extremo a uno no navegable se rechaza explícitamente. El extremo muchos no
+navegable sigue siendo válido y ahora está documentado como lo que es: omite la colección inversa.
+
+### 6.2 Una clase sin atributos generaba código que no compila
+
+Una clase sin atributos y sin relación propietaria emitía **dos constructores sin argumentos**, y `javac`
+rechazaba el archivo. El emisor salía con código 0.
+
+**Corrección:** un solo constructor sin argumentos cuando no hay parámetros. Verificado con el **mismo
+instrumento** que lo encontró: un proyecto con esa clase compila (`mvn -o compile`, código 0).
+
+### 6.3 Dos clases con el mismo nombre colapsaban el artefacto
+
+Salida incompleta, `CREATE TABLE` duplicado y ningún error: la validación rechazaba identificadores repetidos
+pero no **nombres** repetidos.
+
+**Corrección:** los nombres repetidos se rechazan.
+
+### 6.4 Un guardián propio que no guardaba nada
+
+El patrón que busca rutas absolutas de Windows en `test_emit.py` estaba doblemente escapado: detectaba `C:\\`
+pero **no** `C:\Users\HP`, así que no podía disparar nunca. Y las propiedades de LF y de rutas se verificaban
+sobre strings en memoria, **nunca sobre los bytes escritos**.
+
+**Corrección:** el patrón funciona, hay un **control positivo** que exige que los patrones detecten casos
+reales, y un test lee los **bytes en disco** y los escanea. Un guardián que nunca dispara es peor que ninguno:
+dá por verificado lo que no miró.
+
+## 7. Cómo se reproduce
 
 Desde la raíz del repositorio:
 
 ```bash
-python -m pytest spikes/uml2spring -q     # 20 pruebas: determinismo, regla del lado propietario, falla cerrada
+python -m pytest spikes/uml2spring -q     # 28 pruebas: determinismo, regla del lado propietario, falla cerrada
 python spikes/uml2spring/run_spike.py    # los 13 pasos de extremo a extremo
 ```
 

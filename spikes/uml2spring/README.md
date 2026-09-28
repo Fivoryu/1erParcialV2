@@ -58,6 +58,7 @@ categorías que el modelo de datos puede guardar hoy; el resto queda fuera (GAP-
 El emisor escribe un proyecto Maven completo:
 
 ```text
+.gitignore
 pom.xml
 src/main/java/<pkg>/<Nombre>Application.java
 src/main/java/<pkg>/domain/<Clase>.java          entidades JPA
@@ -106,9 +107,10 @@ RNF-04 exige que el mismo modelo y el mismo perfil produzcan el mismo artefacto.
 | --- | --- |
 | **Spring Boot 3.4.5**, no 3.5.0 | 3.4.5 gestiona Flyway 10.20.1, Hibernate 6.6.13 y el driver 42.7.5, que ya están en la caché local. Con 3.5.0 el build pide Flyway 11.7.2 y necesita red. Un spike que depende de la red no es reproducible |
 | Extremo a uno **EAGER** | Con `open-in-view: false`, uno perezoso serializado fuera de la transacción da HTTP 500. Se midió. El costo declarado es N+1 al listar; un generador definitivo devuelve DTO dentro de la transacción |
-| El modelo se **valida y falla cerrado** | Ante una asociación que no es uno-a-muchos, un tipo desconocido o un extremo colgando de una clase inexistente, el emisor levanta un error claro en vez de elegir en silencio un mapeo equivocado |
+| El modelo se **valida y falla cerrado** | Ante una asociación que no es uno-a-muchos, un tipo desconocido, un nombre de clase repetido, un extremo colgando de una clase inexistente o un extremo a uno no navegable, el emisor levanta un error claro en vez de elegir en silencio un mapeo equivocado |
+| Cualquier clave del modelo que el spike no soporte se **rechaza nombrandola** | La validación es genérica, no una lista de casos. Así una enumeración, una generalización o un estereotipo fallan ruidosamente en vez de ignorarse: una verificación independiente comprobó que antes se ignoraban mientras la documentación afirmaba lo contrario |
 | Rutas REST en **singular** (`/api/libro`) | Evita un pluralizador. No es una decisión de producto |
-| Sin clases abstractas, enumeraciones ni herencia | El emisor las rechaza explícitamente: no se probaron, así que no se declaran soportadas |
+| Sin clases abstractas, enumeraciones, herencia ni estereotipos | No se probaron, así que no se declaran soportadas: se rechazan |
 
 ## Cómo se ejecuta
 

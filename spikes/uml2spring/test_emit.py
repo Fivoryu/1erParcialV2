@@ -38,9 +38,25 @@ from emit import (  # noqa: E402
     load_model,
     render_files,
     validate_model,
+    write_tree,
 )
 
 MODEL_PATH = pathlib.Path(__file__).resolve().parent / "model" / "biblioteca.json"
+
+# Patrones que un archivo generado no debe contener nunca.
+#
+# Ojo con el escapado: la version anterior tenia `r"[A-Za-z]:\\\\"`, que matchea
+# `C:\\` pero NO `C:\Users\HP`, asi que el guardian no disparaba nunca. Una
+# verificacion independiente lo comprobo; hay un control positivo mas abajo.
+FORBIDDEN_PATTERNS = (
+    re.compile(r"\b20\d\d-\d\d-\d\d\b"),  # fecha ISO
+    re.compile(r"\b\d\d:\d\d:\d\d\b"),  # hora
+    re.compile(r"[A-Za-z]:\\"),  # ruta absoluta de Windows: C:\...
+    re.compile(r"\\\\[A-Za-z0-9_.-]+\\"),  # ruta UNC
+    re.compile(r"\bUsers\\"),  # perfil de usuario
+    re.compile(r"\b(Math\.random|UUID\.randomUUID|LocalDateTime\.now|Instant\.now)\b"),
+    re.compile(r"\b[0-9a-f]{32,}\b"),  # identificador aleatorio o hash embebido
+)
 
 
 @pytest.fixture()
@@ -77,17 +93,41 @@ def test_every_generated_file_uses_lf_and_ends_with_one_newline(document: dict) 
         assert not content.endswith("\n\n"), f"{path} ends with a blank line"
 
 
+def test_forbidden_patterns_actually_fire() -> None:
+    """Control positivo: si los patrones no detectan un caso real, el barrido de
+    abajo pasa por vacio y no prueba nada. Paso de verdad."""
+    assert FORBIDDEN_PATTERNS[2].search(r"C:\Users\HP\proyecto"), "la ruta de Windows no se detecta"
+    assert FORBIDDEN_PATTERNS[4].search(r"Users\HP\proyecto"), "el perfil de usuario no se detecta"
+    assert FORBIDDEN_PATTERNS[0].search("2026-09-28"), "la fecha no se detecta"
+    assert FORBIDDEN_PATTERNS[1].search("18:14:34"), "la hora no se detecta"
+    assert FORBIDDEN_PATTERNS[5].search("LocalDateTime.now()"), "el reloj no se detecta"
+    assert FORBIDDEN_PATTERNS[6].search("a" * 40), "el identificador largo no se detecta"
+
+
 def test_no_generated_file_contains_time_paths_or_users(document: dict) -> None:
-    forbidden = [
-        re.compile(r"\b20\d\d-\d\d-\d\d\b"),  # fecha
-        re.compile(r"\b\d\d:\d\d:\d\d\b"),  # hora
-        re.compile(r"[A-Za-z]:\\\\"),  # ruta absoluta de Windows
-        re.compile(r"\bUsers\\\\"),  # perfil de usuario
-        re.compile(r"\b(Math\.random|UUID\.randomUUID|LocalDateTime\.now|Instant\.now)\b"),
-    ]
     for path, content in files(document).items():
-        for pattern in forbidden:
+        for pattern in FORBIDDEN_PATTERNS:
             assert not pattern.search(content), f"{path} matches {pattern.pattern}"
+
+
+def test_written_bytes_are_clean(document: dict, tmp_path: pathlib.Path) -> None:
+    """Las propiedades se verifican sobre los BYTES escritos, no sobre los strings en
+    memoria: es lo unico que prueba que el archivo en disco este bien."""
+    write_tree(files(document), tmp_path)
+    scanned = 0
+    for path in sorted(tmp_path.rglob("*")):
+        if not path.is_file():
+            continue
+        raw = path.read_bytes()
+        where = path.relative_to(tmp_path).as_posix()
+        assert b"\r" not in raw, f"{where}: contiene CR"
+        assert raw.endswith(b"\n"), f"{where}: no termina en salto de linea"
+        assert not raw.endswith(b"\n\n"), f"{where}: termina en linea vacia"
+        text = raw.decode("utf-8")  # si no es UTF-8 valido, esto falla
+        for pattern in FORBIDDEN_PATTERNS:
+            assert not pattern.search(text), f"{where} matches {pattern.pattern}"
+        scanned += 1
+    assert scanned == len(files(document)), "no se escanearon todos los archivos"
 
 
 def test_generated_java_has_no_python_booleans(document: dict) -> None:
@@ -200,6 +240,7 @@ def test_unsupported_multiplicity_is_rejected(document: dict) -> None:
 def test_output_contract_lists_every_expected_file(document: dict) -> None:
     content = files(document)
     expected = {
+        ".gitignore",
         "pom.xml",
         "src/main/java/com/example/biblioteca/BibliotecaApplication.java",
         "src/main/java/com/example/biblioteca/domain/Autor.java",
@@ -214,6 +255,75 @@ def test_output_contract_lists_every_expected_file(document: dict) -> None:
         "src/main/resources/db/migration/V1__init.sql",
     }
     assert set(content) == expected
+
+
+def test_duplicate_class_names_are_rejected(document: dict) -> None:
+    """Dos clases con el mismo nombre colapsaban rutas y duplicaban el CREATE TABLE
+    en silencio, con salida incompleta y sin error."""
+    broken = copy.deepcopy(document)
+    broken["model"]["classes"][1]["name"] = "Autor"
+    with pytest.raises(ModelError, match="nombres de clase repetidos"):
+        validate_model(broken)
+
+
+def test_unsupported_feature_is_rejected_not_ignored(document: dict) -> None:
+    """Una verificacion independiente comprobo que enumeraciones y generalizaciones se
+    ignoraban en silencio mientras la documentacion decia que se rechazaban. Ahora
+    cualquier clave que el spike no soporta falla ruidosamente."""
+    with_enum = copy.deepcopy(document)
+    with_enum["model"]["classes"][0]["stereotype"] = "enumeration"
+    with pytest.raises(ModelError, match="no soporta"):
+        validate_model(with_enum)
+
+    with_generalization = copy.deepcopy(document)
+    with_generalization["model"]["generalizations"] = [{"parent": "Autor", "child": "Libro"}]
+    with pytest.raises(ModelError, match="no soporta"):
+        validate_model(with_generalization)
+
+    with_extra_attribute_key = copy.deepcopy(document)
+    with_extra_attribute_key["model"]["classes"][0]["attributes"][0]["default"] = "x"
+    with pytest.raises(ModelError, match="no soporta"):
+        validate_model(with_extra_attribute_key)
+
+
+def test_non_navigable_to_one_end_is_rejected(document: dict) -> None:
+    """Antes se ignoraba: un extremo a uno no navegable significa que no habria clave
+    foranea, y el emisor lo omitia sin decir nada."""
+    broken = copy.deepcopy(document)
+    broken["model"]["associations"][0]["ends"][0]["navigable"] = False
+    with pytest.raises(ModelError, match="no navegable"):
+        validate_model(broken)
+
+
+def test_non_navigable_many_end_omits_the_inverse_collection(document: dict) -> None:
+    """El otro extremo no navegable SI es valido: significa no poder recorrer de uno a
+    muchos, y se refleja omitiendo la coleccion. No es un error."""
+    other = copy.deepcopy(document)
+    other["model"]["associations"][0]["ends"][1]["navigable"] = False
+    validate_model(other)
+    entity = files(other)["src/main/java/com/example/biblioteca/domain/Autor.java"]
+    assert "List<Libro>" not in entity
+    assert artifact_hash(files(document)) != artifact_hash(files(other))
+
+
+def test_class_without_attributes_gets_exactly_one_constructor(document: dict) -> None:
+    """Una clase sin atributos y sin relacion propietaria emitia DOS constructores sin
+    argumentos y javac rechazaba el archivo."""
+    document["model"]["classes"].append(
+        {"id": "cls-genero", "name": "Genero", "abstract": False, "attributes": []}
+    )
+    validate_model(document)
+    entity = files(document)["src/main/java/com/example/biblioteca/domain/Genero.java"]
+    assert entity.count("    public Genero() {") == 1
+    assert "protected Genero()" not in entity, "dos constructores sin argumentos rompen javac"
+
+
+def test_many_side_lower_bound_is_declared_as_ignored(document: dict) -> None:
+    """1..* y 0..* en el lado muchos producen el mismo artefacto: la cota inferior no
+    se refleja en el esquema. Es un limite declarado, no un accidente."""
+    one_or_many = copy.deepcopy(document)
+    one_or_many["model"]["associations"][0]["ends"][1]["multiplicity"] = "ONE_OR_MANY"
+    assert artifact_hash(files(document)) == artifact_hash(files(one_or_many))
 
 
 def test_no_credential_is_written_into_generated_source(document: dict) -> None:

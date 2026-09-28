@@ -194,6 +194,20 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 - **Nota de método:** la primera delegación de esta tarea a un worker falló sin producir nada (tarea demasiado
   grande para una corrida). Se partió en dos: el emisor —donde vive el contrato— lo escribí yo, y la evidencia
   de extremo a extremo quedó en un arnés reproducible.
+- **Segunda ronda (verificación independiente):** confirmó los 13 pasos, la huella reproducible, el build sin
+  red y la limpieza, y **falsificó la tabla de límites más dos bordes**, todo corregido en el emisor:
+  1. la tabla decía que una asociación no navegable hace fallar al emisor: **no fallaba**, salía con código 0; y
+     decía que enumeraciones y herencia se rechazaban cuando se **ignoraban en silencio**. La validación ahora
+     es genérica —cualquier clave no soportada falla nombrandola— y el extremo a uno no navegable se rechaza;
+  2. una clase **sin atributos** emitía dos constructores sin argumentos y `javac` la rechazaba. Corregido y
+     verificado con el mismo instrumento: un proyecto con esa clase compila;
+  3. dos clases con el mismo **nombre** colapsaban archivos y duplicaban el `CREATE TABLE` sin error. Ahora se
+     rechazan;
+  4. un guardián propio del test tenía el patrón de rutas absolutas doblemente escapado y **nunca disparaba**, y
+     las propiedades de LF se chequeaban sobre strings en memoria y no sobre los bytes escritos. Ahora hay
+     control positivo y lectura de bytes en disco.
+  Límites nuevos declarados: la cota inferior del lado muchos no se refleja (`1..*` ≡ `0..*`) y los errores de
+  referencia devuelven 500 en vez de 404/400.
 - **Depende de:** T1; idealmente T2, porque T2 define qué clases son legales.
 - **Fuera de alcance:** plantillas definitivas, perfiles de generación, targets, empaquetado de artefactos.
 
@@ -234,6 +248,6 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 | T1 — Baseline del repositorio | **hecho** | Commit raíz `90f4f4a` en `main`; rama `feat/incremento-0-contrato-y-riesgos`; `.gitignore` + `.gitattributes` + `README.md` |
 | T2 — Línea base UML 2.5 | **hecho** | `03-linea-base-uml.{md,v1.json,schema.json}`; `tools/contract-tests/` 15/15; mutación verificada |
 | T3 — Dialecto XMI de EA | **hecho** | `tools/xmi-inventory/` (suite en verde, 0 tags sin clasificar); `04-dialecto-xmi-ea.md`; 23 evidenciados / 9 sin evidencia; 3 afirmaciones falsificadas y corregidas |
-| T4 — Spike UML→Spring Boot | **hecho** | `spikes/uml2spring/`; 13/13 pasos de extremo a extremo; huella estable en dos corridas; 3 defectos encontrados y corregidos |
+| T4 — Spike UML→Spring Boot | **hecho** | `spikes/uml2spring/`; 13/13 pasos; huella estable; 3 defectos de desarrollo + 3 falsificaciones de la verificación, todas corregidas |
 | T5 — Viabilidad de IA local | pendiente | — |
 | T6 — Acta de cierre | pendiente | — |
