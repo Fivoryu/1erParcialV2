@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diagramador-uml.local/schemas/uml-baseline.schema.json",
+  "title": "UML-BL-1 - Linea base UML 2.5 declarada por el diagramador",
+  "description": "Esquema del inventario machine-checkable de la linea base UML. Una linea base sirve para declarar con precision que subconjunto de UML 2.5 se soporta; el esquema existe para que esa declaracion sea verificable y no una afirmacion en prosa. Los tres invariantes centrales son: (1) todo constructo declara exactamente un mapeo por cada destino (persistencia, generacion, XMI), y un mapeo ausente debe declarar NONE con su motivo; (2) todo constructo no soportado debe declarar por que; (3) el estado de ratificacion es explicito y no puede declararse ratificado por defecto.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "baselineId",
+    "version",
+    "status",
+    "scope",
+    "ratification",
+    "targets",
+    "constructs",
+    "excluded",
+    "openGaps"
+  ],
+  "properties": {
+    "baselineId": {
+      "const": "UML-BL-1",
+      "description": "Identificador estable de la linea base."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Version del inventario. Los cambios de soporte suben esta version."
+    },
+    "status": {
+      "enum": ["proposed", "ratified"],
+      "description": "proposed mientras no exista ratificacion humana registrada."
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 40,
+      "description": "Que declara y que no declara esta linea base. Debe decir explicitamente que no equivale a UML 2.5 completo."
+    },
+    "ratification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requiredFrom", "evidence"],
+      "description": "Estado de ratificacion. La linea base se valida con el docente antes de darla por cerrada.",
+      "properties": {
+        "status": {
+          "enum": ["PENDING", "RATIFIED", "REJECTED"]
+        },
+        "requiredFrom": {
+          "type": "string",
+          "minLength": 3,
+          "description": "Quien debe ratificar la linea base."
+        },
+        "evidence": {
+          "type": ["string", "null"],
+          "description": "Referencia a la evidencia de ratificacion. null mientras este PENDING."
+        }
+      }
+    },
+    "targets": {
+      "const": ["persistence", "generation", "xmi"],
+      "description": "Columnas de mapeo obligatorias. Fijarlas aqui impide que un constructo omita una columna."
+    },
+    "constructs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/construct" }
+    },
+    "excluded": {
+      "type": "array",
+      "description": "Superficie de UML 2.5 deliberadamente fuera de alcance. Nombrarla evita que su ausencia se lea como olvido.",
+      "items": { "$ref": "#/$defs/exclusion" }
+    },
+    "openGaps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/gap" }
+    }
+  },
+  "$defs": {
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "value"],
+      "properties": {
+        "target": { "enum": ["persistence", "generation", "xmi"] },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Mapeo concreto, o el literal NONE cuando el constructo no tiene representacion en ese destino."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 20,
+          "description": "Obligatorio cuando value es NONE. Un mapeo ausente sin motivo es exactamente lo que este esquema prohibe."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "value": { "const": "NONE" } },
+            "required": ["value"]
+          },
+          "then": { "required": ["reason"] }
+        }
+      ]
+    },
+    "construct": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "category",
+        "name",
+        "umlElement",
+        "covers",
+        "supported",
+        "origin",
+        "mappings",
+        "sources"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^BL-[A-Z]{2,4}-[0-9]{2}$",
+          "description": "Identificador estable del constructo dentro de la linea base."
+        },
+        "category": {
+          "enum": ["classifier", "feature", "relationship", "complementary"]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "description": "Nombre legible en espanol."
+        },
+        "umlElement": {
+          "type": "string",
+          "minLength": 2,
+          "description": "Elemento o propiedad UML 2.5 correspondiente."
+        },
+        "covers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "description": "Clausulas obligatorias que este constructo cubre. El test contrasta estas claves contra la lista obligatoria del analisis del enunciado.",
+          "examples": [["CLASS", "ABSTRACT_CLASS"]]
+        },
+        "supported": {
+          "type": "boolean",
+          "description": "false significa que el constructo esta nombrado en la linea base pero el producto no lo soporta todavia."
+        },
+        "unsupportedReason": {
+          "type": "string",
+          "minLength": 20,
+          "description": "Obligatorio cuando supported es false."
+        },
+        "origin": {
+          "enum": [
+            "analisis-seccion-6",
+            "analisis-seccion-11",
+            "contratos-seccion-8-3",
+            "derivado"
+          ],
+          "description": "De donde sale el constructo. derivado significa que no esta enumerado en ninguna fuente y se agrega porque es necesario para materializar otro constructo."
+        },
+        "mappings": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/mapping" },
+          "description": "Exactamente un mapeo por destino declarado en targets."
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "description": "Rutas de archivo del repositorio que sostienen el constructo. El test verifica que existan."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Aclaraciones, bordes conocidos o decisiones que quien ratifique deberia mirar."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "supported": { "const": false } },
+            "required": ["supported"]
+          },
+          "then": { "required": ["unsupportedReason"] }
+        }
+      ]
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "reason", "decidedBy"],
+      "properties": {
+        "item": { "type": "string", "minLength": 2 },
+        "reason": { "type": "string", "minLength": 20 },
+        "decidedBy": {
+          "type": "string",
+          "minLength": 2,
+          "description": "Quien decide que queda fuera: el enunciado, la captura de requisitos o una decision registrada."
+        }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "blocks", "owner"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^GAP-[0-9]{2}$" },
+        "description": { "type": "string", "minLength": 20 },
+        "blocks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Que queda bloqueado mientras el gap siga abierto."
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 2,
+          "description": "Quien puede cerrarlo. Sin responsable no es un gap, es una queja."
+        }
+      }
+    }
+  }
+}

@@ -87,13 +87,20 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 - **Objetivo:** fijar el subconjunto UML que el sistema soporta y **declara** soportar, para no atribuirse
   compatibilidad total no demostrada.
 - **Entregable:**
-  - `docs/puds/contratos/03-linea-base-uml.md` con el subconjunto y su tabla de triple mapeo: persistencia,
-    generación Java, y XMI;
-  - esquema machine-checkable del modelo canónico;
-  - test que valida el esquema contra el inventario de la línea base.
-- **Evidencia:** test verde; tabla de cobertura que enumera explícitamente lo que queda **fuera**.
-- **Depende de:** nada (paralelizable con T3).
-- **Queda abierto:** ratificación de la línea base por el docente.
+  - `docs/puds/contratos/03-linea-base-uml.md` con el subconjunto, su triple mapeo y los huecos;
+  - `docs/puds/contratos/03-linea-base-uml.v1.json` como inventario machine-checkable;
+  - `docs/puds/contratos/03-linea-base-uml.schema.json` como esquema del inventario;
+  - `tools/contract-tests/` con la suite que lo verifica.
+- **Evidencia:** `python -m pytest tools/contract-tests -q` en verde (15 pruebas) y prueba de mutación que
+  demuestra que la suite falla cuando el inventario elimina una cláusula obligatoria.
+- **Verificado:** esquema válido contra draft 2020-12; 25 cláusulas cubiertas; 32 constructos con 23
+  soportados y 9 no; 10 celdas de mapeo en `NONE` de 96, todas con motivo; ninguna cita de origen rota.
+- **Hallazgo:** la sección 8.3 de los contratos sobredeclara. Declara 23 elementos soportados y, contra el
+  modelo de datos, solo 18 se sostienen, 2 a medias y 3 no (enumeraciones sin literales, modificadores
+  estáticos y abstractos, y multiplicidades sin cotas). Además omite las notas UML, que el análisis exige.
+- **Pendiente de verificar:** la exactitud de las citas `archivo:línea` del mapeo de persistencia, extraído
+  por un subagente. Verificación independiente delegada a `gentle-ai-verify`.
+- **Queda abierto:** ratificación del docente (GAP-01) y roundtrip contra Enterprise Architect (GAP-07).
 
 ### T3 — Dialecto XMI de Enterprise Architect caracterizado con fixture real
 
@@ -154,7 +161,7 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 | Tarea | Estado | Evidencia |
 | --- | --- | --- |
 | T1 — Baseline del repositorio | **hecho** | Commit raíz `90f4f4a` en `main`; rama `feat/incremento-0-contrato-y-riesgos`; `.gitignore` + `.gitattributes` + `README.md` |
-| T2 — Línea base UML 2.5 | pendiente | — |
+| T2 — Línea base UML 2.5 | **hecho** | `03-linea-base-uml.{md,v1.json,schema.json}`; `tools/contract-tests/` 15/15; mutación verificada |
 | T3 — Dialecto XMI de EA | pendiente | — |
 | T4 — Spike UML→Spring Boot | pendiente | — |
 | T5 — Viabilidad de IA local | pendiente | — |

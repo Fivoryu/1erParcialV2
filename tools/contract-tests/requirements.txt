@@ -1,0 +1,4 @@
+# Dependencias del arnes de pruebas de contrato.
+# Verificar con: python -m pytest tools/contract-tests -q
+pytest>=9.1
+jsonschema>=4.26

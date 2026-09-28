@@ -1,0 +1,745 @@
+{
+  "baselineId": "UML-BL-1",
+  "version": "1.0",
+  "status": "proposed",
+  "scope": "Subconjunto explícito de UML 2.5 orientado a la generación de un backend Spring Boot sobre PostgreSQL: clasificadores, características y relaciones del diagrama de clases, más los elementos complementarios necesarios para trazabilidad e interoperabilidad. Esta línea base no equivale a UML 2.5 completo y no declara soporte de ningún elemento que no aparezca en constructs.",
+  "ratification": {
+    "status": "PENDING",
+    "requiredFrom": "Docente de Ingeniería de Software I (a confirmar en la sesión de ratificación)",
+    "evidence": null
+  },
+  "targets": ["persistence", "generation", "xmi"],
+  "constructs": [
+    {
+      "id": "BL-CLS-01",
+      "category": "classifier",
+      "name": "Clase",
+      "umlElement": "uml:Class",
+      "covers": ["CLASS"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "Tabla classifier con kind='CLASS'" },
+        { "target": "generation", "value": "Entidad JPA (sección 8.3 de contratos)" },
+        { "target": "xmi", "value": "packagedElement xmi:type='uml:Class' con EAID_ estable" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L133-L137",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ]
+    },
+    {
+      "id": "BL-CLS-02",
+      "category": "classifier",
+      "name": "Clase abstracta",
+      "umlElement": "uml:Class con isAbstract",
+      "covers": ["ABSTRACT_CLASS"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "classifier.is_abstract BOOLEAN, y además el literal classifier_kind='ABSTRACT_CLASS'" },
+        { "target": "generation", "value": "Entidad JPA con la estrategia de herencia del perfil" },
+        { "target": "xmi", "value": "uml:Class con isAbstract='true'" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L52",
+        "docs/puds/datos/02-esquema-fisico.sql#L139",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ],
+      "notes": "El concepto está codificado dos veces: la bandera is_abstract y el literal de enum ABSTRACT_CLASS. Es una fuente de divergencia conocida; hay que decidir cuál manda antes de generar herencia."
+    },
+    {
+      "id": "BL-CLS-03",
+      "category": "classifier",
+      "name": "Interfaz",
+      "umlElement": "uml:Interface",
+      "covers": ["INTERFACE"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "classifier.kind='INTERFACE' (sin tabla propia)" },
+        { "target": "generation", "value": "Interfaz Java / contrato generado" },
+        { "target": "xmi", "value": "packagedElement xmi:type='uml:Interface'" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L52",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ]
+    },
+    {
+      "id": "BL-CLS-04",
+      "category": "classifier",
+      "name": "Enumeración",
+      "umlElement": "uml:Enumeration",
+      "covers": ["ENUMERATION"],
+      "supported": false,
+      "unsupportedReason": "El clasificador se puede guardar (classifier.kind='ENUMERATION'), pero el modelo de datos no tiene dónde guardar sus literales. Una enumeración sin constantes no puede materializarse como Java enum, que es lo que declara la sección 8.3 de contratos.",
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "classifier.kind='ENUMERATION' guarda el clasificador, pero no sus literales" },
+        { "target": "generation", "value": "NONE", "reason": "No es posible emitir un Java enum sin sus constantes; el generador no puede consumar el mapeo declarado en la sección 8.3." },
+        { "target": "xmi", "value": "uml:Enumeration con ownedLiteral, que hoy no tiene contraparte persistida" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L50-L68",
+        "docs/puds/datos/02-esquema-fisico.sql#L133-L143",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ],
+      "notes": "Cubierto también por BL-CLS-05. Ver GAP-02."
+    },
+    {
+      "id": "BL-CLS-05",
+      "category": "classifier",
+      "name": "Literal de enumeración",
+      "umlElement": "uml:EnumerationLiteral",
+      "covers": ["ENUMERATION"],
+      "supported": false,
+      "unsupportedReason": "No existe tabla ni columna que guarde las constantes de una enumeración. Sin ellas, la enumeración es un nombre sin contenido.",
+      "origin": "derivado",
+      "mappings": [
+        { "target": "persistence", "value": "NONE", "reason": "El esquema físico no declara ninguna entidad para literales de enumeración; la ausencia está probada en el rango de tablas del modelo semántico." },
+        { "target": "generation", "value": "NONE", "reason": "Sin literales persistidos no hay constantes que emitir en el Java enum generado." },
+        { "target": "xmi", "value": "ownedLiteral dentro de uml:Enumeration" }
+      ],
+      "sources": [
+        "docs/puds/datos/02-esquema-fisico.sql#L50-L68",
+        "docs/puds/datos/01-mapeo-base-de-datos.md#L29-L41"
+      ],
+      "notes": "Constructo derivado: no está enumerado en el análisis, se agrega porque es imprescindible para materializar BL-CLS-04. Ver GAP-02."
+    },
+    {
+      "id": "BL-CLS-06",
+      "category": "classifier",
+      "name": "Paquete",
+      "umlElement": "uml:Package",
+      "covers": ["PACKAGE"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "classifier.kind='PACKAGE' con classifier.namespace_id autorreferente" },
+        { "target": "generation", "value": "Namespace de código fuente (paquete Java)" },
+        { "target": "xmi", "value": "packagedElement xmi:type='uml:Package' anidado" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L52",
+        "docs/puds/datos/02-esquema-fisico.sql#L136",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ]
+    },
+    {
+      "id": "BL-CLS-07",
+      "category": "classifier",
+      "name": "Referencia a tipo primitivo o de dominio",
+      "umlElement": "Type / TypeReference",
+      "covers": ["PARAMETER_AND_TYPE"],
+      "supported": true,
+      "origin": "contratos-seccion-8-3",
+      "mappings": [
+        { "target": "persistence", "value": "type_reference con classifier_id o primitive_name, excluyentes por chk_type_reference" },
+        { "target": "generation", "value": "Resolución de tipos primitivos y de dominio en el IR" },
+        { "target": "xmi", "value": "type xmi:idref hacia el tipo, con el prefijo EAJava_ del dialecto de EA" }
+      ],
+      "sources": [
+        "docs/puds/datos/02-esquema-fisico.sql#L146-L152",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ],
+      "notes": "El dialecto de EA referencia tipos como EAJava_String, que no es un tipo UML estándar. La tabla de equivalencias se fija en T3."
+    },
+
+    {
+      "id": "BL-FEA-01",
+      "category": "feature",
+      "name": "Atributo",
+      "umlElement": "uml:Property dentro de ownedAttribute",
+      "covers": ["ATTRIBUTE"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "Tabla uml_attribute (classifier_id, name, multiplicity)" },
+        { "target": "generation", "value": "Campo, columna, metadatos de validación y columna de migración" },
+        { "target": "xmi", "value": "ownedAttribute xmi:type='uml:Property' con lowerValue y upperValue" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L155-L159",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ]
+    },
+    {
+      "id": "BL-FEA-02",
+      "category": "feature",
+      "name": "Operación",
+      "umlElement": "uml:Operation dentro de ownedOperation",
+      "covers": ["OPERATION"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "Tabla uml_operation (name, ordinal)" },
+        { "target": "generation", "value": "Método de dominio o de servicio, más contrato DTO/API" },
+        { "target": "xmi", "value": "ownedOperation con ownedParameter de retorno" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L169-L177",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ]
+    },
+    {
+      "id": "BL-FEA-03",
+      "category": "feature",
+      "name": "Parámetro",
+      "umlElement": "uml:Parameter",
+      "covers": ["PARAMETER_AND_TYPE"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "Tabla operation_parameter con type_reference_id" },
+        { "target": "generation", "value": "Parámetro del método generado y de su contrato" },
+        { "target": "xmi", "value": "ownedParameter con name, direction y type" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L182-L185",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ],
+      "notes": "El mapeo documentado no menciona dirección ni tipo de retorno del parámetro, mientras que el fixture de EA representa el retorno como ownedParameter con direction='return'. Ver GAP-08."
+    },
+    {
+      "id": "BL-FEA-04",
+      "category": "feature",
+      "name": "Valor predeterminado",
+      "umlElement": "defaultValue de uml:Property",
+      "covers": ["DEFAULT_VALUE"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_attribute.default_value TEXT" },
+        { "target": "generation", "value": "Valor por defecto del campo y de la columna" },
+        { "target": "xmi", "value": "defaultValue del uml:Property" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L163",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ],
+      "notes": "Existe únicamente para atributos. Un valor predeterminado sobre un parámetro o sobre un extremo de relación no tiene representación."
+    },
+    {
+      "id": "BL-FEA-05",
+      "category": "feature",
+      "name": "Miembro estático",
+      "umlElement": "isStatic sobre uml:Property y uml:Operation",
+      "covers": ["STATIC_MEMBER"],
+      "supported": false,
+      "unsupportedReason": "El modelado es asimétrico: la operación tiene uml_operation.is_static BOOLEAN, y el atributo solo tiene uml_attribute.kind VARCHAR(32) con la palabra static en un comentario. Sin una bandera equivalente, declarar soporte para miembros estáticos en general sería falso.",
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_operation.is_static BOOLEAN para operaciones; para atributos, uml_attribute.kind sin restricción de dominio" },
+        { "target": "generation", "value": "Modificador static en el miembro generado, solo donde el modelo lo distingue" },
+        { "target": "xmi", "value": "isStatic='true' en el elemento" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L160",
+        "docs/puds/datos/02-esquema-fisico.sql#L176",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ],
+      "notes": "Basta agregar uma_attribute.is_static para cerrar el hueco. La decisión queda para quien ratifique."
+    },
+    {
+      "id": "BL-FEA-06",
+      "category": "feature",
+      "name": "Miembro abstracto",
+      "umlElement": "isAbstract sobre uml:Operation",
+      "covers": ["ABSTRACT_MEMBER"],
+      "supported": false,
+      "unsupportedReason": "Solo las operaciones tienen uml_operation.is_abstract. Un atributo abstracto, que UML permite en un clasificador abstracto, no tiene representación en el modelo.",
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_operation.is_abstract BOOLEAN, únicamente para operaciones" },
+        { "target": "generation", "value": "Operación abstracta en la entidad o interfaz generada" },
+        { "target": "xmi", "value": "isAbstract='true' en el elemento" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L175",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ]
+    },
+    {
+      "id": "BL-VIS-01",
+      "category": "feature",
+      "name": "Visibilidad pública",
+      "umlElement": "visibility='public'",
+      "covers": ["VISIBILITY"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_attribute.visibility y uml_operation.visibility, con DEFAULT 'PUBLIC'" },
+        { "target": "generation", "value": "Miembro público" },
+        { "target": "xmi", "value": "visibility='public'" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L161",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ]
+    },
+    {
+      "id": "BL-VIS-02",
+      "category": "feature",
+      "name": "Visibilidad privada",
+      "umlElement": "visibility='private'",
+      "covers": ["VISIBILITY"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_attribute.visibility y uml_operation.visibility" },
+        { "target": "generation", "value": "Miembro privado" },
+        { "target": "xmi", "value": "visibility='private', como en el atributo matricula del fixture" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L161",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ]
+    },
+    {
+      "id": "BL-VIS-03",
+      "category": "feature",
+      "name": "Visibilidad protegida",
+      "umlElement": "visibility='protected'",
+      "covers": ["VISIBILITY"],
+      "supported": false,
+      "unsupportedReason": "La columna es un VARCHAR(16) libre sin restricción de dominio ni valor por defecto distinto de PUBLIC, y no existe visibilidad para clasificadores, parámetros ni extremos de relación. Declarar soporte de las cuatro visibilidades exigidas por el análisis sobre una columna sin validar sería una declaración sin respaldo.",
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_attribute.visibility VARCHAR(16) sin constraint de dominio" },
+        { "target": "generation", "value": "Miembro protegido, únicamente si el valor persistido es coherente" },
+        { "target": "xmi", "value": "visibility='protected'" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L161",
+        "docs/puds/datos/02-esquema-fisico.sql#L174"
+      ],
+      "notes": "Cerrar el hueco requiere un tipo enumerado de visibilidad y su cobertura en clasificador, parámetro y extremo. Ver GAP-06."
+    },
+    {
+      "id": "BL-VIS-04",
+      "category": "feature",
+      "name": "Visibilidad de paquete",
+      "umlElement": "visibility='package'",
+      "covers": ["VISIBILITY"],
+      "supported": false,
+      "unsupportedReason": "Es la visibilidad de mayor riesgo de las cuatro: Java la expresa con la ausencia de modificador, y JPA necesita acceso al campo o a un accesor desde fuera del paquete. El modelo la aceptaría como texto libre, pero ni la generación ni la persistencia tienen una regla decidida para ella.",
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_attribute.visibility VARCHAR(16), sin valor validado para package" },
+        { "target": "generation", "value": "NONE", "reason": "No hay regla decidida para emitir visibilidad de paquete en Java ni para conciliarla con el acceso que JPA necesita a las entidades." },
+        { "target": "xmi", "value": "visibility='package'" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L161"
+      ],
+      "notes": "Es la cláusula 'visibilidad: pública, privada, protegida y de paquete' del análisis. Queda nombrada y sin soporte declarado a propósito, para que la ratificación decida en vez de que un olvido decida. Ver GAP-06."
+    },
+
+    {
+      "id": "BL-REL-01",
+      "category": "relationship",
+      "name": "Asociación",
+      "umlElement": "uml:Association",
+      "covers": ["ASSOCIATION"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_relationship.kind='ASSOCIATION' con dos relationship_end" },
+        { "target": "generation", "value": "Regla de relación JPA del perfil" },
+        { "target": "xmi", "value": "packagedElement xmi:type='uml:Association' con memberEnd" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L53",
+        "docs/puds/datos/02-esquema-fisico.sql#L195",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ]
+    },
+    {
+      "id": "BL-REL-02",
+      "category": "relationship",
+      "name": "Agregación",
+      "umlElement": "uml:Association con aggregation='shared'",
+      "covers": ["AGGREGATION"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_relationship.kind='AGGREGATION' más relationship_end.aggregation_kind='SHARED'" },
+        { "target": "generation", "value": "Regla JPA del perfil con semántica de ciclo de vida compartido" },
+        { "target": "xmi", "value": "aggregation='shared' en el extremo" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L195",
+        "docs/puds/datos/02-esquema-fisico.sql#L208",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ],
+      "notes": "Persistido dos veces: en kind y en aggregation_kind del extremo. Es redundancia conocida; hay que decidir la fuente de verdad."
+    },
+    {
+      "id": "BL-REL-03",
+      "category": "relationship",
+      "name": "Composición",
+      "umlElement": "uml:Association con aggregation='composite'",
+      "covers": ["COMPOSITION"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_relationship.kind='COMPOSITION' más relationship_end.aggregation_kind='COMPOSITE'" },
+        { "target": "generation", "value": "Regla JPA del perfil con semántica de ciclo de vida del compuesto" },
+        { "target": "xmi", "value": "aggregation='composite' en el extremo" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L195",
+        "docs/puds/datos/02-esquema-fisico.sql#L208",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ]
+    },
+    {
+      "id": "BL-REL-04",
+      "category": "relationship",
+      "name": "Generalización o herencia",
+      "umlElement": "uml:Generalization",
+      "covers": ["GENERALIZATION"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_relationship.kind='GENERALIZATION' con dos relationship_end" },
+        { "target": "generation", "value": "Estrategia de herencia configurada en el perfil" },
+        { "target": "xmi", "value": "generalization con general y el id del clasificador padre" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L192-L197",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ],
+      "notes": "El modelo guarda la generalización como relación genérica: el padre y el hijo se identifican por ordinal 1 y 2, sin columna de supertipo en classifier. Que la relación tenga exactamente dos extremos es una invariante de servicio y no una restricción del esquema."
+    },
+    {
+      "id": "BL-REL-05",
+      "category": "relationship",
+      "name": "Realización de interfaz",
+      "umlElement": "uml:InterfaceRealization",
+      "covers": ["INTERFACE_REALIZATION"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_relationship.kind='INTERFACE_REALIZATION'" },
+        { "target": "generation", "value": "Cláusula implements en el tipo generado" },
+        { "target": "xmi", "value": "interfaceRealization" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L53",
+        "docs/puds/datos/02-esquema-fisico.sql#L195",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ]
+    },
+    {
+      "id": "BL-REL-06",
+      "category": "relationship",
+      "name": "Dependencia",
+      "umlElement": "uml:Dependency",
+      "covers": ["DEPENDENCY"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "uml_relationship.kind='DEPENDENCY'" },
+        { "target": "generation", "value": "NONE", "reason": "Una dependencia UML no se materializa en código generado: expresa acoplamiento de diseño y no produce artefacto. Se conserva en el modelo y en el XMI." },
+        { "target": "xmi", "value": "packagedElement xmi:type='uml:Dependency'" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L195",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ]
+    },
+    {
+      "id": "BL-REL-07",
+      "category": "relationship",
+      "name": "Multiplicidad",
+      "umlElement": "lowerValue y upperValue del extremo o de la propiedad",
+      "covers": ["MULTIPLICITY"],
+      "supported": false,
+      "unsupportedReason": "El modelo guarda una categoría (multiplicity_kind: EXACTLY_ONE, ZERO_OR_ONE, ONE_OR_MANY, ZERO_OR_MANY, RANGE) y la categoría RANGE no tiene columnas de cota inferior y superior. UML permite multiplicidades que ese conjunto no puede expresar, como 3..7 o un valor concreto distinto de uno.",
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "multiplicity_kind en uml_attribute.multiplicity y relationship_end.multiplicity, sin cotas numéricas" },
+        { "target": "generation", "value": "Intención de nulabilidad y de colección, resuelta desde la categoría" },
+        { "target": "xmi", "value": "lowerValue y upperValue, que el fixture expresa como uml:LiteralInteger" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L55",
+        "docs/puds/datos/02-esquema-fisico.sql#L162",
+        "docs/puds/datos/02-esquema-fisico.sql#L206",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ],
+      "notes": "Los cuatro casos habituales 1, 0..1, 1..* y 0..* sí funcionan. Lo que se declara no soportado es la multiplicidad UML como conjunto de intervalos. Ver GAP-05."
+    },
+    {
+      "id": "BL-REL-08",
+      "category": "relationship",
+      "name": "Nombre de rol",
+      "umlElement": "role del extremo",
+      "covers": ["ROLES_AND_NAVIGABILITY"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "relationship_end.role VARCHAR(255)" },
+        { "target": "generation", "value": "Selección del lado propietario y nombre del campo de la relación" },
+        { "target": "xmi", "value": "name del extremo o memberEnd" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L205",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ]
+    },
+    {
+      "id": "BL-REL-09",
+      "category": "relationship",
+      "name": "Navegabilidad",
+      "umlElement": "navigability del extremo",
+      "covers": ["ROLES_AND_NAVIGABILITY"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "relationship_end.navigability de tipo navigation_kind, por defecto UNSPECIFIED" },
+        { "target": "generation", "value": "Selección del lado propietario de la relación" },
+        { "target": "xmi", "value": "isNavigable del extremo" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L54",
+        "docs/puds/datos/02-esquema-fisico.sql#L207",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3"
+      ]
+    },
+    {
+      "id": "BL-REL-10",
+      "category": "relationship",
+      "name": "Extremo de relación",
+      "umlElement": "Property como memberEnd del extremo",
+      "covers": ["ROLES_AND_NAVIGABILITY"],
+      "supported": true,
+      "origin": "derivado",
+      "mappings": [
+        { "target": "persistence", "value": "Tabla relationship_end con ordinal restringido a 1 o 2 y classifier_id" },
+        { "target": "generation", "value": "Extremo de la relación JPA generada" },
+        { "target": "xmi", "value": "memberEnd del uml:Association" }
+      ],
+      "sources": [
+        "docs/puds/datos/02-esquema-fisico.sql#L200-L209",
+        "docs/puds/contratos/01-contratos-transversales.md#8-2"
+      ],
+      "notes": "Constructo derivado: el análisis exige roles, navegabilidad y multiplicidad, y los tres viven en el extremo, aunque el extremo no aparezca enumerado en la sección 6. No declara cubrir MULTIPLICITY a propósito: el extremo es el contenedor y está soportado, pero el veredicto sobre la multiplicidad lo da únicamente BL-REL-07, para que un constructo soportado no tape una cláusula que no lo está."
+    },
+
+    {
+      "id": "BL-CMP-01",
+      "category": "complementary",
+      "name": "Nota UML",
+      "umlElement": "uml:Comment",
+      "covers": ["NOTES"],
+      "supported": false,
+      "unsupportedReason": "El análisis exige notas y restricciones, y el modelo de datos no tiene ninguna entidad para comentarios UML. La única coincidencia del esquema con la palabra comment es metadato de catálogo de PostgreSQL, que no es una nota del modelo.",
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "NONE", "reason": "No existe tabla ni columna para uml:Comment en el esquema físico; el comentario de catálogo de PostgreSQL no representa una nota UML." },
+        { "target": "generation", "value": "NONE", "reason": "Sin nota persistida no hay documentación de origen que emitir en el artefacto generado." },
+        { "target": "xmi", "value": "ownedComment con annotatedElement" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L73-L500",
+        "docs/puds/datos/01-mapeo-base-de-datos.md#L29-L41"
+      ],
+      "notes": "Cláusula 'notas y restricciones' del análisis, separada aquí en NOTES y CONSTRAINTS para que ninguna tape a la otra. Ver GAP-03."
+    },
+    {
+      "id": "BL-CMP-02",
+      "category": "complementary",
+      "name": "Restricción",
+      "umlElement": "uml:Constraint",
+      "covers": ["CONSTRAINTS"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "Tabla uml_constraint con owner_type, owner_id, expression y severity" },
+        { "target": "generation", "value": "Validación cuando exista equivalencia soportada por el perfil" },
+        { "target": "xmi", "value": "ownedRule y el bloque constraints del dialecto de EA" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L212-L218",
+        "docs/puds/contratos/01-contratos-transversales.md#8-3",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ],
+      "notes": "El dueño es polimórfico, así que la restricción puede colgar de un clasificador o de una relación sin cambiar el esquema."
+    },
+    {
+      "id": "BL-CMP-03",
+      "category": "complementary",
+      "name": "Estereotipo",
+      "umlElement": "uml:Stereotype y su aplicación",
+      "covers": ["STEREOTYPES"],
+      "supported": false,
+      "unsupportedReason": "El análisis exige los estereotipos necesarios para la generación y el modelo no tiene entidad de estereotipo. La única cadena relacionada es xmi_exchange.profile, que es una etiqueta de perfil de intercambio y no un estereotipo aplicado a un elemento.",
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "NONE", "reason": "No hay tabla ni columna para estereotipos aplicados; xmi_exchange.profile es una etiqueta de perfil de importación, no un estereotipo del modelo." },
+        { "target": "generation", "value": "NONE", "reason": "Sin estereotipo persistido no hay regla de generación guiada por estereotipo que aplicar, aunque la sección 8.3 la nombre." },
+        { "target": "xmi", "value": "el bloque stereotype y el perfil thecustomprofile del dialecto de EA" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L375",
+        "docs/puds/datos/01-mapeo-base-de-datos.md#L85",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ],
+      "notes": "El fixture real de EA trae 32 apariciones del bloque stereotype, así que el dialecto los emite y el modelo no los puede recibir. Ver GAP-04."
+    },
+    {
+      "id": "BL-CMP-04",
+      "category": "complementary",
+      "name": "Identificador estable de elemento",
+      "umlElement": "xmi:id y su correspondencia con el id interno",
+      "covers": ["STABLE_IDS"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "UUID como clave primaria por tabla, más pares polimórficos target_type y target_id para referencias entre tipos" },
+        { "target": "generation", "value": "Conservación del id de origen en el IR y en los hashes de artefacto" },
+        { "target": "xmi", "value": "EAID_ y EAPK_ del dialecto de EA, que hay que correlacionar con el id interno" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L134",
+        "docs/puds/datos/02-esquema-fisico.sql#L237-L238",
+        "docs/fixtures/xmi/Prueba3.xml"
+      ],
+      "notes": "El dialecto de EA usa sus propios identificadores. La regla de correlación es materia de T3 y hoy no está fijada."
+    },
+    {
+      "id": "BL-CMP-05",
+      "category": "complementary",
+      "name": "Disposición visual separada de la semántica",
+      "umlElement": "Diagrama y geometría",
+      "covers": ["LAYOUT_SEPARATION"],
+      "supported": true,
+      "origin": "analisis-seccion-6",
+      "mappings": [
+        { "target": "persistence", "value": "Tablas diagram_view, element_geometry y connector_path colgando de view_id; las tablas semánticas no tienen coordenadas" },
+        { "target": "generation", "value": "NONE", "reason": "El layout queda excluido a propósito del snapshot de generación: la sección 8.2 lo enumera entre los datos que no entran en el artefacto generado." },
+        { "target": "xmi", "value": "el dialecto de diagrama de EA con element/geometry, style, styleex y coords" }
+      ],
+      "sources": [
+        "docs/analisis-enunciado-parcial-1.md#6",
+        "docs/puds/datos/02-esquema-fisico.sql#L225-L256",
+        "docs/puds/datos/01-mapeo-base-de-datos.md#L112-L117",
+        "docs/puds/contratos/01-contratos-transversales.md#8-2",
+        "docs/fixtures/ea-xmi21-diagram-dialect.xml"
+      ],
+      "notes": "El layout compartido vive en un islote de esquema propio y referencia elementos UML por target_type y target_id, sin escribir de vuelta en las tablas semánticas. Un elemento detectado por fotografía también lleva x, y, w, h provisionales, pero es dato de propuesta previo a confirmación y no layout compartido."
+    }
+  ],
+  "excluded": [
+    {
+      "item": "UML 2.5 completo",
+      "reason": "El enunciado exige compatible con UML 2.5, y el propio análisis advierte que esa frase puede abarcar una superficie mucho mayor que la necesaria. La línea base declara un subconjunto y no atribuye compatibilidad total.",
+      "decidedBy": "docs/analisis-enunciado-parcial-1.md sección 6 y sección 12 (riesgo: interpretar UML 2.5 como compatibilidad total)"
+    },
+    {
+      "item": "Diagramas de comportamiento: actividades, secuencia, comunicación, máquina de estados, casos de uso y tiempos",
+      "reason": "El tipo central y obligatorio del parcial es el diagrama de clases; el resto de los diagramas UML no se declara soportado ni se declara descartado del producto final.",
+      "decidedBy": "docs/analisis-enunciado-parcial-1.md (alcance de modelado)"
+    },
+    {
+      "item": "Diagramas estructurales fuera del alcance: componentes, despliegue, objetos, estructura compuesta y perfiles",
+      "reason": "No forman parte del diagrama de clases ni son necesarios para generar un backend desde el modelo, así que quedan nombrados como fuera de alcance en vez de omitidos.",
+      "decidedBy": "docs/analisis-enunciado-parcial-1.md (límites del producto)"
+    },
+    {
+      "item": "Relaciones UML no enumeradas en la línea base, como la asociación de plantilla o el uso de dependencia con estereotipo",
+      "reason": "Solo se declara el subconjunto que el análisis enumera. Una relación no listada no está soportada aunque el formato XMI de origen pudiera contenerla.",
+      "decidedBy": "docs/analisis-enunciado-parcial-1.md sección 6"
+    },
+    {
+      "item": "Errores de tipo entidad-relación como segundo editor independiente",
+      "reason": "El análisis interpreta la mención a entidad-relación como contexto sobre alternativas de diseño, no como un editor paralelo al de clases.",
+      "decidedBy": "docs/analisis-enunciado-parcial-1.md (fuente y decisiones confirmadas)"
+    }
+  ],
+  "openGaps": [
+    {
+      "id": "GAP-01",
+      "description": "La línea base está en estado proposed y requiere ratificación humana antes de darla por cerrada.",
+      "blocks": ["cierre del Incremento 0", "arranque del Ciclo 1", "cualquier afirmación pública de compatibilidad UML"],
+      "owner": "Equipo y docente en la sesión de ratificación"
+    },
+    {
+      "id": "GAP-02",
+      "description": "La enumeración no tiene dónde guardar sus literales, así que no puede materializarse como Java enum pese a que la sección 8.3 de contratos lo declara.",
+      "blocks": ["BL-CLS-04", "BL-CLS-05", "generación de enumeraciones", "RF-10 y RF-11 para modelos con enums"],
+      "owner": "Equipo, en el diseño de datos del Ciclo 1"
+    },
+    {
+      "id": "GAP-03",
+      "description": "No existe entidad para notas UML, aunque el análisis las exige entre los elementos complementarios y el dialecto de EA las emite.",
+      "blocks": ["BL-CMP-01", "RF-02 para diagramas con notas", "roundtrip XMI sin pérdida de notas"],
+      "owner": "Equipo, en el diseño de datos del Ciclo 1"
+    },
+    {
+      "id": "GAP-04",
+      "description": "No existe entidad de estereotipo aplicado, aunque el análisis exige los estereotipos necesarios para la generación y el fixture de EA los emite.",
+      "blocks": ["BL-CMP-03", "generación guiada por estereotipo", "RF-09 y RF-10"],
+      "owner": "Equipo, en el diseño de datos del Ciclo 1"
+    },
+    {
+      "id": "GAP-05",
+      "description": "La multiplicidad se guarda como categoría sin cotas numéricas, así que UML permite multiplicidades que el modelo no puede representar.",
+      "blocks": ["BL-REL-07", "fidelidad del roundtrip XMI", "generación de cardinalidades distintas de las cuatro categorías"],
+      "owner": "Equipo, con decisión explícita de aceptar la restricción o extender el esquema"
+    },
+    {
+      "id": "GAP-06",
+      "description": "La visibilidad es un texto libre sin restricción de dominio y solo existe en atributo y operación; no cubre clasificador, parámetro ni extremo de relación.",
+      "blocks": ["BL-VIS-03", "BL-VIS-04", "validación de visibilidad", "RF-02 según la línea base acordada"],
+      "owner": "Equipo, en el diseño de datos del Ciclo 1"
+    },
+    {
+      "id": "GAP-07",
+      "description": "El roundtrip contra Enterprise Architect no se puede verificar en este entorno porque el servidor de EA no responde; la caracterización del dialecto se hace sobre el fixture real y no sobre un intercambio en vivo.",
+      "blocks": ["Q3", "RF-09", "RNF-05"],
+      "owner": "Equipo, con Enterprise Architect abierto en la máquina de la demostración"
+    },
+    {
+      "id": "GAP-08",
+      "description": "El mapeo lógico documentado no enumera dirección ni tipo de retorno del parámetro, mientras que el fixture de EA representa el retorno como un ownedParameter con direction='return'. Hay que confirmarlo en el esquema físico antes de fijar el contrato de operaciones.",
+      "blocks": ["BL-FEA-02", "BL-FEA-03", "contrato de operaciones", "generación de firmas de método"],
+      "owner": "Equipo, en la revisión del mapeo de datos"
+    }
+  ]
+}
