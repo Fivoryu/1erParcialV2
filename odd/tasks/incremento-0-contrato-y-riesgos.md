@@ -218,6 +218,26 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 - **Entregable:** `docs/puds/verificacion/02-viabilidad-ia-local.md` con CPU, RAM, disco y GPU medidos; runtime
   local candidato; latencia y memoria de un modelo pequeño; viabilidad de ASR local y de lectura de imágenes.
 - **Evidencia:** números medidos y comandos usados, o un veredicto explícito de "no evaluable" con su motivo.
+- **Verificado:** el contrato fija el modelo y **acertó**: `Qwen3.5 0.8B` (Q4_0, 526 MB, Apache-2.0) ya estaba
+  descargado en la máquina vía Docker Model Runner 1.2.6 (motor llama.cpp). Modelo de latencia medido:
+  **latencia ≈ 2,2 s + tokens_salida / 32**, con un piso fijo de 2,18 s por petición y ~31,5 tok/s de decode.
+  Respuesta simple: **3,04 s de mediana**.
+- **Hallazgos que cambian decisiones:**
+  1. **La palanca principal es el razonamiento.** Encendido: 5,87 s y 120 tokens; apagado con
+     `chat_template_kwargs.enable_thinking=false`: **3,04 s y 28 tokens**. `/no_think` en el prompt **no sirve**
+     (medido: sigue pensando). Con razonamiento encendido el modelo llegó a entrar en un bucle y **devolver
+     `content` vacío**;
+  2. `response_format: json_object` **no garantiza JSON parseable**: el modelo igual envuelve en ` ```json `.
+     La limpieza y validación propias son obligatorias, no una precaución;
+  3. **la API de Docker Model Runner no expone `json_schema` ni `grammar`**, aunque llama.cpp sí sabe
+     restringir por esquema. Sin esa restricción, cada reintento cuesta otros ~2,2 s. Si el producto la
+     necesita, hay que hablar con llama.cpp directo: queda registrado, no decidido;
+  4. con el modelo cargado quedan **0,17 GB de RAM libre**: hay que cerrar aplicaciones antes de demostrar;
+  5. operación: `docker model configure --context-size -1` (el "reset" que documenta la doc) **rompe el runner**
+     (`GGML_ASSERT(n_outputs >= 1)`). Se usa un valor explícito.
+- **No medido, y declarado:** ASR local y visión (consumen memoria sobre una máquina que ya quedó al límite),
+  runtime móvil, tiempo real de carga del modelo y el comportamiento con la máquina descargada. Nada de eso se
+  declara viable.
 - **Riesgo:** si no es viable, RF-14 y RF-15 deben replantearse **antes** de construir el móvil.
 
 ### T6 — Acta de cierre del Incremento 0
@@ -249,5 +269,5 @@ frentes, y su §13 lista diez decisiones sin cerrar. Todas comparten la misma fo
 | T2 — Línea base UML 2.5 | **hecho** | `03-linea-base-uml.{md,v1.json,schema.json}`; `tools/contract-tests/` 15/15; mutación verificada |
 | T3 — Dialecto XMI de EA | **hecho** | `tools/xmi-inventory/` (suite en verde, 0 tags sin clasificar); `04-dialecto-xmi-ea.md`; 23 evidenciados / 9 sin evidencia; 3 afirmaciones falsificadas y corregidas |
 | T4 — Spike UML→Spring Boot | **hecho** | `spikes/uml2spring/`; 13/13 pasos; huella estable; 3 defectos de desarrollo + 3 falsificaciones de la verificación, todas corregidas |
-| T5 — Viabilidad de IA local | pendiente | — |
+| T5 — Viabilidad de IA local | **hecho** | `docs/puds/verificacion/02-viabilidad-ia-local.md`; `tools/local-ai-bench/`; latencia ≈ 2,2 s + tok/32; ASR y visión declarados como no medidos |
 | T6 — Acta de cierre | pendiente | — |
