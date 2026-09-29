@@ -3,7 +3,7 @@
 **Fecha:** 2026-09-29
 **Rama:** `feat/incremento-1-modelo-y-editor`, apilada sobre `feat/incremento-0-contrato-y-riesgos`
 **Alcance cerrado:** T1 a T10 del plan [`odd/tasks/incremento-1-modelo-y-editor.md`](../../../odd/tasks/incremento-1-modelo-y-editor.md),
-en **16 commits**.
+en **19 commits**.
 **Producto entregado:** backend Spring Boot y editor web con lienzo de clases UML.
 
 ## 1. El corte visible, con veredicto
@@ -14,7 +14,7 @@ en **16 commits**.
 | Pieza | Veredicto | Evidencia |
 | --- | --- | --- |
 | Crear proyecto | **Cerrado** | `POST /projects` crea proyecto, modelo, vista por defecto y membresía `OWNER`; probado en `T4bProjectAndViewHandlersTest` y en el arnés |
-| Modelo canónico | **Cerrado** | 23 constructos de UML-BL-1; 19 tablas **byte-idénticas** a `02-esquema-fisico.sql`, verificado con script |
+| Modelo canónico | **Cerrado, con una verificación pendiente** | 19 tablas **byte-idénticas** a `02-esquema-fisico.sql`, verificado con script. La línea base declara 23 constructos soportados y 9 no soportados; **6 de esos 9 se rechazan nombrando el constructo y el GAP** y los otros 3 se explican abajo |
 | Capa de comandos | **Cerrado** | Los **20 tipos** del catálogo tienen handler, sobre el sobre de operación con idempotencia, `baseRevision` y precondiciones |
 | Persistencia | **Cerrado** | Flyway dueño del esquema, Hibernate solo valida (`ddl-auto: validate`) |
 | API | **Cerrado** | 5 recursos; un rechazo devuelve HTTP 200 con `status: REJECTED` (D14) |
@@ -29,7 +29,30 @@ en **16 commits**.
 | El corte funciona de punta a punta y se repite | **Sí** | `python tools/acceptance/acceptance.py` = **34 pasos OK**, 0 fallos, salida 0 |
 | El esquema lo aplica Flyway | **Sí** | `V1`/`V2`/`V3` aplicadas; `ddl-auto: validate` intacto |
 | Un comando inválido se rechaza con motivo | **Sí** | Nombra el constructo y el GAP: `BL-CLS-04`/`GAP-02`, `BL-VIS-03`/`BL-VIS-04`/`GAP-06`, `BL-REL-07`/`GAP-05`, `BL-FEA-05`/`BL-FEA-06` |
-| Un constructo fuera de la línea base se rechaza explícitamente | **Sí** | `T3aCommandHandlersTest` y `T4aRelationshipAndGeometryHandlersTest` |
+| Un constructo fuera de la línea base se rechaza explícitamente | **Sí, con un matiz que se declara** | 6 de los 9 no soportados nombran el constructo y el GAP (tabla de §2.1 del acta). Los otros 3 se detallan en el punto siguiente |
+
+### 2.1 Los tres constructos que no se rechazan «nombrando el constructo»
+
+La primera redacción de esta acta decía que los **9** constructos no soportados se rechazaban nombrando el
+constructo y el GAP. **Era una sobredeclaración mía**, y se corrige acá en vez de dejarla pasar:
+
+| Constructo | Cómo se rechaza realmente |
+| --- | --- |
+| `BL-CLS-05` (literal de enumeración) | **De forma transitiva.** No hay comando que cree literales, y la enumeración misma se rechaza nombrando `BL-CLS-04` y `GAP-02`, así que no hay dónde colgar un literal |
+| `BL-CMP-01` (nota UML) | **Como tipo de comando desconocido.** Nunca se definió un tipo `note.*`, así que la petición vuelve `UNKNOWN_OPERATION` **nombrando el tipo**. Es un rechazo explícito y no un silencio, pero **no** nombra el constructo de la línea base |
+| `BL-CMP-03` (estereotipo) | Igual que la nota: `UNKNOWN_OPERATION` nombrando el tipo |
+
+**Por qué se deja así.** Inventar manejadores cuyo único trabajo sea rechazarse a sí mismos sería ruido. Lo que
+importa del criterio —que nada se ignore en silencio— se cumple: las tres rutas devuelven un rechazo con motivo.
+Lo que **no** se cumple es la letra de «nombrando el constructo», y la diferencia se escribe en vez de
+redondearse para arriba.
+
+### 2.2 Verificación pendiente de cobertura
+
+El plan declara los 23 constructos soportados de UML-BL-1 como alcance, y este incremento implementó **20 tipos de
+comando** que los cubren. Lo verificado es que los rechazos nombran el constructo correcto. Lo **no** verificado
+es el mapeo constructo por constructo de los 23: que cada uno tenga comando, persistencia y camino en el lienzo.
+Es una comprobación acotada y queda como tarea, no como afirmación.
 | Las pruebas del backend pasan con `mvn -o` | **Sí** | **82 pruebas**, 0 fallos, sin red |
 | La disposición sobrevive a la recarga y un arrastre emite un comando | **Sí** | Test vivo: `geometryCommands` longitud **1**; tras recargar coinciden revisión, geometría, posiciones, waypoints y miembros |
 | La pantalla no muestra ningún identificador técnico | **Sí** | El markup no matchea patrón de UUID ni contiene `classifier_id`, `EXACTLY_ONE`, `ZERO_OR_MANY`, `NOT_NAVIGABLE` ni `ABSTRACT_CLASS` |
@@ -69,6 +92,8 @@ Heredado del Incremento 0 (GAP-01 a GAP-10) más lo nuevo:
 | GAP-09 | Divergencia de nombres entre documento lógico y físico | **Resuelto por decisión D5** (manda el físico), el documento lógico queda pendiente de anotar |
 | GAP-10 | Notas de modelo: canal propietario | Incremento 5 |
 | **V2, V3** | Defectos visuales de las aristas (§3) | **Primera tarea del próximo incremento** |
+| **C1** | Mapeo constructo por constructo de los 23 soportados de UML-BL-1 (que cada uno tenga comando, persistencia y camino en el lienzo) | Próximo incremento |
+| **C2** | Notas y estereotipos sólo se rechazan como tipo desconocido; decidir si eso alcanza o si el rechazo debe nombrar `BL-CMP-01` y `BL-CMP-03` | Próximo incremento, junto con C1 |
 | — | `type_reference` es el único tipo de fila que no queda en `tombstone` | Incremento 3, cuando entre `undo` |
 | — | Sin autenticación real: usuario semilla determinista | Incremento 3 |
 | — | `undo`/`redo` fuera de alcance | Incremento 3 |
@@ -110,4 +135,4 @@ conocidos y localizados**. Esto es lo que no se puede afirmar:
 | Arnés de aceptación | `python tools/acceptance/acceptance.py` | **34 pasos OK**, 0 fallos, teardown verificado |
 | Editor | `cd web && npm test` | **24 pruebas**, 0 saltadas con backend vivo |
 | Bundle de producción | `cd web && npm run build` | 491,71 kB JS (155,16 kB gzip), 31,38 kB CSS |
-| Alineación con la línea base | — | 23 de 23 constructos soportados implementados; los 9 no soportados se rechazan **nombrando el constructo y el GAP** |
+| Alineación con la línea base | — | Los 6 constructos fuera de base con comando propio se rechazan **nombrando el constructo y el GAP**; los otros 3 se rechazan con motivo por otra vía (§2.1). El mapeo de los 23 soportados queda **pendiente** (§2.2) |

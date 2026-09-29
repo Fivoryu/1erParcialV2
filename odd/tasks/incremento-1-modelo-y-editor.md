@@ -393,6 +393,10 @@ El Incremento 0 se fue de mano. Acá rige lo contrario:
 - [x] El corte de §1 funciona de punta a punta y se puede repetir desde cero.
 - [x] El esquema lo aplica Flyway, no JPA (`ddl-auto: validate` lo prueba).
 - [x] Un comando inválido se rechaza con motivo, nombrando el constructo o el GAP que lo bloquea.
+      **Matiz verificado:** 6 de los 9 constructos fuera de base se rechazan así; los otros 3 (literal de
+      enumeración, nota y estereotipo) se rechazan con motivo por otra vía, y la diferencia está escrita en el
+      [acta de cierre](../../docs/puds/cierre/03-cierre-incremento-1.md) §2.1 en vez de redondearse para arriba.
+      Queda además pendiente el mapeo constructo por constructo de los 23 soportados (§2.2 del acta).
 - [x] Un constructo fuera de la línea base (enumeración, nota, estereotipo, multiplicidad con cotas,
       visibilidad protegida) se rechaza explícitamente, no se ignora en silencio.
 - [x] Las pruebas del backend pasan con `mvn -o`.
