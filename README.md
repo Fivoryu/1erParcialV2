@@ -7,30 +7,77 @@ backend Spring Boot conectado a PostgreSQL.
 
 ## Estado actual
 
-El proyecto se está construyendo **desde cero**. Hoy el repositorio contiene documentación y planificación;
-todavía **no contiene código de producto**.
+El repositorio **ya contiene código de producto**. El Incremento 1 está implementado y verificado: se puede
+crear un proyecto, dibujar un diagrama de clases en un lienzo, editarlo y recargar sin perder ni el modelo ni
+su disposición visual.
 
 | Fase | Estado |
 | --- | --- |
 | Documentación de requisitos, análisis y diseño | Heredada y disponible en `docs/` |
-| Incremento 0 — contrato y pruebas de riesgo | En curso (`odd/tasks/incremento-0-contrato-y-riesgos.md`) |
-| Implementación por ciclos C1 → C2 → C3 | Pendiente |
+| Incremento 0 — contrato y pruebas de riesgo | **Cerrado** (`odd/tasks/incremento-0-contrato-y-riesgos.md`) |
+| Incremento 1 — modelo y editor visual | **Implementado** (`odd/tasks/incremento-1-modelo-y-editor.md`), con una deuda declarada: falta la captura visual |
+| Incrementos 2 y siguientes (generación, colaboración, XMI, IA, móvil) | Pendientes |
 
-> **Importante:** `SOFTWARE.md` describe el **intento anterior** del mismo producto: sus números medidos, su
-> inventario de API y sus límites conocidos. Se conserva como evidencia y como referencia de requisitos, pero
-> **no describe el código de este repositorio**, porque ese código todavía no existe. Cualquier afirmación de
-> `SOFTWARE.md` debe volver a medirse sobre la implementación nueva antes de darla por buena.
+### Qué está verificado hoy
+
+| Superficie | Evidencia |
+| --- | --- |
+| Backend | `mvn -o -B verify` = **82 pruebas**, 0 fallos, sin red |
+| Arnés de aceptación | `python tools/acceptance/acceptance.py` = **34 pasos OK**, 0 fallos, con teardown verificado |
+| Editor web | `npm run build` y `npm test` = **24 pruebas**, 0 saltadas, incluidos los dos tests vivos contra el backend real |
+| Corte visible | Crear proyecto, dos clases, atributo, operación, relación, mover, recargar y encontrar lo mismo **con la misma disposición** |
+| Regla de presentación | El HTML renderizado no contiene ningún UUID ni identificador técnico; probado sobre datos vivos |
+
+**Lo que todavía no se puede afirmar:** ninguna persona miró el diagrama renderizado. La regla de no-IDs y la
+notación UML están probadas sobre el markup, pero si el resultado *se ve* minimalista es un juicio humano y no
+lo sustituye una aserción. La captura visual es la deuda abierta del incremento.
+
+> **Importante:** `SOFTWARE.md` describe el **intento anterior** del mismo producto. Se conserva como evidencia y
+> como referencia de requisitos, pero **no describe el código de este repositorio**. Cualquier afirmación de
+> `SOFTWARE.md` debe volver a medirse sobre esta implementación antes de darla por buena.
+
+## Cómo ejecutarlo
+
+### El recorrido completo, sin interfaz
+
+```bash
+cd backend && mvn -o -B package     # construye el jar, sin red
+python tools/acceptance/acceptance.py
+```
+
+El arnés levanta PostgreSQL y el backend, ejecuta el corte visible por HTTP, compara el modelo releído campo a
+campo y termina verificando que no quedó ni un contenedor ni un proceso vivo. Sale con código distinto de cero
+en el primer fallo.
+
+### Desarrollo del editor
+
+```bash
+python tools/acceptance/acceptance.py --keep-running   # imprime la URL base del backend
+cd web && npm install && npm run dev                   # http://localhost:5173
+```
+
+Cuando termines, el propio arnés imprime el comando `--stop` con el identificador de esa corrida. Usalo: dejarlo
+vivo consume contenedores y memoria de forma silenciosa.
+
+### Restricciones de construcción sin red
+
+El backend se construye **sin red** y eso es una restricción, no una comodidad: Spring Boot está fijado en
+**3.4.5** y no 3.5.0 porque 3.4.5 resuelve Flyway 10.20.1, Hibernate 6.6.13 y el driver 42.7.5 desde la caché
+local, mientras que 3.5.0 pide una versión de Flyway que no está. Flyway corre por autoconfiguración de Spring
+y no por plugin, porque `flyway-maven-plugin` no está en la caché. Las pruebas de persistencia usan Testcontainers
+contra una imagen de PostgreSQL presente localmente. H2 está descartado: el esquema usa `CREATE TYPE … AS ENUM`
+y `gen_random_uuid()`.
 
 ## Estructura del repositorio
 
 Este es un **monorepo**. Todo el código fuente se versiona dentro de este mismo repositorio.
 
 ```text
-backend/     Servicio Spring Boot (Java 21) — modelo canónico, comandos, persistencia, XMI, generación
-web/         Editor web (React + TypeScript + Vite)
-mobile/      Cliente móvil (Flutter + Dart)
-tools/       Arnés de verificación y evidencia (inventarios, E2E, roundtrips)
+backend/     Servicio Spring Boot (Java 21) — modelo canónico, comandos, persistencia, API REST
+web/         Editor web (React + TypeScript + Vite) con lienzo UML sobre React Flow
+mobile/      Cliente móvil (Flutter + Dart) — Incremento posterior
 spikes/      Pruebas de riesgo desechables del Incremento 0; no es código de producto
+tools/       Arnés de verificación y evidencia (pruebas de contrato, inventario XMI, aceptación, bench de IA)
 docs/        Requisitos, análisis, diseño, contratos, fixtures, diagramas y capturas
 odd/         Planificación de tareas del repositorio
 ```
@@ -73,9 +120,9 @@ leen como síntoma, nunca como contrato.
 ## Planificación
 
 El trabajo del repositorio vive en `odd/tasks/`. El incremento vigente es
-[Incremento 0 — contrato y pruebas de riesgo](odd/tasks/incremento-0-contrato-y-riesgos.md), que cierra los
-cuatro riesgos tempranos antes de comprometer arquitectura: línea base UML, dialecto XMI de Enterprise
-Architect, transformación UML→Spring Boot y viabilidad de IA local.
+[Incremento 1 — modelo y editor visual](odd/tasks/incremento-1-modelo-y-editor.md), ya implementado, que reemplazó
+la etapa de «interfaz mínima» del plan original por un lienzo tipo draw.io y dejó registradas catorce decisiones
+de diseño con la alternativa que cada una descarta.
 
 ## Entorno medido
 

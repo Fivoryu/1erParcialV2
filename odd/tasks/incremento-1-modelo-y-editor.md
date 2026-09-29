@@ -390,15 +390,22 @@ El Incremento 0 se fue de mano. Acá rige lo contrario:
 
 ## 8. Definición de terminado
 
-- [ ] El corte de §1 funciona de punta a punta y se puede repetir desde cero.
-- [ ] El esquema lo aplica Flyway, no JPA (`ddl-auto: validate` lo prueba).
-- [ ] Un comando inválido se rechaza con motivo, nombrando el constructo o el GAP que lo bloquea.
-- [ ] Un constructo fuera de la línea base (enumeración, nota, estereotipo, multiplicidad con cotas,
+- [x] El corte de §1 funciona de punta a punta y se puede repetir desde cero.
+- [x] El esquema lo aplica Flyway, no JPA (`ddl-auto: validate` lo prueba).
+- [x] Un comando inválido se rechaza con motivo, nombrando el constructo o el GAP que lo bloquea.
+- [x] Un constructo fuera de la línea base (enumeración, nota, estereotipo, multiplicidad con cotas,
       visibilidad protegida) se rechaza explícitamente, no se ignora en silencio.
-- [ ] Las pruebas del backend pasan con `mvn -o`.
-- [ ] La disposición visual sobrevive a la recarga, y un arrastre de N movimientos emite un comando.
-- [ ] **La pantalla no muestra ningún identificador técnico.**
-- [ ] El `README.md` dice la verdad sobre el estado del repositorio.
+- [x] Las pruebas del backend pasan con `mvn -o`.
+- [x] La disposición visual sobrevive a la recarga, y un arrastre de N movimientos emite un comando.
+- [x] **La pantalla no muestra ningún identificador técnico.**
+- [x] El `README.md` dice la verdad sobre el estado del repositorio.
+
+**Lo único que queda debiendo este incremento, sin adorno:** **ningún humano miró el diagrama**. La regla de
+no-IDs está probada sobre el markup —el test afirma que el HTML renderizado no matchea ningún patrón de UUID ni
+contiene identificadores crudos, incluso con datos vivos del backend— y la notación UML está fijada por prueba.
+Pero si el resultado *se ve* minimalista es un juicio de la persona para la que existe el incremento, y no lo
+puede sustituir una aserción. La captura visual es lo primero que hay que cerrar antes de dar el incremento por
+presentable.
 
 ## 9. Registro de progreso
 
@@ -410,10 +417,10 @@ El Incremento 0 se fue de mano. Acá rige lo contrario:
 | T4 — Comandos de proyecto, relación y geometría | **T4b hecho**, T4a pendiente | Commit `398a595` (T4b); `mvn -o -B verify` = 37 pruebas, 0 fallos, 0 errores, 0 saltadas; la relajación del pipeline es una propiedad declarada con default `false` que solo `project.create` sobreescribe, y el servicio exige proyecto y modelo ambos presentes o ambos ausentes; el replay de `project.create` no cambia ningún conteo |
 | T5 — API REST y errores | **hecho** | Commit `6bc04aa`; `mvn -o -B verify` = 82 pruebas, 0 fallos, 0 errores, 0 saltadas; D14 probado: un comando rechazado devuelve **HTTP 200** con `status: REJECTED` y el `ErrorCode` en `diagnostics`; el handler de 500 devuelve un mensaje fijo sin texto de excepción ni rastro SQL; CORS limitado al origen de Vite |
 | T6 — Arnés de aceptación por HTTP | **hecho** | `python tools/acceptance/acceptance.py` ejecutado y verificado por el mantenedor: **34 pasos OK, 0 fallos, salida 0**; el corte de §1 completo sin interfaz; 7 elementos (2 clasificadores, 1 atributo, 1 operación, 1 relación, 2 extremos) y 4 geometrías (2 rectángulos, 2 puntos de trazado) idénticos antes y después de la recarga; comparación campo a campo "All expected fields match"; hash del modelo releído `b4180200d2b973ce78c571cbed893204edf8b327d9c442e6a18bb70d3d8bed1c`; teardown verificado: proceso backend muerto, contenedor borrado por etiqueta, conteo de contenedores de vuelta en 35 |
-| T7 — Cimiento del editor web | pendiente | — |
-| T8 — Lienzo con edición directa | pendiente | — |
-| T9 — Conectores y persistencia del layout | pendiente | — |
-| T10 — Cierre del incremento | pendiente | — |
+| T7 — Cimiento del editor web | **hecho** | Commit `be9de52`; `npm run build` verde (270.93 kB JS, 8.83 kB CSS) y `npm test` = 4 pasan, 1 saltada (la viva, opcional); licencias leídas del árbol **instalado**: todo MIT salvo `typescript` en Apache-2.0 |
+| T8 — Lienzo con edición directa | **hecho** | Commit `12fac29`; 10 pruebas verdes; la regla de no-IDs probada sobre el markup con UUIDs reales en el fixture (no matchea patrón de UUID, no aparecen `classifier_id`, `EXACTLY_ONE`, `ZERO_OR_MANY`, `NOT_NAVIGABLE` ni `ABSTRACT_CLASS`); multiplicidades como `1`, `0..1`, `1..*`, `0..*`; **D4 cerrada** con `@xyflow/react` 12.12.0, MIT, ~5 MB instalado y 205.90 kB de bundle, atribución visible por decisión |
+| T9 — Conectores y persistencia del layout | **hecho** | Commit `d12a9b9`; 24 pruebas, **0 saltadas**, incluidos los dos tests vivos contra el backend real; el corte completo con dos clases, atributo, operación, relación, movimiento y recarga devuelve **la misma revisión, la misma geometría, las mismas posiciones, los mismos waypoints y los mismos miembros**; `geometryCommands` tiene longitud **1** tras un arrastre, que es el coalescido probado contra un backend real |
+| T10 — Cierre del incremento | **hecho con una deuda declarada** | README raíz reescrito con el estado real; §8 marcada; **deuda: sin captura visual**. Ningún humano miró el diagrama, y si se ve minimalista es un juicio humano, no una aserción |
 
 ## 10. Trazabilidad
 
