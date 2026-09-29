@@ -45,7 +45,13 @@ public class OperationParameter {
 
     public static OperationParameter create(UmlOperation operation, TypeReference typeReference, String name,
             String direction, int ordinal) {
+        return create(null, operation, typeReference, name, direction, ordinal);
+    }
+
+    public static OperationParameter create(UUID id, UmlOperation operation, TypeReference typeReference, String name,
+            String direction, int ordinal) {
         OperationParameter parameter = new OperationParameter();
+        parameter.id = id;
         parameter.operation = operation;
         parameter.typeReference = typeReference;
         parameter.name = name;

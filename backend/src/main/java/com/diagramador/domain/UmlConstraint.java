@@ -59,7 +59,13 @@ public class UmlConstraint {
 
     public static UmlConstraint create(UmlModel model, TargetType ownerType, UUID ownerId, String expression,
             SeverityKind severity) {
+        return create(null, model, ownerType, ownerId, expression, severity);
+    }
+
+    public static UmlConstraint create(UUID id, UmlModel model, TargetType ownerType, UUID ownerId, String expression,
+            SeverityKind severity) {
         UmlConstraint constraint = new UmlConstraint();
+        constraint.id = id;
         constraint.model = model;
         constraint.ownerType = ownerType;
         constraint.ownerId = ownerId;

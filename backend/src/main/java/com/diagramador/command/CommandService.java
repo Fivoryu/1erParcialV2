@@ -69,6 +69,8 @@ public class CommandService {
             return transactionTemplate.execute(status -> executeInTransaction(envelope));
         } catch (RevisionConflictException exception) {
             return rejected(envelope, new Diagnostic(ErrorCode.REVISION_MISMATCH, exception.getMessage()));
+        } catch (CommandValidationException exception) {
+            return rejected(envelope, new Diagnostic(exception.code(), exception.getMessage()));
         } catch (RuntimeException exception) {
             return rejected(envelope, new Diagnostic(ErrorCode.MODEL_INVALID,
                     "Command could not be applied: " + exception.getMessage()));

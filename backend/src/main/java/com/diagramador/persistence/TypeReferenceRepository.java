@@ -8,4 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface TypeReferenceRepository extends JpaRepository<TypeReference, UUID> {
 
     List<TypeReference> findByModelId(UUID modelId);
+
+    java.util.Optional<TypeReference> findFirstByModelIdAndPrimitiveName(UUID modelId, String primitiveName);
+
+    java.util.Optional<TypeReference> findFirstByModelIdAndClassifierId(UUID modelId, UUID classifierId);
 }

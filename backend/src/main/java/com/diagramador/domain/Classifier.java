@@ -56,12 +56,21 @@ public class Classifier {
 
     public static Classifier create(UmlModel model, Classifier namespace, ClassifierKind kind, String name,
             boolean isAbstract) {
+        return create(null, model, namespace, kind, name, isAbstract);
+    }
+
+    public static Classifier create(UUID id, UmlModel model, Classifier namespace, ClassifierKind kind, String name,
+            boolean isAbstract) {
+        if (isAbstract && kind != ClassifierKind.CLASS && kind != ClassifierKind.ABSTRACT_CLASS) {
+            throw new IllegalArgumentException("Only a class can be abstract");
+        }
         Classifier classifier = new Classifier();
+        classifier.id = id;
         classifier.model = model;
         classifier.namespace = namespace;
-        classifier.kind = kind;
+        classifier.kind = isAbstract ? ClassifierKind.ABSTRACT_CLASS : kind;
         classifier.name = name;
-        classifier.isAbstract = isAbstract;
+        classifier.isAbstract = classifier.kind == ClassifierKind.ABSTRACT_CLASS;
         classifier.createdAt = OffsetDateTime.now();
         return classifier;
     }
@@ -88,6 +97,7 @@ public class Classifier {
 
     public void setKind(ClassifierKind kind) {
         this.kind = kind;
+        this.isAbstract = kind == ClassifierKind.ABSTRACT_CLASS;
     }
 
     public String getName() {
@@ -103,7 +113,11 @@ public class Classifier {
     }
 
     public void setAbstract(boolean isAbstract) {
+        if (kind != ClassifierKind.CLASS && kind != ClassifierKind.ABSTRACT_CLASS) {
+            throw new IllegalArgumentException("setAbstract is only valid for classes");
+        }
         this.isAbstract = isAbstract;
+        this.kind = isAbstract ? ClassifierKind.ABSTRACT_CLASS : ClassifierKind.CLASS;
     }
 
     public OffsetDateTime getCreatedAt() {

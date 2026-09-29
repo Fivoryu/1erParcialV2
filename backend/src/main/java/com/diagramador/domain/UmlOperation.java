@@ -55,7 +55,13 @@ public class UmlOperation {
 
     public static UmlOperation create(Classifier classifier, String name, TypeReference returnTypeReference,
             String visibility, boolean isAbstract, boolean isStatic, int ordinal) {
+        return create(null, classifier, name, returnTypeReference, visibility, isAbstract, isStatic, ordinal);
+    }
+
+    public static UmlOperation create(UUID id, Classifier classifier, String name, TypeReference returnTypeReference,
+            String visibility, boolean isAbstract, boolean isStatic, int ordinal) {
         UmlOperation operation = new UmlOperation();
+        operation.id = id;
         operation.classifier = classifier;
         operation.name = name;
         operation.returnTypeReference = returnTypeReference;

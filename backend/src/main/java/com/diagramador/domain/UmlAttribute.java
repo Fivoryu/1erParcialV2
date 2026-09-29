@@ -64,7 +64,13 @@ public class UmlAttribute {
 
     public static UmlAttribute create(Classifier classifier, TypeReference typeReference, String name, String kind,
             String visibility, MultiplicityKind multiplicity, String defaultValue, int ordinal) {
+        return create(null, classifier, typeReference, name, kind, visibility, multiplicity, defaultValue, ordinal);
+    }
+
+    public static UmlAttribute create(UUID id, Classifier classifier, TypeReference typeReference, String name,
+            String kind, String visibility, MultiplicityKind multiplicity, String defaultValue, int ordinal) {
         UmlAttribute attribute = new UmlAttribute();
+        attribute.id = id;
         attribute.classifier = classifier;
         attribute.typeReference = typeReference;
         attribute.name = name;
