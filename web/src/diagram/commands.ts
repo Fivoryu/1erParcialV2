@@ -7,9 +7,26 @@ import type {
   ModelResource,
   OperationEnvelope,
   OperationResource,
+  RelationshipResource,
 } from '../api/types';
 
 export type ClassifierKind = 'CLASS' | 'ABSTRACT_CLASS' | 'INTERFACE';
+export type RelationshipKind =
+  | 'ASSOCIATION'
+  | 'AGGREGATION'
+  | 'COMPOSITION'
+  | 'GENERALIZATION'
+  | 'INTERFACE_REALIZATION'
+  | 'DEPENDENCY';
+
+export const RELATIONSHIP_KINDS: readonly RelationshipKind[] = [
+  'ASSOCIATION',
+  'AGGREGATION',
+  'COMPOSITION',
+  'GENERALIZATION',
+  'INTERFACE_REALIZATION',
+  'DEPENDENCY',
+];
 
 export interface ModelCommandRequest {
   type: string;
@@ -46,6 +63,89 @@ export function buildClassifierCreateEnvelope(
       namespaceId: null,
     },
   }, uuidFactory);
+}
+
+export function buildRelationshipCreateRequest(
+  sourceClassifierId: string,
+  targetClassifierId: string,
+  kind: RelationshipKind,
+): ModelCommandRequest {
+  const end = (classifierId: string) => ({
+    classifierId,
+    role: null,
+    multiplicity: 'EXACTLY_ONE',
+    navigability: 'UNSPECIFIED',
+  });
+  return {
+    type: 'relationship.create',
+    targets: [
+      { scope: 'classifier', id: sourceClassifierId },
+      { scope: 'classifier', id: targetClassifierId },
+    ],
+    payload: {
+      kind,
+      name: null,
+      source: end(sourceClassifierId),
+      target: end(targetClassifierId),
+      waypoints: [],
+    },
+  };
+}
+
+export interface RelationshipUpdateValues {
+  name: string | null;
+  kind: RelationshipKind;
+  source: { role: string | null; multiplicity: string; navigability: string };
+  target: { role: string | null; multiplicity: string; navigability: string };
+}
+
+export function buildRelationshipUpdateRequest(
+  relationship: RelationshipResource,
+  values: RelationshipUpdateValues,
+): ModelCommandRequest {
+  return {
+    type: 'relationship.update',
+    targets: [{ scope: 'relationship', id: relationship.id }],
+    payload: {
+      name: values.name,
+      kind: values.kind,
+      source: values.source,
+      target: values.target,
+    },
+  };
+}
+
+export function buildRelationshipDeleteRequest(relationship: RelationshipResource): ModelCommandRequest {
+  return {
+    type: 'relationship.delete',
+    targets: [{ scope: 'relationship', id: relationship.id }],
+    preconditions: [{ kind: 'cascade_count', expect: relationship.ends.length + 1, scope: null }],
+    payload: {},
+  };
+}
+
+export interface ClassifierGeometryUpdate {
+  targetType: 'CLASSIFIER';
+  viewId: string;
+  targetId: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  zOrder: number;
+}
+
+export interface RelationshipWaypointsUpdate {
+  targetType: 'RELATIONSHIP';
+  viewId: string;
+  targetId: string;
+  waypoints: Array<{ x: number; y: number }>;
+}
+
+export type GeometryUpdate = ClassifierGeometryUpdate | RelationshipWaypointsUpdate;
+
+export function buildGeometrySetRequest(payload: GeometryUpdate): ModelCommandRequest {
+  return { type: 'geometry.set', payload: { ...payload } };
 }
 
 export function buildModelCommandEnvelope(
@@ -189,6 +289,41 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
   const classifierId = targetId(envelope, 'classifier');
 
   switch (envelope.type) {
+    case 'relationship.update': {
+      const relationshipId = targetId(envelope, 'relationship');
+      if (!relationshipId) {
+        return model;
+      }
+      const kind = payloadString(envelope, 'kind');
+      const name = Object.hasOwn(envelope.payload, 'name') ? payloadString(envelope, 'name') : undefined;
+      const source = envelope.payload.source as Record<string, unknown> | undefined;
+      const target = envelope.payload.target as Record<string, unknown> | undefined;
+      return {
+        ...model,
+        relationships: model.relationships.map((relationship) => {
+          if (relationship.id !== relationshipId) {
+            return relationship;
+          }
+          return {
+            ...relationship,
+            ...(kind ? { kind } : {}),
+            ...(name !== undefined ? { name } : {}),
+            ends: relationship.ends.map((end) => {
+              const update = end.ordinal === 1 ? source : end.ordinal === 2 ? target : undefined;
+              if (!update) {
+                return end;
+              }
+              return {
+                ...end,
+                ...(typeof update.role === 'string' || update.role === null ? { role: update.role } : {}),
+                ...(typeof update.multiplicity === 'string' ? { multiplicity: update.multiplicity } : {}),
+                ...(typeof update.navigability === 'string' ? { navigability: update.navigability } : {}),
+              };
+            }),
+          };
+        }),
+      };
+    }
     case 'classifier.create': {
       const id = payloadString(envelope, 'id');
       const name = payloadString(envelope, 'name');

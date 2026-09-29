@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     test: {
-      include: ['src/**/*.test.ts'],
+      include: ['src/**/*.test.{ts,tsx}'],
       clearMocks: true,
     },
   };

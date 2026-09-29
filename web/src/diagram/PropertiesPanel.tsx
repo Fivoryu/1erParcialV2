@@ -5,8 +5,14 @@ import type {
   ModelResource,
   OperationEnvelope,
   OperationResource,
+  RelationshipResource,
 } from '../api/types';
-import type { ModelCommandRequest } from './commands';
+import {
+  buildRelationshipUpdateRequest,
+  RELATIONSHIP_KINDS,
+  type ModelCommandRequest,
+  type RelationshipKind,
+} from './commands';
 import type { CanvasSelection } from './selection';
 
 interface PropertiesPanelProps {
@@ -22,6 +28,21 @@ const MULTIPLICITIES = [
   { value: 'ZERO_OR_ONE', label: '0..1' },
   { value: 'ONE_OR_MANY', label: '1..*' },
   { value: 'ZERO_OR_MANY', label: '0..*' },
+] as const;
+
+const RELATIONSHIP_KIND_LABELS: Record<RelationshipKind, string> = {
+  ASSOCIATION: 'Association',
+  AGGREGATION: 'Aggregation',
+  COMPOSITION: 'Composition',
+  GENERALIZATION: 'Generalization',
+  INTERFACE_REALIZATION: 'Interface realization',
+  DEPENDENCY: 'Dependency',
+};
+
+const NAVIGABILITY_OPTIONS = [
+  { value: 'UNSPECIFIED', label: 'Unspecified' },
+  { value: 'NAVIGABLE', label: 'Navigable' },
+  { value: 'NOT_NAVIGABLE', label: 'Not navigable' },
 ] as const;
 
 function typeReference(model: ModelResource, name: string): Record<string, string> {
@@ -175,6 +196,134 @@ function ClassifierProperties({
         </form>
       </section>
     </>
+  );
+}
+
+function RelationshipProperties({
+  relationship,
+  model,
+  onCommand,
+  onDelete,
+}: {
+  relationship: RelationshipResource;
+  model: ModelResource;
+  onCommand: PropertiesPanelProps['onCommand'];
+  onDelete: () => void;
+}) {
+  const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
+  const sourceEnd = ends[0];
+  const targetEnd = ends[1];
+  const [name, setName] = useState(relationship.name ?? '');
+  const [kind, setKind] = useState<RelationshipKind>(relationship.kind as RelationshipKind);
+  const [sourceRole, setSourceRole] = useState(sourceEnd?.role ?? '');
+  const [sourceMultiplicity, setSourceMultiplicity] = useState(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
+  const [sourceNavigability, setSourceNavigability] = useState(sourceEnd?.navigability ?? 'UNSPECIFIED');
+  const [targetRole, setTargetRole] = useState(targetEnd?.role ?? '');
+  const [targetMultiplicity, setTargetMultiplicity] = useState(targetEnd?.multiplicity ?? 'EXACTLY_ONE');
+  const [targetNavigability, setTargetNavigability] = useState(targetEnd?.navigability ?? 'UNSPECIFIED');
+  const sourceClassifier = model.classifiers.find((classifier) => classifier.id === sourceEnd?.classifierId);
+  const targetClassifier = model.classifiers.find((classifier) => classifier.id === targetEnd?.classifierId);
+
+  useEffect(() => {
+    setName(relationship.name ?? '');
+    setKind(relationship.kind as RelationshipKind);
+    setSourceRole(sourceEnd?.role ?? '');
+    setSourceMultiplicity(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
+    setSourceNavigability(sourceEnd?.navigability ?? 'UNSPECIFIED');
+    setTargetRole(targetEnd?.role ?? '');
+    setTargetMultiplicity(targetEnd?.multiplicity ?? 'EXACTLY_ONE');
+    setTargetNavigability(targetEnd?.navigability ?? 'UNSPECIFIED');
+  }, [
+    relationship.id,
+    relationship.name,
+    relationship.kind,
+    sourceEnd?.role,
+    sourceEnd?.multiplicity,
+    sourceEnd?.navigability,
+    targetEnd?.role,
+    targetEnd?.multiplicity,
+    targetEnd?.navigability,
+  ]);
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!sourceEnd || !targetEnd) {
+      return;
+    }
+    onCommand(buildRelationshipUpdateRequest(relationship, {
+      name: name.trim() || null,
+      kind,
+      source: {
+        role: sourceRole.trim() || null,
+        multiplicity: sourceMultiplicity,
+        navigability: sourceNavigability,
+      },
+      target: {
+        role: targetRole.trim() || null,
+        multiplicity: targetMultiplicity,
+        navigability: targetNavigability,
+      },
+    }));
+  }
+
+  function endFields(
+    side: 'source' | 'target',
+    classifierName: string | undefined,
+    role: string,
+    setRole: (value: string) => void,
+    multiplicity: string,
+    setMultiplicity: (value: string) => void,
+    navigability: string,
+    setNavigability: (value: string) => void,
+  ) {
+    const title = side === 'source' ? 'Source end' : 'Target end';
+    const prefix = `relationship-${side}`;
+    return (
+      <fieldset className="relationship-end-fields">
+        <legend>{title}{classifierName ? ` · ${classifierName}` : ''}</legend>
+        <label className="field-label" htmlFor={`${prefix}-role`}>Role</label>
+        <input id={`${prefix}-role`} onChange={(event) => setRole(event.target.value)} value={role} />
+        <label className="field-label" htmlFor={`${prefix}-multiplicity`}>Multiplicity</label>
+        <select id={`${prefix}-multiplicity`} onChange={(event) => setMultiplicity(event.target.value)} value={multiplicity}>
+          {MULTIPLICITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+        <label className="field-label" htmlFor={`${prefix}-navigability`}>Navigability</label>
+        <select id={`${prefix}-navigability`} onChange={(event) => setNavigability(event.target.value)} value={navigability}>
+          {NAVIGABILITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </fieldset>
+    );
+  }
+
+  return (
+    <section className="property-section" aria-labelledby="relationship-properties-title">
+      <div className="property-section-heading">
+        <div>
+          <h3 id="relationship-properties-title">Relationship</h3>
+          <p className="property-summary">{sourceClassifier?.name ?? 'Class'} to {targetClassifier?.name ?? 'Class'}</p>
+        </div>
+        <button className="text-button danger-button" onClick={onDelete} type="button">Delete relationship</button>
+      </div>
+      <form className="property-form" onSubmit={save}>
+        <label className="field-label" htmlFor="relationship-name">Name <span>Optional</span></label>
+        <input id="relationship-name" onChange={(event) => setName(event.target.value)} value={name} />
+        <label className="field-label" htmlFor="relationship-kind-property">Kind</label>
+        <select
+          id="relationship-kind-property"
+          onChange={(event) => setKind(event.target.value as RelationshipKind)}
+          value={kind}
+        >
+          {RELATIONSHIP_KINDS.map((value) => (
+            <option key={value} value={value}>{RELATIONSHIP_KIND_LABELS[value]}</option>
+          ))}
+        </select>
+        {endFields('source', sourceClassifier?.name, sourceRole, setSourceRole, sourceMultiplicity,
+          setSourceMultiplicity, sourceNavigability, setSourceNavigability)}
+        {endFields('target', targetClassifier?.name, targetRole, setTargetRole, targetMultiplicity,
+          setTargetMultiplicity, targetNavigability, setTargetNavigability)}
+        <button className="button button-primary button-compact" type="submit">Save relationship</button>
+      </form>
+    </section>
   );
 }
 
@@ -332,6 +481,24 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
         <p className="eyebrow">Details</p>
         <h2 id="properties-title">Properties</h2>
         <p className="property-hint">Select a class or one of its members to inspect and edit it.</p>
+      </aside>
+    );
+  }
+
+  if (selection.kind === 'relationship') {
+    const relationship = model.relationships.find((candidate) => candidate.id === selection.relationshipId);
+    return (
+      <aside className="surface properties-panel" aria-labelledby="properties-title">
+        <p className="eyebrow">Details</p>
+        <h2 id="properties-title">Properties</h2>
+        {relationship ? (
+          <RelationshipProperties
+            relationship={relationship}
+            model={model}
+            onCommand={onCommand}
+            onDelete={() => onDelete(selection)}
+          />
+        ) : <p className="property-hint">This relationship is no longer in the model.</p>}
       </aside>
     );
   }

@@ -1,4 +1,10 @@
-import type { AttributeResource, ClassifierResource, OperationResource, ParameterResource } from '../api/types';
+import type {
+  AttributeResource,
+  ClassifierResource,
+  OperationResource,
+  ParameterResource,
+  RelationshipEndResource,
+} from '../api/types';
 
 const MULTIPLICITY_NOTATION: Record<string, string> = {
   EXACTLY_ONE: '1',
@@ -9,6 +15,13 @@ const MULTIPLICITY_NOTATION: Record<string, string> = {
 
 export function formatMultiplicity(multiplicity: string): string {
   return MULTIPLICITY_NOTATION[multiplicity] ?? '';
+}
+
+export function formatRelationshipEndLabel(end: RelationshipEndResource): string {
+  const role = end.role?.trim() ?? '';
+  const multiplicity = formatMultiplicity(end.multiplicity);
+  const cardinality = multiplicity ? `[${multiplicity}]` : '';
+  return [role, cardinality].filter(Boolean).join(' ');
 }
 
 export function formatVisibility(visibility: string): string {

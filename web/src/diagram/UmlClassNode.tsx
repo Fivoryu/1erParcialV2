@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
+import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { ClassifierResource } from '../api/types';
 import { formatAttribute, formatOperation, operationIsStatic, operationNameIsAbstract, orderedAttributes, orderedOperations } from './uml-format';
 import type { CanvasSelection } from './selection';
@@ -9,6 +9,10 @@ export interface ClassNodeData extends Record<string, unknown> {
   onSelectElement?: (selection: CanvasSelection) => void;
   onRenameClassifier?: (classifierId: string, name: string) => void;
   onRenameMember?: (kind: 'attribute' | 'operation', classifierId: string, elementId: string, name: string) => void;
+  onResizeGeometry?: (
+    classifierId: string,
+    rectangle: { x: number; y: number; width: number; height: number },
+  ) => void;
 }
 
 export type ClassFlowNode = Node<ClassNodeData, 'umlClass'>;
@@ -217,7 +221,15 @@ export function UmlClassNode({ data, selected }: NodeProps<ClassFlowNode>) {
         minHeight={96}
         minWidth={190}
         handleClassName="uml-resize-handle"
+        onResizeEnd={(_, params) => data.onResizeGeometry?.(data.classifier.id, {
+          x: params.x,
+          y: params.y,
+          width: params.width,
+          height: params.height,
+        })}
       />
+      <Handle aria-label="Connection target" id="target-left" position={Position.Left} type="target" />
+      <Handle aria-label="Connection source" id="source-right" position={Position.Right} type="source" />
       <UmlClassCard
         classifier={data.classifier}
         {...(data.onRenameClassifier ? { onRenameClassifier: data.onRenameClassifier } : {})}

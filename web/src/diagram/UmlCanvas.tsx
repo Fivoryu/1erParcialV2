@@ -1,22 +1,42 @@
-import { useEffect, useMemo, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   Background,
   BackgroundVariant,
   Controls,
   ReactFlow,
   ReactFlowProvider,
+  useEdgesState,
   useNodesState,
   useReactFlow,
+  type Connection,
+  type EdgeTypes,
   type NodeTypes,
 } from '@xyflow/react';
-import type { ModelResource } from '../api/types';
-import type { ModelCommandRequest, ClassifierKind } from './commands';
+import type { ClassifierResource, ModelResource } from '../api/types';
+import type { GeometryUpdate, ModelCommandRequest, ClassifierKind, RelationshipKind } from './commands';
+import {
+  buildGeometrySetRequest,
+  buildRelationshipCreateRequest,
+  RELATIONSHIP_KINDS,
+} from './commands';
+import { createGeometryCoalescer } from './geometry-coalescer';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
+import UmlRelationshipEdge, { type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
 
 const DEFAULT_NODE_WIDTH = 260;
 const GRID_SIZE = 24;
 const nodeTypes: NodeTypes = { umlClass: UmlClassNode };
+const edgeTypes: EdgeTypes = { umlRelationship: UmlRelationshipEdge };
+
+const RELATIONSHIP_KIND_LABELS: Record<RelationshipKind, string> = {
+  ASSOCIATION: 'Association',
+  AGGREGATION: 'Aggregation',
+  COMPOSITION: 'Composition',
+  GENERALIZATION: 'Generalization',
+  INTERFACE_REALIZATION: 'Interface realization',
+  DEPENDENCY: 'Dependency',
+};
 
 interface UmlCanvasProps {
   model: ModelResource;
@@ -27,7 +47,14 @@ interface UmlCanvasProps {
   onDelete: (selection: CanvasSelection) => void;
 }
 
-function defaultHeight(classifier: ModelResource['classifiers'][number]): number {
+interface NodeRectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function defaultHeight(classifier: ClassifierResource): number {
   const attributes = classifier.attributes.length ? 24 + classifier.attributes.length * 24 : 0;
   const operations = classifier.operations.length ? 24 + classifier.operations.length * 24 : 0;
   const constraints = classifier.constraints.length ? 24 + classifier.constraints.length * 22 : 0;
@@ -35,10 +62,30 @@ function defaultHeight(classifier: ModelResource['classifiers'][number]): number
   return Math.max(96, heading + attributes + operations + constraints);
 }
 
+function defaultView(model: ModelResource) {
+  return model.views.find((view) => view.is_default) ?? model.views[0];
+}
+
 function geometryFor(model: ModelResource, classifierId: string) {
-  const defaultView = model.views.find((view) => view.is_default) ?? model.views[0];
-  return defaultView?.element_geometry.find((geometry) =>
+  return defaultView(model)?.element_geometry.find((geometry) =>
     geometry.targetType === 'CLASSIFIER' && geometry.targetId === classifierId);
+}
+
+function geometryPayload(model: ModelResource, classifierId: string, rectangle: NodeRectangle, zOrder = 0): GeometryUpdate | null {
+  const view = defaultView(model);
+  if (!view) {
+    return null;
+  }
+  return {
+    targetType: 'CLASSIFIER',
+    viewId: view.id,
+    targetId: classifierId,
+    x: Math.round(rectangle.x),
+    y: Math.round(rectangle.y),
+    w: Math.max(1, Math.round(rectangle.width)),
+    h: Math.max(1, Math.round(rectangle.height)),
+    zOrder: Math.round(zOrder),
+  };
 }
 
 export function buildFlowNodes(
@@ -46,6 +93,7 @@ export function buildFlowNodes(
   existing: ClassFlowNode[],
   onCommand: UmlCanvasProps['onCommand'],
   onSelect: UmlCanvasProps['onSelect'],
+  onResizeGeometry?: (classifierId: string, rectangle: NodeRectangle, zOrder: number) => void,
 ): ClassFlowNode[] {
   const existingById = new Map(existing.map((node) => [node.id, node]));
   return model.classifiers.map((classifier, index) => {
@@ -64,24 +112,25 @@ export function buildFlowNodes(
         targets: [{ scope: kind, id: elementId }],
         payload: { name },
       }),
+      ...(onResizeGeometry ? {
+        onResizeGeometry: (classifierId: string, rectangle: NodeRectangle) =>
+          onResizeGeometry(classifierId, rectangle, previous?.zIndex ?? geometry?.zOrder ?? 0),
+      } : {}),
     };
     const column = index % 3;
     const row = Math.floor(index / 3);
-    const zIndex = previous?.zIndex ?? geometry?.zOrder;
+    const zIndex = geometry?.zOrder ?? previous?.zIndex;
     return {
       id: classifier.id,
       type: 'umlClass' as const,
-      position: previous?.position ?? (geometry ? { x: geometry.x, y: geometry.y } : {
+      position: geometry ? { x: geometry.x, y: geometry.y } : previous?.position ?? {
         x: 56 + column * 340,
         y: 56 + row * 260,
-      }),
-      width: previous?.width ?? geometry?.w ?? DEFAULT_NODE_WIDTH,
-      height: previous?.height ?? geometry?.h ?? defaultHeight(classifier),
-      ...(zIndex !== undefined ? { zIndex } : {}),
-      data: {
-        ...data,
-        onSelectElement: onSelect,
       },
+      width: geometry?.w ?? previous?.width ?? DEFAULT_NODE_WIDTH,
+      height: geometry?.h ?? previous?.height ?? defaultHeight(classifier),
+      ...(zIndex !== undefined ? { zIndex } : {}),
+      data,
       ...(previous?.selected !== undefined ? { selected: previous.selected } : {}),
       draggable: true,
       deletable: false,
@@ -89,14 +138,123 @@ export function buildFlowNodes(
   });
 }
 
+export function buildFlowEdges(
+  model: ModelResource,
+  onWaypointsChange?: NonNullable<NonNullable<RelationshipFlowEdge['data']>['onWaypointsChange']>,
+): RelationshipFlowEdge[] {
+  const view = defaultView(model);
+  return model.relationships.flatMap((relationship) => {
+    const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
+    const sourceEnd = ends[0];
+    const targetEnd = ends[1];
+    if (!sourceEnd || !targetEnd) {
+      return [];
+    }
+    const waypoints = view?.connector_path
+      .filter((path) => path.relationshipId === relationship.id)
+      .sort((left, right) => left.ordinal - right.ordinal)
+      .map(({ x, y }) => ({ x, y })) ?? [];
+    return [{
+      id: relationship.id,
+      source: sourceEnd.classifierId,
+      target: targetEnd.classifierId,
+      type: 'umlRelationship' as const,
+      data: {
+        relationship,
+        sourceEnd,
+        targetEnd,
+        waypoints,
+        ...(onWaypointsChange ? { onWaypointsChange } : {}),
+      },
+      selectable: true,
+      deletable: false,
+    }];
+  });
+}
+
 function CanvasFrame(props: UmlCanvasProps) {
   const { fitView } = useReactFlow<ClassFlowNode>();
-  const initialNodes = useMemo(() => buildFlowNodes(props.model, [], props.onCommand, props.onSelect), []);
+  const viewId = defaultView(props.model)?.id;
+  const coalescer = useMemo(() => createGeometryCoalescer<GeometryUpdate>((_elementId, payload) => {
+    props.onCommand(buildGeometrySetRequest(payload));
+  }), [props.onCommand]);
+  const [connectionDraft, setConnectionDraft] = useState<{ sourceId: string; targetId: string } | null>(null);
+  const [connectionKind, setConnectionKind] = useState<RelationshipKind>('ASSOCIATION');
+  const initialNodes = useMemo(
+    () => buildFlowNodes(props.model, [], props.onCommand, props.onSelect),
+    [],
+  );
   const [nodes, setNodes, onNodesChange] = useNodesState<ClassFlowNode>(initialNodes);
+  const initialEdges = useMemo(() => buildFlowEdges(props.model), []);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<RelationshipFlowEdge>(initialEdges);
+
+  const persistResize = useCallback((classifierId: string, rectangle: NodeRectangle, zOrder: number) => {
+    const payload = geometryPayload(props.model, classifierId, rectangle, zOrder);
+    const key = `classifier:${classifierId}`;
+    if (payload) {
+      coalescer.schedule(key, payload);
+      coalescer.flush(key);
+    }
+  }, [coalescer, props.model]);
+
+  const updateWaypoints = useCallback((relationshipId: string, waypoints: Array<{ x: number; y: number }>, settled: boolean) => {
+    if (!viewId) {
+      return;
+    }
+    const key = `relationship:${relationshipId}`;
+    setEdges((current) => current.map((edge) => edge.id === relationshipId && edge.data
+      ? { ...edge, data: { ...edge.data, waypoints } }
+      : edge));
+    if (settled) {
+      coalescer.schedule(key, { targetType: 'RELATIONSHIP', viewId, targetId: relationshipId, waypoints });
+      coalescer.flush(key);
+    }
+  }, [coalescer, setEdges, viewId]);
 
   useEffect(() => {
-    setNodes((current) => buildFlowNodes(props.model, current, props.onCommand, props.onSelect));
-  }, [props.model, props.onCommand, props.onSelect, setNodes]);
+    setNodes((current) => buildFlowNodes(props.model, current, props.onCommand, props.onSelect, persistResize));
+    setEdges(buildFlowEdges(props.model, updateWaypoints));
+  }, [props.model, props.onCommand, props.onSelect, persistResize, updateWaypoints, setNodes, setEdges]);
+
+  useEffect(() => () => coalescer.cancelAll(), [coalescer]);
+
+  function rectangleForNode(node: ClassFlowNode): NodeRectangle {
+    return {
+      x: node.position.x,
+      y: node.position.y,
+      width: node.measured?.width ?? node.width ?? DEFAULT_NODE_WIDTH,
+      height: node.measured?.height ?? node.height ?? defaultHeight(node.data.classifier),
+    };
+  }
+
+  function settleNodeGeometry(node: ClassFlowNode): void {
+    const key = `classifier:${node.id}`;
+    const payload = geometryPayload(props.model, node.id, rectangleForNode(node), node.zIndex ?? 0);
+    if (payload) {
+      coalescer.schedule(key, payload);
+      coalescer.flush(key);
+    }
+  }
+
+  function handleConnect(connection: Connection): void {
+    if (connection.source && connection.target) {
+      setConnectionDraft({ sourceId: connection.source, targetId: connection.target });
+      setConnectionKind('ASSOCIATION');
+    }
+  }
+
+  function createRelationship(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    if (!connectionDraft) {
+      return;
+    }
+    props.onCommand(buildRelationshipCreateRequest(
+      connectionDraft.sourceId,
+      connectionDraft.targetId,
+      connectionKind,
+    ));
+    setConnectionDraft(null);
+  }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const target = event.target;
@@ -108,6 +266,13 @@ function CanvasFrame(props: UmlCanvasProps) {
       props.onDelete(props.selection);
     }
   }
+
+  const sourceName = connectionDraft
+    ? props.model.classifiers.find((classifier) => classifier.id === connectionDraft.sourceId)?.name
+    : null;
+  const targetName = connectionDraft
+    ? props.model.classifiers.find((classifier) => classifier.id === connectionDraft.targetId)?.name
+    : null;
 
   return (
     <section className="surface diagram-panel" aria-label="Class diagram editor">
@@ -131,13 +296,47 @@ function CanvasFrame(props: UmlCanvasProps) {
           </button>
         </div>
       </div>
+      {connectionDraft && (
+        <form className="connection-kind-picker" aria-label="Choose relationship kind" onSubmit={createRelationship}>
+          <label className="field-label" htmlFor="relationship-kind">
+            Connect {sourceName ?? 'class'} to {targetName ?? 'class'}
+          </label>
+          <select
+            id="relationship-kind"
+            onChange={(event) => setConnectionKind(event.target.value as RelationshipKind)}
+            value={connectionKind}
+          >
+            {RELATIONSHIP_KINDS.map((kind) => (
+              <option key={kind} value={kind}>{RELATIONSHIP_KIND_LABELS[kind]}</option>
+            ))}
+          </select>
+          <p className="property-hint">
+            {connectionKind === 'GENERALIZATION'
+              ? 'Start at the subclass and end at its parent.'
+              : connectionKind === 'INTERFACE_REALIZATION'
+                ? 'Start at the implementing class and end at the interface.'
+                : connectionKind === 'AGGREGATION' || connectionKind === 'COMPOSITION'
+                  ? 'Start at the whole; the diamond marks this end.'
+                  : connectionKind === 'DEPENDENCY'
+                    ? 'The open arrow points toward the target.'
+                    : 'Open arrows appear on navigable ends.'}
+          </p>
+          <button className="button button-primary button-compact" type="submit">Create relationship</button>
+          <button className="text-button" onClick={() => setConnectionDraft(null)} type="button">Cancel</button>
+        </form>
+      )}
       <div className="diagram-canvas" onKeyDown={handleKeyDown} tabIndex={0}>
-        <ReactFlow<ClassFlowNode>
+        <ReactFlow<ClassFlowNode, RelationshipFlowEdge>
           nodes={nodes}
-          edges={[]}
+          edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           onNodeClick={(_, node) => props.onSelect({ kind: 'classifier', classifierId: node.id })}
+          onNodeDragStop={(_, node) => settleNodeGeometry(node)}
+          onConnect={handleConnect}
+          onEdgeClick={(_, edge) => props.onSelect({ kind: 'relationship', relationshipId: edge.id })}
           onPaneClick={() => props.onSelect(null)}
           snapToGrid
           snapGrid={[GRID_SIZE, GRID_SIZE]}
@@ -148,7 +347,7 @@ function CanvasFrame(props: UmlCanvasProps) {
           panOnDrag
           zoomOnScroll
           zoomOnPinch
-          nodesConnectable={false}
+          nodesConnectable
           deleteKeyCode={null}
           proOptions={{ hideAttribution: false }}
           aria-label="UML class diagram canvas"

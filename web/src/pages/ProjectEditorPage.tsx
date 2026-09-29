@@ -8,6 +8,7 @@ import {
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
   buildModelCommandEnvelope,
+  buildRelationshipDeleteRequest,
   classifierCascadeCount,
   type ClassifierKind,
   type ModelCommandRequest,
@@ -147,11 +148,14 @@ export default function ProjectEditorPage() {
         if (outcome.kind === 'accepted') {
           const target = envelope.targets[0];
           if (target && envelope.type === 'classifier.delete') {
-            setSelection((current) => current?.classifierId === target.id ? null : current);
+            setSelection((current) => current?.kind !== 'relationship' && current?.classifierId === target.id ? null : current);
+          } else if (target && envelope.type === 'relationship.delete') {
+            setSelection((current) => current?.kind === 'relationship' && current.relationshipId === target.id ? null : current);
           } else if (target && envelope.type.endsWith('.remove')) {
             setSelection((current) => current
               && current.kind === target.scope.toLowerCase()
               && current.kind !== 'classifier'
+              && current.kind !== 'relationship'
               && current.elementId === target.id
               ? null
               : current);
@@ -200,6 +204,18 @@ export default function ProjectEditorPage() {
     if (!current) {
       return;
     }
+    if (selected.kind === 'relationship') {
+      const relationship = current.relationships.find((candidate) => candidate.id === selected.relationshipId);
+      if (!relationship) {
+        return;
+      }
+      if (!window.confirm('Delete this relationship and its ends? This cannot be undone.')) {
+        return;
+      }
+      dispatchCommand(buildRelationshipDeleteRequest(relationship));
+      return;
+    }
+
     if (selected.kind === 'classifier') {
       const cascadeCount = classifierCascadeCount(current, selected.classifierId);
       if (cascadeCount === 0) {
