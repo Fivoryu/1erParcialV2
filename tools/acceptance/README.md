@@ -22,4 +22,4 @@ Para dejar backend y base disponibles mientras se desarrolla el editor:
 python tools/acceptance/acceptance.py --keep-running
 ```
 
-El arnés imprime la URL base y una instrucción `--stop <RUN_ID>`. Ejecutá esa instrucción cuando quieras detener los servicios; el arnés conserva los identificadores de proceso y contenedor y verifica su salida.
+El arnés imprime la URL base y una instrucción `--stop <RUN_ID>`. Ejecutá esa instrucción cuando quieras detener los servicios. Para el backend, el arnés busca y detiene todos los procesos cuya línea de comandos contiene el marcador único `-Dacceptance.runId=<RUN_ID>`; el PID guardado en el manifiesto queda como respaldo si la consulta de procesos de la plataforma no está disponible. La verificación prioriza que no quede ningún proceso con ese marcador. Para PostgreSQL conserva el identificador del contenedor y elimina únicamente el contenedor etiquetado para esa ejecución.

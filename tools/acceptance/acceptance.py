@@ -116,6 +116,90 @@ def process_start_token(pid: int | None) -> str | None:
     return token if result.returncode == 0 and token else None
 
 
+def query_process_ids_for_run_id(run_id: str) -> tuple[list[int], bool]:
+    """Return processes carrying this run's Java marker and whether the query succeeded."""
+    marker = f"-Dacceptance.runId={run_id}"
+    if os.name == "nt":
+        powershell = shutil.which("powershell") or shutil.which("pwsh")
+        if not powershell:
+            return [], False
+        escaped_marker = marker.replace("'", "''")
+        command = (
+            "$ErrorActionPreference = 'Stop'; "
+            f"$marker = '{escaped_marker}'; $ownPid = $PID; "
+            "Get-CimInstance Win32_Process | "
+            "Where-Object { $_.ProcessId -ne $ownPid -and $_.CommandLine -and $_.CommandLine.Contains($marker) } | "
+            "ForEach-Object { $_.ProcessId }"
+        )
+        arguments = [powershell, "-NoProfile", "-NonInteractive", "-Command", command]
+    else:
+        ps = shutil.which("ps")
+        if not ps:
+            return [], False
+        arguments = [ps, "-eo", "pid=,args="]
+
+    try:
+        result = run_process(arguments, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return [], False
+    if result.returncode != 0:
+        return [], False
+
+    pids: list[int] = []
+    if os.name == "nt":
+        for line in result.stdout.splitlines():
+            value = line.strip()
+            if value.isdigit():
+                pids.append(int(value))
+    else:
+        for line in result.stdout.splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2 and marker in parts[1]:
+                try:
+                    pids.append(int(parts[0]))
+                except ValueError:
+                    continue
+    return sorted(set(pids)), True
+
+
+def process_ids_for_run_id(run_id: str) -> list[int]:
+    """Return PIDs carrying the run marker; return an empty list if querying is unavailable."""
+    pids, _ = query_process_ids_for_run_id(run_id)
+    return pids
+
+
+def recorded_process_absent(pid: int, start_token: str | None) -> bool:
+    """Use the recorded PID only as a fallback when command-line inspection is unavailable."""
+    current_token = process_start_token(pid)
+    if current_token is not None:
+        return start_token is not None and current_token != start_token
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    except OSError:
+        return True
+    return False
+
+
+def backend_run_processes_absent(
+    run_id: str, pid: int | None, start_token: str | None, backend: subprocess.Popen[bytes] | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    pids, query_available = query_process_ids_for_run_id(run_id)
+    if query_available:
+        return not pids, {"runId": run_id, "matchingPids": pids, "queryAvailable": True}
+    if pid is not None:
+        absent = recorded_process_absent(pid, start_token)
+    else:
+        absent = backend is None or backend.poll() is not None
+    return absent, {
+        "runId": run_id, "matchingPids": [], "queryAvailable": False,
+        "recordedPid": pid, "recordedProcessAbsent": absent,
+    }
+
+
 def is_uuid(value: Any) -> bool:
     if not isinstance(value, str):
         return False
@@ -565,24 +649,12 @@ class Harness:
         self.verify_cleanup()
 
     def stop_backend(self) -> None:
-        if self.backend is None:
-            self.record("Backend process teardown", True, "no backend process was launched", "no backend PID exists")
-            return
-        try:
-            if self.backend.poll() is None:
-                self.backend.terminate()
-                try:
-                    self.backend.wait(timeout=15)
-                except subprocess.TimeoutExpired:
-                    self.backend.kill()
-                    self.backend.wait(timeout=10)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            self.record("Backend process teardown", False, "pinned Java process exits", str(error))
-        code = self.backend.poll()
-        token = process_start_token(self.backend.pid)
-        exited = code is not None and (token is None or token != self.backend_start)
-        self.record("Backend process teardown", exited, "pinned Java process has exited",
-                    {"pid": self.backend.pid, "exitCode": code, "startToken": token})
+        pid = self.backend.pid if self.backend is not None else None
+        stopped, evidence = stop_backend_processes(
+            self.run_id, backend=self.backend, recorded_pid=pid, start_token=self.backend_start,
+        )
+        self.record("Backend process teardown", stopped,
+                    f"no process carrying -Dacceptance.runId={self.run_id} remains", evidence)
 
     def stop_container(self) -> None:
         if not self.launch_attempted:
@@ -619,48 +691,163 @@ class Harness:
                         self.containers_before, after)
         except Exception as error:
             self.record("Verify container count returned to baseline", False, self.containers_before, str(error))
-        if self.backend is None:
-            self.record("Verify no backend process survived", True, "no backend process was launched", "none")
-            return
-        try:
-            token = process_start_token(self.backend.pid)
-            absent_process = token is None or token != self.backend_start
-            self.record("Verify no backend process survived", absent_process,
-                        f"backend PID {self.backend.pid} exited", {"startToken": token, "exitCode": self.backend.poll()})
-        except Exception as error:
-            self.record("Verify no backend process survived", False, f"backend PID {self.backend.pid} exited", str(error))
+        pid = self.backend.pid if self.backend is not None else None
+        absent_process, evidence = backend_run_processes_absent(
+            self.run_id, pid, self.backend_start, self.backend,
+        )
+        if self.backend is not None:
+            evidence["exitCode"] = self.backend.poll()
+        self.record("Verify no backend process survived", absent_process,
+                    f"no process carrying -Dacceptance.runId={self.run_id} remains", evidence)
+
+
+def pid_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
 
 
 def stop_pinned_process(pid: int, start_token: str) -> tuple[bool, str]:
     current = process_start_token(pid)
-    if current is None:
+    if current is None and not pid_is_alive(pid):
         return True, f"backend PID {pid} is already absent"
-    if current != start_token:
+    if current is not None and current != start_token:
         return True, f"PID {pid} belongs to another process; the recorded backend exited and was not signalled"
+
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         return True, f"backend PID {pid} exited before cleanup"
     except OSError as error:
         return False, str(error)
+
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        if process_start_token(pid) != start_token:
+        if not pid_is_alive(pid):
+            return True, f"backend PID {pid} exited"
+        current = process_start_token(pid)
+        if current is not None and current != start_token:
             return True, f"backend PID {pid} exited"
         time.sleep(0.25)
+
     if os.name == "nt":
         taskkill = shutil.which("taskkill")
-        if taskkill:
+        if not taskkill:
+            return False, f"taskkill is unavailable; recorded backend PID {pid} may still be running"
+        try:
             result = run_process([taskkill, "/PID", str(pid), "/F"], timeout=15)
-            return process_start_token(pid) != start_token, (result.stdout or result.stderr).strip()
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return not pid_is_alive(pid), str(error)
+        return not pid_is_alive(pid), f"taskkill exit code {result.returncode}"
+
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True, f"backend PID {pid} exited during forced stop"
+    except OSError as error:
+        return False, str(error)
+    return not pid_is_alive(pid), f"backend PID {pid} did not exit"
+
+
+def stop_run_marker_process(pid: int, run_id: str) -> tuple[bool, str]:
+    if os.name == "nt":
+        taskkill = shutil.which("taskkill")
+        if not taskkill:
+            pids, available = query_process_ids_for_run_id(run_id)
+            if available and pid not in pids:
+                return True, f"PID {pid} already exited"
+            return False, "taskkill is unavailable"
+        try:
+            result = run_process([taskkill, "/PID", str(pid), "/F"], timeout=15)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            detail = str(error)
+        else:
+            detail = f"taskkill exit code {result.returncode}"
     else:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return True, f"PID {pid} already exited"
+        except OSError as error:
+            return False, str(error)
+        detail = "sent SIGTERM"
+
+    deadline = time.monotonic() + (5 if os.name != "nt" else 3)
+    while time.monotonic() < deadline:
+        pids, available = query_process_ids_for_run_id(run_id)
+        if available and pid not in pids:
+            return True, detail or f"PID {pid} already exited"
+        if not available and not pid_is_alive(pid):
+            return True, detail or f"PID {pid} already exited"
+        time.sleep(0.25)
+
+    if os.name != "nt":
         try:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
-            return True, f"backend PID {pid} exited during forced stop"
+            return True, f"PID {pid} exited during forced stop"
         except OSError as error:
             return False, str(error)
-    return process_start_token(pid) != start_token, f"backend PID {pid} did not exit"
+    pids, available = query_process_ids_for_run_id(run_id)
+    gone = pid not in pids if available else not pid_is_alive(pid)
+    return gone, detail or f"PID {pid} did not exit"
+
+
+def stop_backend_processes(
+    run_id: str, backend: subprocess.Popen[bytes] | None, recorded_pid: int | None, start_token: str | None,
+) -> tuple[bool, dict[str, Any]]:
+    recorded_stop: Any = "no recorded backend PID"
+    if backend is not None:
+        try:
+            if backend.poll() is None:
+                backend.terminate()
+                try:
+                    backend.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    backend.kill()
+                    backend.wait(timeout=10)
+            recorded_stop = {"pid": backend.pid, "exitCode": backend.poll()}
+        except (OSError, subprocess.TimeoutExpired) as error:
+            recorded_stop = {"pid": backend.pid, "error": str(error)}
+    elif recorded_pid is not None:
+        if start_token is None:
+            recorded_stop = {"pid": recorded_pid, "error": "recorded process start identity is missing"}
+        else:
+            try:
+                stopped, detail = stop_pinned_process(recorded_pid, start_token)
+                recorded_stop = {"pid": recorded_pid, "stopped": stopped, "detail": detail}
+            except (OSError, subprocess.TimeoutExpired) as error:
+                recorded_stop = {"pid": recorded_pid, "error": str(error)}
+
+    matching_pids, query_available = query_process_ids_for_run_id(run_id)
+    marker_found = list(matching_pids)
+    marker_stops: list[dict[str, Any]] = []
+    deadline = time.monotonic() + 60
+    while query_available and matching_pids and time.monotonic() < deadline:
+        for pid in matching_pids:
+            if pid not in marker_found:
+                marker_found.append(pid)
+            try:
+                stopped, detail = stop_run_marker_process(pid, run_id)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                stopped, detail = False, str(error)
+            marker_stops.append({"pid": pid, "stopped": stopped, "detail": detail})
+        matching_pids, query_available = query_process_ids_for_run_id(run_id)
+
+    absent, verification = backend_run_processes_absent(run_id, recorded_pid, start_token, backend)
+    if marker_found and not verification["queryAvailable"]:
+        absent = False
+        verification["markerQueryUnavailableAfterDiscovery"] = True
+    return absent, {
+        "recordedStop": recorded_stop, "markerProcessesFound": marker_found,
+        "markerStops": marker_stops, **verification,
+    }
 
 
 def stop_keep_running(run_id: str) -> int:
@@ -682,10 +869,14 @@ def stop_keep_running(run_id: str) -> int:
         before = None
         report(results, "Inspect Docker state before cleanup", False, "container count", str(error))
     try:
-        stopped, evidence = stop_pinned_process(int(manifest["backendPid"]), str(manifest["backendStartToken"]))
-    except (KeyError, TypeError, ValueError) as error:
-        stopped, evidence = False, f"invalid process handle: {error}"
-    report(results, "Stop pinned backend process", stopped, "recorded backend process exits", evidence)
+        pid = int(manifest["backendPid"])
+    except (KeyError, TypeError, ValueError):
+        pid = None
+    start_token = manifest.get("backendStartToken")
+    start_token = str(start_token) if start_token is not None else None
+    stopped, evidence = stop_backend_processes(run_id, None, pid, start_token)
+    report(results, "Stop backend processes", stopped,
+           f"no process carrying -Dacceptance.runId={run_id} remains", evidence)
 
     container_id = str(manifest.get("containerId", ""))
     present: bool | None = None
@@ -714,13 +905,10 @@ def stop_keep_running(run_id: str) -> int:
     except Exception as error:
         after, expected_count, count_ok = str(error), "count changes only by the removed container", False
     report(results, "Verify container count after cleanup", count_ok, expected_count, after)
-    try:
-        pid, start_token = int(manifest["backendPid"]), str(manifest["backendStartToken"])
-        process_absent = process_start_token(pid) != start_token
-    except (KeyError, TypeError, ValueError):
-        pid, process_absent = manifest.get("backendPid"), False
+    process_absent, process_evidence = backend_run_processes_absent(run_id, pid, start_token)
     report(results, "Verify no backend process survived cleanup", stopped and process_absent,
-           "recorded backend PID exited", {"pid": pid, "same process still present": not process_absent})
+           f"no process carrying -Dacceptance.runId={run_id} remains",
+           {"stopSucceeded": stopped, **process_evidence})
     try:
         remaining_owned = owned_container_ids(executable, run_id)
         no_container = gone and not remaining_owned
