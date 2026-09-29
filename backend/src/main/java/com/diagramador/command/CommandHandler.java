@@ -13,6 +13,15 @@ public interface CommandHandler {
 
     String type();
 
+    /**
+     * Declares that this handler creates the aggregate identified by the envelope.
+     * The service uses this contract property to relax only the aggregate-existence
+     * and membership checks for the creating command.
+     */
+    default boolean createsProjectAndModel() {
+        return false;
+    }
+
     Outcome apply(Context context);
 
     record Context(OperationEnvelope envelope, Project project, UmlModel model, EntityManager entityManager) {

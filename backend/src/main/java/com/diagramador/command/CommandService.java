@@ -95,17 +95,32 @@ public class CommandService {
     }
 
     private CommandResult executeInTransaction(OperationEnvelope envelope) {
+        CommandHandler handler = handlers.get(envelope.type());
+        if (handler == null) {
+            return rejected(envelope, new Diagnostic(ErrorCode.UNKNOWN_OPERATION,
+                    "No command handler is registered for type " + envelope.type()));
+        }
+        boolean createsProjectAndModel = handler.createsProjectAndModel();
+
         Project project = projectRepository.findById(envelope.projectId()).orElse(null);
         UmlModel model = modelRepository.findById(envelope.modelId()).orElse(null);
-        if (project == null || model == null) {
+        if (createsProjectAndModel) {
+            if ((project == null) != (model == null)) {
+                return rejected(envelope, new Diagnostic(ErrorCode.PRECONDITION_FAILED,
+                        "Project " + envelope.projectId() + " and model " + envelope.modelId()
+                                + " must either both exist or both be absent"));
+            }
+        } else if (project == null || model == null) {
             return rejected(envelope, new Diagnostic(ErrorCode.PRECONDITION_FAILED,
                     "Project " + envelope.projectId() + " or model " + envelope.modelId() + " does not exist"));
         }
-        UUID actualProjectId = model.getProject().getId();
-        if (!actualProjectId.equals(project.getId())) {
-            return rejected(envelope, new Diagnostic(ErrorCode.PRECONDITION_FAILED,
-                    "Model " + envelope.modelId() + " belongs to project " + actualProjectId
-                            + ", not project " + envelope.projectId()));
+        if (project != null && model != null) {
+            UUID actualProjectId = model.getProject().getId();
+            if (!actualProjectId.equals(project.getId())) {
+                return rejected(envelope, new Diagnostic(ErrorCode.PRECONDITION_FAILED,
+                        "Model " + envelope.modelId() + " belongs to project " + actualProjectId
+                                + ", not project " + envelope.projectId()));
+            }
         }
 
         UserAccount author = userAccountRepository.findById(envelope.author().userId()).orElse(null);
@@ -113,32 +128,31 @@ public class CommandService {
             return rejected(envelope, new Diagnostic(ErrorCode.UNAUTHORIZED,
                     "Author " + envelope.author().userId() + " is unknown"));
         }
-        ProjectMember member = projectMemberRepository
-                .findByProjectIdAndUserId(project.getId(), author.getId()).orElse(null);
-        if (member == null || member.getStatus().equals("REMOVED") || !isEditorOrOwner(member.getRole())) {
-            return rejected(envelope, new Diagnostic(ErrorCode.FORBIDDEN,
-                    "Author " + author.getId() + " is not an OWNER or EDITOR of project " + project.getId()));
+        ProjectMember member = null;
+        if (!createsProjectAndModel) {
+            member = projectMemberRepository
+                    .findByProjectIdAndUserId(project.getId(), author.getId()).orElse(null);
+            if (member == null || member.getStatus().equals("REMOVED") || !isEditorOrOwner(member.getRole())) {
+                return rejected(envelope, new Diagnostic(ErrorCode.FORBIDDEN,
+                        "Author " + author.getId() + " is not an OWNER or EDITOR of project " + project.getId()));
+            }
         }
 
-        Optional<ModelCommand> original = commandRepository
-                .findByModelIdAndIdempotencyKey(model.getId(), envelope.idempotencyKey());
-        if (original.isPresent()) {
-            ModelCommand command = original.get();
-            return new CommandResult(command.getCommandId(), CommandStatus.ACCEPTED, command.getResultRevision(),
-                    List.of(), command.getAuthorizationClassification());
+        if (model != null) {
+            Optional<ModelCommand> original = commandRepository
+                    .findByModelIdAndIdempotencyKey(model.getId(), envelope.idempotencyKey());
+            if (original.isPresent()) {
+                ModelCommand command = original.get();
+                return new CommandResult(command.getCommandId(), CommandStatus.ACCEPTED, command.getResultRevision(),
+                        List.of(), command.getAuthorizationClassification());
+            }
         }
 
-        long expectedRevision = model.getCurrentRevision();
+        long expectedRevision = model == null ? 0L : model.getCurrentRevision();
         if (envelope.baseRevision() != expectedRevision) {
             return rejected(envelope, new Diagnostic(ErrorCode.REVISION_MISMATCH,
                     "Base revision " + envelope.baseRevision() + " does not match current revision "
                             + expectedRevision));
-        }
-
-        CommandHandler handler = handlers.get(envelope.type());
-        if (handler == null) {
-            return rejected(envelope, new Diagnostic(ErrorCode.UNKNOWN_OPERATION,
-                    "No command handler is registered for type " + envelope.type()));
         }
 
         Diagnostic preconditionError = evaluatePreconditions(envelope, project, member);
@@ -158,6 +172,16 @@ public class CommandService {
                 new CommandHandler.Context(envelope, project, model, entityManager));
         validateCascadePrecondition(envelope, outcome);
         entityManager.flush();
+
+        if (createsProjectAndModel && model == null) {
+            project = projectRepository.findById(envelope.projectId()).orElse(null);
+            model = modelRepository.findById(envelope.modelId()).orElse(null);
+            if (project == null || model == null) {
+                throw new CommandValidationException(ErrorCode.MODEL_INVALID,
+                        "Creating handler did not create project " + envelope.projectId()
+                                + " and model " + envelope.modelId());
+            }
+        }
 
         long nextRevision = expectedRevision + 1;
         ModelCommand command = ModelCommand.create(envelope.operationId(), model, author, expectedRevision, nextRevision,
@@ -210,7 +234,7 @@ public class CommandService {
                     // The actual count is known only after the deletion handler expands the cascade.
                 }
                 case "permission" -> {
-                    ProjectMember current = projectMemberRepository
+                    ProjectMember current = project == null ? null : projectMemberRepository
                             .findByProjectIdAndUserId(project.getId(), envelope.author().userId()).orElse(null);
                     if (current == null || !isEditorOrOwner(current.getRole())
                             || !permissionMatches(current.getRole(), precondition.expect())) {

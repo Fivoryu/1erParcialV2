@@ -126,6 +126,14 @@ public class CommandHandlerSupport {
         return value.asText();
     }
 
+    public String optionalNonBlankText(JsonNode payload, String field) {
+        String value = optionalText(payload, field);
+        if (value != null && value.isBlank()) {
+            invalid("Payload field '" + field + "' must be a non-blank string or null");
+        }
+        return value;
+    }
+
     public boolean bool(JsonNode payload, String field) {
         JsonNode value = payload.get(field);
         if (value == null || !value.isBoolean()) {
