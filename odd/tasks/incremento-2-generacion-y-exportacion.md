@@ -84,7 +84,7 @@ con qué reglas se generó y no sólo con qué nombre de perfil.
 
 | Fuera | Motivo |
 | --- | --- |
-| **Varios modelos por proyecto** (varios diagramas en un mismo proyecto) | `uml_model.project_id` es **UNIQUE** en el esquema autoridad y el contrato §4 publica `GET /projects/{id}/model` en singular. Habilitarlo toca **dos autoridades**: el esquema físico (D5) y el contrato. **Decisión pendiente de §4**: hasta que se resuelva, la multiplicidad de backends se obtiene por destinos (D14) y por proyectos distintos, que no requieren cambio de contrato |
+| **Varios modelos por proyecto** (varios diagramas en un mismo proyecto) | `uml_model.project_id` es **UNIQUE** en el esquema autoridad y el contrato §4 publica `GET /projects/{id}/model` en singular. **Resuelto por D15:** la multiplicidad de backends se obtiene por destinos (D14) y por proyectos distintos, así que este incremento **no** toca el esquema ni el contrato. Habilitarlo después exige modificar las dos autoridades, en ese orden |
 | Diagramas UML que no sean de clases | El producto es un diagramador de clases. Otras vistas (`view_kind`) son del mismo modelo semántico, no de otro dominio |
 | Verificación completa de CU-20 | Es obligación de Ciclo 3. Acá se registran los checks que este incremento sí ejecuta y los demás quedan `NOT_RUN`, que es un estado del contrato y no un silencio |
 | Autenticación real del diagramador | Sigue el usuario semilla determinista del Incremento 1; el proveedor de identidad es un GAP |
@@ -114,12 +114,13 @@ con qué reglas se generó y no sólo con qué nombre de perfil.
 | D12 | **Línea base de versión única.** Java, Spring Boot, PostgreSQL y la imagen base se declaran en **una sola fuente**, que el `pom.xml` del diagramador y el perfil del generador consumen | Dos declaraciones independientes (la del diagramador y la que el generador lleva escrita) | El usuario pidió que el backend generado nazca en la misma versión que el del proyecto. Con dos fuentes, la divergencia es cuestión de tiempo y aparece como «el generado no compila» o, peor, compila distinto. Una prueba compara la fuente contra el `pom.xml` real y falla si divergen, así una subida de versión no puede quedar a medias |
 | D13 | El backend del diagramador se **conteneriza** con la misma imagen base que el backend generado | Dejar el diagramador como jar suelto y contenerizar sólo el generado | El usuario lo pidió y además reduce el problema: una sola imagen base, un solo runtime, un solo lugar donde el JRE cambia. El arnés de aceptación sigue corriendo el jar directo para las pruebas rápidas |
 | D14 | Un modelo puede tener **N destinos** y generar **N backends independientes**, y la identidad de corrida incluye el destino y su revisión de configuración | Un backend por modelo, o reutilizar la misma base para todas las corridas | Es lo que el usuario pidió («múltiples backends diferentes») y ya está en el diseño y en el esquema: `generation_target` es por modelo, `target_key` es único por modelo y la unicidad de corrida es `(target, target_config_revision, version, profile, template)`. Dos destinos pueden producir contenido **igual** y siguen siendo dos backends: distinto destino, distinta base, distinto ciclo de vida y distinta verificación |
+| D15 | **P1 resuelta: no** hace falta más de un modelo por proyecto. La multiplicidad de backends se obtiene con **N destinos sobre un modelo** (D14) más **proyectos separados** | Habilitar varios diagramas por proyecto en este incremento | Decisión del usuario. Deja intactas las dos autoridades que la alternativa tocaba: el esquema físico (D5, con `uml_model.project_id UNIQUE`) y el contrato §4 (`GET /projects/{id}/model` en singular). Habilitarlo después es una tarea corta y aislada, con su propio cambio de contrato y de esquema, en ese orden |
 
-### 4.1 Decisión pendiente
+### 4.1 P1, resuelta en esta sesión
 
-| # | Cuestión | Estado |
+| # | Cuestión | Resolución |
 | --- | --- | --- |
-| **P1** | ¿Hace falta **más de un modelo por proyecto** (varios diagramas en un mismo proyecto), o alcanza con N destinos por modelo más proyectos separados? | **Pendiente del usuario.** Si la respuesta es sí, el incremento incorpora una tarea de contrato y esquema: quitar `UNIQUE` de `uml_model.project_id`, publicar `/projects/{id}/models` y actualizar `02-esquema-fisico.sql` —que es la autoridad (D5)— antes de codificar. Si es no, D14 cubre el requisito sin tocar ninguna autoridad |
+| **P1** | ¿Hace falta más de un modelo por proyecto (varios diagramas en un mismo proyecto)? | **No** (D15). El incremento se apoya en N destinos por modelo (D14) y en proyectos separados. Queda **abierta hacia adelante y no bloqueante**: habilitar varios diagramas por proyecto exige, cuando se pida, quitar `UNIQUE` de `uml_model.project_id` y publicar `/projects/{id}/models`, en ese orden, porque el esquema físico manda (D5) |
 
 ## 5. Restricciones de entorno medidas en esta sesión
 
@@ -372,8 +373,7 @@ Cada tarea cierra con **un commit de unidad de trabajo** con sus pruebas al lado
 - **Superficies de edición permitidas:** `docs/puds/cierre/**`, `docs/capturas/incremento-2/**`, `README.md`,
   `odd/tasks/incremento-2-generacion-y-exportacion.md`.
 - **Evidencia:** el recorrido de §1 ejecutado de nuevo desde cero por alguien que no lo escribió; `mvn -o -B
-  verify`, el arnés de aceptación y `npm test` en verde; el acta declarando lo que **no** se verificó y el estado
-  de P1.
+  verify`, el arnés de aceptación y `npm test` en verde; el acta declarando lo que **no** se verificó.
 - **Depende de:** T11, T12 y T13.
 
 ### 6.1 Orden y forma de trabajo
@@ -434,7 +434,7 @@ apareciera, sería una señal de que la frontera está mal puesta.
       los hashes.
 - [ ] La preparación AWS/Floci se ejecutó **sin crear recursos facturables**.
 - [ ] La pantalla del editor no muestra ningún identificador técnico.
-- [ ] El acta de cierre declara lo que **no** se verificó y el estado de P1.
+- [ ] El acta de cierre declara lo que **no** se verificó.
 
 ## 9. Registro de progreso
 
