@@ -84,6 +84,30 @@ que los nombra, en vez de ignorarse en silencio.
 **D4 queda sujeta a verificación de licencia en T7**, que además comprueba el peso y la licencia del árbol de
 dependencias realmente instalado, no solo lo que dice el sitio.
 
+### 4.1 Decisiones cerradas durante la implementación
+
+Estas no estaban en el plan y aparecieron al chocar el contrato con el esquema. Se registran con su motivo
+porque una decisión no escrita es una decisión que nadie puede revisar.
+
+| # | Decisión | Alternativa descartada y motivo |
+| --- | --- | --- |
+| D7 | El `operationId` del sobre **es** la clave primaria `command_id` de `model_command` | Agregar una columna `operation_id`. El esquema físico no la tiene y el contrato pide un id opaco, generado por el autor y estable entre versiones: insertarlo explícitamente cumple las tres cosas sin tocar el esquema |
+| D8 | El `payload JSONB` guarda el **sobre canónico completo**; los escalares consultables se proyectan en sus columnas | Guardar solo el `payload` suelto. El comentario de esa misma columna dice que guarda el sobre con precondiciones y argumentos, y el contrato separa `payload`, `preconditions` y la lista de `targets`, que el esquema no tiene desglosados |
+| D9 | Un nombre de clasificador **duplicado se rechaza al crearlo**, con `PRECONDITION_FAILED` que nombra a los dos | Registrarlo en `name_collision` y bloquear recién al final, como describe el contrato §5.1. El modelo de «registrar y bloquear al final» existe para la edición concurrente, que es el Incremento 3: sin concurrencia, un duplicado es siempre un error del autor y rechazarlo temprano es mejor producto. La comparación es **sensible a mayúsculas**, porque UML distingue `Usuario` de `usuario`. **Debe revisarse cuando entre la colaboración**: ahí los duplicados pasan a ser legítimos y hay que registrarlos |
+
+**Alcance del rechazo de duplicados (D9):** el índice único es lógico, sobre `(model_id, namespace_id, nombre)`, y
+lo aplica la capa de comando porque el esquema **no** tiene `UNIQUE` a propósito. `classifier.rename` valida lo
+mismo que `classifier.create`, así que renombrar hacia un nombre tomado también se rechaza.
+
+| # | Decisión | Alternativa descartada y motivo |
+| --- | --- | --- |
+| D10 | Los comandos que crean un elemento (`*.create`, `*.add`) reciben el **UUID del elemento nuevo desde el cliente** | Generarlo el servidor y devolverlo en la respuesta. El editor necesita direccionar el elemento apenas lo crea para poder editarlo, y la cola offline del contrato §4.2 necesita referenciarlo antes de que el servidor conteste. Es la misma regla que D7 aplicada a los elementos: el id lo genera quien crea, es opaco y no cambia. Un id repetido se rechaza nombrandolo |
+
+**Semántica de `targets` que se aplica en T3 y T4:** `targets` lleva los ids de los elementos **existentes**
+sobre los que actúa el comando (el clasificador dueño en `attribute.add`, el clasificador en
+`classifier.rename`). El id del elemento **nuevo** viaja en el `payload`, según D10. El primer `target` es el que
+se proyecta en `model_command.target_type` / `target_id`, según D8.
+
 **Hallazgo de T1, medido sobre el bytecode.** Hibernate 6.6 no obliga a que el enum Java se llame igual que el
 tipo PostgreSQL. El desensamblado de `org.hibernate.dialect.PostgreSQLEnumJdbcType` muestra que
 `Class.getSimpleName()` se usa **solo** para construir `Dialect.getCreateEnumTypeCommand`, y que ese método se
@@ -150,18 +174,29 @@ demasiado grande falla sin producir nada.
 
 ### T3 — Comandos de clasificador, atributo, operación y parámetro (Etapa B2)
 
-- **Objetivo:** que la semántica del diagrama se pueda construir y destruir por comandos validados.
-- **Entregable:** manejadores de `classifier.create`, `classifier.rename`, `classifier.setAbstract`,
-  `classifier.delete`, `attribute.add`, `attribute.update`, `attribute.remove`, `operation.add`,
-  `operation.update`, `operation.remove`, `parameter.add`, `parameter.remove`, `constraint.add`,
-  `constraint.remove`.
-- **Validaciones exigidas:** nombre de clasificador único por espacio de nombres; tipo de atributo resoluble
-  contra `type_reference`; `ENUMERATION` rechazada nombrando `BL-CLS-04` y el GAP-02; visibilidad fuera de
-  `PUBLIC`/`PRIVATE` rechazada nombrando `BL-VIS-03`/`BL-VIS-04`; `is_static`/`is_abstract` en atributo
-  rechazados nombrando `BL-FEA-05`/`BL-FEA-06`; `constraint.add` con dueño distinto de `CLASSIFIER` se rechaza
+- **Objetivo:** que la semántica del diagrama se pueda construir, modificar y destruir por comandos validados.
+- **Se entrega en dos corridas**, porque incluye los comandos aditivos y además la cascada de borrado:
+  - **T3a — aditivos y modificaciones:** `classifier.create`, `classifier.rename`, `classifier.setAbstract`,
+    `attribute.add`, `attribute.update`, `attribute.remove`, `operation.add`, `operation.update`,
+    `operation.remove`, `parameter.add`, `parameter.remove`, `constraint.add`, `constraint.remove`.
+  - **T3b — borrado con cascada:** `classifier.delete`, con `cascade_group` y un `tombstone` por elemento
+    afectado, y la precondición de confirmación explícita que exige el contrato §2.4.
+- **Invariante que los comandos deben sostener:** `kind = ABSTRACT_CLASS` y `is_abstract = true` son la misma
+  afirmación (BL-CLS-02 declara las dos). `classifier.create` y `classifier.setAbstract` mantienen las dos
+  sincronizadas, y una prueba comprueba que **no pueden divergir** por ningún camino.
+- **Validaciones exigidas:** nombre de clasificador duplicado en el mismo espacio de nombres rechazado según
+  D9; tipo de atributo resoluble contra `type_reference` o rechazado; `ENUMERATION` rechazada nombrando
+  `BL-CLS-04` y el GAP-02; visibilidad fuera de `PUBLIC`/`PRIVATE` rechazada nombrando `BL-VIS-03`/`BL-VIS-04`;
+  `is_static`/`is_abstract` en atributo rechazados nombrando `BL-FEA-05`/`BL-FEA-06`; multiplicidad `RANGE`
+  rechazada nombrando `BL-REL-07` y el GAP-05; `constraint.add` con dueño distinto de `CLASSIFIER` se rechaza
   nombrando el dueño.
+- **Nota de diseño para T3b:** el handler corre **antes** de que exista la fila de `model_command`, y
+  `cascade_group.root_command_id` y `tombstone.command_id` apuntan a esa fila. Por eso el handler devuelve los
+  objetivos borrados y es el servicio el que crea el `cascade_group` y los `tombstone` después de persistir el
+  comando: el handler muta el modelo, el servicio escribe la historia.
 - **Superficies de edición permitidas:** `backend/src/main/java/com/diagramador/command/**`,
-  `backend/src/main/java/com/diagramador/domain/**`, `backend/src/test/**`.
+  `backend/src/main/java/com/diagramador/domain/**`, `backend/src/main/java/com/diagramador/persistence/**`,
+  `backend/src/test/**`.
 - **Evidencia:** una prueba por comando con su camino feliz y su rechazo; prueba de que el rechazo **nombra el
   constructo**, no que devuelve un error genérico.
 - **Depende de:** T2.
@@ -307,7 +342,7 @@ El Incremento 0 se fue de mano. Acá rige lo contrario:
 | Tarea | Estado | Evidencia |
 | --- | --- | --- |
 | T1 — Cimiento del backend y Flyway | **hecho** | Commit `1ce4771`; `mvn -o -B verify` = 8 pruebas, 0 fallos, 0 errores, 0 saltadas; Flyway aplicó `V1` y `V2` al esquema `diagrammer`; las 15 tablas y los 7 tipos enum son **byte-idénticos** a `02-esquema-fisico.sql` (verificado con script, 0 discrepancias); `ddl-auto: validate` intacto; enums Java en PascalCase tras falsificar la afirmación de que debían ir en minúscula |
-| T2 — Sobre de operación e idempotencia | pendiente | — |
+| T2 — Sobre de operación e idempotencia | **hecho** | Commit `58b8fef`; `mvn -o -B verify` = 19 pruebas, 0 fallos, 0 errores, 0 saltadas; `V3` con `model_version`, `model_command`, `cascade_group`, `tombstone` byte-idénticas al esquema autoridad (verificado con script); la idempotencia se comprueba **antes** de mutar y el replay no cambia conteos ni revisión; el bump de revisión es un `UPDATE` condicional y el conflicto es una excepción no chequeada, así que la carrera perdida hace rollback de las mutaciones del handler |
 | T3 — Comandos de clasificador y miembros | pendiente | — |
 | T4 — Comandos de relación y geometría | pendiente | — |
 | T5 — API REST y errores | pendiente | — |
