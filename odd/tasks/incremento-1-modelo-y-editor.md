@@ -84,6 +84,14 @@ que los nombra, en vez de ignorarse en silencio.
 **D4 queda sujeta a verificación de licencia en T7**, que además comprueba el peso y la licencia del árbol de
 dependencias realmente instalado, no solo lo que dice el sitio.
 
+**Hallazgo de T1, medido sobre el bytecode.** Hibernate 6.6 no obliga a que el enum Java se llame igual que el
+tipo PostgreSQL. El desensamblado de `org.hibernate.dialect.PostgreSQLEnumJdbcType` muestra que
+`Class.getSimpleName()` se usa **solo** para construir `Dialect.getCreateEnumTypeCommand`, y que ese método se
+invoca **únicamente** desde `addAuxiliaryDatabaseObjects`, que es el camino de generación de DDL. Con
+`ddl-auto: validate` y Flyway dueño del esquema ese camino no corre nunca. Los siete enums Java se llaman en
+PascalCase y la validación y el round-trip lo confirman. Si el esquema alguna vez pasara a generarse con
+Hibernate, el nombre del enum Java volvería a importar: queda anotado, no como adorno.
+
 ## 5. Restricciones de entorno medidas en esta sesión
 
 Estas restricciones no son preferencias: son lo que el Incremento 0 dejó medido y lo que verifiqué en disco.
@@ -298,7 +306,7 @@ El Incremento 0 se fue de mano. Acá rige lo contrario:
 
 | Tarea | Estado | Evidencia |
 | --- | --- | --- |
-| T1 — Cimiento del backend y Flyway | pendiente | — |
+| T1 — Cimiento del backend y Flyway | **hecho** | Commit `1ce4771`; `mvn -o -B verify` = 8 pruebas, 0 fallos, 0 errores, 0 saltadas; Flyway aplicó `V1` y `V2` al esquema `diagrammer`; las 15 tablas y los 7 tipos enum son **byte-idénticos** a `02-esquema-fisico.sql` (verificado con script, 0 discrepancias); `ddl-auto: validate` intacto; enums Java en PascalCase tras falsificar la afirmación de que debían ir en minúscula |
 | T2 — Sobre de operación e idempotencia | pendiente | — |
 | T3 — Comandos de clasificador y miembros | pendiente | — |
 | T4 — Comandos de relación y geometría | pendiente | — |
