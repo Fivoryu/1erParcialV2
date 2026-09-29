@@ -24,7 +24,7 @@ public class ClassifierSetAbstractHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         support.requireFields(payload, "isAbstract");
         Classifier classifier = support.classifier(context, "classifier");
@@ -32,5 +32,6 @@ public class ClassifierSetAbstractHandler implements CommandHandler {
             support.precondition("setAbstract is meaningless for classifier kind " + classifier.getKind());
         }
         classifier.setAbstract(support.bool(payload, "isAbstract"));
+        return Outcome.none();
     }
 }

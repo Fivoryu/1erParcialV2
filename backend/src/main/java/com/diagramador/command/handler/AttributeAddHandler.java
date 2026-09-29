@@ -31,7 +31,7 @@ public class AttributeAddHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         rejectUnsupportedFlags(payload);
         support.requireFields(payload, "id", "name", "type");
@@ -45,6 +45,7 @@ public class AttributeAddHandler implements CommandHandler {
                 attributeRepository.findByClassifierId(classifier.getId()).stream().map(UmlAttribute::getOrdinal).toList());
         support.insertAttribute(context, id, classifier, type, support.text(payload, "name"), visibility, multiplicity,
                 support.optionalText(payload, "defaultValue"), ordinal);
+        return Outcome.none();
     }
 
     private void rejectUnsupportedFlags(JsonNode payload) {

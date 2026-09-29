@@ -29,7 +29,7 @@ public class ParameterAddHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         support.requireFields(payload, "id", "name", "type");
         UUID id = support.uuid(payload, "id");
@@ -45,5 +45,6 @@ public class ParameterAddHandler implements CommandHandler {
                 parameterRepository.findByOperationId(operation.getId()).stream()
                         .map(OperationParameter::getOrdinal).toList());
         support.insertParameter(context, id, operation, type, support.text(payload, "name"), direction, ordinal);
+        return Outcome.none();
     }
 }

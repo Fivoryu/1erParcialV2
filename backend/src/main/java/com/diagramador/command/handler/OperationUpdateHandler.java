@@ -23,7 +23,7 @@ public class OperationUpdateHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         if (payload.isEmpty()) {
             support.invalid("At least one operation field must be supplied for update");
@@ -45,5 +45,6 @@ public class OperationUpdateHandler implements CommandHandler {
         if (payload.has("isStatic")) {
             operation.setStatic(support.bool(payload, "isStatic"));
         }
+        return Outcome.none();
     }
 }

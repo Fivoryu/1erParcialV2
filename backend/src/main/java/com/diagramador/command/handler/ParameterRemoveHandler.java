@@ -1,6 +1,8 @@
 package com.diagramador.command.handler;
 
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.OperationParameter;
+import com.diagramador.domain.TargetType;
 import com.diagramador.persistence.OperationParameterRepository;
 import org.springframework.stereotype.Component;
 
@@ -21,8 +23,10 @@ public class ParameterRemoveHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         support.noPayload(context);
-        parameterRepository.delete(support.parameter(context));
+        OperationParameter parameter = support.parameter(context);
+        parameterRepository.delete(parameter);
+        return Outcome.deleted(TargetType.PARAMETER, parameter.getId());
     }
 }

@@ -313,8 +313,9 @@ class CommandServiceTest extends AbstractPostgresIntegrationTest {
                 }
 
                 @Override
-                public void apply(Context context) {
+                public Outcome apply(Context context) {
                     // Test-only handler proves the service port without registering a product command.
+                    return Outcome.none();
                 }
             };
         }

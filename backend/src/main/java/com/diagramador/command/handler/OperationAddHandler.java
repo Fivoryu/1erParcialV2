@@ -30,7 +30,7 @@ public class OperationAddHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         support.requireFields(payload, "id", "name");
         UUID id = support.uuid(payload, "id");
@@ -45,5 +45,6 @@ public class OperationAddHandler implements CommandHandler {
                 operationRepository.findByClassifierId(classifier.getId()).stream().map(UmlOperation::getOrdinal).toList());
         support.insertOperation(context, id, classifier, support.text(payload, "name"), returnType, visibility,
                 isAbstract, isStatic, ordinal);
+        return Outcome.none();
     }
 }

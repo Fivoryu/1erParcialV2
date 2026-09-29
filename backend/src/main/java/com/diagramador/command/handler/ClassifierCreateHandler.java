@@ -27,7 +27,7 @@ public class ClassifierCreateHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         support.requireFields(payload, "id", "name", "kind");
         java.util.UUID id = support.uuid(payload, "id");
@@ -38,5 +38,6 @@ public class ClassifierCreateHandler implements CommandHandler {
         support.ensureClassifierNameAvailable(context.model(), namespace, name, null);
         boolean isAbstract = kind == ClassifierKind.ABSTRACT_CLASS;
         support.insertClassifier(context, id, namespace, kind, name, isAbstract);
+        return Outcome.none();
     }
 }

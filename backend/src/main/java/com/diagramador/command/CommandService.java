@@ -1,15 +1,19 @@
 package com.diagramador.command;
 
+import com.diagramador.domain.CascadeGroup;
 import com.diagramador.domain.ModelCommand;
 import com.diagramador.domain.ModelVersion;
+import com.diagramador.domain.Tombstone;
 import com.diagramador.domain.Project;
 import com.diagramador.domain.ProjectMember;
 import com.diagramador.domain.ProjectMemberRole;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UserAccount;
+import com.diagramador.persistence.CascadeGroupRepository;
 import com.diagramador.persistence.ModelCommandRepository;
 import com.diagramador.persistence.ModelVersionRepository;
+import com.diagramador.persistence.TombstoneRepository;
 import com.diagramador.persistence.ProjectMemberRepository;
 import com.diagramador.persistence.ProjectRepository;
 import com.diagramador.persistence.UmlModelRepository;
@@ -35,6 +39,8 @@ public class CommandService {
     private final com.diagramador.persistence.UserAccountRepository userAccountRepository;
     private final ProjectMemberRepository projectMemberRepository;
     private final ModelCommandRepository commandRepository;
+    private final CascadeGroupRepository cascadeGroupRepository;
+    private final TombstoneRepository tombstoneRepository;
     private final ModelVersionRepository versionRepository;
     private final ModelStateHasher stateHasher;
     private final ObjectMapper objectMapper;
@@ -45,6 +51,7 @@ public class CommandService {
     public CommandService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
             com.diagramador.persistence.UserAccountRepository userAccountRepository,
             ProjectMemberRepository projectMemberRepository, ModelCommandRepository commandRepository,
+            CascadeGroupRepository cascadeGroupRepository, TombstoneRepository tombstoneRepository,
             ModelVersionRepository versionRepository, ModelStateHasher stateHasher, ObjectMapper objectMapper,
             EntityManager entityManager, TransactionTemplate transactionTemplate, List<CommandHandler> handlers) {
         this.projectRepository = projectRepository;
@@ -52,6 +59,8 @@ public class CommandService {
         this.userAccountRepository = userAccountRepository;
         this.projectMemberRepository = projectMemberRepository;
         this.commandRepository = commandRepository;
+        this.cascadeGroupRepository = cascadeGroupRepository;
+        this.tombstoneRepository = tombstoneRepository;
         this.versionRepository = versionRepository;
         this.stateHasher = stateHasher;
         this.objectMapper = objectMapper;
@@ -145,7 +154,9 @@ public class CommandService {
                     "Envelope cannot be represented as canonical JSON"));
         }
 
-        handler.apply(new CommandHandler.Context(envelope, project, model, entityManager));
+        CommandHandler.Outcome outcome = handler.apply(
+                new CommandHandler.Context(envelope, project, model, entityManager));
+        validateCascadePrecondition(envelope, outcome);
         entityManager.flush();
 
         long nextRevision = expectedRevision + 1;
@@ -155,6 +166,16 @@ public class CommandService {
                 envelope.causalParentOperationId(), envelope.idempotencyKey());
         commandRepository.save(command);
         entityManager.flush();
+
+        if (!outcome.deletedTargets().isEmpty()) {
+            CascadeGroup cascade = cascadeGroupRepository.save(
+                    CascadeGroup.create(model, command, outcome.deletedTargets().size()));
+            for (CommandHandler.DeletedTarget deleted : outcome.deletedTargets()) {
+                tombstoneRepository.save(Tombstone.create(model, deleted.targetType(), deleted.targetId(), cascade,
+                        command));
+            }
+            entityManager.flush();
+        }
 
         int updated = modelRepository.bumpRevisionIfCurrent(model.getId(), expectedRevision, nextRevision);
         if (updated != 1) {
@@ -185,6 +206,9 @@ public class CommandService {
                                 "Precondition model_valid expected " + expected + " but was " + actual);
                     }
                 }
+                case "cascade_count" -> {
+                    // The actual count is known only after the deletion handler expands the cascade.
+                }
                 case "permission" -> {
                     ProjectMember current = projectMemberRepository
                             .findByProjectIdAndUserId(project.getId(), envelope.author().userId()).orElse(null);
@@ -198,6 +222,45 @@ public class CommandService {
                     return new Diagnostic(ErrorCode.PRECONDITION_FAILED,
                             "Unknown precondition kind " + precondition.kind());
                 }
+            }
+        }
+        return null;
+    }
+
+    private void validateCascadePrecondition(OperationEnvelope envelope, CommandHandler.Outcome outcome) {
+        int actualCount = outcome.deletedTargets().size();
+        Optional<Precondition> declared = envelope.preconditions().stream()
+                .filter(precondition -> precondition != null && "cascade_count".equals(precondition.kind()))
+                .findFirst();
+        if (declared.isPresent()) {
+            Object expect = declared.get().expect();
+            Integer expectedCount = cascadeCount(expect);
+            if (expectedCount == null) {
+                throw new CommandValidationException(ErrorCode.PRECONDITION_FAILED,
+                        "Precondition cascade_count must be a non-negative integer");
+            }
+            if (expectedCount != actualCount) {
+                throw new CommandValidationException(ErrorCode.PRECONDITION_FAILED,
+                        "Precondition cascade_count expected " + expectedCount + " but actual cascade count was "
+                                + actualCount);
+            }
+        } else if (actualCount > 1) {
+            throw new CommandValidationException(ErrorCode.PRECONDITION_FAILED,
+                    "Deletion cascade affects " + actualCount
+                            + " elements and requires a cascade_count confirmation");
+        }
+    }
+
+    private static Integer cascadeCount(Object value) {
+        if (value instanceof Number number && number.longValue() >= 0 && number.longValue() <= Integer.MAX_VALUE) {
+            return number.intValue();
+        }
+        if (value instanceof String string) {
+            try {
+                int parsed = Integer.parseInt(string);
+                return parsed >= 0 ? parsed : null;
+            } catch (NumberFormatException ignored) {
+                return null;
             }
         }
         return null;

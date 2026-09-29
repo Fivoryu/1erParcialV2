@@ -1,6 +1,8 @@
 package com.diagramador.command.handler;
 
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.TargetType;
+import com.diagramador.domain.UmlConstraint;
 import com.diagramador.persistence.UmlConstraintRepository;
 import org.springframework.stereotype.Component;
 
@@ -21,8 +23,10 @@ public class ConstraintRemoveHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         support.noPayload(context);
-        constraintRepository.delete(support.constraint(context));
+        UmlConstraint constraint = support.constraint(context);
+        constraintRepository.delete(constraint);
+        return Outcome.deleted(TargetType.CONSTRAINT, constraint.getId());
     }
 }

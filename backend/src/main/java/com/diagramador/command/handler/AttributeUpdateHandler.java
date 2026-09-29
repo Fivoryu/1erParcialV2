@@ -25,7 +25,7 @@ public class AttributeUpdateHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         rejectUnsupportedFlags(payload);
         if (payload.isEmpty()) {
@@ -50,6 +50,7 @@ public class AttributeUpdateHandler implements CommandHandler {
         if (payload.has("defaultValue")) {
             attribute.setDefaultValue(support.optionalText(payload, "defaultValue"));
         }
+        return Outcome.none();
     }
 
     private void rejectUnsupportedFlags(JsonNode payload) {

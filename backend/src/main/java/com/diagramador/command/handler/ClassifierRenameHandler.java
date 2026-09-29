@@ -23,12 +23,13 @@ public class ClassifierRenameHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         support.requireFields(payload, "name");
         Classifier classifier = support.classifier(context, "classifier");
         String name = support.text(payload, "name");
         support.ensureClassifierNameAvailable(context.model(), classifier.getNamespace(), name, classifier.getId());
         classifier.setName(name);
+        return Outcome.none();
     }
 }

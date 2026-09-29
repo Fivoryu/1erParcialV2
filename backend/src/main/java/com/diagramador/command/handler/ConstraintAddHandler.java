@@ -31,7 +31,7 @@ public class ConstraintAddHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         support.requireFields(payload, "id", "ownerType", "ownerId", "expression");
         UUID id = support.uuid(payload, "id");
@@ -44,6 +44,7 @@ public class ConstraintAddHandler implements CommandHandler {
         }
         SeverityKind severity = severity(payload);
         support.insertConstraint(context, id, ownerType, ownerId, support.text(payload, "expression"), severity.name());
+        return Outcome.none();
     }
 
     private SeverityKind severity(JsonNode payload) {

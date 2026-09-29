@@ -1,6 +1,8 @@
 package com.diagramador.command.handler;
 
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.TargetType;
+import com.diagramador.domain.UmlAttribute;
 import com.diagramador.persistence.UmlAttributeRepository;
 import org.springframework.stereotype.Component;
 
@@ -21,8 +23,10 @@ public class AttributeRemoveHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         support.noPayload(context);
-        attributeRepository.delete(support.attribute(context));
+        UmlAttribute attribute = support.attribute(context);
+        attributeRepository.delete(attribute);
+        return Outcome.deleted(TargetType.ATTRIBUTE, attribute.getId());
     }
 }

@@ -1,6 +1,8 @@
 package com.diagramador.command.handler;
 
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.TargetType;
+import com.diagramador.domain.UmlOperation;
 import com.diagramador.persistence.UmlOperationRepository;
 import org.springframework.stereotype.Component;
 
@@ -21,8 +23,10 @@ public class OperationRemoveHandler implements CommandHandler {
     }
 
     @Override
-    public void apply(Context context) {
+    public Outcome apply(Context context) {
         support.noPayload(context);
-        operationRepository.delete(support.operation(context));
+        UmlOperation operation = support.operation(context);
+        operationRepository.delete(operation);
+        return Outcome.deleted(TargetType.OPERATION, operation.getId());
     }
 }

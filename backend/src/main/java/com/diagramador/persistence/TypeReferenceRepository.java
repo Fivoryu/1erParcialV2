@@ -9,6 +9,8 @@ public interface TypeReferenceRepository extends JpaRepository<TypeReference, UU
 
     List<TypeReference> findByModelId(UUID modelId);
 
+    List<TypeReference> findByClassifierId(UUID classifierId);
+
     java.util.Optional<TypeReference> findFirstByModelIdAndPrimitiveName(UUID modelId, String primitiveName);
 
     java.util.Optional<TypeReference> findFirstByModelIdAndClassifierId(UUID modelId, UUID classifierId);
