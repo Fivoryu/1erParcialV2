@@ -1,0 +1,131 @@
+package com.diagramador.domain;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+/**
+ * Row of {@code diagrammer.relationship_end}.
+ *
+ * <p>The schema constrains {@code ordinal} to 1 or 2; the two ends of one relationship together
+ * satisfy the "exactly two valid ends" invariant enforced by application code in later tasks.
+ */
+@Entity
+@Table(name = "relationship_end", schema = "diagrammer")
+public class RelationshipEnd {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(name = "relationship_end_id", nullable = false, updatable = false)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "relationship_id", nullable = false)
+    private UmlRelationship relationship;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "classifier_id", nullable = false)
+    private Classifier classifier;
+
+    @Column(name = "ordinal", nullable = false)
+    private short ordinal;
+
+    @Column(name = "role", length = 255)
+    private String role;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "multiplicity", nullable = false)
+    private MultiplicityKind multiplicity;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "navigability", nullable = false)
+    private NavigationKind navigability;
+
+    @Column(name = "aggregation_kind", nullable = false, length = 16)
+    private String aggregationKind;
+
+    protected RelationshipEnd() {
+    }
+
+    public static RelationshipEnd create(UmlRelationship relationship, Classifier classifier, short ordinal, String role,
+            MultiplicityKind multiplicity, NavigationKind navigability, String aggregationKind) {
+        RelationshipEnd end = new RelationshipEnd();
+        end.relationship = relationship;
+        end.classifier = classifier;
+        end.ordinal = ordinal;
+        end.role = role;
+        end.multiplicity = multiplicity;
+        end.navigability = navigability;
+        end.aggregationKind = aggregationKind;
+        return end;
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public UmlRelationship getRelationship() {
+        return relationship;
+    }
+
+    public Classifier getClassifier() {
+        return classifier;
+    }
+
+    public void setClassifier(Classifier classifier) {
+        this.classifier = classifier;
+    }
+
+    public short getOrdinal() {
+        return ordinal;
+    }
+
+    public void setOrdinal(short ordinal) {
+        this.ordinal = ordinal;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public MultiplicityKind getMultiplicity() {
+        return multiplicity;
+    }
+
+    public void setMultiplicity(MultiplicityKind multiplicity) {
+        this.multiplicity = multiplicity;
+    }
+
+    public NavigationKind getNavigability() {
+        return navigability;
+    }
+
+    public void setNavigability(NavigationKind navigability) {
+        this.navigability = navigability;
+    }
+
+    public String getAggregationKind() {
+        return aggregationKind;
+    }
+
+    public void setAggregationKind(String aggregationKind) {
+        this.aggregationKind = aggregationKind;
+    }
+}
