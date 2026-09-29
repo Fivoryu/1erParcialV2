@@ -15,7 +15,7 @@ su disposición visual.
 | --- | --- |
 | Documentación de requisitos, análisis y diseño | Heredada y disponible en `docs/` |
 | Incremento 0 — contrato y pruebas de riesgo | **Cerrado** (`odd/tasks/incremento-0-contrato-y-riesgos.md`) |
-| Incremento 1 — modelo y editor visual | **Implementado** (`odd/tasks/incremento-1-modelo-y-editor.md`), con una deuda declarada: falta la captura visual |
+| Incremento 1 — modelo y editor visual | **Cerrado** — [acta](docs/puds/cierre/03-cierre-incremento-1.md), con dos defectos visuales abiertos |
 | Incrementos 2 y siguientes (generación, colaboración, XMI, IA, móvil) | Pendientes |
 
 ### Qué está verificado hoy
@@ -28,9 +28,14 @@ su disposición visual.
 | Corte visible | Crear proyecto, dos clases, atributo, operación, relación, mover, recargar y encontrar lo mismo **con la misma disposición** |
 | Regla de presentación | El HTML renderizado no contiene ningún UUID ni identificador técnico; probado sobre datos vivos |
 
-**Lo que todavía no se puede afirmar:** ninguna persona miró el diagrama renderizado. La regla de no-IDs y la
-notación UML están probadas sobre el markup, pero si el resultado *se ve* minimalista es un juicio humano y no
-lo sustituye una aserción. La captura visual es la deuda abierta del incremento.
+**Evidencia visual:** la captura del lienzo está en `docs/capturas/incremento-1/` y se reproduce con
+`python tools/acceptance/seed_demo_diagram.py` más un `npm run build` apuntando al backend. La regla de no-IDs se
+confirma ahí a ojo: no hay un solo UUID en pantalla.
+
+**Dos defectos de presentación quedan abiertos y nombrados:** las etiquetas de los extremos de una asociación se
+superponen a las cajas cuando el tramo es corto, y el triángulo de `INTERFACE_REALIZATION` se dibuja despegado de
+su línea. Están en el [acta de cierre](docs/puds/cierre/03-cierre-incremento-1.md) §3 con su causa, y son lo
+primero a arreglar antes de mostrar el producto.
 
 > **Importante:** `SOFTWARE.md` describe el **intento anterior** del mismo producto. Se conserva como evidencia y
 > como referencia de requisitos, pero **no describe el código de este repositorio**. Cualquier afirmación de

@@ -400,12 +400,21 @@ El Incremento 0 se fue de mano. Acá rige lo contrario:
 - [x] **La pantalla no muestra ningún identificador técnico.**
 - [x] El `README.md` dice la verdad sobre el estado del repositorio.
 
-**Lo único que queda debiendo este incremento, sin adorno:** **ningún humano miró el diagrama**. La regla de
-no-IDs está probada sobre el markup —el test afirma que el HTML renderizado no matchea ningún patrón de UUID ni
-contiene identificadores crudos, incluso con datos vivos del backend— y la notación UML está fijada por prueba.
-Pero si el resultado *se ve* minimalista es un juicio de la persona para la que existe el incremento, y no lo
-puede sustituir una aserción. La captura visual es lo primero que hay que cerrar antes de dar el incremento por
-presentable.
+**Lo que la captura reveló, y que ningún test veía.** El incremento cierra con el corte funcional verificado y
+con **dos defectos de presentación conocidos y localizados**, documentados en el
+[acta de cierre](../../docs/puds/cierre/03-cierre-incremento-1.md) §3:
+
+- **V1, corregido.** `[1]` aparecía en cada atributo y en cada extremo. `1` es el default de UML, así que
+  omitirlo no cambia el significado: era ruido técnico puro, justo lo que este incremento quiere evitar. Se omite
+  solo el default, con una prueba que lo fija en los dos sentidos.
+- **V2 y V3, abiertos.** Las etiquetas de los extremos de una asociación se superponen a las cajas cuando el
+  tramo es corto, y el triángulo de `INTERFACE_REALIZATION` se dibuja despegado de su línea. Ambos viven en el
+  posicionamiento de etiquetas y marcadores de las aristas, que es el código con más pruebas verdes del editor.
+  Arreglarlos sin el ojo puesto en el resultado es cómo se rompe lo que ya funciona.
+
+O sea: el corte **funciona y está probado**, y la captura existe en `docs/capturas/incremento-1/`. La regla de
+no-IDs se confirma a ojo, no solo en el markup. Lo que queda pendiente es de presentación y está nombrado, que es
+muy distinto a estar oculto.
 
 ## 9. Registro de progreso
 
@@ -420,7 +429,7 @@ presentable.
 | T7 — Cimiento del editor web | **hecho** | Commit `be9de52`; `npm run build` verde (270.93 kB JS, 8.83 kB CSS) y `npm test` = 4 pasan, 1 saltada (la viva, opcional); licencias leídas del árbol **instalado**: todo MIT salvo `typescript` en Apache-2.0 |
 | T8 — Lienzo con edición directa | **hecho** | Commit `12fac29`; 10 pruebas verdes; la regla de no-IDs probada sobre el markup con UUIDs reales en el fixture (no matchea patrón de UUID, no aparecen `classifier_id`, `EXACTLY_ONE`, `ZERO_OR_MANY`, `NOT_NAVIGABLE` ni `ABSTRACT_CLASS`); multiplicidades como `1`, `0..1`, `1..*`, `0..*`; **D4 cerrada** con `@xyflow/react` 12.12.0, MIT, ~5 MB instalado y 205.90 kB de bundle, atribución visible por decisión |
 | T9 — Conectores y persistencia del layout | **hecho** | Commit `d12a9b9`; 24 pruebas, **0 saltadas**, incluidos los dos tests vivos contra el backend real; el corte completo con dos clases, atributo, operación, relación, movimiento y recarga devuelve **la misma revisión, la misma geometría, las mismas posiciones, los mismos waypoints y los mismos miembros**; `geometryCommands` tiene longitud **1** tras un arrastre, que es el coalescido probado contra un backend real |
-| T10 — Cierre del incremento | **hecho con una deuda declarada** | README raíz reescrito con el estado real; §8 marcada; **deuda: sin captura visual**. Ningún humano miró el diagrama, y si se ve minimalista es un juicio humano, no una aserción |
+| T10 — Cierre del incremento | **hecho** | Acta en [`docs/puds/cierre/03-cierre-incremento-1.md`](../../docs/puds/cierre/03-cierre-incremento-1.md); capturas en `docs/capturas/incremento-1/` tomadas con Chrome headless sobre una escena creada por `tools/acceptance/seed_demo_diagram.py`, para que la evidencia visual sea **reproducible** y no un montaje; README raíz reescrito con el estado real; **V1 corregido** (el `[1]` por defecto ya no se muestra) y **V2/V3 declarados** como defectos de presentación abiertos, con su causa |
 
 ## 10. Trazabilidad
 
