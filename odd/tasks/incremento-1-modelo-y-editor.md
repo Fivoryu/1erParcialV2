@@ -108,6 +108,22 @@ sobre los que actúa el comando (el clasificador dueño en `attribute.add`, el c
 `classifier.rename`). El id del elemento **nuevo** viaja en el `payload`, según D10. El primer `target` es el que
 se proyecta en `model_command.target_type` / `target_id`, según D8.
 
+| # | Decisión | Alternativa descartada y motivo |
+| --- | --- | --- |
+| D11 | **Una relación puede unir un clasificador consigo mismo** (auto-relación) | Rechazarla, como decía la primera redacción de T4. UML la permite y es un ejemplo de clase habitual (`Empleado —jefe→ Empleado`). El escenario de aceptación del parcial es modelar **un dominio no codificado previamente** (RF-12), así que un dominio propuesto por el docente puede perfectamente traerla y rechazarla sería fallar en vivo. React Flow dibuja auto-lazos de forma nativa, así que tampoco cuesta en el lienzo. El esquema ya la representa: dos extremos con ordinal 1 y 2 sobre el mismo clasificador |
+
+**Hallazgo de T3b, corregido en su alcance.** El enum `target_type` tiene ocho miembros — `CLASSIFIER`,
+`ATTRIBUTE`, `OPERATION`, `PARAMETER`, `RELATIONSHIP`, `RELATIONSHIP_END`, `CONSTRAINT` y `DIAGRAM_VIEW` — y
+ninguno se llama como `type_reference`, `element_geometry` o `connector_path`. La consecuencia **no es la misma
+para los tres**, y vale la pena decirlo con precisión en vez de agruparlos:
+
+- `element_geometry` y `connector_path` quedan cubiertos **de forma transitiva** por el tombstone de su dueño:
+  una geometría se identifica por el elemento que ubica, y un trazado por su relación, así que
+  `(CLASSIFIER, id)` y `(RELATIONSHIP, id)` ya dicen que esos hijos se fueron. No hace falta un miembro propio.
+- `type_reference` es el único que **no queda registrado de ninguna forma**. Es inocuo hoy porque esas filas se
+  reutilizan por `(model_id, tipo)` y se recrean a demanda, pero se registra igual: un hueco que no molesta
+  hoy sigue siendo un hueco.
+
 **Hallazgo de T1, medido sobre el bytecode.** Hibernate 6.6 no obliga a que el enum Java se llame igual que el
 tipo PostgreSQL. El desensamblado de `org.hibernate.dialect.PostgreSQLEnumJdbcType` muestra que
 `Class.getSimpleName()` se usa **solo** para construir `Dialect.getCreateEnumTypeCommand`, y que ese método se
@@ -201,19 +217,40 @@ demasiado grande falla sin producir nada.
   constructo**, no que devuelve un error genérico.
 - **Depende de:** T2.
 
-### T4 — Comandos de relación y de disposición visual (Etapa B3)
+### T4 — Comandos de proyecto, de relación y de disposición visual (Etapa B3)
 
-- **Objetivo:** que las relaciones de UML-BL-1 y la geometría entren por el mismo sobre que la semántica.
-- **Entregable:** manejadores de `relationship.create`, `relationship.update`, `relationship.delete`,
-  `geometry.set`, `geometry.remove`; creación implícita del `connector_path` al crear la relación; validación
-  de que la relación tiene exactamente dos extremos del mismo modelo y que no une un clasificador consigo
-  mismo.
+- **Objetivo:** que las relaciones de UML-BL-1, la geometría y las operaciones de proyecto entren por el mismo
+  sobre que la semántica.
+- **Hueco del plan que esta redacción cierra:** `project.create`, `project.rename` y `view.create` figuraban en
+  el catálogo de §6.2 pero **ninguna tarea los implementaba**. Sin `project.create` no hay proyecto, ni modelo,
+  ni vista por defecto, así que el corte visible no puede empezar y `geometry.set` no tiene dónde apoyarse.
+- **Se entrega en dos corridas, en este orden:**
+  - **T4b — proyecto y vista:** `project.create` (crea el proyecto, el `uml_model` en revisión 0, la
+    `diagram_view` por defecto y la membresía del autor como `OWNER`), `project.rename`, `view.create`.
+  - **T4a — relación y geometría:** `relationship.create`, `relationship.update`, `relationship.delete`,
+    `geometry.set`, `geometry.remove`.
+- **Validaciones de relación exigidas:** exactamente dos extremos, ambos clasificadores del **mismo modelo**;
+  `kind` dentro de los seis soportados; la auto-relación (D11) **se acepta**; el nombre de rol y la
+  navegabilidad van por extremo; multiplicidad por categoría con `RANGE` rechazado nombrando `BL-REL-07` y
+  GAP-05. `relationship.create` crea implícitamente el `connector_path` cuando el payload trae los puntos del
+  trazado.
+- **Validaciones de geometría exigidas:** la vista pertenece al mismo modelo; el `targetType` es uno de los
+  ocho del enum y **el objetivo existe con ese tipo** (la integridad polimórfica que el esquema no puede
+  garantizar); `w > 0` y `h > 0` como exige `chk_geometry_dims`; `geometry.set` es un **upsert** sobre
+  `uq_geometry_view_target`.
+- **Separación semántica que hay que probar, no afirmar:** un `geometry.set` **no** cambia ninguna fila de
+  `classifier`, `uml_attribute`, `uml_operation`, `uml_relationship` ni `uml_constraint`. Sí crea una revisión
+  nueva, porque es un comando del catálogo y la colaboración necesita su causalidad. El `state_hash` de
+  `model_version` cubre el **estado versionado completo, incluida la disposición compartida**; el recorte del
+  layout es del *snapshot de generación* del Incremento 2 (§8.2), que es otro artefacto.
 - **Superficies de edición permitidas:** `backend/src/main/java/com/diagramador/command/**`,
-  `backend/src/main/java/com/diagramador/domain/**`, `backend/src/test/**`.
-- **Evidencia:** prueba por cada una de las seis relaciones, comprobando el marcador que le corresponde
+  `backend/src/main/java/com/diagramador/domain/**`,
+  `backend/src/main/java/com/diagramador/persistence/**`, `backend/src/test/**`.
+- **Evidencia:** prueba por cada una de las seis relaciones comprobando el marcador que le corresponde
   (agregación `SHARED`, composición `COMPOSITE`, generalización apuntando al padre); prueba de los cuatro
-  valores de multiplicidad aceptados y de `RANGE` rechazado nombrando GAP-05; prueba de que `geometry.set` no
-  altera la semántica.
+  valores de multiplicidad aceptados y de `RANGE` rechazado nombrando GAP-05; prueba de auto-relación aceptada;
+  prueba de que `geometry.set` no altera la semántica; prueba de que borrar una relación deja su `tombstone` y
+  limpia su trazado.
 - **Depende de:** T3.
 
 ### T5 — API REST y convención de errores (Etapa C)
@@ -315,6 +352,10 @@ worktree.
 20 tipos. Todo lo demás del catálogo de los contratos (`member.*`, `proposal.*`, `xmi.*`, `generation.*`,
 `undo`, `redo`, `resolve`) queda fuera y se rechaza con `UNKNOWN_OPERATION`.
 
+Los 20 tipos se reparten así: `project.create` y `project.rename` en **T4b**; `view.create` en **T4b**;
+los 13 de clasificador, atributo, operación, parámetro y restricción en **T3a**, más `classifier.delete` en
+**T3b**; y los 5 de relación y geometría en **T4a**. Ninguno queda sin tarea.
+
 ## 7. Compromiso de proporción
 
 El Incremento 0 se fue de mano. Acá rige lo contrario:
@@ -343,8 +384,8 @@ El Incremento 0 se fue de mano. Acá rige lo contrario:
 | --- | --- | --- |
 | T1 — Cimiento del backend y Flyway | **hecho** | Commit `1ce4771`; `mvn -o -B verify` = 8 pruebas, 0 fallos, 0 errores, 0 saltadas; Flyway aplicó `V1` y `V2` al esquema `diagrammer`; las 15 tablas y los 7 tipos enum son **byte-idénticos** a `02-esquema-fisico.sql` (verificado con script, 0 discrepancias); `ddl-auto: validate` intacto; enums Java en PascalCase tras falsificar la afirmación de que debían ir en minúscula |
 | T2 — Sobre de operación e idempotencia | **hecho** | Commit `58b8fef`; `mvn -o -B verify` = 19 pruebas, 0 fallos, 0 errores, 0 saltadas; `V3` con `model_version`, `model_command`, `cascade_group`, `tombstone` byte-idénticas al esquema autoridad (verificado con script); la idempotencia se comprueba **antes** de mutar y el replay no cambia conteos ni revisión; el bump de revisión es un `UPDATE` condicional y el conflicto es una excepción no chequeada, así que la carrera perdida hace rollback de las mutaciones del handler |
-| T3 — Comandos de clasificador y miembros | pendiente | — |
-| T4 — Comandos de relación y geometría | pendiente | — |
+| T3 — Comandos de clasificador y miembros | **hecho** (T3a + T3b) | Commits `2c095af` (T3a) y `2da554b` (T3b); `mvn -o -B verify` = 30 pruebas, 0 fallos, 0 errores, 0 saltadas; los 13 comandos ejercitados por el pipeline completo con `baseRevision` incremental, cada efecto leído **de vuelta desde la base**; cascada de 8 elementos con `element_count` = 8 = tombstones = 8; una cascada rechazada deja el modelo intacto, la revisión sin mover y **ni una fila** de `cascade_group` ni `tombstone` |
+| T4 — Comandos de proyecto, relación y geometría | pendiente (T4b y luego T4a) | — |
 | T5 — API REST y errores | pendiente | — |
 | T6 — Arnés de aceptación por HTTP | pendiente | — |
 | T7 — Cimiento del editor web | pendiente | — |
