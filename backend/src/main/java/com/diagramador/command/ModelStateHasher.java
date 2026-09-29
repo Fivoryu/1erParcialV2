@@ -1,6 +1,8 @@
 package com.diagramador.command;
 
 import com.diagramador.domain.Classifier;
+import com.diagramador.domain.ConnectorPath;
+import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.ElementGeometry;
 import com.diagramador.domain.OperationParameter;
 import com.diagramador.domain.RelationshipEnd;
@@ -10,6 +12,8 @@ import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.persistence.ClassifierRepository;
+import com.diagramador.persistence.ConnectorPathRepository;
+import com.diagramador.persistence.DiagramViewRepository;
 import com.diagramador.persistence.ElementGeometryRepository;
 import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.RelationshipEndRepository;
@@ -38,12 +42,15 @@ public class ModelStateHasher {
     private final UmlRelationshipRepository relationshipRepository;
     private final RelationshipEndRepository relationshipEndRepository;
     private final UmlConstraintRepository constraintRepository;
+    private final DiagramViewRepository viewRepository;
     private final ElementGeometryRepository geometryRepository;
+    private final ConnectorPathRepository connectorPathRepository;
 
     public ModelStateHasher(ClassifierRepository classifierRepository, UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, OperationParameterRepository parameterRepository,
             UmlRelationshipRepository relationshipRepository, RelationshipEndRepository relationshipEndRepository,
-            UmlConstraintRepository constraintRepository, ElementGeometryRepository geometryRepository) {
+            UmlConstraintRepository constraintRepository, DiagramViewRepository viewRepository,
+            ElementGeometryRepository geometryRepository, ConnectorPathRepository connectorPathRepository) {
         this.classifierRepository = classifierRepository;
         this.attributeRepository = attributeRepository;
         this.operationRepository = operationRepository;
@@ -51,7 +58,9 @@ public class ModelStateHasher {
         this.relationshipRepository = relationshipRepository;
         this.relationshipEndRepository = relationshipEndRepository;
         this.constraintRepository = constraintRepository;
+        this.viewRepository = viewRepository;
         this.geometryRepository = geometryRepository;
+        this.connectorPathRepository = connectorPathRepository;
     }
 
     @Transactional(readOnly = true)
@@ -74,6 +83,11 @@ public class ModelStateHasher {
         List<RelationshipEnd> relationshipEnds = new ArrayList<>();
         for (UmlRelationship relationship : relationships) {
             relationshipEnds.addAll(relationshipEndRepository.findByRelationshipId(relationship.getId()));
+        }
+        List<DiagramView> views = viewRepository.findByModelId(modelId);
+        List<ConnectorPath> connectorPaths = new ArrayList<>();
+        for (DiagramView view : views) {
+            connectorPaths.addAll(connectorPathRepository.findByViewId(view.getId()));
         }
 
         classifiers.stream().sorted(byId(Classifier::getId))
@@ -117,11 +131,20 @@ public class ModelStateHasher {
                         field("ownerId", constraint.getOwnerId()), field("expression", constraint.getExpression()),
                         field("severity", constraint.getSeverity())))
                 .forEach(lines::add);
+        views.stream().sorted(byId(DiagramView::getId))
+                .map(view -> line("views", view.getId(), field("name", view.getName()),
+                        field("viewKind", view.getViewKind()), field("isDefault", view.isDefault())))
+                .forEach(lines::add);
         geometryRepository.findByViewModelId(modelId).stream().sorted(byId(ElementGeometry::getId))
                 .map(geometry -> line("geometries", geometry.getId(), field("viewId", id(geometry.getView())),
                         field("targetType", geometry.getTargetType()), field("targetId", geometry.getTargetId()),
                         field("x", geometry.getX()), field("y", geometry.getY()), field("w", geometry.getW()),
                         field("h", geometry.getH()), field("zOrder", geometry.getZOrder())))
+                .forEach(lines::add);
+        connectorPaths.stream().sorted(byId(ConnectorPath::getId))
+                .map(path -> line("connectorPaths", path.getId(), field("viewId", id(path.getView())),
+                        field("relationshipId", id(path.getRelationship())), field("ordinal", path.getOrdinal()),
+                        field("x", path.getX()), field("y", path.getY())))
                 .forEach(lines::add);
 
         String canonicalProjection = String.join("\n", lines);

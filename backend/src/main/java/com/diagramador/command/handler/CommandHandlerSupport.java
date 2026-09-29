@@ -7,20 +7,25 @@ import com.diagramador.command.CommandValidationException;
 import com.diagramador.command.ErrorCode;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.OperationParameter;
+import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
 import com.diagramador.domain.UmlConstraint;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UmlOperation;
+import com.diagramador.domain.UmlRelationship;
 import com.diagramador.persistence.ClassifierRepository;
+import com.diagramador.persistence.DiagramViewRepository;
 import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.TypeReferenceRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
 import com.diagramador.persistence.UmlOperationRepository;
+import com.diagramador.persistence.UmlRelationshipRepository;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -36,6 +41,8 @@ public class CommandHandlerSupport {
 
     private final ObjectMapper objectMapper;
     private final ClassifierRepository classifierRepository;
+    private final DiagramViewRepository viewRepository;
+    private final UmlRelationshipRepository relationshipRepository;
     private final UmlAttributeRepository attributeRepository;
     private final UmlOperationRepository operationRepository;
     private final OperationParameterRepository parameterRepository;
@@ -43,11 +50,14 @@ public class CommandHandlerSupport {
     private final UmlConstraintRepository constraintRepository;
 
     public CommandHandlerSupport(ObjectMapper objectMapper, ClassifierRepository classifierRepository,
+            DiagramViewRepository viewRepository, UmlRelationshipRepository relationshipRepository,
             UmlAttributeRepository attributeRepository, UmlOperationRepository operationRepository,
             OperationParameterRepository parameterRepository, TypeReferenceRepository typeReferenceRepository,
             UmlConstraintRepository constraintRepository) {
         this.objectMapper = objectMapper;
         this.classifierRepository = classifierRepository;
+        this.viewRepository = viewRepository;
+        this.relationshipRepository = relationshipRepository;
         this.attributeRepository = attributeRepository;
         this.operationRepository = operationRepository;
         this.parameterRepository = parameterRepository;
@@ -150,6 +160,14 @@ public class CommandHandlerSupport {
         return value.asInt();
     }
 
+    public int integer(JsonNode payload, String field) {
+        JsonNode value = payload.get(field);
+        if (value == null || !value.isIntegralNumber() || !value.canConvertToInt()) {
+            invalid("Payload field '" + field + "' must be a 32-bit integer");
+        }
+        return value.asInt();
+    }
+
     public int ordinalOrNext(JsonNode payload, String field, List<Integer> used) {
         if (payload.has(field) && !payload.get(field).isNull()) {
             int requested = ordinal(payload, field);
@@ -205,6 +223,26 @@ public class CommandHandlerSupport {
         }
     }
 
+    public RelationshipKind relationshipKind(JsonNode payload, String field, RelationshipKind defaultValue) {
+        String value = payload.has(field) && !payload.get(field).isNull()
+                ? text(payload, field).toUpperCase(Locale.ROOT)
+                : defaultValue.name();
+        try {
+            return RelationshipKind.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            invalid("Unsupported relationship kind '" + value + "'");
+            return null;
+        }
+    }
+
+    public AggregationKinds aggregationKinds(RelationshipKind kind) {
+        return switch (kind) {
+            case AGGREGATION -> new AggregationKinds("SHARED", "NONE");
+            case COMPOSITION -> new AggregationKinds("COMPOSITE", "NONE");
+            default -> new AggregationKinds("NONE", "NONE");
+        };
+    }
+
     public TargetType ownerType(JsonNode payload) {
         String value = text(payload, "ownerType").toUpperCase(Locale.ROOT);
         if (!value.equals("CLASSIFIER")) {
@@ -226,12 +264,45 @@ public class CommandHandlerSupport {
     }
 
     public Classifier classifier(CommandHandler.Context context, String scope) {
-        UUID id = targetId(context, scope);
+        return classifier(context.model(), targetId(context, scope));
+    }
+
+    public Classifier classifier(UmlModel model, UUID id) {
         Classifier classifier = classifierRepository.findById(id).orElse(null);
-        if (classifier == null || !classifier.getModel().getId().equals(context.model().getId())) {
-            precondition("Target classifier " + id + " does not belong to model " + context.model().getId());
+        if (classifier == null || !classifier.getModel().getId().equals(model.getId())) {
+            precondition("Classifier " + id + " does not belong to model " + model.getId());
         }
         return classifier;
+    }
+
+    public UmlRelationship relationship(CommandHandler.Context context, String scope) {
+        return relationship(context.model(), targetId(context, scope));
+    }
+
+    public UmlRelationship relationship(UmlModel model, UUID id) {
+        UmlRelationship relationship = relationshipRepository.findById(id).orElse(null);
+        if (relationship == null || !relationship.getModel().getId().equals(model.getId())) {
+            precondition("Relationship " + id + " does not belong to model " + model.getId());
+        }
+        return relationship;
+    }
+
+    public DiagramView diagramView(UmlModel model, UUID id) {
+        DiagramView view = viewRepository.findById(id).orElse(null);
+        if (view == null || !view.getModel().getId().equals(model.getId())) {
+            precondition("View " + id + " does not belong to model " + model.getId());
+        }
+        return view;
+    }
+
+    public DiagramView defaultDiagramView(UmlModel model) {
+        List<DiagramView> defaultViews = viewRepository.findByModelId(model.getId()).stream()
+                .filter(DiagramView::isDefault)
+                .toList();
+        if (defaultViews.size() != 1) {
+            precondition("Model " + model.getId() + " must have exactly one default diagram view to store waypoints");
+        }
+        return defaultViews.get(0);
     }
 
     public UmlAttribute attribute(CommandHandler.Context context) {
@@ -333,6 +404,20 @@ public class CommandHandlerSupport {
         }
     }
 
+    public void insertRelationship(CommandHandler.Context context, UUID id, RelationshipKind kind, String name) {
+        context.entityManager().createNativeQuery("""
+                INSERT INTO diagrammer.uml_relationship
+                    (relationship_id, model_id, kind, name, created_at)
+                VALUES (CAST(:id AS uuid), CAST(:modelId AS uuid),
+                    CAST(:kind AS diagrammer.relationship_kind), :name, now())
+                """)
+                .setParameter("id", id)
+                .setParameter("modelId", context.model().getId())
+                .setParameter("kind", kind.name())
+                .setParameter("name", name)
+                .executeUpdate();
+    }
+
     public void insertClassifier(CommandHandler.Context context, UUID id, Classifier namespace, ClassifierKind kind,
             String name, boolean isAbstract) {
         context.entityManager().createNativeQuery("""
@@ -432,6 +517,9 @@ public class CommandHandlerSupport {
 
     public static void precondition(String message) {
         throw new CommandValidationException(ErrorCode.PRECONDITION_FAILED, message);
+    }
+
+    public record AggregationKinds(String source, String target) {
     }
 
     private static UUID id(Classifier classifier) {
