@@ -13,14 +13,28 @@ const MULTIPLICITY_NOTATION: Record<string, string> = {
   ZERO_OR_MANY: '0..*',
 };
 
+/**
+ * UML treats a multiplicity of exactly one as the default, so it is left out of the
+ * notation: writing `[1]` on every member and every end is noise that reads as a
+ * technicality rather than as a model. Omitting a bound still means one.
+ */
+const UML_DEFAULT_MULTIPLICITY = 'EXACTLY_ONE';
+
 export function formatMultiplicity(multiplicity: string): string {
   return MULTIPLICITY_NOTATION[multiplicity] ?? '';
 }
 
+function formatBounds(multiplicity: string, prefix: string): string {
+  if (multiplicity === UML_DEFAULT_MULTIPLICITY) {
+    return '';
+  }
+  const notation = formatMultiplicity(multiplicity);
+  return notation ? `${prefix}${notation}]` : '';
+}
+
 export function formatRelationshipEndLabel(end: RelationshipEndResource): string {
   const role = end.role?.trim() ?? '';
-  const multiplicity = formatMultiplicity(end.multiplicity);
-  const cardinality = multiplicity ? `[${multiplicity}]` : '';
+  const cardinality = formatBounds(end.multiplicity, '[');
   return [role, cardinality].filter(Boolean).join(' ');
 }
 
@@ -49,8 +63,7 @@ function formatType(type: string | null): string {
 
 export function formatAttribute(attribute: AttributeResource): string {
   const type = formatType(attribute.type);
-  const multiplicity = formatMultiplicity(attribute.multiplicity);
-  const bounds = multiplicity ? ` [${multiplicity}]` : '';
+  const bounds = formatBounds(attribute.multiplicity, ' [');
   const defaultValue = attribute.defaultValue === null ? '' : ` = ${attribute.defaultValue}`;
   return `${formatVisibility(attribute.visibility)} ${attribute.name}${type}${bounds}${defaultValue}`;
 }

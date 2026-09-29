@@ -106,7 +106,9 @@ describe('UML class node presentation', () => {
 
     expect(markup).toContain('Account');
     expect(markup).toContain('<i><span class="uml-editable-label" title="Double-click to edit">Account</span></i>');
-    expect(markup).toContain('- email: String [1] = &#x27;guest@example.test&#x27;');
+    expect(markup).toContain('- email: String = &#x27;guest@example.test&#x27;');
+    expect(markup).not.toContain('String [1]');
+    expect(markup).not.toContain('[1]');
     expect(markup).toContain('+ validate(): boolean');
     expect(markup).toContain('{email is not empty}');
     expect(interfaceMarkup).toContain('«interface»');
