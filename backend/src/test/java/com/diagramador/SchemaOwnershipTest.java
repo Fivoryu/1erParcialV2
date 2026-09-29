@@ -3,12 +3,14 @@ package com.diagramador;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.GenerationState;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.ProjectMemberRole;
 import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.SeverityKind;
 import com.diagramador.domain.TargetType;
+import com.diagramador.domain.VerificationState;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -61,13 +63,37 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("diagram_view", Set.of("view_id", "model_id", "name", "view_kind", "is_default", "created_at")),
             Map.entry("element_geometry", Set.of("geometry_id", "view_id", "target_type", "target_id", "x", "y", "w",
                     "h", "z_order")),
-            Map.entry("connector_path", Set.of("path_id", "view_id", "relationship_id", "ordinal", "x", "y")));
+            Map.entry("connector_path", Set.of("path_id", "view_id", "relationship_id", "ordinal", "x", "y")),
+            Map.entry("generation_target", Set.of("target_id", "model_id", "target_key", "name", "database_engine",
+                    "database_name", "database_schema", "connection_config_ref", "configuration_revision",
+                    "created_at", "updated_at")),
+            Map.entry("generation_profile", Set.of("profile_id", "project_id", "profile_key", "name", "revision",
+                    "configuration", "configuration_hash", "created_at")),
+            Map.entry("template_version", Set.of("template_id", "profile_id", "label", "revision", "content_hash",
+                    "created_at")),
+            Map.entry("generation_run", Set.of("run_id", "model_id", "version_id", "target_id",
+                    "target_config_revision", "profile_id", "template_id", "input_snapshot_hash",
+                    "artifact_set_hash", "artifact_zip_hash", "artifact_zip_uri", "state", "started_at",
+                    "finished_at")),
+            Map.entry("generated_artifact", Set.of("artifact_id", "run_id", "path", "kind", "content_hash", "uri",
+                    "size_bytes")),
+            Map.entry("verification_result", Set.of("verification_id", "run_id", "check_name", "state", "evidence",
+                    "evidence_hash", "tool_name", "started_at", "finished_at", "created_at")));
 
     private static final Set<String> TABLES_RESERVED_FOR_LATER_TASKS = Set.of(
             "invitation", "model_conflict",
-            "name_collision", "ai_proposal", "detected_element", "xmi_exchange", "xmi_loss_item",
-            "generation_target", "generation_profile", "generation_run", "template_version",
-            "generated_artifact", "verification_result", "audit_log");
+            "name_collision", "ai_proposal", "detected_element", "xmi_exchange", "xmi_loss_item", "audit_log");
+
+    /**
+     * Support indexes the physical schema authority declares for the generation tables. Named
+     * explicitly because a previous increment copied the tables and the enum types but skipped the
+     * index section, and nothing noticed: the guard did not look at indexes.
+     */
+    private static final Map<String, Set<String>> SUPPORT_INDEXES_OF_GENERATION_TABLES = Map.of(
+            "generation_target", Set.of("idx_generation_target_model"),
+            "generation_run", Set.of("idx_run_model", "idx_run_target"),
+            "generated_artifact", Set.of("idx_artifact_run"),
+            "verification_result", Set.of("idx_verification_run"));
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -85,7 +111,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2", "3");
+                .contains("1", "2", "3", "4");
     }
 
     @Test
@@ -127,6 +153,8 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertColumnType("model_version", "validation_state", "validation_state");
         assertColumnType("model_command", "origin", "command_origin");
         assertColumnType("model_command", "authorization_classification", "authorization_classification");
+        assertColumnType("generation_run", "state", "generation_state");
+        assertColumnType("verification_result", "state", "verification_state");
     }
 
     @Test
@@ -141,6 +169,20 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertEnumLabels("validation_state", com.diagramador.command.ValidationState.class, 3);
         assertEnumLabels("command_origin", com.diagramador.command.CommandOrigin.class, 11);
         assertEnumLabels("authorization_classification", com.diagramador.command.AuthorizationClassification.class, 5);
+        assertEnumLabels("generation_state", GenerationState.class, 4);
+        assertEnumLabels("verification_state", VerificationState.class, 3);
+    }
+
+    @Test
+    void supportIndexesDeclaredByTheAuthorityExist() {
+        for (Map.Entry<String, Set<String>> entry : SUPPORT_INDEXES_OF_GENERATION_TABLES.entrySet()) {
+            Set<String> indexes = Set.copyOf(jdbcTemplate.queryForList(
+                    "SELECT indexname FROM pg_indexes WHERE schemaname = 'diagrammer' AND tablename = ?",
+                    String.class, entry.getKey()));
+
+            assertThat(indexes).as("support indexes of diagrammer.%s", entry.getKey())
+                    .containsAll(entry.getValue());
+        }
     }
 
     @Test
