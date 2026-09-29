@@ -120,6 +120,20 @@ otros cuatro `kind`, los dos extremos van en `NONE`. El `payload` **no acepta** 
 única fuente de verdad, por la misma razón por la que `classifier.create` no acepta `isAbstract`. Sin esto el
 rombo podría quedar del lado equivocado del conector sin que ninguna prueba lo note.
 
+| # | Decisión | Alternativa descartada y motivo |
+| --- | --- | --- |
+| D14 | `POST /projects/{id}/commands` responde **siempre HTTP 200** con el `CommandResult`; los códigos HTTP se reservan a los fallos de transporte | Derivar el código HTTP del `ErrorCode` del rechazo. El contrato §2.2 describe la respuesta del servidor como un cuerpo con `status: REJECTED` y `diagnostics`, **no** como un error HTTP, y la cola offline del cliente necesita leer el diagnóstico para reconciliar. Los 4xx quedan para lo que nunca llegó al pipeline: 404 de proyecto desconocido, 400 de cuerpo malformado o parámetro faltante, y 500 con la forma de §3.2 para lo inesperado, sin rastro de excepción |
+
+**Los identificadores en la API son la excepción a la regla de presentación.** El editor necesita los ids
+estables para direccionar elementos, así que la API los expone. La regla de la §1 es de **pantalla**: lo que no
+deaparece en el lienzo es el UUID, no del contrato. Nadie debe «limpiar» los ids de la respuesta para cumplir
+la regla de presentación.
+
+**Nota sobre el arnés de T6.** Cuando imprime un paso, a veces muestra crudo el valor que sondeó en lugar del
+resultado interpretado (por ejemplo, en el paso de teardown del backend imprime el objeto del sondeo). Es
+**cosmético**: el veredicto y el código de salida son correctos, y el resumen final es el que manda. Queda
+anotado para no confundir a quien lea la salida por primera vez.
+
 **Hallazgo de T3b, corregido en su alcance.** El enum `target_type` tiene ocho miembros — `CLASSIFIER`,
 `ATTRIBUTE`, `OPERATION`, `PARAMETER`, `RELATIONSHIP`, `RELATIONSHIP_END`, `CONSTRAINT` y `DIAGRAM_VIEW` — y
 ninguno se llama como `type_reference`, `element_geometry` o `connector_path`. La consecuencia **no es la misma
@@ -394,8 +408,8 @@ El Incremento 0 se fue de mano. Acá rige lo contrario:
 | T2 — Sobre de operación e idempotencia | **hecho** | Commit `58b8fef`; `mvn -o -B verify` = 19 pruebas, 0 fallos, 0 errores, 0 saltadas; `V3` con `model_version`, `model_command`, `cascade_group`, `tombstone` byte-idénticas al esquema autoridad (verificado con script); la idempotencia se comprueba **antes** de mutar y el replay no cambia conteos ni revisión; el bump de revisión es un `UPDATE` condicional y el conflicto es una excepción no chequeada, así que la carrera perdida hace rollback de las mutaciones del handler |
 | T3 — Comandos de clasificador y miembros | **hecho** (T3a + T3b) | Commits `2c095af` (T3a) y `2da554b` (T3b); `mvn -o -B verify` = 30 pruebas, 0 fallos, 0 errores, 0 saltadas; los 13 comandos ejercitados por el pipeline completo con `baseRevision` incremental, cada efecto leído **de vuelta desde la base**; cascada de 8 elementos con `element_count` = 8 = tombstones = 8; una cascada rechazada deja el modelo intacto, la revisión sin mover y **ni una fila** de `cascade_group` ni `tombstone` |
 | T4 — Comandos de proyecto, relación y geometría | **T4b hecho**, T4a pendiente | Commit `398a595` (T4b); `mvn -o -B verify` = 37 pruebas, 0 fallos, 0 errores, 0 saltadas; la relajación del pipeline es una propiedad declarada con default `false` que solo `project.create` sobreescribe, y el servicio exige proyecto y modelo ambos presentes o ambos ausentes; el replay de `project.create` no cambia ningún conteo |
-| T5 — API REST y errores | pendiente | — |
-| T6 — Arnés de aceptación por HTTP | pendiente | — |
+| T5 — API REST y errores | **hecho** | Commit `6bc04aa`; `mvn -o -B verify` = 82 pruebas, 0 fallos, 0 errores, 0 saltadas; D14 probado: un comando rechazado devuelve **HTTP 200** con `status: REJECTED` y el `ErrorCode` en `diagnostics`; el handler de 500 devuelve un mensaje fijo sin texto de excepción ni rastro SQL; CORS limitado al origen de Vite |
+| T6 — Arnés de aceptación por HTTP | **hecho** | `python tools/acceptance/acceptance.py` ejecutado y verificado por el mantenedor: **34 pasos OK, 0 fallos, salida 0**; el corte de §1 completo sin interfaz; 7 elementos (2 clasificadores, 1 atributo, 1 operación, 1 relación, 2 extremos) y 4 geometrías (2 rectángulos, 2 puntos de trazado) idénticos antes y después de la recarga; comparación campo a campo "All expected fields match"; hash del modelo releído `b4180200d2b973ce78c571cbed893204edf8b327d9c442e6a18bb70d3d8bed1c`; teardown verificado: proceso backend muerto, contenedor borrado por etiqueta, conteo de contenedores de vuelta en 35 |
 | T7 — Cimiento del editor web | pendiente | — |
 | T8 — Lienzo con edición directa | pendiente | — |
 | T9 — Conectores y persistencia del layout | pendiente | — |
