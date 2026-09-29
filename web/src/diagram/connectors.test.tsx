@@ -12,7 +12,15 @@ import {
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildFlowEdges, buildFlowNodes } from './UmlCanvas';
-import { RelationshipEndLabels, relationshipMarkerPresentation } from './UmlRelationshipEdge';
+import {
+  buildRelationshipEdgePath,
+  estimateLabelWidth,
+  HOLLOW_TRIANGLE_MARKER,
+  hollowTriangleGeometry,
+  placeRelationshipLabels,
+  RelationshipEndLabels,
+  relationshipMarkerPresentation,
+} from './UmlRelationshipEdge';
 import PropertiesPanel from './PropertiesPanel';
 
 const sourceId = '11111111-1111-4111-8111-111111111111';
@@ -83,6 +91,15 @@ const markerCases = [
   ['GENERALIZATION', 'solid', null, 'hollow-triangle', false],
   ['INTERFACE_REALIZATION', 'dashed', null, 'hollow-triangle', true],
   ['DEPENDENCY', 'dashed', null, 'open-arrow', false],
+] as const;
+
+const labelPlacementCases = [
+  { label: 'very short straight gap', gap: 40, waypoints: false },
+  { label: 'very short waypoint gap', gap: 40, waypoints: true },
+  { label: 'medium straight gap', gap: 320, waypoints: false },
+  { label: 'medium waypoint gap', gap: 320, waypoints: true },
+  { label: 'long straight gap', gap: 600, waypoints: false },
+  { label: 'long waypoint gap', gap: 600, waypoints: true },
 ] as const;
 
 afterEach(() => {
@@ -180,6 +197,92 @@ describe('UML relationship markers and labels', () => {
       },
     });
     expect(update.payload).not.toHaveProperty('aggregationKind');
+  });
+});
+
+describe('relationship label geometry', () => {
+  it.each(labelPlacementCases)('$label keeps every estimated label box clear of both class rectangles', ({ gap, waypoints }) => {
+    const sourceRectangle = { x: 0, y: 0, width: 100, height: 120 };
+    const targetRectangle = { x: 100 + gap, y: 0, width: 100, height: 120 };
+    const sourceBorder = { x: sourceRectangle.x + sourceRectangle.width, y: 60 };
+    const targetBorder = { x: targetRectangle.x, y: 60 };
+    const points = [
+      sourceBorder,
+      ...(waypoints ? [
+        { x: sourceBorder.x + gap / 3, y: 72 },
+        { x: sourceBorder.x + gap * 2 / 3, y: 72 },
+      ] : []),
+      targetBorder,
+    ];
+    const placements = placeRelationshipLabels(points, sourceRectangle, targetRectangle, {
+      source: 'customer [0..*]',
+      target: 'subscriptions [1..*]',
+      name: 'owns',
+    });
+    const intersects = (
+      left: { x: number; y: number; width: number; height: number },
+      right: { x: number; y: number; width: number; height: number },
+    ) => left.x < right.x + right.width
+      && left.x + left.width > right.x
+      && left.y < right.y + right.height
+      && left.y + left.height > right.y;
+
+    expect(estimateLabelWidth('UML')).toBe(28);
+    for (const placement of Object.values(placements)) {
+      if (!placement) {
+        continue;
+      }
+      for (const rectangle of [sourceRectangle, targetRectangle]) {
+        expect(intersects(placement.estimatedBounds, rectangle)).toBe(false);
+        expect(intersects(placement.estimatedBounds, {
+          x: rectangle.x - 8,
+          y: rectangle.y - 8,
+          width: rectangle.width + 16,
+          height: rectangle.height + 16,
+        })).toBe(false);
+      }
+    }
+
+    if (gap === 40) {
+      expect(placements).toEqual({ source: null, target: null, name: null });
+    } else {
+      expect(placements.source).not.toBeNull();
+      expect(placements.target).not.toBeNull();
+    }
+  });
+});
+
+describe('interface realization triangle geometry', () => {
+  it.each([
+    {
+      label: 'straight edge',
+      points: [{ x: 80, y: 120 }, { x: 360, y: 120 }],
+      targetBorder: { x: 360, y: 120 },
+    },
+    {
+      label: 'waypoint edge',
+      points: [{ x: 80, y: 120 }, { x: 220, y: 160 }, { x: 360, y: 220 }],
+      targetBorder: { x: 360, y: 220 },
+    },
+  ])('$label anchors the apex at the target border and points the base away along the final segment', ({ points, targetBorder }) => {
+    const path = buildRelationshipEdgePath(points);
+    const marker = hollowTriangleGeometry(points)!;
+    const previous = points[points.length - 2]!;
+    const finalSegment = { x: targetBorder.x - previous.x, y: targetBorder.y - previous.y };
+    const segmentLength = Math.hypot(finalSegment.x, finalSegment.y);
+    const baseVector = { x: marker.baseCenter.x - marker.apex.x, y: marker.baseCenter.y - marker.apex.y };
+
+    expect(path.split(' L ').at(-1)).toBe(`${targetBorder.x} ${targetBorder.y}`);
+    expect(marker.pathEnd).toEqual(targetBorder);
+    expect(marker.apex).toEqual(targetBorder);
+    expect(HOLLOW_TRIANGLE_MARKER.refX).toBe(0);
+    expect(HOLLOW_TRIANGLE_MARKER.refY).toBe(0);
+    expect(HOLLOW_TRIANGLE_MARKER.orient).toBe('auto');
+    expect(HOLLOW_TRIANGLE_MARKER.markerUnits).toBe('strokeWidth');
+    expect(HOLLOW_TRIANGLE_MARKER.path).toMatch(/^M 0 0 L -13 -7 L -13 7 Z$/);
+    expect(Math.cos(marker.orientationRadians)).toBeCloseTo(finalSegment.x / segmentLength);
+    expect(Math.sin(marker.orientationRadians)).toBeCloseTo(finalSegment.y / segmentLength);
+    expect(baseVector.x * finalSegment.x + baseVector.y * finalSegment.y).toBeLessThan(0);
   });
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type PointerEvent } from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
+  useInternalNode,
   useReactFlow,
   type Edge,
   type EdgeProps,
@@ -10,6 +11,297 @@ import type { RelationshipEndResource, RelationshipResource } from '../api/types
 import { formatRelationshipEndLabel } from './uml-format';
 
 export type RelationshipMarker = 'open-arrow' | 'hollow-diamond' | 'filled-diamond' | 'hollow-triangle' | null;
+
+export interface EdgePoint {
+  x: number;
+  y: number;
+}
+
+export interface EdgeRectangle extends EdgePoint {
+  width: number;
+  height: number;
+}
+
+export interface RelationshipLabelPlacement {
+  x: number;
+  y: number;
+  estimatedBounds: EdgeRectangle;
+}
+
+export interface RelationshipLabelTexts {
+  source: string;
+  target: string;
+  targetStereotype?: string;
+  name: string;
+}
+
+export interface RelationshipLabelPlacements {
+  source: RelationshipLabelPlacement | null;
+  target: RelationshipLabelPlacement | null;
+  name: RelationshipLabelPlacement | null;
+}
+
+const ESTIMATED_LABEL_CHARACTER_WIDTH_PX = 6;
+const LABEL_HORIZONTAL_PADDING_PX = 10;
+const LABEL_HEIGHT_PX = 17;
+const LABEL_GROUP_GAP_PX = 5;
+const LABEL_NODE_PADDING_PX = 8;
+const LABEL_TO_LABEL_GAP_PX = 2;
+export const EDGE_STROKE_WIDTH_PX = 1.7;
+
+/**
+ * Browser-independent width heuristic for the 9–10px UML edge text. It uses a
+ * fixed average glyph width plus the CSS horizontal padding; it is not a font measurement.
+ */
+export function estimateLabelWidth(text: string): number {
+  return Array.from(text).length * ESTIMATED_LABEL_CHARACTER_WIDTH_PX + LABEL_HORIZONTAL_PADDING_PX;
+}
+
+function estimateLabelGroupWidth(texts: string[]): number {
+  const visibleTexts = texts.filter(Boolean);
+  return visibleTexts.reduce((width, text) => width + estimateLabelWidth(text), 0)
+    + Math.max(0, visibleTexts.length - 1) * LABEL_GROUP_GAP_PX;
+}
+
+function expandRectangle(rectangle: EdgeRectangle, padding: number): EdgeRectangle {
+  return {
+    x: rectangle.x - padding,
+    y: rectangle.y - padding,
+    width: rectangle.width + padding * 2,
+    height: rectangle.height + padding * 2,
+  };
+}
+
+function rectanglesIntersect(left: EdgeRectangle, right: EdgeRectangle): boolean {
+  return left.x < right.x + right.width
+    && left.x + left.width > right.x
+    && left.y < right.y + right.height
+    && left.y + left.height > right.y;
+}
+
+function pathSegments(points: EdgePoint[]): Array<{ start: EdgePoint; end: EdgePoint; length: number; distance: number }> {
+  const segments: Array<{ start: EdgePoint; end: EdgePoint; length: number; distance: number }> = [];
+  let distance = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1]!;
+    const end = points[index]!;
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (length > 0) {
+      segments.push({ start, end, length, distance });
+      distance += length;
+    }
+  }
+  return segments;
+}
+
+function pointAtPathDistance(points: EdgePoint[], distance: number): EdgePoint {
+  const segments = pathSegments(points);
+  const totalLength = segments.reduce((length, segment) => length + segment.length, 0);
+  const requestedDistance = Math.max(0, Math.min(distance, totalLength));
+  const segment = segments.find((candidate) => requestedDistance <= candidate.distance + candidate.length)
+    ?? segments.at(-1);
+  if (!segment) {
+    return points[0] ?? { x: 0, y: 0 };
+  }
+  const fraction = (requestedDistance - segment.distance) / segment.length;
+  return {
+    x: segment.start.x + (segment.end.x - segment.start.x) * fraction,
+    y: segment.start.y + (segment.end.y - segment.start.y) * fraction,
+  };
+}
+
+function placementCandidates(
+  points: EdgePoint[],
+  preferredDistance: number,
+  width: number,
+  height: number,
+  obstacles: EdgeRectangle[],
+): number[] {
+  const segments = pathSegments(points);
+  const totalLength = segments.reduce((length, segment) => length + segment.length, 0);
+  const candidates = new Set<number>([0, totalLength, Math.max(0, Math.min(preferredDistance, totalLength))]);
+
+  for (const segment of segments) {
+    const localDistances = new Set<number>([0, segment.length]);
+    for (const obstacle of obstacles) {
+      const centerBounds = {
+        x: obstacle.x - width / 2,
+        y: obstacle.y - height / 2,
+        width: obstacle.width + width,
+        height: obstacle.height + height,
+      };
+      const addCrossing = (axis: 'x' | 'y', boundary: number) => {
+        const start = segment.start[axis];
+        const delta = segment.end[axis] - start;
+        if (delta === 0) {
+          return;
+        }
+        const fraction = (boundary - start) / delta;
+        if (fraction >= 0 && fraction <= 1) {
+          localDistances.add(fraction * segment.length);
+        }
+      };
+      addCrossing('x', centerBounds.x);
+      addCrossing('x', centerBounds.x + centerBounds.width);
+      addCrossing('y', centerBounds.y);
+      addCrossing('y', centerBounds.y + centerBounds.height);
+    }
+
+    const sortedLocalDistances = [...localDistances].sort((left, right) => left - right);
+    for (const localDistance of sortedLocalDistances) {
+      candidates.add(segment.distance + localDistance);
+    }
+    for (let index = 1; index < sortedLocalDistances.length; index += 1) {
+      const start = sortedLocalDistances[index - 1]!;
+      const end = sortedLocalDistances[index]!;
+      const preferredLocalDistance = Math.max(0, Math.min(preferredDistance - segment.distance, segment.length));
+      candidates.add(segment.distance + (start + end) / 2);
+      candidates.add(segment.distance + preferredLocalDistance);
+    }
+  }
+
+  return [...candidates].sort((left, right) => Math.abs(left - preferredDistance) - Math.abs(right - preferredDistance));
+}
+
+function placeLabelOnPath(
+  points: EdgePoint[],
+  texts: string[],
+  preferredDistance: number,
+  obstacles: EdgeRectangle[],
+): RelationshipLabelPlacement | null {
+  const width = estimateLabelGroupWidth(texts);
+  if (width <= 0) {
+    return null;
+  }
+  const height = LABEL_HEIGHT_PX;
+  for (const distance of placementCandidates(points, preferredDistance, width, height, obstacles)) {
+    const point = pointAtPathDistance(points, distance);
+    const estimatedBounds = {
+      x: point.x - width / 2,
+      y: point.y - height / 2,
+      width,
+      height,
+    };
+    if (obstacles.every((obstacle) => !rectanglesIntersect(estimatedBounds, obstacle))) {
+      return { x: point.x, y: point.y, estimatedBounds };
+    }
+  }
+  return null;
+}
+
+/**
+ * Places each estimated label box on the polyline while keeping it at least 8px
+ * from both node rectangles. End labels prefer the nearest safe point to their
+ * endpoint; the relationship name prefers the path midpoint. Labels that do not
+ * fit are omitted because hiding a label is clearer than obscuring a class box or
+ * shrinking text until it is unreadable.
+ */
+export function placeRelationshipLabels(
+  points: EdgePoint[],
+  sourceRectangle: EdgeRectangle,
+  targetRectangle: EdgeRectangle,
+  texts: RelationshipLabelTexts,
+): RelationshipLabelPlacements {
+  const nodeObstacles = [
+    expandRectangle(sourceRectangle, LABEL_NODE_PADDING_PX),
+    expandRectangle(targetRectangle, LABEL_NODE_PADDING_PX),
+  ];
+  const placedBoxes: EdgeRectangle[] = [];
+  const pathLength = pathSegments(points).reduce((length, segment) => length + segment.length, 0);
+  const place = (labelTexts: string[], preferredDistance: number) => {
+    const visibleTexts = labelTexts.filter(Boolean);
+    if (!visibleTexts.length) {
+      return null;
+    }
+    const obstacles = [
+      ...nodeObstacles,
+      ...placedBoxes.map((box) => expandRectangle(box, LABEL_TO_LABEL_GAP_PX)),
+    ];
+    const placement = placeLabelOnPath(points, visibleTexts, preferredDistance, obstacles);
+    if (placement) {
+      placedBoxes.push(placement.estimatedBounds);
+    }
+    return placement;
+  };
+
+  const source = place([texts.source], 0);
+  const target = place([texts.target, texts.targetStereotype ?? ''], pathLength);
+  const name = place([texts.name], pathLength / 2);
+  return { source, target, name };
+}
+
+const HOLLOW_TRIANGLE_TIP = { x: 0, y: 0 } as const;
+/**
+ * The base sits at negative local x, which is opposite the direction of travel at the path
+ * end. SVG orients the marker along that direction, so for an edge arriving at the target's
+ * border from outside, the apex lands on the border and the base lands back along the line,
+ * outside the node. That is the UML arrowhead.
+ *
+ * This was verified against the real render and it is correct: with the base at positive x
+ * the triangle would land past the border, inside the box it is supposed to meet.
+ */
+const HOLLOW_TRIANGLE_BASE_LEFT = { x: -13, y: -7 } as const;
+const HOLLOW_TRIANGLE_BASE_RIGHT = { x: -13, y: 7 } as const;
+
+export const HOLLOW_TRIANGLE_MARKER = {
+  viewBox: '-14 -8 15 16',
+  refX: HOLLOW_TRIANGLE_TIP.x,
+  refY: HOLLOW_TRIANGLE_TIP.y,
+  markerWidth: 14,
+  markerHeight: 16,
+  orient: 'auto',
+  markerUnits: 'strokeWidth',
+  path: `M ${HOLLOW_TRIANGLE_TIP.x} ${HOLLOW_TRIANGLE_TIP.y} L ${HOLLOW_TRIANGLE_BASE_LEFT.x} ${HOLLOW_TRIANGLE_BASE_LEFT.y} L ${HOLLOW_TRIANGLE_BASE_RIGHT.x} ${HOLLOW_TRIANGLE_BASE_RIGHT.y} Z`,
+} as const;
+
+export interface HollowTriangleGeometry {
+  pathEnd: EdgePoint;
+  apex: EdgePoint;
+  baseCenter: EdgePoint;
+  orientationRadians: number;
+}
+
+/** Geometry of the SVG end marker after auto-orienting it to the final path segment. */
+export function hollowTriangleGeometry(points: EdgePoint[]): HollowTriangleGeometry | null {
+  const pathEnd = points.at(-1);
+  if (!pathEnd) {
+    return null;
+  }
+  let precedingPoint: EdgePoint | undefined;
+  for (let index = points.length - 2; index >= 0; index -= 1) {
+    const candidate = points[index]!;
+    if (candidate.x !== pathEnd.x || candidate.y !== pathEnd.y) {
+      precedingPoint = candidate;
+      break;
+    }
+  }
+  if (!precedingPoint) {
+    return null;
+  }
+
+  const orientationRadians = Math.atan2(pathEnd.y - precedingPoint.y, pathEnd.x - precedingPoint.x);
+  const baseCenter = {
+    x: (HOLLOW_TRIANGLE_BASE_LEFT.x + HOLLOW_TRIANGLE_BASE_RIGHT.x) / 2,
+    y: (HOLLOW_TRIANGLE_BASE_LEFT.y + HOLLOW_TRIANGLE_BASE_RIGHT.y) / 2,
+  };
+  const cosine = Math.cos(orientationRadians);
+  const sine = Math.sin(orientationRadians);
+  const transform = (point: EdgePoint): EdgePoint => ({
+    x: pathEnd.x + (point.x * cosine - point.y * sine) * EDGE_STROKE_WIDTH_PX,
+    y: pathEnd.y + (point.x * sine + point.y * cosine) * EDGE_STROKE_WIDTH_PX,
+  });
+
+  return {
+    pathEnd: { ...pathEnd },
+    apex: transform(HOLLOW_TRIANGLE_TIP),
+    baseCenter: transform(baseCenter),
+    orientationRadians,
+  };
+}
+
+export function buildRelationshipEdgePath(points: EdgePoint[]): string {
+  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+}
 
 export interface RelationshipMarkerPresentation {
   lineStyle: 'solid' | 'dashed';
@@ -97,11 +389,26 @@ function markerUrl(marker: RelationshipMarker, markerIds: Record<Exclude<Relatio
   return marker ? `url(#${markerIds[marker]})` : undefined;
 }
 
-function pointAlongSegment(start: { x: number; y: number }, end: { x: number; y: number }, fraction: number) {
+function pointAlongSegment(start: EdgePoint, end: EdgePoint, fraction: number): EdgePoint {
   return {
     x: start.x + (end.x - start.x) * fraction,
     y: start.y + (end.y - start.y) * fraction,
   };
+}
+
+function rectangleForInternalNode(node: {
+  measured?: { width?: number; height?: number };
+  width?: number;
+  height?: number;
+  internals?: { positionAbsolute: EdgePoint };
+} | undefined): EdgeRectangle | null {
+  const width = node?.measured?.width ?? node?.width;
+  const height = node?.measured?.height ?? node?.height;
+  const position = node?.internals?.positionAbsolute;
+  if (!position || width === undefined || height === undefined || width <= 0 || height <= 0) {
+    return null;
+  }
+  return { x: position.x, y: position.y, width, height };
 }
 
 function roundToGrid(value: number): number {
@@ -110,6 +417,8 @@ function roundToGrid(value: number): number {
 
 export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdge>) {
   const { screenToFlowPosition } = useReactFlow();
+  const sourceNode = useInternalNode(props.source);
+  const targetNode = useInternalNode(props.target);
   const markerPrefix = useId().replaceAll(':', '');
   const markerIds = Object.fromEntries(Object.entries(MARKER_SUFFIXES)
     .map(([marker, suffix]) => [marker, `${markerPrefix}-${suffix}`])) as Record<Exclude<RelationshipMarker, null>, string>;
@@ -126,14 +435,24 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     waypointsRef.current = data.waypoints;
   }, [data.waypoints]);
 
-  const points = [
+  const points: EdgePoint[] = [
     { x: props.sourceX, y: props.sourceY },
     ...waypoints,
     { x: props.targetX, y: props.targetY },
   ];
-  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
-  const sourceLabelPosition = pointAlongSegment(points[0]!, points[1]!, 0.35);
-  const targetLabelPosition = pointAlongSegment(points[points.length - 1]!, points[points.length - 2]!, 0.35);
+  const path = buildRelationshipEdgePath(points);
+  const sourceRectangle = rectangleForInternalNode(sourceNode);
+  const targetRectangle = rectangleForInternalNode(targetNode);
+  const sourceLabel = formatRelationshipEndLabel(orderedEnds[0]!);
+  const targetLabel = formatRelationshipEndLabel(orderedEnds[1]!);
+  const labelPlacements = sourceRectangle && targetRectangle
+    ? placeRelationshipLabels(points, sourceRectangle, targetRectangle, {
+      source: sourceLabel,
+      target: targetLabel,
+      ...(markers.realizationLabelAtTarget ? { targetStereotype: '«realize»' } : {}),
+      name: relationship.name ?? '',
+    })
+    : { source: null, target: null, name: null };
   const middle = pointAlongSegment(points[0]!, points[points.length - 1]!, 0.5);
 
   function updateWaypoint(event: PointerEvent<HTMLButtonElement>, index: number): void {
@@ -174,8 +493,17 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
         <marker id={markerIds['filled-diamond']} viewBox="0 -7 14 14" refX="0" refY="0" markerWidth="14" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
           <path d="M 0 0 L 7 -6 L 14 0 L 7 6 Z" fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
         </marker>
-        <marker id={markerIds['hollow-triangle']} viewBox="0 -8 14 16" refX="0" refY="0" markerWidth="14" markerHeight="16" orient="auto" markerUnits="strokeWidth">
-          <path d="M 0 0 L 13 -7 L 13 7 Z" fill="white" stroke="#526b62" strokeWidth="1.4" />
+        <marker
+          id={markerIds['hollow-triangle']}
+          viewBox={HOLLOW_TRIANGLE_MARKER.viewBox}
+          refX={HOLLOW_TRIANGLE_MARKER.refX}
+          refY={HOLLOW_TRIANGLE_MARKER.refY}
+          markerWidth={HOLLOW_TRIANGLE_MARKER.markerWidth}
+          markerHeight={HOLLOW_TRIANGLE_MARKER.markerHeight}
+          orient={HOLLOW_TRIANGLE_MARKER.orient}
+          markerUnits={HOLLOW_TRIANGLE_MARKER.markerUnits}
+        >
+          <path d={HOLLOW_TRIANGLE_MARKER.path} fill="white" stroke="#526b62" strokeWidth="1.4" />
         </marker>
       </defs>
       <BaseEdge
@@ -184,26 +512,30 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
         {...(markers.sourceMarker ? { markerStart: markerUrl(markers.sourceMarker, markerIds)! } : {})}
         {...(markers.targetMarker ? { markerEnd: markerUrl(markers.targetMarker, markerIds)! } : {})}
         interactionWidth={20}
-        style={{ stroke: '#526b62', strokeWidth: 1.7, ...(markers.lineStyle === 'dashed' ? { strokeDasharray: '6 4' } : {}) }}
+        style={{ stroke: '#526b62', strokeWidth: EDGE_STROKE_WIDTH_PX, ...(markers.lineStyle === 'dashed' ? { strokeDasharray: '6 4' } : {}) }}
       />
       <EdgeLabelRenderer>
-        <div
-          className="uml-edge-label-position"
-          style={{ transform: `translate(-50%, -50%) translate(${sourceLabelPosition.x}px, ${sourceLabelPosition.y}px)` }}
-        >
-          <RelationshipEndLabel end={orderedEnds[0]!} side="source" />
-        </div>
-        <div
-          className="uml-edge-label-position"
-          style={{ transform: `translate(-50%, -50%) translate(${targetLabelPosition.x}px, ${targetLabelPosition.y}px)` }}
-        >
-          <RelationshipEndLabel end={orderedEnds[1]!} side="target" />
-          {markers.realizationLabelAtTarget && <span className="uml-edge-stereotype">«realize»</span>}
-        </div>
-        {relationship.name && (
+        {sourceLabel && labelPlacements.source && (
+          <div
+            className="uml-edge-label-position"
+            style={{ transform: `translate(-50%, -50%) translate(${labelPlacements.source.x}px, ${labelPlacements.source.y}px)` }}
+          >
+            <RelationshipEndLabel end={orderedEnds[0]!} side="source" />
+          </div>
+        )}
+        {(targetLabel || markers.realizationLabelAtTarget) && labelPlacements.target && (
+          <div
+            className="uml-edge-label-position uml-edge-labels"
+            style={{ transform: `translate(-50%, -50%) translate(${labelPlacements.target.x}px, ${labelPlacements.target.y}px)` }}
+          >
+            {targetLabel && <RelationshipEndLabel end={orderedEnds[1]!} side="target" />}
+            {markers.realizationLabelAtTarget && <span className="uml-edge-stereotype">«realize»</span>}
+          </div>
+        )}
+        {relationship.name && labelPlacements.name && (
           <div
             className="uml-edge-name uml-edge-label-position"
-            style={{ transform: `translate(-50%, -50%) translate(${middle.x}px, ${middle.y}px)` }}
+            style={{ transform: `translate(-50%, -50%) translate(${labelPlacements.name.x}px, ${labelPlacements.name.y}px)` }}
           >{relationship.name}</div>
         )}
         {props.selected && (

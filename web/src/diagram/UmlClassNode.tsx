@@ -230,6 +230,21 @@ export function UmlClassNode({ data, selected }: NodeProps<ClassFlowNode>) {
       />
       <Handle aria-label="Connection target" id="target-left" position={Position.Left} type="target" />
       <Handle aria-label="Connection source" id="source-right" position={Position.Right} type="source" />
+      {/*
+        The facing handles exist because with only left and right, a relationship between
+        vertically stacked classes is forced onto the target's left border and the straight line
+        crosses the box interior, which also drags the UML arrowhead onto the wrong border.
+
+        They are necessary but NOT sufficient: edges are derived from the model without a
+        sourceHandle or targetHandle, so React Flow falls back to the first handle of each type and
+        picks target-left and source-right regardless of geometry. Measured: adding these four
+        handles left the path at `M 825 415 L 535 120` instead of routing on the facing side. The
+        edge builder still has to choose the handles from the two node rectangles.
+      */}
+      <Handle aria-label="Connection target" id="target-top" position={Position.Top} type="target" />
+      <Handle aria-label="Connection target" id="target-bottom" position={Position.Bottom} type="target" />
+      <Handle aria-label="Connection source" id="source-top" position={Position.Top} type="source" />
+      <Handle aria-label="Connection source" id="source-bottom" position={Position.Bottom} type="source" />
       <UmlClassCard
         classifier={data.classifier}
         {...(data.onRenameClassifier ? { onRenameClassifier: data.onRenameClassifier } : {})}
