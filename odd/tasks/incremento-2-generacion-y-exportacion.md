@@ -1,6 +1,6 @@
 # Incremento 2 — Generación, exportación y despliegue del backend
 
-> **Estado:** plan creado; ninguna tarea ejecutada todavía.
+> **Estado:** plan en ejecución. T1 cerrada con evidencia observada; T1b registrada como defecto descubierto y T2 es la siguiente.
 > **Producto:** diagramador colaborativo de clases UML 2.5 (PRIMER PARCIAL, Ingeniería de Software I).
 > **Rama:** `feat/incremento-2-generacion-y-exportacion`, apilada sobre `feat/incremento-1-modelo-y-editor`.
 > **Autoridad del alcance:** enunciado §10 puntos 10–12 y §11 «Incremento 2 — Generación vertical», más el
@@ -171,6 +171,28 @@ Cada tarea cierra con **un commit de unidad de trabajo** con sus pruebas al lado
   tablas y los dos tipos contra `docs/puds/datos/02-esquema-fisico.sql`, con 0 discrepancias; `mvn -o -B verify`
   en verde con `ddl-auto: validate` intacto.
 - **Depende de:** nada.
+
+### T1b — Índices de apoyo que el Incremento 1 no copió (Etapa A, defecto descubierto)
+
+- **Objetivo:** cerrar la divergencia entre las migraciones aplicadas y la autoridad del esquema en la
+  sección de índices, para que la afirmación de «byte-idéntico» del acta del Incremento 1 deje de ser falsa.
+- **Defecto que corrige:** `V3__commands_and_versions.sql` creó `model_version`, `model_command`,
+  `cascade_group` y `tombstone` con **0 de los 4** índices que la autoridad declara para esas tablas:
+  `idx_command_model_rev`, `idx_command_author`, `idx_version_model_rev` y `idx_tombstone_model`. `V1` está
+  **completo**: sus 11 índices coinciden con los declarados, incluido `idx_classifier_model`, que la autoridad
+  declara inline en la línea 144 y no en la sección de apoyo del final.
+- **Por qué pasó:** el guardián de esquema comparaba tablas, columnas y etiquetas de enum, **nunca índices**, así
+  que una unidad entera de la autoridad quedó sin copiar mientras la documentación afirmaba identidad byte a byte.
+- **Entregable:** migración `V5__support_indexes.sql` con los 4 índices faltantes —no se editan `V1` ni `V3`,
+  que ya están aplicadas y cuyo checksum Flyway valida—; extensión del guardián para cubrir los índices de
+  **todas** las tablas creadas, no sólo las de generación, de modo que la clase de defecto quede cerrada y no
+  sólo este caso.
+- **Superficies de edición permitidas:** `backend/src/main/resources/db/migration/**`,
+  `backend/src/test/java/com/diagramador/**`.
+- **Evidencia:** el guardián extendido pasa contra el esquema migrado, **y vuelve a fallar si se quita uno de
+  los índices de `V5`**, probado con el mismo procedimiento que en T1 (quitar, correr, restaurar y verificar por
+  hash). La autoridad completa tiene 26 índices; el guardián debe cubrir los de las tablas que existen.
+- **Depende de:** T1.
 
 ### T2 — Snapshot inmutable e identidad de corrida (Etapa B1)
 
@@ -416,6 +438,8 @@ apareciera, sería una señal de que la frontera está mal puesta.
 ## 8. Definición de terminado
 
 - [ ] El corte de §1 funciona de punta a punta y se puede repetir desde cero.
+- [ ] Las migraciones reproducen la sección de índices de la autoridad para todas las tablas creadas, y el
+      guardián lo comprueba y **dispara** si falta uno.
 - [ ] El ZIP generado compila con **`mvn -o`**, sin red.
 - [ ] El backend generado usa **la misma** línea base de versión que el diagramador, y una prueba falla si
       divergen.
@@ -440,7 +464,8 @@ apareciera, sería una señal de que la frontera está mal puesta.
 
 | Tarea | Estado | Evidencia |
 | --- | --- | --- |
-| T1 — Migración V4 con el esquema de generación | pendiente | — |
+| T1 — Migración V4 con el esquema de generación | **hecho** | Commit `c64216b`; `mvn -o -B verify` = **95 pruebas, 0 fallos, 0 errores, 0 saltadas**, sin red; Flyway aplica `V1`–`V4` y reporta `now at version v4`; las 6 tablas, los 2 tipos enum, los 2 comentarios y los **5 índices** son idénticos a `02-esquema-fisico.sql` (comparación de texto extraído, no de intención); el guardián gana la comprobación de índices que le faltaba y **se probó que dispara**: quitar la línea de `idx_verification_run` hace fallar `supportIndexesDeclaredByTheAuthorityExist` nombrando `diagrammer.verification_result`, y el archivo se restauró verificando el hash. **Hallazgo durante la tarea:** `V3` no copió los 4 índices que la autoridad declara para sus tablas; queda como **T1b** |
+| T1b — Índices de apoyo faltantes del Incremento 1 | pendiente | — |
 | T2 — Snapshot inmutable e identidad de corrida | pendiente | — |
 | T3 — Representación intermedia y reglas de mapeo | pendiente | — |
 | T4 — Perfil, plantilla y destinos versionados | pendiente | — |
