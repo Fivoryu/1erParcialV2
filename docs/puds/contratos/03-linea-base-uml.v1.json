@@ -535,7 +535,8 @@
         "docs/puds/datos/02-esquema-fisico.sql#L54",
         "docs/puds/datos/02-esquema-fisico.sql#L207",
         "docs/puds/contratos/01-contratos-transversales.md#8-3"
-      ]
+      ],
+      "notes": "El editor dibuja una punta para cada extremo navegable en asociación, agregación, composición y dependencia. Generalización y realización de interfaz conservan su triángulo UML hacia el padre; ese marcador expresa el tipo de relación, no la navegabilidad del extremo. Los controles muestran etiquetas legibles en vez del valor interno."
     },
     {
       "id": "BL-REL-10",
@@ -597,7 +598,7 @@
         "docs/puds/contratos/01-contratos-transversales.md#8-3",
         "docs/fixtures/xmi/Prueba3.xml"
       ],
-      "notes": "El dueño es polimórfico, así que la restricción puede colgar de un clasificador o de una relación sin cambiar el esquema. El dialecto tampoco está ejercitado: los 16 bloques constraints del fixture cuelgan de la extensión del conector y están vacíos, y el árbol UML no lleva ninguna restricción."
+      "notes": "El dueño es polimórfico, así que la restricción puede colgar de un clasificador o de una relación sin cambiar el esquema. La API y el editor permiten crear, leer y editar expresión y severidad para ambos dueños; el lienzo muestra la expresión y usa un indicador discreto solo para severidades no predeterminadas, sin presentar el enum interno. Los demás dueños del esquema no están soportados por esta interfaz y se rechazan explícitamente. El dialecto tampoco está ejercitado: los 16 bloques constraints del fixture cuelgan de la extensión del conector y están vacíos, y el árbol UML no lleva ninguna restricción."
     },
     {
       "id": "BL-CMP-03",

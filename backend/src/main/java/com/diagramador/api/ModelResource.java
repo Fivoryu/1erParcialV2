@@ -110,10 +110,12 @@ public record ModelResource(
             UUID id,
             String kind,
             String name,
-            List<RelationshipEndResource> ends) {
+            List<RelationshipEndResource> ends,
+            List<ConstraintResource> constraints) {
 
         public RelationshipResource {
             ends = ends == null ? List.of() : List.copyOf(ends);
+            constraints = constraints == null ? List.of() : List.copyOf(constraints);
         }
     }
 

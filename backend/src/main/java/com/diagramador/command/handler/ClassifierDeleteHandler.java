@@ -80,10 +80,6 @@ public class ClassifierDeleteHandler implements CommandHandler {
         for (UmlOperation operation : operations) {
             parameters.addAll(parameterRepository.findByOperationId(operation.getId()));
         }
-        List<UmlConstraint> constraints = constraintRepository.findByModelId(context.model().getId()).stream()
-                .filter(constraint -> constraint.getOwnerType() == TargetType.CLASSIFIER
-                        && classifier.getId().equals(constraint.getOwnerId()))
-                .toList();
         List<RelationshipEnd> classifierEnds = relationshipEndRepository.findByClassifierId(classifier.getId());
         Set<UmlRelationship> relationships = new LinkedHashSet<>();
         classifierEnds.forEach(end -> relationships.add(end.getRelationship()));
@@ -93,6 +89,13 @@ public class ClassifierDeleteHandler implements CommandHandler {
             ends.addAll(relationshipEndRepository.findByRelationshipId(relationship.getId()));
             paths.addAll(connectorPathRepository.findByRelationshipId(relationship.getId()));
         }
+        List<UmlConstraint> constraints = constraintRepository.findByModelId(context.model().getId()).stream()
+                .filter(constraint -> (constraint.getOwnerType() == TargetType.CLASSIFIER
+                        && classifier.getId().equals(constraint.getOwnerId()))
+                        || (constraint.getOwnerType() == TargetType.RELATIONSHIP
+                                && relationships.stream().anyMatch(relationship ->
+                                        relationship.getId().equals(constraint.getOwnerId()))))
+                .toList();
 
         Set<CommandHandler.DeletedTarget> deletedTargets = new LinkedHashSet<>();
         deletedTargets.add(new CommandHandler.DeletedTarget(TargetType.CLASSIFIER, classifier.getId()));

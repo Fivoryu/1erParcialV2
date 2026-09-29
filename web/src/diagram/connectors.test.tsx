@@ -6,7 +6,12 @@ import { ReactFlow } from '@xyflow/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModelResource, RelationshipEndResource, RelationshipResource } from '../api/types';
 import {
+  applyOptimisticCommand,
+  buildConstraintAddRequest,
+  buildConstraintRemoveRequest,
+  buildConstraintUpdateRequest,
   buildGeometrySetRequest,
+  buildModelCommandEnvelope,
   buildRelationshipDeleteRequest,
   buildRelationshipUpdateRequest,
   RELATIONSHIP_KINDS,
@@ -57,6 +62,7 @@ const relationship: RelationshipResource = {
   kind: 'ASSOCIATION',
   name: 'owns',
   ends: [sourceEnd, targetEnd],
+  constraints: [{ id: '77777777-7777-4777-8777-777777777777', expression: 'orders->notEmpty()', severity: 'WARNING' }],
 };
 
 const model: ModelResource = {
@@ -90,11 +96,20 @@ const markerEnds = [
 
 const markerCases = [
   ['ASSOCIATION', 'solid', 'open-arrow', null, false],
-  ['AGGREGATION', 'solid', 'hollow-diamond', null, false],
-  ['COMPOSITION', 'solid', 'filled-diamond', null, false],
+  ['AGGREGATION', 'solid', 'hollow-diamond-open-arrow', null, false],
+  ['COMPOSITION', 'solid', 'filled-diamond-open-arrow', null, false],
   ['GENERALIZATION', 'solid', null, 'hollow-triangle', false],
   ['INTERFACE_REALIZATION', 'dashed', null, 'hollow-triangle', true],
-  ['DEPENDENCY', 'dashed', null, 'open-arrow', false],
+  ['DEPENDENCY', 'dashed', 'open-arrow', null, false],
+] as const;
+
+const navigationMarkerCases = [
+  ['ASSOCIATION', 'open-arrow', 'open-arrow', null, null, false],
+  ['AGGREGATION', 'hollow-diamond-open-arrow', 'open-arrow', 'hollow-diamond', null, false],
+  ['COMPOSITION', 'filled-diamond-open-arrow', 'open-arrow', 'filled-diamond', null, false],
+  ['GENERALIZATION', null, 'hollow-triangle', null, 'hollow-triangle', true],
+  ['INTERFACE_REALIZATION', null, 'hollow-triangle', null, 'hollow-triangle', true],
+  ['DEPENDENCY', 'open-arrow', 'open-arrow', null, null, false],
 ] as const;
 
 const labelPlacementCases = [
@@ -120,12 +135,76 @@ describe('UML relationship markers and labels', () => {
         .filter((marker) => marker?.includes('diamond'));
       if (kind === 'AGGREGATION' || kind === 'COMPOSITION') {
         expect(diamonds).toEqual([sourceMarker]);
-        expect(presentation.sourceMarker).toBe(kind === 'AGGREGATION' ? 'hollow-diamond' : 'filled-diamond');
+        expect(presentation.sourceMarker).toContain(kind === 'AGGREGATION' ? 'hollow-diamond' : 'filled-diamond');
       } else {
         expect(diamonds).toEqual([]);
       }
     },
   );
+
+  it.each(navigationMarkerCases)(
+    '%s changes with navigability except for inheritance and realization triangles',
+    (kind, navigableSourceMarker, navigableTargetMarker, nonNavigableSourceMarker, nonNavigableTargetMarker, fixedByKind) => {
+      const navigableSource = { ...sourceEnd, navigability: 'NAVIGABLE' as const };
+      const nonNavigableSource = { ...sourceEnd, navigability: 'NOT_NAVIGABLE' as const };
+      const navigableTarget = { ...targetEnd, navigability: 'NAVIGABLE' as const };
+      const nonNavigableTarget = { ...targetEnd, navigability: 'NOT_NAVIGABLE' as const };
+      const fromSource = relationshipMarkerPresentation(kind, [navigableSource, nonNavigableTarget]);
+      const fromTarget = relationshipMarkerPresentation(kind, [nonNavigableSource, navigableTarget]);
+      const neither = relationshipMarkerPresentation(kind, [nonNavigableSource, nonNavigableTarget]);
+
+      expect(fromSource.sourceMarker).toBe(navigableSourceMarker);
+      expect(fromSource.targetMarker).toBe(nonNavigableTargetMarker);
+      expect(fromTarget.sourceMarker).toBe(nonNavigableSourceMarker);
+      expect(fromTarget.targetMarker).toBe(navigableTargetMarker);
+      if (fixedByKind) {
+        expect(fromSource).toEqual(fromTarget);
+        expect(fromSource).toEqual(neither);
+      } else {
+        expect(fromSource).not.toEqual(neither);
+        expect(fromTarget).not.toEqual(neither);
+      }
+    },
+  );
+
+  it('builds and projects relationship-owned constraint add, update, and removal commands', () => {
+    const baseModel: ModelResource = {
+      ...model,
+      relationships: [{ ...relationship, constraints: [] }],
+    };
+    const generatedIds = [
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaad',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaae',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaf',
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbc',
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbd',
+    ];
+    let generatedIndex = 0;
+    const uuidFactory = () => generatedIds[generatedIndex++]!;
+    const add = buildModelCommandEnvelope(baseModel, buildConstraintAddRequest(
+      'RELATIONSHIP', relationshipId, 'orders->notEmpty()', 'WARNING',
+    ), uuidFactory);
+    expect(add.targets).toEqual([{ scope: 'relationship', id: relationshipId }]);
+    expect(add.payload).toMatchObject({ ownerType: 'RELATIONSHIP', ownerId: relationshipId });
+
+    const added = applyOptimisticCommand(baseModel, add);
+    expect(added.relationships[0]?.constraints).toEqual([{
+      id: generatedIds[1], expression: 'orders->notEmpty()', severity: 'WARNING',
+    }]);
+
+    const update = buildModelCommandEnvelope(added, buildConstraintUpdateRequest(generatedIds[1]!, {
+      expression: 'orders->size() > 0', severity: 'INFO',
+    }), uuidFactory);
+    const updated = applyOptimisticCommand(added, update);
+    expect(updated.relationships[0]?.constraints[0]).toMatchObject({
+      expression: 'orders->size() > 0', severity: 'INFO',
+    });
+
+    const remove = buildModelCommandEnvelope(updated, buildConstraintRemoveRequest(generatedIds[1]!), uuidFactory);
+    expect(applyOptimisticCommand(updated, remove).relationships[0]?.constraints).toEqual([]);
+  });
 
   it('renders both end roles and multiplicities in UML notation without exposing identifiers or enums', () => {
     const markup = renderToStaticMarkup(createElement(RelationshipEndLabels, {
@@ -156,6 +235,10 @@ describe('UML relationship markers and labels', () => {
     expect(panel).toContain('Relationship');
     expect(panel).toContain('Source end · Customer');
     expect(panel).toContain('Target end · Subscription');
+    expect(panel).toContain('orders-&gt;notEmpty()');
+    expect(panel).toContain('Save constraint');
+    expect(panel).toContain('Severity');
+    expect(panel).toContain('Warning');
     expect(panel).toContain('Role');
     expect(panel).toContain('Multiplicity');
     expect(panel).toContain('Navigability');
@@ -177,7 +260,7 @@ describe('UML relationship markers and labels', () => {
     expect(buildRelationshipDeleteRequest(relationship)).toEqual({
       type: 'relationship.delete',
       targets: [{ scope: 'relationship', id: relationshipId }],
-      preconditions: [{ kind: 'cascade_count', expect: 3, scope: null }],
+      preconditions: [{ kind: 'cascade_count', expect: 4, scope: null }],
       payload: {},
     });
   });

@@ -1,6 +1,6 @@
 # Completitud del editor — auditoría y cierre de brechas
 
-> **Estado:** auditoría hecha, tareas por delante.
+> **Estado:** auditoría hecha; T5, T6 y advertencia de bundle cerradas; T3 y captura de T4 pendientes.
 > **Origen:** al mirar el incremento cerrado, el usuario señaló que «le faltan más cosas para que sea
 > completo, como la multiplicidad o la asociación de clases».
 > **Producto:** diagramador colaborativo de clases UML 2.5 (PRIMER PARCIAL, Ingeniería de Software I).
@@ -40,9 +40,9 @@ relaciones con su marcador), `BL-CMP-05` (disposición separada de la semántica
 | **B2** | `BL-REL-08`, `BL-REL-10` — Rol y multiplicidad de extremo | **El rótulo se calcula y después se descarta si no encuentra una ubicación segura.** La arista queda visible pero el extremo pierde su información: en el diagrama de demostración se lee `customer` y **no** su multiplicidad ni el nombre de la asociación | `UmlRelationshipEdge.tsx:166-189,518-533` |
 | **B3** | `BL-REL-01` (y las demás) — Descubribilidad | **Los ocho anclajes tienen `opacity: 0`** y solo aparecen con hover, selección o foco. No hay herramienta de relación en la barra: la única forma de asociar dos clases es descubrir por accidente que hay anclajes invisibles | `styles.css:883-895`, `UmlClassNode.tsx:231-249`, `UmlCanvas.tsx:326-340` |
 | **B4** | `BL-CLS-06` — Paquete | **Implementado en T4; captura visual live pendiente:** la paleta crea paquetes, el panel permite asignar o quitar su espacio de nombres con validación contra ciclos, y el lienzo muestra notación de carpeta | `ClassifierSetNamespaceHandler.java`, `UmlCanvas.tsx`, `PropertiesPanel.tsx`, `UmlClassNode.tsx`; pruebas backend y web; script extendido |
-| **B5** | `BL-CMP-02` — Restricción | Solo se admiten restricciones **de clasificador**; la severidad queda fija en `ERROR`, no se muestra en el lienzo y una restricción existente no se puede editar | `ConstraintAddHandler.java:41-46`, `PropertiesPanel.tsx:113-127,166-195`, `UmlClassNode.tsx:195-212` |
-| **B6** | `BL-REL-09` — Navegabilidad | Existe el control, pero en las relaciones que no son asociación el marcador se elige **por tipo** y no refleja el valor editado: cambiar la navegabilidad de una dependencia no cambia nada | `PropertiesPanel.tsx:269-292`, `UmlRelationshipEdge.tsx:321-337` |
-| **B7** | `BL-FEA-01`…`BL-FEA-04` — Filas de miembro | El texto de miembro usa `ellipsis`, así que tipo, parámetros, retorno o valor predeterminado pueden quedar cortados. El valor predeterminado va al final de la fila, justo donde corta | `styles.css:833-837`, `uml-format.ts:64-82` |
+| **B5** | `BL-CMP-02` — Restricción | **Cerrada en T5:** restricciones de clasificador y relación se pueden crear, leer y editar; expresión y severidad persisten. El lienzo dibuja `{expresión}` y solo agrega `⚠` o `ⓘ` para severidad no predeterminada; `ERROR` no agrega ruido | `ConstraintAddHandler.java`, `ConstraintUpdateHandler.java`, `ProjectApiService.java`, `PropertiesPanel.tsx`, `UmlClassNode.tsx`; pruebas HTTP y capturas en `docs/capturas/completitud-editor/` |
+| **B6** | `BL-REL-09` — Navegabilidad | **Cerrada en T5:** asociación, agregación, composición y dependencia dibujan flechas en los extremos navegables; generalización y realización conservan su triángulo fijo hacia el padre y no dibujan navegabilidad | `UmlRelationshipEdge.tsx`, `connectors.test.tsx`; captura en `docs/capturas/completitud-editor/01-member-wrapping.png` |
+| **B7** | `BL-FEA-01`…`BL-FEA-04` — Filas de miembro | **Cerrada en T6:** las filas envuelven texto dentro del ancho redimensionable; la tarjeta permite scroll si el contenido supera su alto. No hay `ellipsis` sobre los datos | `styles.css`, `UmlClassNode.tsx`, `uml-node.test.ts`; captura en `docs/capturas/completitud-editor/01-member-wrapping.png` |
 
 ### 2.3 Lo que **no** es una brecha, y conviene decir por qué
 
@@ -62,11 +62,11 @@ relaciones con su marcador), `BL-CMP-05` (disposición separada de la semántica
 
 | Falta | Por qué importa |
 | --- | --- |
-| `parameter.update` | Hay `parameter.add` y `parameter.remove`; sin `update`, corregir el tipo de un parámetro obliga a borrarlo y recrearlo |
-| `constraint.update` | Expresión y severidad solo se envían al crear |
+| `parameter.update` | **Resuelto en T3a** en el modelo; la edición de la firma desde la interfaz sigue dentro de T3 |
+| `constraint.update` | **Resuelto en T5:** actualiza expresión y/o severidad; las pruebas releen ambos campos desde el recurso del modelo |
 | Cambiar el `namespaceId` de un clasificador ya creado | **Resuelto en T4:** `classifier.setNamespace` valida paquetes del mismo modelo, auto-namespace y ciclos; la paleta permite asignar o limpiar el paquete |
 | Reasignar el clasificador de un extremo | `relationship.update` acepta rol, multiplicidad y navegabilidad, pero no `classifierId` |
-| Restricción con dueño relación | La línea base admite ese dueño y el modelo no tiene camino para él |
+| Restricción con dueño relación | **Resuelto en T5:** alta, lectura, edición y limpieza al borrar la relación; otros dueños polimórficos siguen rechazados nombrando el tipo |
 
 ## 3. Tareas
 
@@ -111,13 +111,12 @@ Ordenadas por impacto sobre alguien que quiere dibujar un diagrama de clases.
 ### T5 — Restricciones y navegabilidad (B5, B6)
 
 - **Objetivo:** cerrar las dos brechas de fidelidad que quedan.
-- **Entregable:** `constraint.update`, severidad visible y editable, restricciones de relación si el modelo lo
-  admite; y que el marcador refleje la navegabilidad en todos los tipos, no solo en asociación.
+- **Entregable:** `constraint.update` acepta `expression` y/o `severity`; las severidades permitidas son `INFO`, `WARNING` y `ERROR`, y el rechazo nombra el valor inválido. Constraints de classifier y relationship se crean, serializan dentro de su dueño y editan en el mismo panel. El diagrama deja `ERROR` sin marcador y usa `⚠`/`ⓘ` para severidades no predeterminadas. Asociación, agregación, composición y dependencia dibujan flechas según la navegabilidad; generalización y realización conservan su triángulo hacia el padre.
 
 ### T6 — Filas de miembro sin truncar (B7)
 
 - **Objetivo:** que un tipo, un retorno o un valor predeterminado no desaparezcan por el ancho.
-- **Entregable:** ajuste del ancho de la tarjeta al contenido, o ajuste de línea, en vez de `ellipsis`.
+- **Entregable:** ajuste de línea dentro del ancho del nodo y scroll de la tarjeta si el contenido supera su alto; la tarjeta conserva su redimensionador. Se elige envolver en vez de crecer el ancho para no alterar posiciones vecinas ni deshacer el tamaño elegido por la persona.
 
 ## 4. Definición de terminado
 
@@ -136,5 +135,6 @@ Ordenadas por impacto sobre alguien que quiere dibujar un diagrama de clases.
 | T2 — Anclajes descubribles | **hecho** | En reposo los ocho anclajes se ven como puntos de 8 px a `opacity: 0.62`, y pasan a 11 px y opacidad plena con hover, selección o foco; además son alcanzables por teclado. La barra dice **«Drag from one class dot to another to connect them.»** Verificado en la captura |
 | T3 — Parámetros en la interfaz | pendiente | — |
 | T4 — Paquetes | **implementación hecha; captura live pendiente** | `classifier.setNamespace` con 5 pruebas backend; selector/paleta/notación con pruebas web; `capture-editor.mjs` exige estados reales; falta ejecutar con un editor live que contenga Customer, una relación, una operación y un paquete |
-| T5 — Restricciones y navegabilidad | pendiente | — |
-| T6 — Filas sin truncar | pendiente | — |
+| T5 — Restricciones y navegabilidad | **hecho** | `constraint.update` cubre `expression` y `severity`; `ERROR`, `WARNING` e `INFO` releídos vía HTTP; rechazo de severidad `TRACE` y constraint desconocida que nombra el UUID; constraint de relación creada, leída, editada y borrada con su dueño; rechazo de constraint desconocida; sin migración. Marcadores probados por tipo. Capturas reales en `docs/capturas/completitud-editor/02-class-constraints.png` y `03-relationship-constraints.png` |
+| T6 — Filas sin truncar | **hecho** | Prueba con tipo de miembro largo comprueba contenido intacto, `overflow-wrap:anywhere`, `white-space:normal`, ausencia de ellipsis y scroll del nodo; captura `docs/capturas/completitud-editor/01-member-wrapping.png` |
+| Bundle — advertencia de chunk | **hecho** | Antes: `npm run build` emitía un chunk JS de **503.18 kB** (gzip 158.34 kB), sobre 500 kB. Después de cargar el editor por ruta dinámica: `index` **268.48 kB** (gzip 85.52 kB) y `ProjectEditorPage` **238.36 kB** (gzip 74.12 kB); ningún chunk supera el límite y Vite no advierte. CSS: **33.42 kB** (gzip 6.63 kB) |

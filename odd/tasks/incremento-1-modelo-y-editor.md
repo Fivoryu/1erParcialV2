@@ -1,6 +1,6 @@
 # Incremento 1 — Modelo y editor visual
 
-> **Estado:** plan reescrito y aprobado en sesión, sin empezar.
+> **Estado:** incremento ejecutado; el cierre histórico está en §9 y las mejoras posteriores de completitud están registradas allí.
 > **Producto:** diagramador colaborativo de clases UML 2.5 (PRIMER PARCIAL, Ingeniería de Software I).
 > **Rama:** `feat/incremento-1-modelo-y-editor`, apilada sobre `feat/incremento-0-contrato-y-riesgos`.
 > **Cambio respecto del plan anterior:** el lienzo gráfico **entra** a este incremento. El plan previo lo
@@ -23,7 +23,7 @@ se verifica en T10.
 | Pieza | Qué entra |
 | --- | --- |
 | Modelo canónico | `Project`, `UmlModel` con revisión, `Classifier` (clase, clase abstracta, interfaz, paquete), `Attribute`, `Operation`, `Parameter`, `TypeReference`, `Relationship` con sus dos extremos, y la separación explícita entre semántica y layout |
-| Capa de comandos | Sobre de operación completo (`operationId`, autor, `baseRevision`, objetivos estables, precondiciones, `idempotencyKey`, causalidad) con los 24 tipos de comando de §6.2 |
+| Capa de comandos | Sobre de operación completo (`operationId`, autor, `baseRevision`, objetivos estables, precondiciones, `idempotencyKey`, causalidad) con los 25 tipos de comando de §6.2 |
 | Persistencia | PostgreSQL 16 con migraciones Flyway que **poseen el esquema**; JPA solo valida (`ddl-auto: validate`) |
 | Validación | Nombres de clasificador únicos por espacio de nombres, tipos resolubles, revisiones monotónicas, rechazo explícito de constructos fuera de la línea base |
 | API | Crear y listar proyectos, abrir el modelo, aplicar comandos, recuperar el modelo y su disposición |
@@ -46,10 +46,11 @@ Manda la línea base UML-BL-1: **23 constructos soportados**. Nada fuera de ella
 
 **Restricción declarada sobre `BL-CMP-02`:** la línea base lo declara soportado en persistencia y el esquema
 físico tiene `uml_constraint` con dueño polimórfico, así que **no puede quedar fuera sin contradecir la línea
-base**. Entra con comando propio (`constraint.add`, `constraint.remove`) y se renderiza como `{expresión}`
-dentro de la caja del clasificador. En este incremento el dueño admitido es **solo el clasificador**; los demás
-dueños que el esquema permite (`ATTRIBUTE`, `OPERATION`, `PARAMETER`, `RELATIONSHIP`) se rechazan con un motivo
-que los nombra, en vez de ignorarse en silencio.
+base**. `constraint.add`, `constraint.update` y `constraint.remove` permiten alta, edición y baja; el panel
+permite editar expresión y severidad para dueños `CLASSIFIER` y `RELATIONSHIP`, y el diagrama muestra
+`{expresión}` con un indicador discreto solo cuando la severidad no es la predeterminada. Los demás dueños que
+el esquema permite (`ATTRIBUTE`, `OPERATION`, `PARAMETER`) se rechazan con un motivo, en vez de ignorarse en
+silencio.
 
 ## 3. Fuera de alcance, y por qué
 
@@ -60,7 +61,7 @@ que los nombra, en vez de ignorarse en silencio.
 | Estereotipos | Sin entidad (GAP-04) |
 | Multiplicidad con cotas numéricas | Solo se soportan las cuatro categorías (GAP-05); `RANGE` se rechaza |
 | Visibilidad protegida y de paquete | Sin restricción de dominio que las sostenga (GAP-06) |
-| Restricciones con dueño distinto del clasificador | El esquema las admite (`uml_constraint.owner_type` es polimórfico), pero la UI de este incremento solo las edita sobre el clasificador. Se rechazan nombrando el dueño, no se descartan |
+| Restricciones con dueño distinto de clasificador o relación | El esquema las admite (`uml_constraint.owner_type` es polimórfico), pero el producto solo soporta edición para `CLASSIFIER` y `RELATIONSHIP`; `ATTRIBUTE`, `OPERATION` y `PARAMETER` se rechazan nombrando el dueño, no se descartan |
 | **Autenticación real** | El proveedor de identidad es un GAP de los contratos. Se siembra un usuario propietario determinista y el sobre viaja con ese autor; no se finge un login |
 | Colaboración, presencia, conflictos | Incremento 3. El esquema y el contrato ya los prevén, pero no se implementan |
 | **Undo/redo** | `undo`/`redo` son sobres nuevos que referencian la operación original (§2.3 de los contratos) y exigen historial de inversas. Entra en el próximo incremento; se declara acá para no fingir que existe |
@@ -226,8 +227,8 @@ demasiado grande falla sin producir nada.
   D9; tipo de atributo resoluble contra `type_reference` o rechazado; `ENUMERATION` rechazada nombrando
   `BL-CLS-04` y el GAP-02; visibilidad fuera de `PUBLIC`/`PRIVATE` rechazada nombrando `BL-VIS-03`/`BL-VIS-04`;
   `is_static`/`is_abstract` en atributo rechazados nombrando `BL-FEA-05`/`BL-FEA-06`; multiplicidad `RANGE`
-  rechazada nombrando `BL-REL-07` y el GAP-05; `constraint.add` con dueño distinto de `CLASSIFIER` se rechaza
-  nombrando el dueño.
+  rechazada nombrando `BL-REL-07` y el GAP-05; el seguimiento T5 de `completitud-editor.md` amplía los dueños
+  admitidos de constraints a `CLASSIFIER` y `RELATIONSHIP`, y rechaza los demás nombrando el dueño.
 - **Nota de diseño para T3b:** el handler corre **antes** de que exista la fila de `model_command`, y
   `cascade_group.root_command_id` y `tombstone.command_id` apuntan a esa fila. Por eso el handler devuelve los
   objetivos borrados y es el servicio el que crea el `cascade_group` y los `tombstone` después de persistir el
@@ -369,16 +370,16 @@ worktree.
 | Parámetro | `parameter.add`, `parameter.update`, `parameter.remove` |
 | Relación | `relationship.create`, `relationship.update`, `relationship.delete` |
 | Vista | `view.create` |
-| Restricción | `constraint.add`, `constraint.remove` |
+| Restricción | `constraint.add`, `constraint.update`, `constraint.remove` |
 | Disposición | `geometry.set`, `geometry.remove` |
 
-24 tipos. Todo lo demás del catálogo de los contratos (`member.*`, `proposal.*`, `xmi.*`, `generation.*`,
+25 tipos. Todo lo demás del catálogo de los contratos (`member.*`, `proposal.*`, `xmi.*`, `generation.*`,
 `undo`, `redo`, `resolve`) queda fuera y se rechaza con `UNKNOWN_OPERATION`.
 
-Los 24 tipos se reparten así: `project.create`, `project.rename` y `view.create` en **T4b**; los 14 de
-clasificador, atributo, operación, parámetro y restricción en **T3a**; `classifier.setNamespace` en la tarea **T4
-(Paquetes)** de `completitud-editor.md`; `classifier.delete` en **T3b**; y los 5 de relación y geometría en
-**T4a**. Ninguno queda sin tarea.
+Los 25 tipos se reparten así: `project.create`, `project.rename` y `view.create` en **T4b**; los 14 de
+clasificador, atributo, operación, parámetro y restricciones de T3a; `classifier.setNamespace` en la tarea **T4
+(Paquetes)** de `completitud-editor.md`; `classifier.delete` en **T3b**; los 5 de relación y geometría en
+**T4a**; y `constraint.update` en el seguimiento T5 de `completitud-editor.md`. Ninguno queda sin tarea.
 
 ## 7. Compromiso de proporción
 
@@ -436,6 +437,8 @@ muy distinto a estar oculto.
 | T8 — Lienzo con edición directa | **hecho** | Commit `12fac29`; 10 pruebas verdes; la regla de no-IDs probada sobre el markup con UUIDs reales en el fixture (no matchea patrón de UUID, no aparecen `classifier_id`, `EXACTLY_ONE`, `ZERO_OR_MANY`, `NOT_NAVIGABLE` ni `ABSTRACT_CLASS`); multiplicidades como `1`, `0..1`, `1..*`, `0..*`; **D4 cerrada** con `@xyflow/react` 12.12.0, MIT, ~5 MB instalado y 205.90 kB de bundle, atribución visible por decisión |
 | T9 — Conectores y persistencia del layout | **hecho** | Commit `d12a9b9`; 24 pruebas, **0 saltadas**, incluidos los dos tests vivos contra el backend real; el corte completo con dos clases, atributo, operación, relación, movimiento y recarga devuelve **la misma revisión, la misma geometría, las mismas posiciones, los mismos waypoints y los mismos miembros**; `geometryCommands` tiene longitud **1** tras un arrastre, que es el coalescido probado contra un backend real |
 | T10 — Cierre del incremento | **hecho** | Acta en [`docs/puds/cierre/03-cierre-incremento-1.md`](../../docs/puds/cierre/03-cierre-incremento-1.md); capturas en `docs/capturas/incremento-1/` tomadas con Chrome headless sobre una escena creada por `tools/acceptance/seed_demo_diagram.py`, para que la evidencia visual sea **reproducible** y no un montaje; README raíz reescrito con el estado real; **V1 corregido** (el `[1]` por defecto ya no se muestra) y **V2/V3 declarados** como defectos de presentación abiertos, con su causa |
+
+**Seguimiento posterior — completitud del editor.** T5 de `completitud-editor.md` incorpora `constraint.update`, soporta owners de classifier y relationship, conserva `ddl-auto: validate` y no añade migraciones. T6 envuelve filas largas sin truncarlas, manteniendo el nodo redimensionable. La carga diferida del editor eliminó la advertencia de chunk de Vite. Verificaciones: `cd backend && mvn -o -B -Dtest=T5ProjectApiTest test` (**13 pruebas**), `cd backend && mvn -o -B verify` (**94 pruebas**), `cd web && npm test` (**57 pasaron, 4 omitidas**) y `cd web && npm run build` (sin advertencia; `index` 268.48 kB y `ProjectEditorPage` 238.36 kB). Capturas reales: `docs/capturas/completitud-editor/01-member-wrapping.png`, `02-class-constraints.png`, `03-relationship-constraints.png`. Las omisiones frontend son preexistentes y no se debilitaron en esta tarea.
 
 ## 10. Trazabilidad
 

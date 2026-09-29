@@ -98,10 +98,12 @@ export interface ParameterResource {
   ordinal: number;
 }
 
+export type ConstraintSeverity = 'INFO' | 'WARNING' | 'ERROR';
+
 export interface ConstraintResource {
   id: Uuid;
   expression: string;
-  severity: string;
+  severity: ConstraintSeverity;
 }
 
 export interface RelationshipResource {
@@ -109,6 +111,7 @@ export interface RelationshipResource {
   kind: string;
   name: string | null;
   ends: RelationshipEndResource[];
+  constraints: ConstraintResource[];
 }
 
 export interface RelationshipEndResource {

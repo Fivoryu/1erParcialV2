@@ -10,7 +10,14 @@ import {
 import type { RelationshipEndResource, RelationshipResource } from '../api/types';
 import { formatRelationshipEndLabel } from './uml-format';
 
-export type RelationshipMarker = 'open-arrow' | 'hollow-diamond' | 'filled-diamond' | 'hollow-triangle' | null;
+export type RelationshipMarker =
+  | 'open-arrow'
+  | 'hollow-diamond'
+  | 'filled-diamond'
+  | 'hollow-diamond-open-arrow'
+  | 'filled-diamond-open-arrow'
+  | 'hollow-triangle'
+  | null;
 
 export interface EdgePoint {
   x: number;
@@ -386,23 +393,42 @@ export function relationshipMarkerPresentation(
   const orderedEnds = [...ends].sort((left, right) => left.ordinal - right.ordinal);
   const sourceEnd = orderedEnds[0];
   const targetEnd = orderedEnds[1];
+  const sourceNavigable = sourceEnd?.navigability === 'NAVIGABLE';
+  const targetNavigable = targetEnd?.navigability === 'NAVIGABLE';
+
+  // UML generalization and interface-realization triangles point at the parent; navigability does not add an arrowhead.
   switch (kind) {
     case 'AGGREGATION':
-      return { lineStyle: 'solid', sourceMarker: 'hollow-diamond', targetMarker: null, realizationLabelAtTarget: false };
+      return {
+        lineStyle: 'solid',
+        sourceMarker: sourceNavigable ? 'hollow-diamond-open-arrow' : 'hollow-diamond',
+        targetMarker: targetNavigable ? 'open-arrow' : null,
+        realizationLabelAtTarget: false,
+      };
     case 'COMPOSITION':
-      return { lineStyle: 'solid', sourceMarker: 'filled-diamond', targetMarker: null, realizationLabelAtTarget: false };
+      return {
+        lineStyle: 'solid',
+        sourceMarker: sourceNavigable ? 'filled-diamond-open-arrow' : 'filled-diamond',
+        targetMarker: targetNavigable ? 'open-arrow' : null,
+        realizationLabelAtTarget: false,
+      };
     case 'GENERALIZATION':
       return { lineStyle: 'solid', sourceMarker: null, targetMarker: 'hollow-triangle', realizationLabelAtTarget: false };
     case 'INTERFACE_REALIZATION':
       return { lineStyle: 'dashed', sourceMarker: null, targetMarker: 'hollow-triangle', realizationLabelAtTarget: true };
     case 'DEPENDENCY':
-      return { lineStyle: 'dashed', sourceMarker: null, targetMarker: 'open-arrow', realizationLabelAtTarget: false };
+      return {
+        lineStyle: 'dashed',
+        sourceMarker: sourceNavigable ? 'open-arrow' : null,
+        targetMarker: targetNavigable ? 'open-arrow' : null,
+        realizationLabelAtTarget: false,
+      };
     case 'ASSOCIATION':
     default:
       return {
         lineStyle: 'solid',
-        sourceMarker: sourceEnd?.navigability === 'NAVIGABLE' ? 'open-arrow' : null,
-        targetMarker: targetEnd?.navigability === 'NAVIGABLE' ? 'open-arrow' : null,
+        sourceMarker: sourceNavigable ? 'open-arrow' : null,
+        targetMarker: targetNavigable ? 'open-arrow' : null,
         realizationLabelAtTarget: false,
       };
   }
@@ -451,6 +477,8 @@ const MARKER_SUFFIXES: Record<Exclude<RelationshipMarker, null>, string> = {
   'open-arrow': 'open-arrow',
   'hollow-diamond': 'hollow-diamond',
   'filled-diamond': 'filled-diamond',
+  'hollow-diamond-open-arrow': 'hollow-diamond-open-arrow',
+  'filled-diamond-open-arrow': 'filled-diamond-open-arrow',
   'hollow-triangle': 'hollow-triangle',
 };
 
@@ -561,6 +589,14 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
         </marker>
         <marker id={markerIds['filled-diamond']} viewBox="0 -7 14 14" refX="0" refY="0" markerWidth="14" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
           <path d="M 0 0 L 7 -6 L 14 0 L 7 6 Z" fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
+        </marker>
+        <marker id={markerIds['hollow-diamond-open-arrow']} viewBox="-26 -8 28 16" refX="0" refY="0" markerWidth="28" markerHeight="16" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d="M 9 -5 L 0 0 L 9 5" fill="none" stroke="#526b62" strokeWidth="1.4" />
+          <path d="M -24 0 L -18 -6 L -12 0 L -18 6 Z" fill="white" stroke="#526b62" strokeWidth="1.4" />
+        </marker>
+        <marker id={markerIds['filled-diamond-open-arrow']} viewBox="-26 -8 28 16" refX="0" refY="0" markerWidth="28" markerHeight="16" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d="M 9 -5 L 0 0 L 9 5" fill="none" stroke="#526b62" strokeWidth="1.4" />
+          <path d="M -24 0 L -18 -6 L -12 0 L -18 6 Z" fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
         </marker>
         <marker
           id={markerIds['hollow-triangle']}

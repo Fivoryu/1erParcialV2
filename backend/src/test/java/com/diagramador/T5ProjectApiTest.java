@@ -232,6 +232,7 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
         assertThat(relationship.path("kind").asText()).isEqualTo("ASSOCIATION");
         assertThat(relationship.path("name").asText()).isEqualTo("places");
         assertThat(relationship.path("ends")).hasSize(2);
+        assertThat(relationship.path("constraints")).isEmpty();
         JsonNode firstEnd = relationship.path("ends").get(0);
         JsonNode secondEnd = relationship.path("ends").get(1);
         assertThat(firstEnd.path("classifierId").asText()).isEqualTo(firstClassifierId.toString());
@@ -258,6 +259,123 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
                 .isEqualTo(relationshipId.toString());
         assertThat(view.path("connector_path").get(0).path("ordinal").asInt()).isZero();
         assertThat(view.path("connector_path").get(1).path("ordinal").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void constraintUpdatePersistsExpressionAndEverySupportedSeverityAcrossModelReloads() throws Exception {
+        UUID projectId = UUID.fromString(createProject("Constraint update " + UUID.randomUUID(), null)
+                .path("id").asText());
+        JsonNode initialModel = getJson("/projects/{id}/model", projectId);
+        UUID modelId = UUID.fromString(initialModel.path("id").asText());
+        UUID classifierId = UUID.randomUUID();
+        UUID constraintId = UUID.randomUUID();
+        postCommand(projectId, projectId, modelId, 1L, "classifier.create", List.of(),
+                Map.of("id", classifierId, "name", "Account", "kind", "CLASS"));
+        postCommand(projectId, projectId, modelId, 2L, "constraint.add", List.of(target("classifier", classifierId)),
+                Map.of("id", constraintId, "ownerType", "CLASSIFIER", "ownerId", classifierId,
+                        "expression", "self.name <> ''", "severity", "ERROR"));
+
+        postCommand(projectId, projectId, modelId, 3L, "constraint.update", List.of(target("constraint", constraintId)),
+                Map.of("expression", "self.name.size() > 0"));
+        JsonNode afterExpression = findById(getJson("/projects/{id}/model", projectId).path("classifiers"),
+                classifierId.toString()).path("constraints").get(0);
+        assertThat(afterExpression.path("expression").asText()).isEqualTo("self.name.size() > 0");
+        assertThat(afterExpression.path("severity").asText()).isEqualTo("ERROR");
+
+        long revision = 4L;
+        for (String severity : List.of("WARNING", "INFO", "ERROR")) {
+            postCommand(projectId, projectId, modelId, revision++, "constraint.update",
+                    List.of(target("constraint", constraintId)), Map.of("severity", severity));
+            JsonNode persisted = findById(getJson("/projects/{id}/model", projectId).path("classifiers"),
+                    classifierId.toString()).path("constraints").get(0);
+            assertThat(persisted.path("expression").asText()).isEqualTo("self.name.size() > 0");
+            assertThat(persisted.path("severity").asText()).isEqualTo(severity);
+        }
+    }
+
+    @Test
+    void relationshipOwnedConstraintCanBeCreatedReadAndEdited() throws Exception {
+        UUID projectId = UUID.fromString(createProject("Relationship constraint " + UUID.randomUUID(), null)
+                .path("id").asText());
+        JsonNode initialModel = getJson("/projects/{id}/model", projectId);
+        UUID modelId = UUID.fromString(initialModel.path("id").asText());
+        UUID sourceId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        UUID relationshipId = UUID.randomUUID();
+        UUID constraintId = UUID.randomUUID();
+        postCommand(projectId, projectId, modelId, 1L, "classifier.create", List.of(),
+                Map.of("id", sourceId, "name", "Customer", "kind", "CLASS"));
+        postCommand(projectId, projectId, modelId, 2L, "classifier.create", List.of(),
+                Map.of("id", targetId, "name", "Order", "kind", "CLASS"));
+        Map<String, Object> relationshipPayload = new HashMap<>();
+        relationshipPayload.put("id", relationshipId);
+        relationshipPayload.put("kind", "ASSOCIATION");
+        relationshipPayload.put("name", "places");
+        relationshipPayload.put("source", Map.of("classifierId", sourceId));
+        relationshipPayload.put("target", Map.of("classifierId", targetId));
+        relationshipPayload.put("waypoints", List.of());
+        postCommand(projectId, projectId, modelId, 3L, "relationship.create",
+                List.of(target("classifier", sourceId), target("classifier", targetId)), relationshipPayload);
+        postCommand(projectId, projectId, modelId, 4L, "constraint.add", List.of(target("relationship", relationshipId)),
+                Map.of("id", constraintId, "ownerType", "RELATIONSHIP", "ownerId", relationshipId,
+                        "expression", "customer.orders->notEmpty()", "severity", "WARNING"));
+
+        JsonNode relationshipConstraint = findById(getJson("/projects/{id}/model", projectId).path("relationships"),
+                relationshipId.toString()).path("constraints").get(0);
+        assertThat(relationshipConstraint.path("id").asText()).isEqualTo(constraintId.toString());
+        assertThat(relationshipConstraint.path("expression").asText()).isEqualTo("customer.orders->notEmpty()");
+        assertThat(relationshipConstraint.path("severity").asText()).isEqualTo("WARNING");
+
+        postCommand(projectId, projectId, modelId, 5L, "constraint.update", List.of(target("constraint", constraintId)),
+                Map.of("expression", "customer.orders->size() > 0", "severity", "INFO"));
+        JsonNode edited = findById(getJson("/projects/{id}/model", projectId).path("relationships"),
+                relationshipId.toString()).path("constraints").get(0);
+        assertThat(edited.path("expression").asText()).isEqualTo("customer.orders->size() > 0");
+        assertThat(edited.path("severity").asText()).isEqualTo("INFO");
+
+        Map<String, Object> cascadeCount = new HashMap<>();
+        cascadeCount.put("kind", "cascade_count");
+        cascadeCount.put("expect", 4);
+        cascadeCount.put("scope", null);
+        MvcResult deleted = postEnvelope(projectId, projectId, modelId, UUID.randomUUID(), 6L,
+                "relationship.delete", List.of(target("relationship", relationshipId)), Map.of(), List.of(cascadeCount))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(objectMapper.readTree(deleted.getResponse().getContentAsByteArray()).path("status").asText())
+                .isEqualTo("ACCEPTED");
+        assertThat(findById(getJson("/projects/{id}/model", projectId).path("relationships"),
+                relationshipId.toString())).isNull();
+    }
+
+    @Test
+    void constraintUpdateRejectsAnUnknownSeverityNamingItAndAnUnknownConstraintNamingItsId() throws Exception {
+        UUID projectId = UUID.fromString(createProject("Rejected constraint update " + UUID.randomUUID(), null)
+                .path("id").asText());
+        JsonNode initialModel = getJson("/projects/{id}/model", projectId);
+        UUID modelId = UUID.fromString(initialModel.path("id").asText());
+        UUID classifierId = UUID.randomUUID();
+        UUID constraintId = UUID.randomUUID();
+        UUID unknownConstraintId = UUID.randomUUID();
+        postCommand(projectId, projectId, modelId, 1L, "classifier.create", List.of(),
+                Map.of("id", classifierId, "name", "Account", "kind", "CLASS"));
+        postCommand(projectId, projectId, modelId, 2L, "constraint.add", List.of(target("classifier", classifierId)),
+                Map.of("id", constraintId, "ownerType", "CLASSIFIER", "ownerId", classifierId,
+                        "expression", "self.name <> ''"));
+
+        MvcResult invalidSeverityResult = postEnvelope(projectId, projectId, modelId, UUID.randomUUID(), 3L,
+                "constraint.update", List.of(target("constraint", constraintId)), Map.of("severity", "TRACE"))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode invalidSeverity = objectMapper.readTree(invalidSeverityResult.getResponse().getContentAsByteArray());
+        assertThat(invalidSeverity.path("status").asText()).isEqualTo("REJECTED");
+        assertThat(invalidSeverity.path("diagnostics").get(0).path("message").asText()).contains("TRACE");
+
+        MvcResult unknownConstraintResult = postEnvelope(projectId, projectId, modelId, UUID.randomUUID(), 3L,
+                "constraint.update", List.of(target("constraint", unknownConstraintId)),
+                Map.of("expression", "missing"))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode unknownConstraint = objectMapper.readTree(unknownConstraintResult.getResponse().getContentAsByteArray());
+        assertThat(unknownConstraint.path("status").asText()).isEqualTo("REJECTED");
+        assertThat(unknownConstraint.path("diagnostics").get(0).path("message").asText())
+                .contains(unknownConstraintId.toString());
     }
 
     @Test
@@ -345,6 +463,13 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
     private org.springframework.test.web.servlet.ResultActions postEnvelope(UUID pathProjectId, UUID envelopeProjectId,
             UUID modelId, UUID operationId, long baseRevision, String type, List<Map<String, Object>> targets,
             Map<String, Object> payload) throws Exception {
+        return postEnvelope(pathProjectId, envelopeProjectId, modelId, operationId, baseRevision, type, targets,
+                payload, List.of());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions postEnvelope(UUID pathProjectId, UUID envelopeProjectId,
+            UUID modelId, UUID operationId, long baseRevision, String type, List<Map<String, Object>> targets,
+            Map<String, Object> payload, List<Map<String, Object>> preconditions) throws Exception {
         Map<String, Object> author = Map.of("userId", SEED_OWNER_ID, "externalSubject", SEED_OWNER_SUBJECT);
         Map<String, Object> envelope = new HashMap<>();
         envelope.put("operationId", operationId);
@@ -354,7 +479,7 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
         envelope.put("modelId", modelId);
         envelope.put("baseRevision", baseRevision);
         envelope.put("targets", targets);
-        envelope.put("preconditions", List.of());
+        envelope.put("preconditions", preconditions);
         envelope.put("payload", payload);
         envelope.put("origin", "MANUAL");
         envelope.put("idempotencyKey", UUID.randomUUID().toString());

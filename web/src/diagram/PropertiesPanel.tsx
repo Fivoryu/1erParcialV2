@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type {
   AttributeResource,
   ClassifierResource,
+  ConstraintResource,
+  ConstraintSeverity,
   ModelResource,
   OperationEnvelope,
   OperationResource,
@@ -9,11 +11,15 @@ import type {
 } from '../api/types';
 import {
   buildClassifierSetNamespaceRequest,
+  buildConstraintAddRequest,
+  buildConstraintRemoveRequest,
+  buildConstraintUpdateRequest,
   buildParameterAddRequest,
   buildParameterRemoveRequest,
   buildParameterUpdateRequest,
   buildRelationshipUpdateRequest,
   RELATIONSHIP_KINDS,
+  type ConstraintOwnerType,
   type ModelCommandRequest,
   type ParameterDirection,
   type RelationshipKind,
@@ -51,6 +57,12 @@ const NAVIGABILITY_OPTIONS = [
   { value: 'NOT_NAVIGABLE', label: 'Not navigable' },
 ] as const;
 
+const CONSTRAINT_SEVERITIES: Array<{ value: ConstraintSeverity; label: string }> = [
+  { value: 'ERROR', label: 'Error' },
+  { value: 'WARNING', label: 'Warning' },
+  { value: 'INFO', label: 'Info' },
+];
+
 function hasAncestor(model: ModelResource, classifierId: string, ancestorId: string): boolean {
   const classifiersById = new Map(model.classifiers.map((classifier) => [classifier.id, classifier]));
   const visited = new Set<string>();
@@ -82,6 +94,135 @@ export function dispatchPackageSelection(
   onCommand(buildClassifierSetNamespaceRequest(classifierId, selectedNamespaceId || null));
 }
 
+function ConstraintEditor({
+  constraint,
+  onCommand,
+}: {
+  constraint: ConstraintResource;
+  onCommand: PropertiesPanelProps['onCommand'];
+}) {
+  const [expression, setExpression] = useState(constraint.expression);
+  const [severity, setSeverity] = useState<ConstraintSeverity>(constraint.severity);
+
+  useEffect(() => {
+    setExpression(constraint.expression);
+    setSeverity(constraint.severity);
+  }, [constraint.id, constraint.expression, constraint.severity]);
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanExpression = expression.trim();
+    if (!cleanExpression) {
+      return;
+    }
+    const values: Partial<Pick<ConstraintResource, 'expression' | 'severity'>> = {};
+    if (cleanExpression !== constraint.expression) {
+      values.expression = cleanExpression;
+    }
+    if (severity !== constraint.severity) {
+      values.severity = severity;
+    }
+    if (Object.keys(values).length > 0) {
+      onCommand(buildConstraintUpdateRequest(constraint.id, values));
+    }
+  }
+
+  return (
+    <form className="property-constraint-form" onSubmit={save}>
+      <label className="field-label">
+        Expression
+        <input aria-label="Constraint expression" onChange={(event) => setExpression(event.target.value)}
+          required value={expression} />
+      </label>
+      <label className="field-label">
+        Severity
+        <select aria-label="Constraint severity" onChange={(event) => setSeverity(event.target.value as ConstraintSeverity)}
+          value={severity}>
+          {CONSTRAINT_SEVERITIES.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+      <div className="property-constraint-actions">
+        <button className="button button-secondary button-compact"
+          disabled={expression.trim() === constraint.expression && severity === constraint.severity} type="submit">
+          Save constraint
+        </button>
+        <button aria-label="Delete constraint" className="text-button danger-button"
+          onClick={() => onCommand(buildConstraintRemoveRequest(constraint.id))} type="button">
+          Delete
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ConstraintSection({
+  ownerType,
+  ownerId,
+  constraints,
+  onCommand,
+  onAdded,
+}: {
+  ownerType: ConstraintOwnerType;
+  ownerId: string;
+  constraints: ConstraintResource[];
+  onCommand: PropertiesPanelProps['onCommand'];
+  onAdded?: (constraintId: string) => void;
+}) {
+  const [expression, setExpression] = useState('');
+  const [severity, setSeverity] = useState<ConstraintSeverity>('ERROR');
+
+  function addConstraint(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanExpression = expression.trim();
+    if (!cleanExpression) {
+      return;
+    }
+    const envelope = onCommand(buildConstraintAddRequest(ownerType, ownerId, cleanExpression, severity));
+    const id = envelope?.payload.id;
+    if (typeof id === 'string') {
+      onAdded?.(id);
+    }
+    setExpression('');
+    setSeverity('ERROR');
+  }
+
+  return (
+    <section className="property-section" aria-labelledby="constraints-title">
+      <h3 id="constraints-title">Constraints</h3>
+      {constraints.length > 0 ? (
+        <ul className="property-constraint-list">
+          {constraints.map((constraint) => (
+            <li key={constraint.id}>
+              <ConstraintEditor constraint={constraint} onCommand={onCommand} />
+            </li>
+          ))}
+        </ul>
+      ) : <p className="property-hint">No constraints yet.</p>}
+      <form className="property-inline-form" onSubmit={addConstraint}>
+        <label className="field-label" htmlFor="new-constraint-expression">Expression</label>
+        <input
+          id="new-constraint-expression"
+          onChange={(event) => setExpression(event.target.value)}
+          placeholder="e.g. balance >= 0"
+          value={expression}
+        />
+        <label className="field-label" htmlFor="new-constraint-severity">Severity</label>
+        <select id="new-constraint-severity" onChange={(event) => setSeverity(event.target.value as ConstraintSeverity)}
+          value={severity}>
+          {CONSTRAINT_SEVERITIES.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <button className="button button-secondary button-compact" disabled={!expression.trim()} type="submit">
+          Add constraint
+        </button>
+      </form>
+    </section>
+  );
+}
+
 function typeReference(model: ModelResource, name: string): TypeReferenceInput {
   const classifier = model.classifiers.find((candidate) => candidate.name === name.trim());
   return classifier
@@ -106,15 +247,12 @@ function ClassifierProperties({
   onDelete: () => void;
   onSelect: (selection: CanvasSelection) => void;
 }) {
-  const [constraintExpression, setConstraintExpression] = useState('');
   const canBeAbstract = classifier.kind === 'CLASS' || classifier.kind === 'ABSTRACT_CLASS';
   const isPackage = classifier.kind === 'PACKAGE';
   const namespacePackages = availableNamespacePackages(model, classifier.id);
   const namespaceValue = namespacePackages.some((candidate) => candidate.id === classifier.namespaceId)
     ? classifier.namespaceId ?? ''
     : '';
-
-  useEffect(() => setConstraintExpression(''), [classifier.id]);
 
   function addAttribute() {
     const envelope = onCommand({
@@ -152,29 +290,6 @@ function ClassifierProperties({
     if (typeof id === 'string') {
       onSelect({ kind: 'operation', classifierId: classifier.id, elementId: id });
     }
-  }
-
-  function addConstraint(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const expression = constraintExpression.trim();
-    if (!expression) {
-      return;
-    }
-    const envelope = onCommand({
-      type: 'constraint.add',
-      targets: [{ scope: 'classifier', id: classifier.id }],
-      payload: {
-        ownerType: 'CLASSIFIER',
-        ownerId: classifier.id,
-        expression,
-        severity: 'ERROR',
-      },
-    });
-    const id = envelope?.payload.id;
-    if (typeof id === 'string') {
-      onSelect({ kind: 'constraint', classifierId: classifier.id, elementId: id });
-    }
-    setConstraintExpression('');
   }
 
   return (
@@ -224,40 +339,13 @@ function ClassifierProperties({
       </section>
 
       {!isPackage && (
-        <section className="property-section" aria-labelledby="constraints-title">
-          <h3 id="constraints-title">Constraints</h3>
-          {classifier.constraints.length > 0 ? (
-            <ul className="property-constraint-list">
-              {classifier.constraints.map((constraint) => (
-                <li key={constraint.id}>
-                  <span>{`{${constraint.expression}}`}</span>
-                  <button
-                    aria-label="Delete constraint"
-                    className="icon-button danger-button"
-                    onClick={() => onCommand({
-                      type: 'constraint.remove',
-                      targets: [{ scope: 'constraint', id: constraint.id }],
-                      payload: {},
-                    })}
-                    type="button"
-                  >×</button>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="property-hint">No constraints yet.</p>}
-          <form className="property-inline-form" onSubmit={addConstraint}>
-            <label className="field-label" htmlFor="constraint-expression">Expression</label>
-            <input
-              id="constraint-expression"
-              onChange={(event) => setConstraintExpression(event.target.value)}
-              placeholder="e.g. balance >= 0"
-              value={constraintExpression}
-            />
-            <button className="button button-secondary button-compact" disabled={!constraintExpression.trim()} type="submit">
-              Add constraint
-            </button>
-          </form>
-        </section>
+        <ConstraintSection
+          constraints={classifier.constraints}
+          onAdded={(constraintId) => onSelect({ kind: 'constraint', classifierId: classifier.id, elementId: constraintId })}
+          onCommand={onCommand}
+          ownerId={classifier.id}
+          ownerType="CLASSIFIER"
+        />
       )}
     </>
   );
@@ -360,7 +448,8 @@ function RelationshipProperties({
   }
 
   return (
-    <section className="property-section" aria-labelledby="relationship-properties-title">
+    <>
+      <section className="property-section" aria-labelledby="relationship-properties-title">
       <div className="property-section-heading">
         <div>
           <h3 id="relationship-properties-title">Relationship</h3>
@@ -388,6 +477,13 @@ function RelationshipProperties({
         <button className="button button-primary button-compact" type="submit">Save relationship</button>
       </form>
     </section>
+      <ConstraintSection
+        constraints={relationship.constraints}
+        onCommand={onCommand}
+        ownerId={relationship.id}
+        ownerType="RELATIONSHIP"
+      />
+    </>
   );
 }
 
@@ -762,9 +858,10 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
       <div className="property-section">
         <div className="property-section-heading">
           <h3>Constraint</h3>
-          <button className="text-button danger-button" onClick={() => onDelete(selection)} type="button">Delete</button>
         </div>
-        <p className="constraint-detail">{constraint ? `{${constraint.expression}}` : 'This element is no longer in the model.'}</p>
+        {constraint
+          ? <ConstraintEditor constraint={constraint} onCommand={onCommand} />
+          : <p className="property-hint">This element is no longer in the model.</p>}
       </div>
     </aside>
   );

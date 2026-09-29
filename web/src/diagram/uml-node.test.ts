@@ -1,3 +1,5 @@
+// @ts-expect-error Node built-ins are available in Vitest, but this browser project omits Node type declarations.
+import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -92,6 +94,7 @@ const modelFixture: ModelResource = {
       aggregationKind: 'NONE',
       ordinal: 1,
     }],
+    constraints: [],
   }],
 };
 
@@ -118,6 +121,45 @@ describe('UML class node presentation', () => {
     for (const rawIdentifier of ['classifier_id', 'EXACTLY_ONE', 'ZERO_OR_MANY', 'NOT_NAVIGABLE', 'ABSTRACT_CLASS']) {
       expect(markup).not.toContain(rawIdentifier);
     }
+  });
+
+  it('shows a symbol only for non-default constraint severity without spelling the enum value', () => {
+    const warningMarkup = renderClassifier({
+      ...classifier,
+      constraints: [{ ...classifier.constraints[0]!, severity: 'WARNING' }],
+    });
+    const informationMarkup = renderClassifier({
+      ...classifier,
+      constraints: [{ ...classifier.constraints[0]!, severity: 'INFO' }],
+    });
+    const errorMarkup = renderClassifier({
+      ...classifier,
+      constraints: [{ ...classifier.constraints[0]!, severity: 'ERROR' }],
+    });
+
+    expect(warningMarkup).toContain('⚠');
+    expect(warningMarkup).not.toContain('WARNING');
+    expect(informationMarkup).toContain('ⓘ');
+    expect(informationMarkup).not.toContain('INFO');
+    expect(errorMarkup).toContain('{email is not empty}');
+    expect(errorMarkup).not.toContain('uml-constraint-severity');
+  });
+
+  it('wraps a long member line instead of clipping its data', () => {
+    const longType = 'VeryLongDomainTypeNameWithSeveralPartsThatMustRemainReadable';
+    const markup = renderClassifier({
+      ...classifier,
+      attributes: [{ ...classifier.attributes[0]!, type: longType }],
+    });
+    const stylesheet = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+    const memberTextRule = stylesheet.match(/\.uml-member-text\s*\{([^}]*)\}/)?.[1] ?? '';
+    const classCardRule = stylesheet.match(/\.uml-class-card\s*\{([^}]*)\}/)?.[1] ?? '';
+
+    expect(markup).toContain(longType);
+    expect(memberTextRule).toMatch(/overflow-wrap:\s*anywhere\s*;/);
+    expect(memberTextRule).toMatch(/white-space:\s*normal\s*;/);
+    expect(memberTextRule).not.toMatch(/overflow:\s*hidden|text-overflow:\s*ellipsis/);
+    expect(classCardRule).toMatch(/overflow:\s*auto\s*;/);
   });
 
   it('renders each supported multiplicity using UML notation', () => {
@@ -158,6 +200,23 @@ describe('UML class node presentation', () => {
 
     expect(markup.indexOf('earlier')).toBeLessThan(markup.indexOf('later'));
     expect(markup.indexOf('firstCall')).toBeLessThan(markup.indexOf('laterCall'));
+  });
+
+  it('offers editable expression and severity controls for a classifier constraint', () => {
+    const selected = modelFixture.classifiers[0]!;
+    const markup = renderToStaticMarkup(createElement(PropertiesPanel, {
+      model: modelFixture,
+      selection: { kind: 'classifier', classifierId: selected.id },
+      onCommand: () => null,
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    expect(markup).toContain('Constraint expression');
+    expect(markup).toContain('Constraint severity');
+    expect(markup).toContain('Save constraint');
+    expect(markup).toContain('Warning');
+    expect(markup).toContain('Info');
   });
 
   it('does not offer attribute values the backend rejects', () => {

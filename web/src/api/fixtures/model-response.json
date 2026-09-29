@@ -117,7 +117,8 @@
           "aggregationKind": "NONE",
           "ordinal": 2
         }
-      ]
+      ],
+      "constraints": []
     }
   ]
 }

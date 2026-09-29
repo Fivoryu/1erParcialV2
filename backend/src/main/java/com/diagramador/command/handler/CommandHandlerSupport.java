@@ -245,10 +245,11 @@ public class CommandHandlerSupport {
 
     public TargetType ownerType(JsonNode payload) {
         String value = text(payload, "ownerType").toUpperCase(Locale.ROOT);
-        if (!value.equals("CLASSIFIER")) {
-            precondition("Constraint owner type '" + value + "' is unsupported in this increment");
+        if (value.equals("CLASSIFIER") || value.equals("RELATIONSHIP")) {
+            return TargetType.valueOf(value);
         }
-        return TargetType.CLASSIFIER;
+        precondition("Constraint owner type '" + value + "' is unsupported in this increment");
+        return null;
     }
 
     public UUID targetId(CommandHandler.Context context, String expectedScope) {

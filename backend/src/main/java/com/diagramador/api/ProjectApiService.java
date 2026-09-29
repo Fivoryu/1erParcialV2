@@ -150,6 +150,9 @@ public class ProjectApiService {
         Map<UUID, List<UmlConstraint>> classifierConstraints = modelConstraints.stream()
                 .filter(constraint -> constraint.getOwnerType() == TargetType.CLASSIFIER)
                 .collect(Collectors.groupingBy(UmlConstraint::getOwnerId));
+        Map<UUID, List<UmlConstraint>> relationshipConstraints = modelConstraints.stream()
+                .filter(constraint -> constraint.getOwnerType() == TargetType.RELATIONSHIP)
+                .collect(Collectors.groupingBy(UmlConstraint::getOwnerId));
 
         List<ViewResource> views = sortedById(viewRepository.findByModelId(model.getId()), DiagramView::getId).stream()
                 .map(this::viewResource)
@@ -161,7 +164,8 @@ public class ProjectApiService {
                 .toList();
         List<RelationshipResource> relationships = sortedById(relationshipRepository.findByModelId(model.getId()),
                 UmlRelationship::getId).stream()
-                .map(this::relationshipResource)
+                .map(relationship -> relationshipResource(relationship,
+                        relationshipConstraints.getOrDefault(relationship.getId(), List.of())))
                 .toList();
 
         return new ModelResource(model.getId(), projectId, model.getCurrentRevision(), views, classifiers,
@@ -229,15 +233,19 @@ public class ProjectApiService {
                 typeReference == null ? null : typeReference.getId(), typeName(typeReference), parameter.getOrdinal());
     }
 
-    private RelationshipResource relationshipResource(UmlRelationship relationship) {
+    private RelationshipResource relationshipResource(UmlRelationship relationship, List<UmlConstraint> constraints) {
         List<RelationshipEndResource> ends = relationshipEndRepository.findByRelationshipId(relationship.getId())
                 .stream()
                 .sorted(Comparator.comparingInt(RelationshipEnd::getOrdinal).thenComparing(RelationshipEnd::getId))
                 .map(end -> new RelationshipEndResource(end.getId(), end.getClassifier().getId(), end.getRole(),
                         end.getMultiplicity(), end.getNavigability(), end.getAggregationKind(), end.getOrdinal()))
                 .toList();
+        List<ConstraintResource> constraintResources = sortedById(constraints, UmlConstraint::getId).stream()
+                .map(constraint -> new ConstraintResource(constraint.getId(), constraint.getExpression(),
+                        constraint.getSeverity().name()))
+                .toList();
         return new RelationshipResource(relationship.getId(), relationship.getKind().name(), relationship.getName(),
-                ends);
+                ends, constraintResources);
     }
 
     private String typeName(TypeReference typeReference) {

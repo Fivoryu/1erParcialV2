@@ -234,6 +234,13 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
               }}
             >
               {`{${constraint.expression}}`}
+              {constraint.severity !== 'ERROR' && (
+                <span
+                  aria-label={constraint.severity === 'WARNING' ? 'Warning constraint' : 'Informational constraint'}
+                  className="uml-constraint-severity"
+                  title={constraint.severity === 'WARNING' ? 'Warning severity' : 'Informational severity'}
+                >{constraint.severity === 'WARNING' ? '⚠' : 'ⓘ'}</span>
+              )}
             </div>
           ))}
         </div>

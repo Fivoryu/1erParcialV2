@@ -781,7 +781,7 @@ h3 {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid #8fa69d;
   border-radius: 8px;
   background: #fff;
@@ -873,11 +873,11 @@ h3 {
   line-height: 1.45;
 }
 
+/* Wrap inside the user's sized node; growing its width would disturb neighboring layout and explicit resize intent. */
 .uml-member-text {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
   cursor: text;
 }
 
@@ -897,6 +897,12 @@ h3 {
   font-style: italic;
   line-height: 1.45;
   cursor: pointer;
+}
+
+.uml-constraint-severity {
+  padding-left: 5px;
+  color: #8b5a13;
+  font-style: normal;
 }
 
 .uml-editable-label {
@@ -986,7 +992,8 @@ h3 {
 }
 
 .property-form,
-.property-inline-form {
+.property-inline-form,
+.property-constraint-form {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1001,6 +1008,9 @@ h3 {
 .property-form select,
 .classifier-package-select,
 .property-inline-form input,
+.property-inline-form select,
+.property-constraint-form input,
+.property-constraint-form select,
 .connection-kind-picker select {
   width: 100%;
   min-height: 37px;
@@ -1043,6 +1053,16 @@ h3 {
 .property-inline-form {
   margin-top: 14px;
   gap: 5px;
+}
+
+.property-constraint-form {
+  gap: 7px;
+}
+
+.property-constraint-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .parameter-properties {
@@ -1178,15 +1198,8 @@ h3 {
 }
 
 .property-constraint-list li {
-  padding: 8px 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 9px;
+  padding: 10px 0;
   border-top: 1px solid #edf1ef;
-  color: #53655e;
-  font-size: 11px;
-  line-height: 1.5;
 }
 
 .constraint-detail {

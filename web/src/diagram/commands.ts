@@ -4,6 +4,8 @@ import type {
   ClassifierResource,
   CommandPrecondition,
   CommandTarget,
+  ConstraintResource,
+  ConstraintSeverity,
   ModelResource,
   OperationEnvelope,
   OperationResource,
@@ -38,6 +40,39 @@ export interface ModelCommandRequest {
 
 export type TypeReferenceInput = { primitiveName: string } | { classifierId: string };
 export type ParameterDirection = 'IN' | 'OUT' | 'INOUT';
+export type ConstraintOwnerType = 'CLASSIFIER' | 'RELATIONSHIP';
+
+export function buildConstraintAddRequest(
+  ownerType: ConstraintOwnerType,
+  ownerId: string,
+  expression: string,
+  severity: ConstraintSeverity,
+): ModelCommandRequest {
+  return {
+    type: 'constraint.add',
+    targets: [{ scope: ownerType.toLowerCase(), id: ownerId }],
+    payload: { ownerType, ownerId, expression, severity },
+  };
+}
+
+export function buildConstraintUpdateRequest(
+  constraintId: string,
+  values: Partial<Pick<ConstraintResource, 'expression' | 'severity'>>,
+): ModelCommandRequest {
+  return {
+    type: 'constraint.update',
+    targets: [{ scope: 'constraint', id: constraintId }],
+    payload: { ...values },
+  };
+}
+
+export function buildConstraintRemoveRequest(constraintId: string): ModelCommandRequest {
+  return {
+    type: 'constraint.remove',
+    targets: [{ scope: 'constraint', id: constraintId }],
+    payload: {},
+  };
+}
 
 export interface ParameterAddValues {
   name: string;
@@ -167,7 +202,7 @@ export function buildRelationshipDeleteRequest(relationship: RelationshipResourc
   return {
     type: 'relationship.delete',
     targets: [{ scope: 'relationship', id: relationship.id }],
-    preconditions: [{ kind: 'cascade_count', expect: relationship.ends.length + 1, scope: null }],
+    preconditions: [{ kind: 'cascade_count', expect: relationship.ends.length + relationship.constraints.length + 1, scope: null }],
     payload: {},
   };
 }
@@ -221,7 +256,7 @@ export function classifierCascadeCount(model: ModelResource, classifierId: strin
   const relatedRelationships = model.relationships.filter((relationship) =>
     relationship.ends.some((end) => end.classifierId === classifierId));
   const relationshipTargets = relatedRelationships.reduce(
-    (count, relationship) => count + 1 + relationship.ends.length,
+    (count, relationship) => count + 1 + relationship.ends.length + relationship.constraints.length,
     0,
   );
   const parameters = classifier.operations.reduce((count, operation) => count + operation.parameters.length, 0);
@@ -262,15 +297,12 @@ function resolveTypeName(model: ModelResource, value: unknown): string | null {
   return null;
 }
 
-function ownerClassifierId(model: ModelResource, scope: 'attribute' | 'operation' | 'constraint', elementId: string): string | null {
+function ownerClassifierId(model: ModelResource, scope: 'attribute' | 'operation', elementId: string): string | null {
   const owner = model.classifiers.find((classifier) => {
     if (scope === 'attribute') {
       return classifier.attributes.some((attribute) => attribute.id === elementId);
     }
-    if (scope === 'operation') {
-      return classifier.operations.some((operation) => operation.id === elementId);
-    }
-    return classifier.constraints.some((constraint) => constraint.id === elementId);
+    return classifier.operations.some((operation) => operation.id === elementId);
   });
   return owner?.id ?? null;
 }
@@ -285,6 +317,30 @@ function updateClassifier(
     classifiers: model.classifiers.map((classifier) =>
       classifier.id === classifierId ? update(classifier) : classifier),
   };
+}
+
+function updateConstraint(
+  model: ModelResource,
+  constraintId: string,
+  update: (constraint: ConstraintResource) => ConstraintResource,
+): ModelResource {
+  return {
+    ...model,
+    classifiers: model.classifiers.map((classifier) => ({
+      ...classifier,
+      constraints: classifier.constraints.map((constraint) =>
+        constraint.id === constraintId ? update(constraint) : constraint),
+    })),
+    relationships: model.relationships.map((relationship) => ({
+      ...relationship,
+      constraints: relationship.constraints.map((constraint) =>
+        constraint.id === constraintId ? update(constraint) : constraint),
+    })),
+  };
+}
+
+function constraintSeverity(value: string | null): ConstraintSeverity {
+  return value === 'INFO' || value === 'WARNING' || value === 'ERROR' ? value : 'ERROR';
 }
 
 function addAttribute(model: ModelResource, envelope: OperationEnvelope, classifierId: string): ModelResource {
@@ -584,18 +640,61 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
     case 'constraint.add': {
       const id = payloadString(envelope, 'id');
       const ownerId = payloadString(envelope, 'ownerId');
+      const ownerType = payloadString(envelope, 'ownerType');
       const expression = payloadString(envelope, 'expression');
       if (!id || !ownerId || !expression) {
         return model;
       }
-      return updateClassifier(model, ownerId, (classifier) => ({
-        ...classifier,
-        constraints: [...classifier.constraints, {
-          id,
-          expression,
-          severity: payloadString(envelope, 'severity') ?? 'ERROR',
-        }],
+      const constraint: ConstraintResource = {
+        id,
+        expression,
+        severity: constraintSeverity(payloadString(envelope, 'severity')),
+      };
+      if (ownerType === 'RELATIONSHIP') {
+        return {
+          ...model,
+          relationships: model.relationships.map((relationship) => relationship.id === ownerId
+            ? { ...relationship, constraints: [...relationship.constraints, constraint] }
+            : relationship),
+        };
+      }
+      if (ownerType === 'CLASSIFIER') {
+        return updateClassifier(model, ownerId, (classifier) => ({
+          ...classifier,
+          constraints: [...classifier.constraints, constraint],
+        }));
+      }
+      return model;
+    }
+    case 'constraint.update': {
+      const constraintId = targetId(envelope, 'constraint');
+      if (!constraintId) {
+        return model;
+      }
+      const expression = payloadString(envelope, 'expression');
+      const severityValue = payloadString(envelope, 'severity');
+      return updateConstraint(model, constraintId, (constraint) => ({
+        ...constraint,
+        ...(expression !== null ? { expression } : {}),
+        ...(severityValue !== null ? { severity: constraintSeverity(severityValue) } : {}),
       }));
+    }
+    case 'constraint.remove': {
+      const constraintId = targetId(envelope, 'constraint');
+      if (!constraintId) {
+        return model;
+      }
+      return {
+        ...model,
+        classifiers: model.classifiers.map((classifier) => ({
+          ...classifier,
+          constraints: classifier.constraints.filter((constraint) => constraint.id !== constraintId),
+        })),
+        relationships: model.relationships.map((relationship) => ({
+          ...relationship,
+          constraints: relationship.constraints.filter((constraint) => constraint.id !== constraintId),
+        })),
+      };
     }
     case 'classifier.delete': {
       if (!classifierId) {
@@ -611,11 +710,10 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
       };
     }
     case 'attribute.remove':
-    case 'operation.remove':
-    case 'constraint.remove': {
+    case 'operation.remove': {
       const scope = envelope.type.split('.')[0] ?? '';
       const removedId = targetId(envelope, scope);
-      if (!removedId || (scope !== 'attribute' && scope !== 'operation' && scope !== 'constraint')) {
+      if (!removedId || (scope !== 'attribute' && scope !== 'operation')) {
         return model;
       }
       const ownerId = ownerClassifierId(model, scope, removedId);
@@ -626,10 +724,7 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         if (scope === 'attribute') {
           return { ...classifier, attributes: classifier.attributes.filter((attribute) => attribute.id !== removedId) };
         }
-        if (scope === 'operation') {
-          return { ...classifier, operations: classifier.operations.filter((operation) => operation.id !== removedId) };
-        }
-        return { ...classifier, constraints: classifier.constraints.filter((constraint) => constraint.id !== removedId) };
+        return { ...classifier, operations: classifier.operations.filter((operation) => operation.id !== removedId) };
       });
     }
     default:

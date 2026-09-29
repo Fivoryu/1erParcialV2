@@ -6,6 +6,7 @@ import com.diagramador.domain.Classifier;
 import com.diagramador.domain.SeverityKind;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.UmlConstraint;
+import com.diagramador.domain.UmlRelationship;
 import com.diagramador.persistence.UmlConstraintRepository;
 import java.util.Locale;
 import java.util.Set;
@@ -38,9 +39,17 @@ public class ConstraintAddHandler implements CommandHandler {
         support.duplicateId(constraintRepository.existsById(id), id, "constraint");
         TargetType ownerType = support.ownerType(payload);
         UUID ownerId = support.uuid(payload, "ownerId");
-        Classifier owner = support.classifier(context, "classifier");
-        if (!owner.getId().equals(ownerId)) {
-            support.precondition("Constraint ownerId " + ownerId + " does not match target classifier " + owner.getId());
+        UUID targetOwnerId;
+        if (ownerType == TargetType.CLASSIFIER) {
+            Classifier owner = support.classifier(context, "classifier");
+            targetOwnerId = owner.getId();
+        } else {
+            UmlRelationship owner = support.relationship(context, "relationship");
+            targetOwnerId = owner.getId();
+        }
+        if (!targetOwnerId.equals(ownerId)) {
+            support.precondition("Constraint ownerId " + ownerId + " does not match target "
+                    + ownerType.name().toLowerCase(Locale.ROOT) + " " + targetOwnerId);
         }
         SeverityKind severity = severity(payload);
         support.insertConstraint(context, id, ownerType, ownerId, support.text(payload, "expression"), severity.name());
