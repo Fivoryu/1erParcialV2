@@ -230,16 +230,18 @@ export function UmlClassNode({ data, selected }: NodeProps<ClassFlowNode>) {
       />
       <Handle aria-label="Connection target" id="target-left" position={Position.Left} type="target" />
       <Handle aria-label="Connection source" id="source-right" position={Position.Right} type="source" />
+      <Handle aria-label="Connection target" id="target-right" position={Position.Right} type="target" />
+      <Handle aria-label="Connection source" id="source-left" position={Position.Left} type="source" />
       {/*
-        The facing handles exist because with only left and right, a relationship between
-        vertically stacked classes is forced onto the target's left border and the straight line
-        crosses the box interior, which also drags the UML arrowhead onto the wrong border.
+        Every side offers both a source and a target handle. An edge between vertically stacked
+        classes has to leave through the bottom and enter through the top; with only left and right
+        it is forced onto the sides and the straight line crosses the class box, which also drags
+        the UML arrowhead onto the wrong border.
 
-        They are necessary but NOT sufficient: edges are derived from the model without a
-        sourceHandle or targetHandle, so React Flow falls back to the first handle of each type and
-        picks target-left and source-right regardless of geometry. Measured: adding these four
-        handles left the path at `M 825 415 L 535 120` instead of routing on the facing side. The
-        edge builder still has to choose the handles from the two node rectangles.
+        Offering them is not enough on its own, and that was measured: React Flow falls back to the
+        first handle of each type, so the path stayed at `M 825 415 L 535 120` when the sides were
+        the only option. What chooses the side is `chooseHandles` in UmlCanvas, which derives it
+        from the two node rectangles.
       */}
       <Handle aria-label="Connection target" id="target-top" position={Position.Top} type="target" />
       <Handle aria-label="Connection target" id="target-bottom" position={Position.Bottom} type="target" />

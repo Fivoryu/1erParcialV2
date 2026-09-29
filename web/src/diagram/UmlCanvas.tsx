@@ -138,11 +138,46 @@ export function buildFlowNodes(
   });
 }
 
+export function chooseHandles(
+  source: NodeRectangle,
+  target: NodeRectangle,
+): { sourceHandle: string; targetHandle: string } {
+  const sourceCenter = { x: source.x + source.width / 2, y: source.y + source.height / 2 };
+  const targetCenter = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
+  const deltaX = targetCenter.x - sourceCenter.x;
+  const deltaY = targetCenter.y - sourceCenter.y;
+  if (Math.abs(deltaY) >= Math.abs(deltaX)) {
+    return deltaY >= 0
+      ? { sourceHandle: 'source-bottom', targetHandle: 'target-top' }
+      : { sourceHandle: 'source-top', targetHandle: 'target-bottom' };
+  }
+  return deltaX >= 0
+    ? { sourceHandle: 'source-right', targetHandle: 'target-left' }
+    : { sourceHandle: 'source-left', targetHandle: 'target-right' };
+}
+
+function classifierRectangles(model: ModelResource): Map<string, NodeRectangle> {
+  const rectangles = new Map<string, NodeRectangle>();
+  model.classifiers.forEach((classifier, index) => {
+    const geometry = geometryFor(model, classifier.id);
+    const column = index % 3;
+    const row = Math.floor(index / 3);
+    rectangles.set(classifier.id, {
+      x: geometry?.x ?? 56 + column * 340,
+      y: geometry?.y ?? 56 + row * 260,
+      width: geometry?.w ?? DEFAULT_NODE_WIDTH,
+      height: geometry?.h ?? defaultHeight(classifier),
+    });
+  });
+  return rectangles;
+}
+
 export function buildFlowEdges(
   model: ModelResource,
   onWaypointsChange?: NonNullable<NonNullable<RelationshipFlowEdge['data']>['onWaypointsChange']>,
 ): RelationshipFlowEdge[] {
   const view = defaultView(model);
+  const rectangles = classifierRectangles(model);
   return model.relationships.flatMap((relationship) => {
     const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
     const sourceEnd = ends[0];
@@ -150,6 +185,11 @@ export function buildFlowEdges(
     if (!sourceEnd || !targetEnd) {
       return [];
     }
+    const sourceRectangle = rectangles.get(sourceEnd.classifierId);
+    const targetRectangle = rectangles.get(targetEnd.classifierId);
+    const handles = sourceRectangle && targetRectangle
+      ? chooseHandles(sourceRectangle, targetRectangle)
+      : {};
     const waypoints = view?.connector_path
       .filter((path) => path.relationshipId === relationship.id)
       .sort((left, right) => left.ordinal - right.ordinal)
@@ -158,6 +198,7 @@ export function buildFlowEdges(
       id: relationship.id,
       source: sourceEnd.classifierId,
       target: targetEnd.classifierId,
+      ...handles,
       type: 'umlRelationship' as const,
       data: {
         relationship,

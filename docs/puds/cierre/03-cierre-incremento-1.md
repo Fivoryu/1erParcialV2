@@ -68,14 +68,14 @@ tres aparecieron al mirar `docs/capturas/incremento-1/01-lienzo-uml.png`.
 | # | Defecto | Estado | Detalle |
 | --- | --- | --- | --- |
 | V1 | `[1]` en **cada** atributo y en cada extremo | **Corregido** | `1` es el default de UML, así que omitirlo no cambia el significado. Era ruido técnico puro, justo lo que el incremento quiere evitar. Se omite solo el default; `0..1`, `1..*` y `0..*` siguen mostrándose, y hay una prueba que lo fija en los dos sentidos |
-| V2 | Las etiquetas de los extremos de una asociación **se superponen a las cajas** | **Abierto** | Con una separación corta entre dos clases, las etiquetas de rol y multiplicidad se dibujan fuera del hueco disponible: en la captura se lee `custo…` cortado contra la caja de `Customer`. Las etiquetas se ubican a 0,35 y 0,65 del trazado, que no es un punto seguro cuando el tramo es corto |
-| V3 | El triángulo de `INTERFACE_REALIZATION` aparece **despegado de su línea** | **Abierto** | El marcador se dibuja a la izquierda de `Payable` mientras el trazado discontinuo termina por debajo. El marcador parece calcularse desde los anclajes y no desde los puntos realmente dibujados, así que ambos pueden discrepar |
+| V2 | Las etiquetas de los extremos de una asociación **se superponían a las cajas** | **Corregido** | Se anclaban a un porcentaje fijo del segmento desde el borde del nodo. Ahora se colocan por geometría: los rectángulos de los nodos son obstáculos y cada etiqueta toma el punto seguro más cercano a su extremo. Verificado en el render. **Costo declarado:** una etiqueta que no entra se **omite**, que es más claro que tapar una caja |
+| V3 | El triángulo de `INTERFACE_REALIZATION` parecía **despegado de su línea** | **Corregido, y el diagnóstico inicial estaba mal** | El marcador nunca estuvo despegado. El dato duro: la arista era `M 825 415 L 535 120` y cruzaba el borde de la caja destino en `x=594`, así que **~62 px de línea corrían dentro del nodo**. La causa raíz era que las aristas no declaraban `sourceHandle` ni `targetHandle` y React Flow caía al primero de cada tipo, forzando un par apilado verticalmente a los costados. Ahora `chooseHandles` deriva el lado de los dos rectángulos: la realización pasó a `M 680 295 L 660 185`, del borde superior al borde inferior. Verificado en el DOM y a ojo |
 
-**Por qué se cierra el incremento con V2 y V3 abiertos en vez de arreglarlos acá.** Arreglarlos toca el
-posicionamiento de etiquetas y de marcadores de las aristas, que es exactamente el código que hoy tiene 11
-pruebas verdes de conectores. Hacerlo al final de una sesión larga, sin el ojo puesto en el resultado, es cómo
-se rompe lo que ya funciona. Quedan **nombrados, con la captura como evidencia y con su causa identificada**,
-que es muy distinto a quedar ocultos.
+**Una corrección de método que vale más que los dos arreglos.** Al diagnosticar V3 leí la captura, concluí que el
+triángulo estaba construido al revés y moví su base de `-13` a `+13`. **Era falso y lo reverti.** Después dejé de
+razonar sobre píxeles de una imagen comprimida y volqué el DOM con `chrome --headless --dump-dom`, que da el
+trazado exacto, la posición del marcador y el tipo de nodo. Ese dato resolvió en un paso lo que la lectura visual
+había resuelto al revés. **Para geometría renderizada, el DOM es la fuente; la captura es para el juicio humano.**
 
 ## 4. Lo que quedó abierto, con responsable
 
@@ -93,7 +93,8 @@ Heredado del Incremento 0 (GAP-01 a GAP-10) más lo nuevo:
 | GAP-08 | Dirección y retorno del parámetro en el esquema físico | Incremento 5 |
 | GAP-09 | Divergencia de nombres entre documento lógico y físico | **Resuelto por decisión D5** (manda el físico), el documento lógico queda pendiente de anotar |
 | GAP-10 | Notas de modelo: canal propietario | Incremento 5 |
-| **V2, V3** | Defectos visuales de las aristas (§3) | **Primera tarea del próximo incremento** |
+| **V2, V3** | Defectos visuales de las aristas | **Corregidos** (§3). Verificados por geometría en el DOM y a ojo |
+| **C** | Set completo de capturas con interacción (selección, panel poblado, edición en línea) | Próximo: requiere `puppeteer-core` sobre el Chrome ya instalado |
 | **C1** | Mapeo constructo por constructo de los 23 soportados de UML-BL-1 (que cada uno tenga comando, persistencia y camino en el lienzo) | Próximo incremento |
 | **C2** | Notas y estereotipos sólo se rechazan como tipo desconocido; decidir si eso alcanza o si el rechazo debe nombrar `BL-CMP-01` y `BL-CMP-03` | Próximo incremento, junto con C1 |
 | — | `type_reference` es el único tipo de fila que no queda en `tombstone` | Incremento 3, cuando entre `undo` |
