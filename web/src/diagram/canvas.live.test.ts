@@ -8,9 +8,12 @@ import {
   buildClassifierCreateEnvelope,
   buildGeometrySetRequest,
   buildModelCommandEnvelope,
+  buildParameterAddRequest,
+  buildParameterUpdateRequest,
   buildRelationshipCreateRequest,
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
+import { formatOperation } from './uml-format';
 import UmlCanvas, { buildFlowEdges, buildFlowNodes } from './UmlCanvas';
 import { UmlClassCard } from './UmlClassNode';
 
@@ -181,6 +184,73 @@ describe.skipIf(!liveBaseUrl)('live UML canvas', () => {
     expect(afterReload.classifiers.find((classifier) => classifier.id === customerId)?.operations.map((item) => item.name))
       .toContain('validate');
     expect(afterReload.relationships.find((item) => item.id === createdRelationship.id)?.kind).toBe('ASSOCIATION');
+  });
+
+  it('creates, reorders, renames, and reads back a two-parameter operation', async () => {
+    const api = createApiClient(liveBaseUrl);
+    const suffix = new Date().toISOString();
+    const project = await api.createProject({
+      name: `T3 live parameters ${suffix}`,
+      description: 'Opt-in live test for operation parameters.',
+    });
+    let model = await api.getModel(project.id);
+
+    const classifierEnvelope = buildClassifierCreateEnvelope(model, 'CLASS');
+    classifierEnvelope.payload.name = `ParameterOwner ${suffix}`;
+    model = await applyEnvelope(api, project.id, classifierEnvelope);
+    const classifierId = String(classifierEnvelope.payload.id);
+
+    const operationEnvelope = buildModelCommandEnvelope(model, {
+      type: 'operation.add',
+      targets: [{ scope: 'classifier', id: classifierId }],
+      payload: { name: 'confirm', returnType: { primitiveName: 'boolean' }, visibility: 'PUBLIC' },
+    });
+    model = await applyEnvelope(api, project.id, operationEnvelope);
+    const operationId = String(operationEnvelope.payload.id);
+
+    const firstParameterEnvelope = buildModelCommandEnvelope(model, buildParameterAddRequest(operationId, {
+      name: 'account',
+      type: { primitiveName: 'String' },
+      direction: 'IN',
+      ordinal: 0,
+    }));
+    model = await applyEnvelope(api, project.id, firstParameterEnvelope);
+    const firstParameterId = String(firstParameterEnvelope.payload.id);
+
+    const secondParameterEnvelope = buildModelCommandEnvelope(model, buildParameterAddRequest(operationId, {
+      name: 'retries',
+      type: { primitiveName: 'Integer' },
+      direction: 'OUT',
+      ordinal: 1,
+    }));
+    model = await applyEnvelope(api, project.id, secondParameterEnvelope);
+    const secondParameterId = String(secondParameterEnvelope.payload.id);
+
+    const reorderEnvelope = buildModelCommandEnvelope(model,
+      buildParameterUpdateRequest(secondParameterId, { ordinal: 0 }));
+    expect(reorderEnvelope.baseRevision).toBe(model.revision);
+    model = await applyEnvelope(api, project.id, reorderEnvelope);
+    expect(model.revision).toBe(reorderEnvelope.baseRevision + 1);
+
+    const renameEnvelope = buildModelCommandEnvelope(model,
+      buildParameterUpdateRequest(secondParameterId, { name: 'limit' }));
+    expect(renameEnvelope.baseRevision).toBe(model.revision);
+    await applyEnvelope(api, project.id, renameEnvelope);
+
+    const reloaded = await api.getModel(project.id);
+    const operation = reloaded.classifiers.find((classifier) => classifier.id === classifierId)
+      ?.operations.find((candidate) => candidate.id === operationId);
+    expect(operation?.parameters.map((parameter) => ({
+      id: parameter.id,
+      name: parameter.name,
+      type: parameter.type,
+      direction: parameter.direction,
+      ordinal: parameter.ordinal,
+    }))).toEqual([
+      { id: secondParameterId, name: 'limit', type: 'Integer', direction: 'OUT', ordinal: 0 },
+      { id: firstParameterId, name: 'account', type: 'String', direction: 'IN', ordinal: 1 },
+    ]);
+    expect(operation && formatOperation(operation)).toBe('+ confirm(limit: Integer, account: String): boolean');
   });
 });
 

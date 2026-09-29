@@ -7,6 +7,7 @@ import type {
   ModelResource,
   OperationEnvelope,
   OperationResource,
+  ParameterResource,
   RelationshipResource,
 } from '../api/types';
 
@@ -33,6 +34,42 @@ export interface ModelCommandRequest {
   targets?: CommandTarget[];
   preconditions?: CommandPrecondition[];
   payload?: Record<string, unknown>;
+}
+
+export type TypeReferenceInput = { primitiveName: string } | { classifierId: string };
+export type ParameterDirection = 'IN' | 'OUT' | 'INOUT';
+
+export interface ParameterAddValues {
+  name: string;
+  type: TypeReferenceInput;
+  direction: ParameterDirection;
+  ordinal: number;
+}
+
+export type ParameterUpdateValues = Partial<ParameterAddValues>;
+
+export function buildParameterAddRequest(operationId: string, values: ParameterAddValues): ModelCommandRequest {
+  return {
+    type: 'parameter.add',
+    targets: [{ scope: 'operation', id: operationId }],
+    payload: { ...values },
+  };
+}
+
+export function buildParameterUpdateRequest(parameterId: string, values: ParameterUpdateValues): ModelCommandRequest {
+  return {
+    type: 'parameter.update',
+    targets: [{ scope: 'parameter', id: parameterId }],
+    payload: { ...values },
+  };
+}
+
+export function buildParameterRemoveRequest(parameterId: string): ModelCommandRequest {
+  return {
+    type: 'parameter.remove',
+    targets: [{ scope: 'parameter', id: parameterId }],
+    payload: {},
+  };
 }
 
 function nextClassifierName(model: ModelResource, kind: ClassifierKind): string {
@@ -285,6 +322,90 @@ function addOperation(model: ModelResource, envelope: OperationEnvelope, classif
   }));
 }
 
+function parameterOwnerClassifierId(model: ModelResource, parameterId: string): string | null {
+  return model.classifiers.find((classifier) => classifier.operations.some((operation) =>
+    operation.parameters.some((parameter) => parameter.id === parameterId)))?.id ?? null;
+}
+
+function addParameter(model: ModelResource, envelope: OperationEnvelope, classifierId: string): ModelResource {
+  const operationId = targetId(envelope, 'operation');
+  const id = payloadString(envelope, 'id');
+  const name = payloadString(envelope, 'name');
+  if (!operationId || !id || !name) {
+    return model;
+  }
+  return updateClassifier(model, classifierId, (classifier) => ({
+    ...classifier,
+    operations: classifier.operations.map((operation) => {
+      if (operation.id !== operationId) {
+        return operation;
+      }
+      const parameter: ParameterResource = {
+        id,
+        name,
+        direction: payloadString(envelope, 'direction') ?? 'IN',
+        typeReferenceId: null,
+        type: resolveTypeName(model, envelope.payload.type),
+        ordinal: typeof envelope.payload.ordinal === 'number' ? envelope.payload.ordinal : operation.parameters.length,
+      };
+      return { ...operation, parameters: [...operation.parameters, parameter] };
+    }),
+  }));
+}
+
+function updateParameter(
+  model: ModelResource,
+  envelope: OperationEnvelope,
+  classifierId: string,
+  parameterId: string,
+): ModelResource {
+  const requestedOrdinal = envelope.payload.ordinal;
+  return updateClassifier(model, classifierId, (classifier) => ({
+    ...classifier,
+    operations: classifier.operations.map((operation) => {
+      if (!operation.parameters.some((parameter) => parameter.id === parameterId)) {
+        return operation;
+      }
+      let parameters = operation.parameters.map((parameter) => {
+        if (parameter.id !== parameterId) {
+          return parameter;
+        }
+        return {
+          ...parameter,
+          name: payloadString(envelope, 'name') ?? parameter.name,
+          direction: payloadString(envelope, 'direction') ?? parameter.direction,
+          type: Object.hasOwn(envelope.payload, 'type')
+            ? resolveTypeName(model, envelope.payload.type)
+            : parameter.type,
+        };
+      });
+      if (typeof requestedOrdinal === 'number'
+          && Number.isInteger(requestedOrdinal)
+          && requestedOrdinal >= 0
+          && requestedOrdinal < parameters.length) {
+        parameters = [...parameters].sort((left, right) => left.ordinal - right.ordinal);
+        const currentIndex = parameters.findIndex((parameter) => parameter.id === parameterId);
+        const [moved] = parameters.splice(currentIndex, 1);
+        if (moved) {
+          parameters.splice(requestedOrdinal, 0, moved);
+          parameters = parameters.map((parameter, ordinal) => ({ ...parameter, ordinal }));
+        }
+      }
+      return { ...operation, parameters };
+    }),
+  }));
+}
+
+function removeParameter(model: ModelResource, classifierId: string, parameterId: string): ModelResource {
+  return updateClassifier(model, classifierId, (classifier) => ({
+    ...classifier,
+    operations: classifier.operations.map((operation) => ({
+      ...operation,
+      parameters: operation.parameters.filter((parameter) => parameter.id !== parameterId),
+    })),
+  }));
+}
+
 export function applyOptimisticCommand(model: ModelResource, envelope: OperationEnvelope): ModelResource {
   const classifierId = targetId(envelope, 'classifier');
 
@@ -423,6 +544,21 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
           };
         }),
       }));
+    }
+    case 'parameter.add': {
+      const operationId = targetId(envelope, 'operation');
+      const ownerId = operationId ? ownerClassifierId(model, 'operation', operationId) : null;
+      return operationId && ownerId ? addParameter(model, envelope, ownerId) : model;
+    }
+    case 'parameter.update': {
+      const parameterId = targetId(envelope, 'parameter');
+      const ownerId = parameterId ? parameterOwnerClassifierId(model, parameterId) : null;
+      return parameterId && ownerId ? updateParameter(model, envelope, ownerId, parameterId) : model;
+    }
+    case 'parameter.remove': {
+      const parameterId = targetId(envelope, 'parameter');
+      const ownerId = parameterId ? parameterOwnerClassifierId(model, parameterId) : null;
+      return parameterId && ownerId ? removeParameter(model, ownerId, parameterId) : model;
     }
     case 'constraint.add': {
       const id = payloadString(envelope, 'id');

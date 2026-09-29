@@ -8,10 +8,15 @@ import type {
   RelationshipResource,
 } from '../api/types';
 import {
+  buildParameterAddRequest,
+  buildParameterRemoveRequest,
+  buildParameterUpdateRequest,
   buildRelationshipUpdateRequest,
   RELATIONSHIP_KINDS,
   type ModelCommandRequest,
+  type ParameterDirection,
   type RelationshipKind,
+  type TypeReferenceInput,
 } from './commands';
 import type { CanvasSelection } from './selection';
 
@@ -45,7 +50,7 @@ const NAVIGABILITY_OPTIONS = [
   { value: 'NOT_NAVIGABLE', label: 'Not navigable' },
 ] as const;
 
-function typeReference(model: ModelResource, name: string): Record<string, string> {
+function typeReference(model: ModelResource, name: string): TypeReferenceInput {
   const classifier = model.classifiers.find((candidate) => candidate.name === name.trim());
   return classifier
     ? { classifierId: classifier.id }
@@ -402,6 +407,95 @@ function AttributeProperties({
   );
 }
 
+function ParameterProperties({
+  parameter,
+  index,
+  total,
+  model,
+  onCommand,
+}: {
+  parameter: OperationResource['parameters'][number];
+  index: number;
+  total: number;
+  model: ModelResource;
+  onCommand: PropertiesPanelProps['onCommand'];
+}) {
+  const [name, setName] = useState(parameter.name);
+  const [type, setType] = useState(parameter.type ?? '');
+  const [direction, setDirection] = useState<ParameterDirection>(
+    parameter.direction === 'OUT' || parameter.direction === 'INOUT' ? parameter.direction : 'IN',
+  );
+
+  useEffect(() => {
+    setName(parameter.name);
+    setType(parameter.type ?? '');
+    setDirection(parameter.direction === 'OUT' || parameter.direction === 'INOUT' ? parameter.direction : 'IN');
+  }, [parameter.id, parameter.name, parameter.type, parameter.direction]);
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanName = name.trim();
+    const cleanType = type.trim();
+    if (!cleanName || !cleanType) {
+      return;
+    }
+    onCommand(buildParameterUpdateRequest(parameter.id, {
+      name: cleanName,
+      type: typeReference(model, cleanType),
+      direction,
+    }));
+  }
+
+  return (
+    <li className="parameter-property">
+      <div className="parameter-property-heading">
+        <strong>{`Parameter ${index + 1}`}</strong>
+        <div className="parameter-order-actions">
+          <button
+            aria-label={`Move parameter ${index + 1} up`}
+            className="text-button"
+            disabled={index === 0}
+            onClick={() => onCommand(buildParameterUpdateRequest(parameter.id, { ordinal: index - 1 }))}
+            type="button"
+          >Move up</button>
+          <button
+            aria-label={`Move parameter ${index + 1} down`}
+            className="text-button"
+            disabled={index === total - 1}
+            onClick={() => onCommand(buildParameterUpdateRequest(parameter.id, { ordinal: index + 1 }))}
+            type="button"
+          >Move down</button>
+          <button
+            aria-label={`Remove parameter ${index + 1}`}
+            className="text-button danger-button"
+            onClick={() => onCommand(buildParameterRemoveRequest(parameter.id))}
+            type="button"
+          >Remove parameter</button>
+        </div>
+      </div>
+      <form className="parameter-property-form" onSubmit={save}>
+        <label className="field-label">
+          Name
+          <input onChange={(event) => setName(event.target.value)} required value={name} />
+        </label>
+        <label className="field-label">
+          Type
+          <input onChange={(event) => setType(event.target.value)} required value={type} />
+        </label>
+        <label className="field-label">
+          Direction
+          <select onChange={(event) => setDirection(event.target.value as ParameterDirection)} value={direction}>
+            <option value="IN">In</option>
+            <option value="OUT">Out</option>
+            <option value="INOUT">Inout</option>
+          </select>
+        </label>
+        <button className="button button-secondary button-compact" type="submit">Save parameter</button>
+      </form>
+    </li>
+  );
+}
+
 function OperationProperties({
   operation,
   classifier,
@@ -426,6 +520,15 @@ function OperationProperties({
     setIsAbstract(operation.isAbstract);
     setIsStatic(operation.isStatic);
   }, [operation.id, operation.returnType, operation.visibility, operation.isAbstract, operation.isStatic]);
+
+  function addParameter() {
+    onCommand(buildParameterAddRequest(operation.id, {
+      name: `parameter${operation.parameters.length + 1}`,
+      type: { primitiveName: 'String' },
+      direction: 'IN',
+      ordinal: nextOrdinal(operation.parameters),
+    }));
+  }
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -470,6 +573,30 @@ function OperationProperties({
         </label>
         <button className="button button-primary button-compact" type="submit">Save operation</button>
       </form>
+      <section className="parameter-properties" aria-labelledby="operation-parameters-title">
+        <div className="parameter-properties-heading">
+          <h4 id="operation-parameters-title">Parameters</h4>
+          <button className="button button-secondary button-compact" onClick={addParameter} type="button">
+            Add parameter
+          </button>
+        </div>
+        {operation.parameters.length > 0 ? (
+          <ol className="parameter-property-list">
+            {[...operation.parameters]
+              .sort((left, right) => left.ordinal - right.ordinal)
+              .map((parameter, index, ordered) => (
+                <ParameterProperties
+                  key={parameter.id}
+                  index={index}
+                  model={model}
+                  onCommand={onCommand}
+                  parameter={parameter}
+                  total={ordered.length}
+                />
+              ))}
+          </ol>
+        ) : <p className="property-hint">No parameters yet.</p>}
+      </section>
     </>
   );
 }

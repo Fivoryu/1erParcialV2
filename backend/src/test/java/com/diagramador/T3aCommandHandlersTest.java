@@ -13,7 +13,9 @@ import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.Project;
 import com.diagramador.domain.ProjectMember;
+import com.diagramador.domain.OperationParameter;
 import com.diagramador.domain.ProjectMemberRole;
+import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.persistence.ClassifierRepository;
 import com.diagramador.persistence.ModelVersionRepository;
@@ -252,6 +254,123 @@ class T3aCommandHandlersTest extends AbstractPostgresIntegrationTest {
         assertRejected(takenOrdinal, ErrorCode.PRECONDITION_FAILED, "ordinal", "0");
     }
 
+    @Test
+    void parameterUpdatePersistsEditableFieldsAndRejectsInvalidValues() {
+        ParameterFixture fixture = parameterFixture();
+        OperationParameter second = parameterRepository.findById(fixture.secondParameterId()).orElseThrow();
+        UUID reusableIntegerTypeId = second.getTypeReference().getId();
+
+        assertAccepted(command(fixture.fixture(), "parameter.update", fixture.revision(), Map.of("name", "renamed"),
+                target("parameter", fixture.firstParameterId())));
+        assertThat(parameterRepository.findById(fixture.firstParameterId()).orElseThrow().getName()).isEqualTo("renamed");
+
+        assertAccepted(command(fixture.fixture(), "parameter.update", fixture.revision() + 1,
+                Map.of("type", Map.of("primitiveName", "Integer")), target("parameter", fixture.firstParameterId())));
+        assertThat(parameterRepository.findById(fixture.firstParameterId()).orElseThrow().getTypeReference().getId())
+                .isEqualTo(reusableIntegerTypeId);
+
+        assertAccepted(command(fixture.fixture(), "parameter.update", fixture.revision() + 2,
+                Map.of("type", Map.of("classifierId", fixture.referencedClassifierId())),
+                target("parameter", fixture.firstParameterId())));
+        assertThat(persistedType(fixture.firstParameterId()).getClassifier().getId())
+                .isEqualTo(fixture.referencedClassifierId());
+
+        assertAccepted(command(fixture.fixture(), "parameter.update", fixture.revision() + 3,
+                Map.of("direction", "OUT"), target("parameter", fixture.firstParameterId())));
+        assertThat(parameterRepository.findById(fixture.firstParameterId()).orElseThrow().getDirection()).isEqualTo("OUT");
+        assertAccepted(command(fixture.fixture(), "parameter.update", fixture.revision() + 4,
+                Map.of("direction", "inout"), target("parameter", fixture.firstParameterId())));
+        assertThat(parameterRepository.findById(fixture.firstParameterId()).orElseThrow().getDirection()).isEqualTo("INOUT");
+
+        UUID invalidDirection = UUID.randomUUID();
+        assertRejected(command(fixture.fixture(), "parameter.update", fixture.revision() + 5,
+                Map.of("direction", "RETURN"), target("parameter", fixture.firstParameterId())),
+                ErrorCode.INVALID_PAYLOAD, "RETURN");
+        assertRejected(command(fixture.fixture(), "parameter.update", fixture.revision() + 5,
+                Map.of("type", Map.of("classifierId", invalidDirection)), target("parameter", fixture.firstParameterId())),
+                ErrorCode.PRECONDITION_FAILED, "classifierId", invalidDirection.toString());
+    }
+
+    @Test
+    void parameterUpdateMovesParametersAndKeepsOrdinalsDenseAndSiblingsIntact() {
+        ParameterFixture fixture = parameterFixture();
+        UUID lastParameterId = UUID.randomUUID();
+        assertAccepted(command(fixture.fixture(), "parameter.add", fixture.revision(),
+                Map.of("id", lastParameterId, "name", "last", "type", Map.of("primitiveName", "Boolean"),
+                        "direction", "IN", "ordinal", 2), target("operation", fixture.operationId())));
+
+        assertAccepted(command(fixture.fixture(), "parameter.update", fixture.revision() + 1,
+                Map.of("ordinal", 0), target("parameter", lastParameterId)));
+        List<OperationParameter> movedToFront = orderedParameters(fixture.operationId());
+        assertThat(movedToFront).extracting(OperationParameter::getName).containsExactly("last", "first", "second");
+        assertThat(movedToFront).extracting(OperationParameter::getOrdinal).containsExactly(0, 1, 2);
+        assertThat(movedToFront).extracting(OperationParameter::getOrdinal).doesNotHaveDuplicates();
+        assertThat(persistedType(fixture.firstParameterId()).getPrimitiveName()).isEqualTo("String");
+        assertThat(persistedType(fixture.secondParameterId()).getPrimitiveName()).isEqualTo("Integer");
+
+        assertAccepted(command(fixture.fixture(), "parameter.update", fixture.revision() + 2,
+                Map.of("ordinal", 2), target("parameter", lastParameterId)));
+        List<OperationParameter> movedBack = orderedParameters(fixture.operationId());
+        assertThat(movedBack).extracting(OperationParameter::getName).containsExactly("first", "second", "last");
+        assertThat(movedBack).extracting(OperationParameter::getOrdinal).containsExactly(0, 1, 2);
+        assertThat(movedBack).extracting(OperationParameter::getOrdinal).doesNotHaveDuplicates();
+        assertThat(persistedType(fixture.firstParameterId()).getPrimitiveName()).isEqualTo("String");
+        assertThat(persistedType(fixture.secondParameterId()).getPrimitiveName()).isEqualTo("Integer");
+    }
+
+    @Test
+    void parameterUpdateRejectsChangingTheOwningOperation() {
+        ParameterFixture fixture = parameterFixture();
+        UUID otherOperationId = UUID.randomUUID();
+        CommandResult rejected = command(fixture.fixture(), "parameter.update", fixture.revision(),
+                Map.of("operationId", otherOperationId), target("parameter", fixture.firstParameterId()));
+        assertRejected(rejected, ErrorCode.PRECONDITION_FAILED, "owning operation", fixture.firstParameterId().toString());
+        assertThat(parameterRepository.findById(fixture.firstParameterId()).orElseThrow().getOperation().getId())
+                .isEqualTo(fixture.operationId());
+    }
+
+    @Test
+    void parameterUpdateRejectsUnknownParameterIdByName() {
+        Fixture fixture = fixture();
+        UUID unknownParameterId = UUID.randomUUID();
+        CommandResult rejected = command(fixture, "parameter.update", 0, Map.of("name", "missing"),
+                target("parameter", unknownParameterId));
+        assertRejected(rejected, ErrorCode.PRECONDITION_FAILED, unknownParameterId.toString());
+    }
+
+    private List<OperationParameter> orderedParameters(UUID operationId) {
+        return parameterRepository.findByOperationId(operationId).stream()
+                .sorted(java.util.Comparator.comparingInt(OperationParameter::getOrdinal))
+                .toList();
+    }
+
+    private TypeReference persistedType(UUID parameterId) {
+        UUID typeReferenceId = parameterRepository.findById(parameterId).orElseThrow().getTypeReference().getId();
+        return typeReferenceRepository.findById(typeReferenceId).orElseThrow();
+    }
+
+    private ParameterFixture parameterFixture() {
+        Fixture fixture = fixture();
+        UUID ownerClassifierId = UUID.randomUUID();
+        UUID referencedClassifierId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        UUID firstParameterId = UUID.randomUUID();
+        UUID secondParameterId = UUID.randomUUID();
+        assertAccepted(command(fixture, "classifier.create", 0,
+                Map.of("id", ownerClassifierId, "name", "Source", "kind", "CLASS"), List.of()));
+        assertAccepted(command(fixture, "classifier.create", 1,
+                Map.of("id", referencedClassifierId, "name", "Target", "kind", "CLASS"), List.of()));
+        assertAccepted(command(fixture, "operation.add", 2, Map.of("id", operationId, "name", "execute"),
+                target("classifier", ownerClassifierId)));
+        assertAccepted(command(fixture, "parameter.add", 3,
+                Map.of("id", firstParameterId, "name", "first", "type", Map.of("primitiveName", "String"),
+                        "direction", "IN", "ordinal", 0), target("operation", operationId)));
+        assertAccepted(command(fixture, "parameter.add", 4,
+                Map.of("id", secondParameterId, "name", "second", "type", Map.of("primitiveName", "Integer"),
+                        "direction", "OUT", "ordinal", 1), target("operation", operationId)));
+        return new ParameterFixture(fixture, referencedClassifierId, operationId, firstParameterId, secondParameterId, 5);
+    }
+
     private CommandResult command(Fixture fixture, String type, long revision, Object payload, List<TargetValue> targets) {
         return commandService.execute(new OperationEnvelope(UUID.randomUUID(), type, fixture.author(), fixture.project().getId(),
                 fixture.model().getId(), revision, targets.stream().map(value -> new com.diagramador.command.Target(value.scope(), value.id())).toList(),
@@ -288,6 +407,10 @@ class T3aCommandHandlersTest extends AbstractPostgresIntegrationTest {
     }
 
     private record Fixture(Project project, UmlModel model, Author author) {
+    }
+
+    private record ParameterFixture(Fixture fixture, UUID referencedClassifierId, UUID operationId,
+            UUID firstParameterId, UUID secondParameterId, long revision) {
     }
 
     private record TargetValue(String scope, UUID id) {

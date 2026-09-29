@@ -216,7 +216,7 @@ demasiado grande falla sin producir nada.
 - **Se entrega en dos corridas**, porque incluye los comandos aditivos y además la cascada de borrado:
   - **T3a — aditivos y modificaciones:** `classifier.create`, `classifier.rename`, `classifier.setAbstract`,
     `attribute.add`, `attribute.update`, `attribute.remove`, `operation.add`, `operation.update`,
-    `operation.remove`, `parameter.add`, `parameter.remove`, `constraint.add`, `constraint.remove`.
+    `operation.remove`, `parameter.add`, `parameter.update`, `parameter.remove`, `constraint.add`, `constraint.remove`.
   - **T3b — borrado con cascada:** `classifier.delete`, con `cascade_group` y un `tombstone` por elemento
     afectado, y la precondición de confirmación explícita que exige el contrato §2.4.
 - **Invariante que los comandos deben sostener:** `kind = ABSTRACT_CLASS` y `is_abstract = true` son la misma
@@ -366,17 +366,18 @@ worktree.
 | Clasificador | `classifier.create`, `classifier.rename`, `classifier.setAbstract`, `classifier.delete` |
 | Atributo | `attribute.add`, `attribute.update`, `attribute.remove` |
 | Operación | `operation.add`, `operation.update`, `operation.remove` |
-| Parámetro | `parameter.add`, `parameter.remove` |
+| Parámetro | `parameter.add`, `parameter.update`, `parameter.remove` |
 | Relación | `relationship.create`, `relationship.update`, `relationship.delete` |
+| Vista | `view.create` |
 | Restricción | `constraint.add`, `constraint.remove` |
 | Disposición | `geometry.set`, `geometry.remove` |
 
-20 tipos. Todo lo demás del catálogo de los contratos (`member.*`, `proposal.*`, `xmi.*`, `generation.*`,
+23 tipos. Todo lo demás del catálogo de los contratos (`member.*`, `proposal.*`, `xmi.*`, `generation.*`,
 `undo`, `redo`, `resolve`) queda fuera y se rechaza con `UNKNOWN_OPERATION`.
 
-Los 20 tipos se reparten así: `project.create` y `project.rename` en **T4b**; `view.create` en **T4b**;
-los 13 de clasificador, atributo, operación, parámetro y restricción en **T3a**, más `classifier.delete` en
-**T3b**; y los 5 de relación y geometría en **T4a**. Ninguno queda sin tarea.
+Los 23 tipos se reparten así: `project.create`, `project.rename` y `view.create` en **T4b**; los 14 de
+clasificador, atributo, operación, parámetro y restricción en **T3a**, más `classifier.delete` en **T3b**; y los
+5 de relación y geometría en **T4a**. Ninguno queda sin tarea.
 
 ## 7. Compromiso de proporción
 
