@@ -2,8 +2,10 @@
 
 **Fecha:** 2026-09-29
 **Rama:** `feat/incremento-1-modelo-y-editor`, apilada sobre `feat/incremento-0-contrato-y-riesgos`
-**Alcance cerrado:** T1 a T10 del plan [`odd/tasks/incremento-1-modelo-y-editor.md`](../../../odd/tasks/incremento-1-modelo-y-editor.md),
-en **19 commits**.
+**Alcance cerrado:** T1 a T10 del plan [`odd/tasks/incremento-1-modelo-y-editor.md`](../../../odd/tasks/incremento-1-modelo-y-editor.md).
+Las unidades de trabajo de este incremento son las de `git log --oneline ded103d..HEAD`: **no se cita el número**
+porque un documento que dice cuántos commits tiene el rango cambia ese número al commitearse, y esta acta ya
+necesitó una corrección por exactamente ese motivo.
 **Producto entregado:** backend Spring Boot y editor web con lienzo de clases UML.
 
 ## 1. El corte visible, con veredicto
