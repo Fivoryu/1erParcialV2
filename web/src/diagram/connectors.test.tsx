@@ -1,5 +1,8 @@
+// @ts-expect-error Node built-ins are available in Vitest, but this browser project omits Node type declarations.
+import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { ReactFlow } from '@xyflow/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModelResource, RelationshipEndResource, RelationshipResource } from '../api/types';
 import {
@@ -12,6 +15,7 @@ import {
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildFlowEdges, buildFlowNodes } from './UmlCanvas';
+import { UmlClassNode } from './UmlClassNode';
 import {
   buildRelationshipEdgePath,
   estimateLabelWidth,
@@ -244,11 +248,60 @@ describe('relationship label geometry', () => {
     }
 
     if (gap === 40) {
-      expect(placements).toEqual({ source: null, target: null, name: null });
+      expect(placements.source).not.toBeNull();
+      expect(placements.target).not.toBeNull();
+      expect(placements.name).not.toBeNull();
     } else {
       expect(placements.source).not.toBeNull();
       expect(placements.target).not.toBeNull();
     }
+
+    const visibleBounds = Object.values(placements)
+      .filter((placement) => placement !== null)
+      .map((placement) => placement.estimatedBounds);
+    for (let left = 0; left < visibleBounds.length; left += 1) {
+      for (let right = left + 1; right < visibleBounds.length; right += 1) {
+        expect(intersects(visibleBounds[left]!, visibleBounds[right]!)).toBe(false);
+      }
+    }
+  });
+});
+
+describe('connection handles', () => {
+  it('renders keyboard-focusable source and target handles on all four sides of both classes', () => {
+    const nodes = buildFlowNodes(model, [], () => undefined, () => undefined);
+    const markup = renderToStaticMarkup(createElement(ReactFlow, {
+      nodes,
+      edges: [],
+      nodeTypes: { umlClass: UmlClassNode },
+      fitView: false,
+    }));
+
+    const handles = markup.match(/<div\b(?=[^>]*class="[^"]*\breact-flow__handle\b)[^>]*>/g) ?? [];
+    expect(handles).toHaveLength(16);
+    for (const side of ['left', 'right', 'top', 'bottom']) {
+      for (const type of ['source', 'target']) {
+        const matchingHandles = handles.filter((handle) => handle.includes(`data-handleid="${type}-${side}"`));
+        expect(matchingHandles).toHaveLength(2);
+        for (const handle of matchingHandles) {
+          expect(handle).toContain(`aria-label="Connection ${type}, ${side}"`);
+          expect(handle).toContain('tabindex="0"');
+        }
+      }
+    }
+  });
+
+  it('keeps connection handles visibly styled at rest', () => {
+    // This intentionally checks stylesheet text: resting visibility is a CSS fact, not something SSR markup can prove.
+    const stylesheet = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+    const ruleStart = stylesheet.indexOf('.uml-flow-node .react-flow__handle');
+    const ruleEnd = stylesheet.indexOf('}', ruleStart);
+    const restingHandleRule = stylesheet.slice(ruleStart, ruleEnd + 1);
+
+    expect(ruleStart).toBeGreaterThanOrEqual(0);
+    expect(restingHandleRule).not.toMatch(/\bopacity\s*:\s*0\s*;/);
+    expect(restingHandleRule).toMatch(/\bopacity\s*:\s*0\.\d+\s*;/);
+    expect(stylesheet).toMatch(/\.react-flow__node:focus-within \.react-flow__handle\s*\{[^}]*opacity:\s*1\s*;/);
   });
 });
 

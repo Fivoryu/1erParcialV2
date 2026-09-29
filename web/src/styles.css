@@ -739,6 +739,13 @@ h3 {
   padding: 0 10px;
 }
 
+.diagram-connection-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .diagram-canvas {
   height: min(72vh, 760px);
   min-height: 520px;
@@ -881,17 +888,19 @@ h3 {
 }
 
 .uml-flow-node .react-flow__handle {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border: 2px solid #fff;
   background: var(--accent);
-  opacity: 0;
-  transition: opacity 120ms ease;
+  opacity: 0.62;
+  transition: opacity 120ms ease, width 120ms ease, height 120ms ease;
 }
 
 .uml-flow-node:hover .react-flow__handle,
 .react-flow__node.selected .react-flow__handle,
 .react-flow__node:focus-within .react-flow__handle {
+  width: 11px;
+  height: 11px;
   opacity: 1;
 }
 

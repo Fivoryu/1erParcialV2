@@ -17,6 +17,17 @@ export interface ClassNodeData extends Record<string, unknown> {
 
 export type ClassFlowNode = Node<ClassNodeData, 'umlClass'>;
 
+const connectionHandleKeyboardProps = {
+  tabIndex: 0,
+  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.click();
+    }
+  },
+};
+
 interface EditableTextProps {
   displayValue: string;
   editValue: string;
@@ -228,10 +239,10 @@ export function UmlClassNode({ data, selected }: NodeProps<ClassFlowNode>) {
           height: params.height,
         })}
       />
-      <Handle aria-label="Connection target" id="target-left" position={Position.Left} type="target" />
-      <Handle aria-label="Connection source" id="source-right" position={Position.Right} type="source" />
-      <Handle aria-label="Connection target" id="target-right" position={Position.Right} type="target" />
-      <Handle aria-label="Connection source" id="source-left" position={Position.Left} type="source" />
+      <Handle {...connectionHandleKeyboardProps} aria-label="Connection target, left" id="target-left" position={Position.Left} type="target" />
+      <Handle {...connectionHandleKeyboardProps} aria-label="Connection source, right" id="source-right" position={Position.Right} type="source" />
+      <Handle {...connectionHandleKeyboardProps} aria-label="Connection target, right" id="target-right" position={Position.Right} type="target" />
+      <Handle {...connectionHandleKeyboardProps} aria-label="Connection source, left" id="source-left" position={Position.Left} type="source" />
       {/*
         Every side offers both a source and a target handle. An edge between vertically stacked
         classes has to leave through the bottom and enter through the top; with only left and right
@@ -243,10 +254,10 @@ export function UmlClassNode({ data, selected }: NodeProps<ClassFlowNode>) {
         the only option. What chooses the side is `chooseHandles` in UmlCanvas, which derives it
         from the two node rectangles.
       */}
-      <Handle aria-label="Connection target" id="target-top" position={Position.Top} type="target" />
-      <Handle aria-label="Connection target" id="target-bottom" position={Position.Bottom} type="target" />
-      <Handle aria-label="Connection source" id="source-top" position={Position.Top} type="source" />
-      <Handle aria-label="Connection source" id="source-bottom" position={Position.Bottom} type="source" />
+      <Handle {...connectionHandleKeyboardProps} aria-label="Connection target, top" id="target-top" position={Position.Top} type="target" />
+      <Handle {...connectionHandleKeyboardProps} aria-label="Connection target, bottom" id="target-bottom" position={Position.Bottom} type="target" />
+      <Handle {...connectionHandleKeyboardProps} aria-label="Connection source, top" id="source-top" position={Position.Top} type="source" />
+      <Handle {...connectionHandleKeyboardProps} aria-label="Connection source, bottom" id="source-bottom" position={Position.Bottom} type="source" />
       <UmlClassCard
         classifier={data.classifier}
         {...(data.onRenameClassifier ? { onRenameClassifier: data.onRenameClassifier } : {})}

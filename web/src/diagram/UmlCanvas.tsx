@@ -323,6 +323,7 @@ function CanvasFrame(props: UmlCanvasProps) {
           <span className="mode-chip">UML 2.5</span>
         </div>
         <div className="diagram-toolbar-actions" aria-label="Diagram tools">
+          <p className="diagram-connection-hint">Drag from one class dot to another to connect them.</p>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('CLASS')} type="button">
             + Class
           </button>

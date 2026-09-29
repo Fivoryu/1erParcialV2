@@ -47,6 +47,8 @@ const LABEL_HEIGHT_PX = 17;
 const LABEL_GROUP_GAP_PX = 5;
 const LABEL_NODE_PADDING_PX = 8;
 const LABEL_TO_LABEL_GAP_PX = 2;
+const PERPENDICULAR_SEARCH_STEP_PX = 8;
+const PERPENDICULAR_CLEARANCE_PX = 1;
 export const EDGE_STROKE_WIDTH_PX = 1.7;
 
 /**
@@ -189,12 +191,78 @@ function placeLabelOnPath(
   return null;
 }
 
+function placeLabelPerpendicularToPath(
+  points: EdgePoint[],
+  texts: string[],
+  preferredDistance: number,
+  obstacles: EdgeRectangle[],
+): RelationshipLabelPlacement | null {
+  const width = estimateLabelGroupWidth(texts);
+  if (width <= 0) {
+    return null;
+  }
+
+  const segments = pathSegments(points);
+  const totalLength = segments.reduce((length, segment) => length + segment.length, 0);
+  const distance = Math.max(0, Math.min(preferredDistance, totalLength));
+  const segment = segments.find((candidate) => distance <= candidate.distance + candidate.length)
+    ?? segments.at(-1);
+  if (!segment) {
+    return null;
+  }
+
+  const tangent = {
+    x: (segment.end.x - segment.start.x) / segment.length,
+    y: (segment.end.y - segment.start.y) / segment.length,
+  };
+  const normal = { x: -tangent.y, y: tangent.x };
+  const anchor = pointAtPathDistance(points, distance);
+  const height = LABEL_HEIGHT_PX;
+  const offsetToClearObstacle = (obstacle: EdgeRectangle) => {
+    const xOffset = Math.abs(normal.x) === 0
+      ? Number.POSITIVE_INFINITY
+      : (Math.abs(obstacle.x + obstacle.width / 2 - anchor.x)
+        + (obstacle.width + width) / 2 + PERPENDICULAR_CLEARANCE_PX) / Math.abs(normal.x);
+    const yOffset = Math.abs(normal.y) === 0
+      ? Number.POSITIVE_INFINITY
+      : (Math.abs(obstacle.y + obstacle.height / 2 - anchor.y)
+        + (obstacle.height + height) / 2 + PERPENDICULAR_CLEARANCE_PX) / Math.abs(normal.y);
+    return Math.min(xOffset, yOffset);
+  };
+  const maximumOffset = Math.max(0, ...obstacles.map(offsetToClearObstacle));
+  const finalOffset = Math.max(
+    PERPENDICULAR_SEARCH_STEP_PX,
+    Math.ceil(maximumOffset / PERPENDICULAR_SEARCH_STEP_PX) * PERPENDICULAR_SEARCH_STEP_PX,
+  );
+
+  for (let offset = PERPENDICULAR_SEARCH_STEP_PX; offset <= finalOffset; offset += PERPENDICULAR_SEARCH_STEP_PX) {
+    for (const direction of [1, -1]) {
+      const point = {
+        x: anchor.x + normal.x * offset * direction,
+        y: anchor.y + normal.y * offset * direction,
+      };
+      const estimatedBounds = {
+        x: point.x - width / 2,
+        y: point.y - height / 2,
+        width,
+        height,
+      };
+      if (obstacles.every((obstacle) => !rectanglesIntersect(estimatedBounds, obstacle))) {
+        return { x: point.x, y: point.y, estimatedBounds };
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Places each estimated label box on the polyline while keeping it at least 8px
  * from both node rectangles. End labels prefer the nearest safe point to their
- * endpoint; the relationship name prefers the path midpoint. Labels that do not
- * fit are omitted because hiding a label is clearer than obscuring a class box or
- * shrinking text until it is unreadable.
+ * endpoint; the relationship name prefers the path midpoint. If no on-path point
+ * is safe, it offsets the unchanged label perpendicularly at that preferred
+ * distance, searching both sides until it clears every node and placed label.
+ * Omission is reserved for degenerate paths or the rare case where no tested
+ * perpendicular offset can clear all obstacles; text is never shrunk or put over a class box.
  */
 export function placeRelationshipLabels(
   points: EdgePoint[],
@@ -217,7 +285,8 @@ export function placeRelationshipLabels(
       ...nodeObstacles,
       ...placedBoxes.map((box) => expandRectangle(box, LABEL_TO_LABEL_GAP_PX)),
     ];
-    const placement = placeLabelOnPath(points, visibleTexts, preferredDistance, obstacles);
+    const placement = placeLabelOnPath(points, visibleTexts, preferredDistance, obstacles)
+      ?? placeLabelPerpendicularToPath(points, visibleTexts, preferredDistance, obstacles);
     if (placement) {
       placedBoxes.push(placement.estimatedBounds);
     }

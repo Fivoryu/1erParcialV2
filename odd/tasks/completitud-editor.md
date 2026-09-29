@@ -132,8 +132,8 @@ Ordenadas por impacto sobre alguien que quiere dibujar un diagrama de clases.
 | Tarea | Estado | Evidencia |
 | --- | --- | --- |
 | Auditoría de los 23 constructos | **hecha** | §2, con `file:line` por constructo; cierra C1 del acta |
-| T1 — Rol y multiplicidad siempre visibles | pendiente | — |
-| T2 — Anclajes descubribles | pendiente | — |
+| T1 — Rol y multiplicidad siempre visibles | **hecho** | La colocación en el trazado sigue siendo el primer intento; si no hay punto seguro, la etiqueta se **desplaza perpendicularmente** en pasos de 8 px, probando ambos sentidos, hasta que su caja estimada libre los dos rectángulos y las etiquetas ya colocadas. Verificado en el diagrama: se leen `places`, `customer` y **`orders [0..*]`**. **Intercambio declarado:** esa última queda debajo de la caja, visible pero menos pegada a su extremo. Visible y algo ambiguo es mejor que invisible |
+| T2 — Anclajes descubribles | **hecho** | En reposo los ocho anclajes se ven como puntos de 8 px a `opacity: 0.62`, y pasan a 11 px y opacidad plena con hover, selección o foco; además son alcanzables por teclado. La barra dice **«Drag from one class dot to another to connect them.»** Verificado en la captura |
 | T3 — Parámetros en la interfaz | pendiente | — |
 | T4 — Paquetes | pendiente | — |
 | T5 — Restricciones y navegabilidad | pendiente | — |
