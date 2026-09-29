@@ -1,0 +1,123 @@
+{
+  "id": "461f3413-6576-4bc1-bab0-a7a619831c30",
+  "projectId": "b475cd3a-a203-4230-947a-1d42cd878ea2",
+  "revision": 9,
+  "views": [
+    {
+      "id": "314c76fe-feef-4f2b-8e0d-119efe257a65",
+      "name": "Class Diagram",
+      "is_default": true,
+      "element_geometry": [
+        {
+          "id": "0c0bd6ee-a0e0-44b1-8846-b1ea562d3e8b",
+          "targetType": "CLASSIFIER",
+          "targetId": "f40eed0a-9b4c-454f-a91c-5bbf2447c77d",
+          "x": 420,
+          "y": 100,
+          "w": 260,
+          "h": 180,
+          "zOrder": 2
+        },
+        {
+          "id": "0c7bc0f2-f4f4-419b-84b4-e9b507627c36",
+          "targetType": "CLASSIFIER",
+          "targetId": "9eb605eb-00b7-4188-967a-ef14aaaee4d6",
+          "x": 80,
+          "y": 100,
+          "w": 240,
+          "h": 160,
+          "zOrder": 1
+        }
+      ],
+      "connector_path": [
+        {
+          "id": "881151d2-8a66-4967-bc5d-e67a21d1e624",
+          "relationshipId": "8064b350-43a8-4625-857f-e715b9ee7398",
+          "ordinal": 0,
+          "x": 340,
+          "y": 160
+        },
+        {
+          "id": "8064ac7f-30fe-4bad-bdcd-1a6a35dbe89f",
+          "relationshipId": "8064b350-43a8-4625-857f-e715b9ee7398",
+          "ordinal": 1,
+          "x": 390,
+          "y": 160
+        }
+      ]
+    }
+  ],
+  "classifiers": [
+    {
+      "id": "9eb605eb-00b7-4188-967a-ef14aaaee4d6",
+      "name": "Customer",
+      "kind": "CLASS",
+      "isAbstract": false,
+      "namespaceId": null,
+      "attributes": [
+        {
+          "id": "9a97dec1-e8b2-41fd-9c98-805845d3c168",
+          "name": "email",
+          "kind": "ATTRIBUTE",
+          "visibility": "PRIVATE",
+          "multiplicity": "EXACTLY_ONE",
+          "defaultValue": null,
+          "typeReferenceId": "0d3c08f8-0cd9-4f17-b9ac-93c31c80a8a4",
+          "type": "String",
+          "ordinal": 0
+        }
+      ],
+      "operations": [
+        {
+          "id": "8c0daccf-741d-4863-8dea-2d71d19169b2",
+          "name": "validate",
+          "visibility": "PUBLIC",
+          "isAbstract": false,
+          "isStatic": false,
+          "returnTypeReferenceId": "14a800e3-8c50-47bb-8043-75c76b73f814",
+          "returnType": "boolean",
+          "ordinal": 0,
+          "parameters": []
+        }
+      ],
+      "constraints": []
+    },
+    {
+      "id": "f40eed0a-9b4c-454f-a91c-5bbf2447c77d",
+      "name": "Subscription",
+      "kind": "ABSTRACT_CLASS",
+      "isAbstract": true,
+      "namespaceId": null,
+      "attributes": [],
+      "operations": [],
+      "constraints": []
+    }
+  ],
+  "relationships": [
+    {
+      "id": "8064b350-43a8-4625-857f-e715b9ee7398",
+      "kind": "ASSOCIATION",
+      "name": "subscriptions",
+      "ends": [
+        {
+          "id": "f77cc1fe-d4a9-4b00-8cf7-94687dddefe1",
+          "classifierId": "9eb605eb-00b7-4188-967a-ef14aaaee4d6",
+          "role": "customer",
+          "multiplicity": "EXACTLY_ONE",
+          "navigability": "NAVIGABLE",
+          "aggregationKind": "NONE",
+          "ordinal": 1
+        },
+        {
+          "id": "f663da9c-1b40-493e-b96e-4906ef970b58",
+          "classifierId": "f40eed0a-9b4c-454f-a91c-5bbf2447c77d",
+          "role": "subscriptions",
+          "multiplicity": "ZERO_OR_MANY",
+          "navigability": "NOT_NAVIGABLE",
+          "aggregationKind": "NONE",
+          "ordinal": 2
+        }
+      ]
+    }
+  ]
+}
