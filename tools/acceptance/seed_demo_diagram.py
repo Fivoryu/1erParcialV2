@@ -104,6 +104,15 @@ class Seeder:
         payable = self.classifier("Payable", "INTERFACE")
         order = self.classifier("Order", "ABSTRACT_CLASS")
         customer = self.classifier("Customer", "CLASS")
+        payments = self.classifier("Payments", "PACKAGE")
+
+        # A package is semantic, not geometric: the members stay where they are and the
+        # namespace records the containment.
+        self.send(
+            "classifier.setNamespace",
+            {"namespaceId": payments},
+            targets=[{"scope": "classifier", "id": customer}],
+        )
 
         for name, type_name in (("id", "String"), ("name", "String")):
             self.attribute(customer, name, type_name, "PRIVATE")
@@ -112,6 +121,7 @@ class Seeder:
         self.attribute(order, "total", "double", "PRIVATE")
 
         self.operation(customer, "confirm", "boolean")
+        confirm = self.operation(customer, "verify", "boolean", parameters=[("email", "String"), ("retries", "Integer")])
         self.operation(order, "submit", "void")
         self.operation(order, "cancel", "void")
         self.operation(payable, "pay", "boolean")
@@ -154,6 +164,7 @@ class Seeder:
             (payable, 540, 60, 240, 120, 1),
             (order, 540, 300, 280, 230, 2),
             (customer, 120, 300, 300, 270, 3),
+            (payments, 960, 300, 320, 180, 4),
         ):
             self.send(
                 "geometry.set",
@@ -197,17 +208,36 @@ class Seeder:
             payload["defaultValue"] = default
         self.send("attribute.add", payload, targets=[{"scope": "classifier", "id": classifier_id}])
 
-    def operation(self, classifier_id: str, name: str, return_type: str) -> None:
+    def operation(
+        self,
+        classifier_id: str,
+        name: str,
+        return_type: str,
+        parameters: list[tuple[str, str]] | None = None,
+    ) -> str:
+        operation_id = str(uuid.uuid4())
         self.send(
             "operation.add",
             {
-                "id": str(uuid.uuid4()),
+                "id": operation_id,
                 "name": name,
                 "returnType": {"primitiveName": return_type},
                 "visibility": "PUBLIC",
             },
             targets=[{"scope": "classifier", "id": classifier_id}],
         )
+        for parameter_name, parameter_type in parameters or []:
+            self.send(
+                "parameter.add",
+                {
+                    "id": str(uuid.uuid4()),
+                    "name": parameter_name,
+                    "type": {"primitiveName": parameter_type},
+                    "direction": "IN",
+                },
+                targets=[{"scope": "operation", "id": operation_id}],
+            )
+        return operation_id
 
     def constraint(self, classifier_id: str, expression: str) -> None:
         self.send(
