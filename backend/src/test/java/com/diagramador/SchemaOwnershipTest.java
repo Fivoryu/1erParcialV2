@@ -34,7 +34,16 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
                     "created_at", "updated_at")),
             Map.entry("project_member", Set.of("project_id", "user_id", "role", "status", "joined_at", "updated_at")),
             Map.entry("uml_model", Set.of("model_id", "project_id", "name", "current_revision", "created_at")),
-            Map.entry("classifier", Set.of("classifier_id", "model_id", "namespace_id", "kind", "name", "is_abstract",
+            Map.entry("model_version", Set.of("version_id", "model_id", "revision", "parent_revision", "state_hash",
+                    "validation_state", "created_by_user_id", "created_at")),
+            Map.entry("model_command", Set.of("command_id", "model_id", "author_user_id", "base_revision",
+                    "result_revision", "operation", "target_type", "target_id", "payload", "origin",
+                    "authorization_classification", "inverse_of_command_id", "causal_parent_operation_id",
+                    "idempotency_key", "created_at")),
+            Map.entry("cascade_group", Set.of("cascade_id", "model_id", "root_command_id", "element_count", "restored_at")),
+            Map.entry("tombstone", Set.of("tombstone_id", "model_id", "target_type", "target_id", "cascade_id",
+                    "command_id", "deleted_at")),
+            Map.entry("classifier",  Set.of("classifier_id", "model_id", "namespace_id", "kind", "name", "is_abstract",
                     "created_at")),
             Map.entry("type_reference", Set.of("type_reference_id", "model_id", "classifier_id", "primitive_name",
                     "created_at")),
@@ -55,7 +64,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("connector_path", Set.of("path_id", "view_id", "relationship_id", "ordinal", "x", "y")));
 
     private static final Set<String> TABLES_RESERVED_FOR_LATER_TASKS = Set.of(
-            "invitation", "model_version", "model_command", "cascade_group", "tombstone", "model_conflict",
+            "invitation", "model_conflict",
             "name_collision", "ai_proposal", "detected_element", "xmi_exchange", "xmi_loss_item",
             "generation_target", "generation_profile", "generation_run", "template_version",
             "generated_artifact", "verification_result", "audit_log");
@@ -76,7 +85,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2");
+                .contains("1", "2", "3");
     }
 
     @Test
@@ -115,6 +124,9 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertColumnType("uml_constraint", "owner_type", "target_type");
         assertColumnType("uml_constraint", "severity", "severity_kind");
         assertColumnType("element_geometry", "target_type", "target_type");
+        assertColumnType("model_version", "validation_state", "validation_state");
+        assertColumnType("model_command", "origin", "command_origin");
+        assertColumnType("model_command", "authorization_classification", "authorization_classification");
     }
 
     @Test
@@ -126,6 +138,9 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertEnumLabels("relationship_kind", RelationshipKind.class, 6);
         assertEnumLabels("severity_kind", SeverityKind.class, 3);
         assertEnumLabels("target_type", TargetType.class, 8);
+        assertEnumLabels("validation_state", com.diagramador.command.ValidationState.class, 3);
+        assertEnumLabels("command_origin", com.diagramador.command.CommandOrigin.class, 11);
+        assertEnumLabels("authorization_classification", com.diagramador.command.AuthorizationClassification.class, 5);
     }
 
     @Test

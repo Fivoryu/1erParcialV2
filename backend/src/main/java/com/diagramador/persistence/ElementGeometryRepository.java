@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ElementGeometryRepository extends JpaRepository<ElementGeometry, UUID> {
 
     List<ElementGeometry> findByViewId(UUID viewId);
+
+    List<ElementGeometry> findByViewModelId(UUID modelId);
 }

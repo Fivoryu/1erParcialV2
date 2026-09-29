@@ -1,0 +1,12 @@
+package com.diagramador.command;
+
+public enum ErrorCode {
+    UNKNOWN_OPERATION,
+    INVALID_PAYLOAD,
+    PRECONDITION_FAILED,
+    REVISION_MISMATCH,
+    UNAUTHORIZED,
+    FORBIDDEN,
+    NAME_COLLISION_BLOCKS,
+    MODEL_INVALID
+}
