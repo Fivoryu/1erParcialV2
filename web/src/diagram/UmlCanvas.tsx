@@ -55,6 +55,9 @@ interface NodeRectangle {
 }
 
 function defaultHeight(classifier: ClassifierResource): number {
+  if (classifier.kind === 'PACKAGE') {
+    return 96;
+  }
   const attributes = classifier.attributes.length ? 24 + classifier.attributes.length * 24 : 0;
   const operations = classifier.operations.length ? 24 + classifier.operations.length * 24 : 0;
   const constraints = classifier.constraints.length ? 24 + classifier.constraints.length * 22 : 0;
@@ -332,6 +335,9 @@ function CanvasFrame(props: UmlCanvasProps) {
           </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('INTERFACE')} type="button">
             + Interface
+          </button>
+          <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('PACKAGE')} type="button">
+            + Package
           </button>
           <button className="button button-secondary button-compact" onClick={() => void fitView({ padding: 0.2 })} type="button">
             Fit to view

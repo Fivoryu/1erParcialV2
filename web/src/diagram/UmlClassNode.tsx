@@ -98,6 +98,7 @@ function EditableText({ displayValue, editValue, ariaLabel, className, onCommit,
 
   return (
     <span
+      aria-label={ariaLabel}
       className={className}
       onClick={(event) => {
         if (onSelect) {
@@ -123,6 +124,24 @@ export interface UmlClassCardProps {
 export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, onRenameMember }: UmlClassCardProps) {
   const attributes = orderedAttributes(classifier);
   const operations = orderedOperations(classifier);
+
+  if (classifier.kind === 'PACKAGE') {
+    return (
+      <div className="uml-package-card" data-testid="uml-package-card">
+        {/* Namespace is semantic only: members keep independent canvas positions; geometric containment and grouped dragging are not implemented. */}
+        <div className="uml-package-tab" aria-hidden="true" />
+        <div className="uml-package-name">
+          <EditableText
+            ariaLabel="Edit package name"
+            className="uml-editable-label"
+            displayValue={classifier.name}
+            editValue={classifier.name}
+            onCommit={(name) => onRenameClassifier?.(classifier.id, name)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="uml-class-card" data-testid="uml-class-card">
@@ -188,7 +207,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
               operationIsStatic(operation) ? 'uml-member--static' : '',
             ].filter(Boolean).join(' ');
             return (
-              <div className={`uml-member-row ${modifiers}`} key={operation.id}>
+              <div className={`uml-member-row ${modifiers}`} key={operation.id} data-element-kind="operation">
                 <EditableText
                   ariaLabel={`Edit operation ${operation.name}`}
                   className="uml-member-text"

@@ -23,7 +23,7 @@ se verifica en T10.
 | Pieza | Qué entra |
 | --- | --- |
 | Modelo canónico | `Project`, `UmlModel` con revisión, `Classifier` (clase, clase abstracta, interfaz, paquete), `Attribute`, `Operation`, `Parameter`, `TypeReference`, `Relationship` con sus dos extremos, y la separación explícita entre semántica y layout |
-| Capa de comandos | Sobre de operación completo (`operationId`, autor, `baseRevision`, objetivos estables, precondiciones, `idempotencyKey`, causalidad) con los 20 tipos de comando de §6.2 |
+| Capa de comandos | Sobre de operación completo (`operationId`, autor, `baseRevision`, objetivos estables, precondiciones, `idempotencyKey`, causalidad) con los 24 tipos de comando de §6.2 |
 | Persistencia | PostgreSQL 16 con migraciones Flyway que **poseen el esquema**; JPA solo valida (`ddl-auto: validate`) |
 | Validación | Nombres de clasificador únicos por espacio de nombres, tipos resolubles, revisiones monotónicas, rechazo explícito de constructos fuera de la línea base |
 | API | Crear y listar proyectos, abrir el modelo, aplicar comandos, recuperar el modelo y su disposición |
@@ -363,7 +363,7 @@ worktree.
 | Grupo | Tipos |
 | --- | --- |
 | Proyecto | `project.create`, `project.rename` |
-| Clasificador | `classifier.create`, `classifier.rename`, `classifier.setAbstract`, `classifier.delete` |
+| Clasificador | `classifier.create`, `classifier.rename`, `classifier.setAbstract`, `classifier.setNamespace`, `classifier.delete` |
 | Atributo | `attribute.add`, `attribute.update`, `attribute.remove` |
 | Operación | `operation.add`, `operation.update`, `operation.remove` |
 | Parámetro | `parameter.add`, `parameter.update`, `parameter.remove` |
@@ -372,12 +372,13 @@ worktree.
 | Restricción | `constraint.add`, `constraint.remove` |
 | Disposición | `geometry.set`, `geometry.remove` |
 
-23 tipos. Todo lo demás del catálogo de los contratos (`member.*`, `proposal.*`, `xmi.*`, `generation.*`,
+24 tipos. Todo lo demás del catálogo de los contratos (`member.*`, `proposal.*`, `xmi.*`, `generation.*`,
 `undo`, `redo`, `resolve`) queda fuera y se rechaza con `UNKNOWN_OPERATION`.
 
-Los 23 tipos se reparten así: `project.create`, `project.rename` y `view.create` en **T4b**; los 14 de
-clasificador, atributo, operación, parámetro y restricción en **T3a**, más `classifier.delete` en **T3b**; y los
-5 de relación y geometría en **T4a**. Ninguno queda sin tarea.
+Los 24 tipos se reparten así: `project.create`, `project.rename` y `view.create` en **T4b**; los 14 de
+clasificador, atributo, operación, parámetro y restricción en **T3a**; `classifier.setNamespace` en la tarea **T4
+(Paquetes)** de `completitud-editor.md`; `classifier.delete` en **T3b**; y los 5 de relación y geometría en
+**T4a**. Ninguno queda sin tarea.
 
 ## 7. Compromiso de proporción
 

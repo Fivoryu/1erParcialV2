@@ -105,7 +105,7 @@ describe('UML class node presentation', () => {
     const interfaceMarkup = renderClassifier(modelFixture.classifiers[1]!);
 
     expect(markup).toContain('Account');
-    expect(markup).toContain('<i><span class="uml-editable-label" title="Double-click to edit">Account</span></i>');
+    expect(markup).toContain('<i><span aria-label="Edit class name" class="uml-editable-label" title="Double-click to edit">Account</span></i>');
     expect(markup).toContain('- email: String = &#x27;guest@example.test&#x27;');
     expect(markup).not.toContain('String [1]');
     expect(markup).not.toContain('[1]');

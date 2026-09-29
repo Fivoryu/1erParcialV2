@@ -8,6 +8,7 @@ import type {
   RelationshipResource,
 } from '../api/types';
 import {
+  buildClassifierSetNamespaceRequest,
   buildParameterAddRequest,
   buildParameterRemoveRequest,
   buildParameterUpdateRequest,
@@ -50,6 +51,37 @@ const NAVIGABILITY_OPTIONS = [
   { value: 'NOT_NAVIGABLE', label: 'Not navigable' },
 ] as const;
 
+function hasAncestor(model: ModelResource, classifierId: string, ancestorId: string): boolean {
+  const classifiersById = new Map(model.classifiers.map((classifier) => [classifier.id, classifier]));
+  const visited = new Set<string>();
+  let current = classifiersById.get(classifierId);
+  while (current) {
+    if (current.id === ancestorId) {
+      return true;
+    }
+    if (visited.has(current.id) || !current.namespaceId) {
+      return false;
+    }
+    visited.add(current.id);
+    current = classifiersById.get(current.namespaceId);
+  }
+  return false;
+}
+
+export function availableNamespacePackages(model: ModelResource, classifierId: string): ClassifierResource[] {
+  return model.classifiers.filter((candidate) => candidate.kind === 'PACKAGE'
+    && candidate.id !== classifierId
+    && !hasAncestor(model, candidate.id, classifierId));
+}
+
+export function dispatchPackageSelection(
+  onCommand: PropertiesPanelProps['onCommand'],
+  classifierId: string,
+  selectedNamespaceId: string,
+): void {
+  onCommand(buildClassifierSetNamespaceRequest(classifierId, selectedNamespaceId || null));
+}
+
 function typeReference(model: ModelResource, name: string): TypeReferenceInput {
   const classifier = model.classifiers.find((candidate) => candidate.name === name.trim());
   return classifier
@@ -63,17 +95,24 @@ function nextOrdinal(items: Array<{ ordinal: number }>): number {
 
 function ClassifierProperties({
   classifier,
+  model,
   onCommand,
   onDelete,
   onSelect,
 }: {
   classifier: ClassifierResource;
+  model: ModelResource;
   onCommand: PropertiesPanelProps['onCommand'];
   onDelete: () => void;
   onSelect: (selection: CanvasSelection) => void;
 }) {
   const [constraintExpression, setConstraintExpression] = useState('');
   const canBeAbstract = classifier.kind === 'CLASS' || classifier.kind === 'ABSTRACT_CLASS';
+  const isPackage = classifier.kind === 'PACKAGE';
+  const namespacePackages = availableNamespacePackages(model, classifier.id);
+  const namespaceValue = namespacePackages.some((candidate) => candidate.id === classifier.namespaceId)
+    ? classifier.namespaceId ?? ''
+    : '';
 
   useEffect(() => setConstraintExpression(''), [classifier.id]);
 
@@ -142,10 +181,26 @@ function ClassifierProperties({
     <>
       <section className="property-section" aria-labelledby="classifier-properties-title">
         <div className="property-section-heading">
-          <h3 id="classifier-properties-title">Class</h3>
-          <button className="text-button danger-button" onClick={onDelete} type="button">Delete class</button>
+          <h3 id="classifier-properties-title">{isPackage ? 'Package' : 'Class'}</h3>
+          <button className="text-button danger-button" onClick={onDelete} type="button">
+            Delete {isPackage ? 'package' : 'class'}
+          </button>
         </div>
-        <p className="property-summary">{classifier.kind === 'INTERFACE' ? 'Interface' : classifier.isAbstract ? 'Abstract class' : 'Class'}</p>
+        <p className="property-summary">
+          {isPackage ? 'Package' : classifier.kind === 'INTERFACE' ? 'Interface' : classifier.isAbstract ? 'Abstract class' : 'Class'}
+        </p>
+        <label className="field-label" htmlFor="classifier-package">Package</label>
+        <select
+          className="classifier-package-select"
+          id="classifier-package"
+          onChange={(event) => dispatchPackageSelection(onCommand, classifier.id, event.target.value)}
+          value={namespaceValue}
+        >
+          <option value="">None</option>
+          {namespacePackages.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+          ))}
+        </select>
         {canBeAbstract && (
           <label className="property-check">
             <input
@@ -160,46 +215,50 @@ function ClassifierProperties({
             <span>Abstract class</span>
           </label>
         )}
-        <div className="property-actions">
-          <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Add attribute</button>
-          <button className="button button-secondary button-compact" onClick={addOperation} type="button">Add operation</button>
-        </div>
+        {!isPackage && (
+          <div className="property-actions">
+            <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Add attribute</button>
+            <button className="button button-secondary button-compact" onClick={addOperation} type="button">Add operation</button>
+          </div>
+        )}
       </section>
 
-      <section className="property-section" aria-labelledby="constraints-title">
-        <h3 id="constraints-title">Constraints</h3>
-        {classifier.constraints.length > 0 ? (
-          <ul className="property-constraint-list">
-            {classifier.constraints.map((constraint) => (
-              <li key={constraint.id}>
-                <span>{`{${constraint.expression}}`}</span>
-                <button
-                  aria-label="Delete constraint"
-                  className="icon-button danger-button"
-                  onClick={() => onCommand({
-                    type: 'constraint.remove',
-                    targets: [{ scope: 'constraint', id: constraint.id }],
-                    payload: {},
-                  })}
-                  type="button"
-                >×</button>
-              </li>
-            ))}
-          </ul>
-        ) : <p className="property-hint">No constraints yet.</p>}
-        <form className="property-inline-form" onSubmit={addConstraint}>
-          <label className="field-label" htmlFor="constraint-expression">Expression</label>
-          <input
-            id="constraint-expression"
-            onChange={(event) => setConstraintExpression(event.target.value)}
-            placeholder="e.g. balance >= 0"
-            value={constraintExpression}
-          />
-          <button className="button button-secondary button-compact" disabled={!constraintExpression.trim()} type="submit">
-            Add constraint
-          </button>
-        </form>
-      </section>
+      {!isPackage && (
+        <section className="property-section" aria-labelledby="constraints-title">
+          <h3 id="constraints-title">Constraints</h3>
+          {classifier.constraints.length > 0 ? (
+            <ul className="property-constraint-list">
+              {classifier.constraints.map((constraint) => (
+                <li key={constraint.id}>
+                  <span>{`{${constraint.expression}}`}</span>
+                  <button
+                    aria-label="Delete constraint"
+                    className="icon-button danger-button"
+                    onClick={() => onCommand({
+                      type: 'constraint.remove',
+                      targets: [{ scope: 'constraint', id: constraint.id }],
+                      payload: {},
+                    })}
+                    type="button"
+                  >×</button>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="property-hint">No constraints yet.</p>}
+          <form className="property-inline-form" onSubmit={addConstraint}>
+            <label className="field-label" htmlFor="constraint-expression">Expression</label>
+            <input
+              id="constraint-expression"
+              onChange={(event) => setConstraintExpression(event.target.value)}
+              placeholder="e.g. balance >= 0"
+              value={constraintExpression}
+            />
+            <button className="button button-secondary button-compact" disabled={!constraintExpression.trim()} type="submit">
+              Add constraint
+            </button>
+          </form>
+        </section>
+      )}
     </>
   );
 }
@@ -648,6 +707,7 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
         <h2 id="properties-title">Properties</h2>
         <ClassifierProperties
           classifier={classifier}
+          model={model}
           onCommand={onCommand}
           onDelete={() => onDelete(selection)}
           onSelect={onSelect}

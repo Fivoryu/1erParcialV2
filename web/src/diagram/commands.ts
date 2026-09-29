@@ -11,7 +11,7 @@ import type {
   RelationshipResource,
 } from '../api/types';
 
-export type ClassifierKind = 'CLASS' | 'ABSTRACT_CLASS' | 'INTERFACE';
+export type ClassifierKind = 'CLASS' | 'ABSTRACT_CLASS' | 'INTERFACE' | 'PACKAGE';
 export type RelationshipKind =
   | 'ASSOCIATION'
   | 'AGGREGATION'
@@ -73,7 +73,10 @@ export function buildParameterRemoveRequest(parameterId: string): ModelCommandRe
 }
 
 function nextClassifierName(model: ModelResource, kind: ClassifierKind): string {
-  const prefix = kind === 'ABSTRACT_CLASS' ? 'Abstract class' : kind === 'INTERFACE' ? 'Interface' : 'Class';
+  const prefix = kind === 'ABSTRACT_CLASS' ? 'Abstract class'
+    : kind === 'INTERFACE' ? 'Interface'
+      : kind === 'PACKAGE' ? 'Package'
+        : 'Class';
   const existingNames = new Set(model.classifiers.map((classifier) => classifier.name));
   let index = model.classifiers.length + 1;
   let candidate = `${prefix} ${index}`;
@@ -82,6 +85,14 @@ function nextClassifierName(model: ModelResource, kind: ClassifierKind): string 
     candidate = `${prefix} ${index}`;
   }
   return candidate;
+}
+
+export function buildClassifierSetNamespaceRequest(classifierId: string, namespaceId: string | null): ModelCommandRequest {
+  return {
+    type: 'classifier.setNamespace',
+    targets: [{ scope: 'classifier', id: classifierId }],
+    payload: { namespaceId },
+  };
 }
 
 export function buildClassifierCreateEnvelope(
@@ -486,6 +497,16 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         isAbstract,
         kind: isAbstract ? 'ABSTRACT_CLASS' : classifier.kind === 'ABSTRACT_CLASS' ? 'CLASS' : classifier.kind,
       }));
+    }
+    case 'classifier.setNamespace': {
+      if (!classifierId || !Object.hasOwn(envelope.payload, 'namespaceId')) {
+        return model;
+      }
+      const namespaceId = envelope.payload.namespaceId;
+      if (namespaceId !== null && typeof namespaceId !== 'string') {
+        return model;
+      }
+      return updateClassifier(model, classifierId, (classifier) => ({ ...classifier, namespaceId }));
     }
     case 'attribute.add':
       return classifierId ? addAttribute(model, envelope, classifierId) : model;

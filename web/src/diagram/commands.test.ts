@@ -56,4 +56,31 @@ describe('palette classifier command', () => {
     expect(request.payload.kind).toBe('CLASS');
     expect(request.payload.id).not.toBe(envelope.operationId);
   });
+
+  it('sends a package create command with its client-generated id', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      operationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccd',
+      status: 'ACCEPTED',
+      resultRevision: 13,
+      diagnostics: [],
+      authorizationClassification: 'AUTHORIZED_ONLINE',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const api = createApiClient('https://diagram.test', fetcher);
+    const envelope = buildClassifierCreateEnvelope(model, 'PACKAGE', sequenceUuidFactory(
+      'cccccccc-cccc-4ccc-8ccc-ccccccccccce',
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    ));
+
+    const outcome = await api.executeCommand(model.projectId, envelope);
+
+    expect(outcome.kind).toBe('accepted');
+    const request = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as {
+      type: string;
+      payload: { id: string; kind: string; namespaceId: string | null };
+    };
+    expect(request.type).toBe('classifier.create');
+    expect(request.payload).toEqual({ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Package 1', kind: 'PACKAGE', namespaceId: null });
+    expect(request.payload.id).not.toBe(envelope.operationId);
+  });
 });

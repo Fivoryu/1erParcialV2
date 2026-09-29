@@ -39,7 +39,7 @@ relaciones con su marcador), `BL-CMP-05` (disposición separada de la semántica
 | **B1** | `BL-FEA-03` — Parámetro | **No se pueden crear ni editar parámetros desde la interfaz.** El panel de operación expone retorno, visibilidad y banderas, pero ningún control de parámetros, y la selección no tiene un tipo `parameter`. Una firma existente se dibuja; no se puede escribir una nueva | `PropertiesPanel.tsx:405-471`, `selection.ts:1-6`, `ModelResource.java:89-103` |
 | **B2** | `BL-REL-08`, `BL-REL-10` — Rol y multiplicidad de extremo | **El rótulo se calcula y después se descarta si no encuentra una ubicación segura.** La arista queda visible pero el extremo pierde su información: en el diagrama de demostración se lee `customer` y **no** su multiplicidad ni el nombre de la asociación | `UmlRelationshipEdge.tsx:166-189,518-533` |
 | **B3** | `BL-REL-01` (y las demás) — Descubribilidad | **Los ocho anclajes tienen `opacity: 0`** y solo aparecen con hover, selección o foco. No hay herramienta de relación en la barra: la única forma de asociar dos clases es descubrir por accidente que hay anclajes invisibles | `styles.css:883-895`, `UmlClassNode.tsx:231-249`, `UmlCanvas.tsx:326-340` |
-| **B4** | `BL-CLS-06` — Paquete | No hay control para crear un paquete ni para asignar `namespaceId`, y un paquete cargado se dibuja como una tarjeta genérica, sin notación de paquete | `commands.ts:13`, `UmlCanvas.tsx:326-333`, `UmlClassNode.tsx:119-142` |
+| **B4** | `BL-CLS-06` — Paquete | **Implementado en T4; captura visual live pendiente:** la paleta crea paquetes, el panel permite asignar o quitar su espacio de nombres con validación contra ciclos, y el lienzo muestra notación de carpeta | `ClassifierSetNamespaceHandler.java`, `UmlCanvas.tsx`, `PropertiesPanel.tsx`, `UmlClassNode.tsx`; pruebas backend y web; script extendido |
 | **B5** | `BL-CMP-02` — Restricción | Solo se admiten restricciones **de clasificador**; la severidad queda fija en `ERROR`, no se muestra en el lienzo y una restricción existente no se puede editar | `ConstraintAddHandler.java:41-46`, `PropertiesPanel.tsx:113-127,166-195`, `UmlClassNode.tsx:195-212` |
 | **B6** | `BL-REL-09` — Navegabilidad | Existe el control, pero en las relaciones que no son asociación el marcador se elige **por tipo** y no refleja el valor editado: cambiar la navegabilidad de una dependencia no cambia nada | `PropertiesPanel.tsx:269-292`, `UmlRelationshipEdge.tsx:321-337` |
 | **B7** | `BL-FEA-01`…`BL-FEA-04` — Filas de miembro | El texto de miembro usa `ellipsis`, así que tipo, parámetros, retorno o valor predeterminado pueden quedar cortados. El valor predeterminado va al final de la fila, justo donde corta | `styles.css:833-837`, `uml-format.ts:64-82` |
@@ -64,7 +64,7 @@ relaciones con su marcador), `BL-CMP-05` (disposición separada de la semántica
 | --- | --- |
 | `parameter.update` | Hay `parameter.add` y `parameter.remove`; sin `update`, corregir el tipo de un parámetro obliga a borrarlo y recrearlo |
 | `constraint.update` | Expresión y severidad solo se envían al crear |
-| Cambiar el `namespaceId` de un clasificador ya creado | `classifier.create` lo acepta; los de actualización no, así que mover una clase de paquete es imposible |
+| Cambiar el `namespaceId` de un clasificador ya creado | **Resuelto en T4:** `classifier.setNamespace` valida paquetes del mismo modelo, auto-namespace y ciclos; la paleta permite asignar o limpiar el paquete |
 | Reasignar el clasificador de un extremo | `relationship.update` acepta rol, multiplicidad y navegabilidad, pero no `classifierId` |
 | Restricción con dueño relación | La línea base admite ese dueño y el modelo no tiene camino para él |
 
@@ -106,7 +106,7 @@ Ordenadas por impacto sobre alguien que quiere dibujar un diagrama de clases.
 - **Objetivo:** que el paquete sea un constructo usable, no una fila de la base.
 - **Entregable:** alta de paquete desde la paleta, asignación de `namespaceId` a un clasificador, y notación de
   paquete en el lienzo.
-- **Depende de:** decidir si el paquete se dibuja como contenedor o como nodo con notación de carpeta.
+- **Decisión cerrada:** el paquete se dibuja como un nodo con notación de carpeta. La contención geométrica no está implementada: los miembros conservan posiciones independientes en el lienzo y el namespace es semántico.
 
 ### T5 — Restricciones y navegabilidad (B5, B6)
 
@@ -135,6 +135,6 @@ Ordenadas por impacto sobre alguien que quiere dibujar un diagrama de clases.
 | T1 — Rol y multiplicidad siempre visibles | **hecho** | La colocación en el trazado sigue siendo el primer intento; si no hay punto seguro, la etiqueta se **desplaza perpendicularmente** en pasos de 8 px, probando ambos sentidos, hasta que su caja estimada libre los dos rectángulos y las etiquetas ya colocadas. Verificado en el diagrama: se leen `places`, `customer` y **`orders [0..*]`**. **Intercambio declarado:** esa última queda debajo de la caja, visible pero menos pegada a su extremo. Visible y algo ambiguo es mejor que invisible |
 | T2 — Anclajes descubribles | **hecho** | En reposo los ocho anclajes se ven como puntos de 8 px a `opacity: 0.62`, y pasan a 11 px y opacidad plena con hover, selección o foco; además son alcanzables por teclado. La barra dice **«Drag from one class dot to another to connect them.»** Verificado en la captura |
 | T3 — Parámetros en la interfaz | pendiente | — |
-| T4 — Paquetes | pendiente | — |
+| T4 — Paquetes | **implementación hecha; captura live pendiente** | `classifier.setNamespace` con 5 pruebas backend; selector/paleta/notación con pruebas web; `capture-editor.mjs` exige estados reales; falta ejecutar con un editor live que contenga Customer, una relación, una operación y un paquete |
 | T5 — Restricciones y navegabilidad | pendiente | — |
 | T6 — Filas sin truncar | pendiente | — |
