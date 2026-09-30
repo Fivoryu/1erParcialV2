@@ -2,9 +2,16 @@ import type {
   ApiErrorResource,
   CommandOutcome,
   CommandResult,
+  CreateGenerationRequest,
+  CreateGenerationTargetRequest,
   CreateProjectRequest,
+  GenerationArchiveDownload,
+  GenerationProfileResource,
+  GenerationRunResource,
+  GenerationTargetResource,
   ModelResource,
   OperationEnvelope,
+  OperationOutcomeResource,
   ProjectResource,
   Uuid,
 } from './types';
@@ -76,6 +83,24 @@ export interface ApiClient {
   getProject(projectId: Uuid): Promise<ProjectResource>;
   getModel(projectId: Uuid): Promise<ModelResource>;
   executeCommand(projectId: Uuid, envelope: OperationEnvelope): Promise<CommandOutcome>;
+  listGenerationTargets(projectId: Uuid): Promise<GenerationTargetResource[]>;
+  createGenerationTarget(
+    projectId: Uuid,
+    request: CreateGenerationTargetRequest,
+  ): Promise<OperationOutcomeResource<GenerationTargetResource>>;
+  listGenerationProfiles(projectId: Uuid): Promise<GenerationProfileResource[]>;
+  startGeneration(
+    projectId: Uuid,
+    request: CreateGenerationRequest,
+  ): Promise<OperationOutcomeResource<GenerationRunResource>>;
+  getGeneration(projectId: Uuid, runId: Uuid): Promise<OperationOutcomeResource<GenerationRunResource>>;
+  downloadGenerationArchive(projectId: Uuid, runId: Uuid): Promise<GenerationArchiveDownload>;
+}
+
+function archiveFilename(response: Response, fallback: string): string {
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  return match?.[1] ?? fallback;
 }
 
 export function createApiClient(
@@ -115,6 +140,41 @@ export function createApiClient(
     });
   }
 
+  async function requestArchive(projectId: Uuid, runId: Uuid): Promise<GenerationArchiveDownload> {
+    const path = `/projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(runId)}/artifacts`;
+    let response: Response;
+    try {
+      response = await fetcher(`${base}${path}`, { method: 'GET' });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
+      throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
+    }
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw transportErrorFromBody(body, response.status);
+    }
+
+    const contentType = response.headers.get('Content-Type') ?? '';
+    if (contentType.includes('application/zip')) {
+      return {
+        kind: 'archive',
+        filename: archiveFilename(response, `generation-${runId}.zip`),
+        blob: await response.blob(),
+      };
+    }
+
+    const body = (await response.json().catch(() => null)) as Partial<OperationOutcomeResource<unknown>> | null;
+    if (body && typeof body.code === 'string' && typeof body.message === 'string') {
+      return { kind: 'rejected', code: body.code, message: body.message };
+    }
+    return {
+      kind: 'rejected',
+      code: 'RUN_NOT_COMPLETE',
+      message: 'That generation run has no downloadable archive yet.',
+    };
+  }
+
   return {
     createProject(request) {
       return postJson<ProjectResource>('/projects', request);
@@ -134,6 +194,36 @@ export function createApiClient(
         envelope,
       );
       return classifyCommandResult(result);
+    },
+    listGenerationTargets(projectId) {
+      return requestJson<GenerationTargetResource[]>(
+        `/projects/${encodeURIComponent(projectId)}/generation-targets`,
+      );
+    },
+    createGenerationTarget(projectId, request) {
+      return postJson<OperationOutcomeResource<GenerationTargetResource>>(
+        `/projects/${encodeURIComponent(projectId)}/generation-targets`,
+        request,
+      );
+    },
+    listGenerationProfiles(projectId) {
+      return requestJson<GenerationProfileResource[]>(
+        `/projects/${encodeURIComponent(projectId)}/generation-profiles`,
+      );
+    },
+    startGeneration(projectId, request) {
+      return postJson<OperationOutcomeResource<GenerationRunResource>>(
+        `/projects/${encodeURIComponent(projectId)}/generations`,
+        request,
+      );
+    },
+    getGeneration(projectId, runId) {
+      return requestJson<OperationOutcomeResource<GenerationRunResource>>(
+        `/projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(runId)}`,
+      );
+    },
+    downloadGenerationArchive(projectId, runId) {
+      return requestArchive(projectId, runId);
     },
   };
 }

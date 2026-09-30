@@ -23,6 +23,7 @@ const model: ModelResource = {
   id: '11111111-1111-4111-8111-111111111111',
   projectId: '22222222-2222-4222-8222-222222222222',
   revision: 8,
+  versionId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
   views: [],
   classifiers: [
     {

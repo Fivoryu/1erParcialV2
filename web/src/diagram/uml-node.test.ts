@@ -64,6 +64,7 @@ const modelFixture: ModelResource = {
   id: '88888888-8888-4888-8888-888888888888',
   projectId: '99999999-9999-4999-8999-999999999999',
   revision: 7,
+  versionId: '12121212-1212-4212-8212-121212121212',
   views: [{
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     name: 'Class diagram',

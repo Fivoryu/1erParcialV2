@@ -4,6 +4,7 @@ import { ApiTransportError, createApiClient } from '../api/client';
 import type { ModelResource, OperationEnvelope, ProjectResource } from '../api/types';
 import UmlCanvas from '../diagram/UmlCanvas';
 import PropertiesPanel from '../diagram/PropertiesPanel';
+import GenerationPanel from '../generation/GenerationPanel';
 import {
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
@@ -299,6 +300,13 @@ export default function ProjectEditorPage() {
                 onSelect={setSelection}
               />
             </div>
+
+            <GenerationPanel
+              projectId={project.id}
+              modelId={model.id}
+              versionId={model.versionId}
+              modelRevision={model.revision}
+            />
           </>
         ) : null}
       </div>

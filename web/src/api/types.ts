@@ -22,6 +22,7 @@ export interface ModelResource {
   id: Uuid;
   projectId: Uuid;
   revision: number;
+  versionId: Uuid;
   views: ViewResource[];
   classifiers: ClassifierResource[];
   relationships: RelationshipResource[];
@@ -201,3 +202,116 @@ export type CommandOutcome =
   | { kind: 'rejected'; result: CommandResult; diagnostics: CommandDiagnostic[] }
   | { kind: 'conflict'; result: CommandResult }
   | { kind: 'deferred'; result: CommandResult };
+
+export type GenerationOutcome = 'ACCEPTED' | 'REJECTED';
+export type GenerationState = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+export type GenerationSeverity = 'INFO' | 'WARNING' | 'ERROR';
+export type VerificationState = 'PASSED' | 'FAILED' | 'NOT_RUN';
+
+/** A stable diagnostic produced while mapping a frozen generation snapshot. */
+export interface GenerationDiagnosticResource {
+  code: string;
+  severity: GenerationSeverity;
+  elementId: Uuid | null;
+  feature: string;
+  message: string;
+  blocking: boolean;
+}
+
+export interface GenerationTargetResource {
+  targetId: Uuid;
+  modelId: Uuid;
+  targetKey: string;
+  name: string;
+  databaseEngine: string | null;
+  databaseName: string;
+  databaseSchema: string | null;
+  connectionConfigRef: string | null;
+  configurationRevision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GenerationProfileResource {
+  profileId: Uuid;
+  profileKey: string;
+  name: string;
+  profileRevision: number;
+  templateId: Uuid;
+  templateRevision: number;
+}
+
+/** The destination metadata a client may author. Secrets never travel here. */
+export interface CreateGenerationTargetRequest {
+  targetKey: string;
+  name: string;
+  databaseEngine: string;
+  databaseName: string;
+  databaseSchema: string | null;
+  connectionConfigRef: string | null;
+}
+
+/** The exact identities a generation run freezes. No default hides one. */
+export interface CreateGenerationRequest {
+  modelId: Uuid;
+  versionId: Uuid;
+  targetId: Uuid;
+  profileId: Uuid;
+  templateId: Uuid;
+  idempotencyKey: string;
+}
+
+export interface VerificationCheckResource {
+  verificationId: Uuid;
+  checkName: string;
+  state: VerificationState;
+  evidence: string;
+  evidenceHash: string;
+  toolName: string;
+}
+
+/** What per-run verification recorded, including the checks it did not run. */
+export interface VerificationSummaryResource {
+  runId: Uuid;
+  generationState: GenerationState;
+  status: VerificationState;
+  verifiedBackend: boolean;
+  checks: VerificationCheckResource[];
+}
+
+export interface GenerationRunResource {
+  runId: Uuid;
+  modelId: Uuid;
+  versionId: Uuid;
+  modelRevision: number;
+  targetId: Uuid;
+  targetKey: string;
+  targetConfigRevision: number;
+  profileId: Uuid;
+  profileKey: string;
+  profileRevision: number;
+  templateId: Uuid;
+  templateRevision: number;
+  state: GenerationState;
+  inputSnapshotHash: string | null;
+  artifactSetHash: string | null;
+  artifactZipHash: string | null;
+  artifactZipUri: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  diagnostics: GenerationDiagnosticResource[];
+  verification: VerificationSummaryResource | null;
+}
+
+/** The uniform operation envelope the generation endpoints answer with. */
+export interface OperationOutcomeResource<TResult> {
+  outcome: GenerationOutcome;
+  code: string;
+  message: string;
+  idempotencyKey: string | null;
+  result: TResult | null;
+}
+
+export type GenerationArchiveDownload =
+  | { kind: 'archive'; filename: string; blob: Blob }
+  | { kind: 'rejected'; code: string; message: string };

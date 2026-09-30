@@ -30,6 +30,7 @@ const model: ModelResource = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   revision: 4,
+  versionId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
   views: [],
   classifiers: [rootPackage, childPackage, nestedPackage, availablePackage],
   relationships: [],

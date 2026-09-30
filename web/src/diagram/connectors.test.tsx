@@ -69,6 +69,7 @@ const model: ModelResource = {
   id: '77777777-7777-4777-8777-777777777777',
   projectId: '88888888-8888-4888-8888-888888888888',
   revision: 5,
+  versionId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   views: [{
     id: viewId,
     name: 'Class diagram',

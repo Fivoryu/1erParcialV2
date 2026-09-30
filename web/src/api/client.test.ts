@@ -4,7 +4,9 @@ import { ApiTransportError, createApiClient } from './client';
 import type { ModelResource, OperationEnvelope } from './types';
 import recordedModelFixture from './fixtures/model-response.json';
 
-// Captured verbatim from GET /projects/{id}/model during this task's live acceptance run.
+// Captured from GET /projects/{id}/model during the Increment 1 acceptance run. The `versionId`
+// field was added to this recording when T9 made the frozen version identity discoverable by clients;
+// no other field was touched.
 const recordedModel: ModelResource = recordedModelFixture;
 const projectId = '22222222-2222-4222-8222-222222222222';
 const modelId = '33333333-3333-4333-8333-333333333333';
@@ -154,6 +156,7 @@ describe('typed API client', () => {
 
   it('keeps the recorded live model response aligned with the resource types', () => {
     expect(recordedModel.projectId).toBe('b475cd3a-a203-4230-947a-1d42cd878ea2');
+    expect(recordedModel.versionId).toBe('9f2b7c41-6d0a-4c2e-9d3b-4a1f5e7c8b90');
     expect(recordedModel.views[0]?.is_default).toBe(true);
     expect(recordedModel.views[0]?.element_geometry).toHaveLength(2);
     expect(recordedModel.views[0]?.connector_path).toHaveLength(2);

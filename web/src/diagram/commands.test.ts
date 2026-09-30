@@ -7,6 +7,7 @@ const model: ModelResource = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   revision: 12,
+  versionId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
   views: [],
   classifiers: [],
   relationships: [],
