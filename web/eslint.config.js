@@ -23,4 +23,13 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    // The capture scripts run under Node and drive Chrome through puppeteer-core. Their module scope is
+    // Node, and the callbacks handed to `page.evaluate` execute in the browser page, so both global sets
+    // are legitimately in play in the same file.
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
 );
