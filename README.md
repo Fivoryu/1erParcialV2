@@ -7,35 +7,40 @@ backend Spring Boot conectado a PostgreSQL.
 
 ## Estado actual
 
-El repositorio **ya contiene código de producto**. El Incremento 1 está implementado y verificado: se puede
-crear un proyecto, dibujar un diagrama de clases en un lienzo, editarlo y recargar sin perder ni el modelo ni
-su disposición visual.
+El repositorio **ya contiene código de producto**. Los Incrementos 1 y 2 están implementados y verificados: se
+puede crear un proyecto, dibujar un diagrama de clases en un lienzo, editarlo y recargar sin perder ni el modelo
+ni su disposición visual, y **generar desde el editor un backend Spring Boot** que se descarga como ZIP, compila
+sin red y se levanta con su propia base PostgreSQL.
 
 | Fase | Estado |
 | --- | --- |
 | Documentación de requisitos, análisis y diseño | Heredada y disponible en `docs/` |
 | Incremento 0 — contrato y pruebas de riesgo | **Cerrado** (`odd/tasks/incremento-0-contrato-y-riesgos.md`) |
-| Incremento 1 — modelo y editor visual | **Cerrado** — [acta](docs/puds/cierre/03-cierre-incremento-1.md), con dos defectos visuales abiertos |
-| Incrementos 2 y siguientes (generación, colaboración, XMI, IA, móvil) | Pendientes |
+| Incremento 1 — modelo y editor visual | **Cerrado** — [acta](docs/puds/cierre/03-cierre-incremento-1.md). Los tres defectos de presentación que su §3 nombra están **corregidos** |
+| Incremento 2 — generación, exportación y despliegue | **Cerrado, con límites declarados** — [acta](docs/puds/cierre/04-cierre-incremento-2.md) |
+| Incrementos 3 y siguientes (colaboración, XMI, IA, móvil) | Pendientes |
 
 ### Qué está verificado hoy
 
 | Superficie | Evidencia |
 | --- | --- |
-| Backend | `mvn -o -B verify` = **82 pruebas**, 0 fallos, sin red |
-| Arnés de aceptación | `python tools/acceptance/acceptance.py` = **34 pasos OK**, 0 fallos, con teardown verificado |
-| Editor web | `npm run build` y `npm test` = **24 pruebas**, 0 saltadas, incluidos los dos tests vivos contra el backend real |
-| Corte visible | Crear proyecto, dos clases, atributo, operación, relación, mover, recargar y encontrar lo mismo **con la misma disposición** |
-| Regla de presentación | El HTML renderizado no contiene ningún UUID ni identificador técnico; probado sobre datos vivos |
+| Backend | `mvn -o -B verify` = **179 pruebas**, 0 fallos, sin red |
+| Arnés del corte visible | `python tools/acceptance/acceptance.py` = **30 pasos OK**, 0 fallos, con teardown verificado |
+| Arnés de generación y despliegue | `python tools/generation-acceptance/acceptance_generation.py` = **66 aserciones**, 0 fallos, con teardown verificado |
+| Editor web | `npm run lint` = 0 errores, `npm test` = **71 pruebas**, 0 fallos, `npm run build` en verde |
+| Corte visible del Incremento 1 | Crear proyecto, dos clases, atributo, operación, relación, mover, recargar y encontrar lo mismo **con la misma disposición** |
+| Corte visible del Incremento 2 | Elegir destino, generar, ver el estado y los diagnósticos, descargar el ZIP, compilarlo offline, levantarlo con su base, `health` `UP` y CRUD con la foránea resuelta; **dos destinos a la vez sin pisarse** |
+| Determinismo | Dos generaciones del mismo estado dan el mismo `artifactSetHash`; dos destinos dan dos archivos distintos |
+| Regla de presentación | El HTML renderizado no contiene ningún UUID ni identificador técnico; comprobado sobre `web/src/**` y sobre el render vivo |
 
-**Evidencia visual:** la captura del lienzo está en `docs/capturas/incremento-1/` y se reproduce con
-`python tools/acceptance/seed_demo_diagram.py` más un `npm run build` apuntando al backend. La regla de no-IDs se
-confirma ahí a ojo: no hay un solo UUID en pantalla.
+**Evidencia visual:** las capturas del lienzo están en `docs/capturas/incremento-1/` y las del Incremento 2 en
+`docs/capturas/incremento-2/`, junto con las transcripciones de la corrida de Postman y del arnés de generación.
 
-**Dos defectos de presentación quedan abiertos y nombrados:** las etiquetas de los extremos de una asociación se
-superponen a las cajas cuando el tramo es corto, y el triángulo de `INTERFACE_REALIZATION` se dibuja despegado de
-su línea. Están en el [acta de cierre](docs/puds/cierre/03-cierre-incremento-1.md) §3 con su causa, y son lo
-primero a arreglar antes de mostrar el producto.
+**Ojo con los límites:** el Incremento 2 cierra con **siete puntos abiertos** y con **lo que no se verificó**
+declarado en el [acta](docs/puds/cierre/04-cierre-incremento-2.md) §5 y §7. Los tres que más importan: la subida
+de la imagen a un registro no la completa el emulador local, no se verificó ningún despliegue fuera de esta
+máquina, y el backend generado **no tiene capa de seguridad** porque `spring-boot-starter-security` no está
+disponible para la versión 3.4.5 en la caché local.
 
 > **Importante:** `SOFTWARE.md` describe el **intento anterior** del mismo producto. Se conserva como evidencia y
 > como referencia de requisitos, pero **no describe el código de este repositorio**. Cualquier afirmación de
@@ -53,6 +58,44 @@ python tools/acceptance/acceptance.py
 El arnés levanta PostgreSQL y el backend, ejecuta el corte visible por HTTP, compara el modelo releído campo a
 campo y termina verificando que no quedó ni un contenedor ni un proceso vivo. Sale con código distinto de cero
 en el primer fallo.
+
+### Generación y despliegue, sin interfaz
+
+```bash
+cd backend && mvn -o -B package                      # jar del diagramador
+python tools/acceptance/acceptance.py --keep-running # imprime la URL base del diagramador
+python tools/generation-acceptance/acceptance_generation.py --base-url <esa URL>
+```
+
+El segundo arnés crea un modelo por HTTP, genera **dos destinos independientes**, baja cada ZIP, comprueba que su
+SHA-256 sea el `artifactZipHash` que la corrida persistió, compila cada proyecto **sin red**, despliega cada
+destino con su propio proyecto Compose y su propia PostgreSQL, espera `health` `UP`, hace el CRUD de los dos
+recursos con la clave foránea resuelta, y limpia **verificando** que el conteo de contenedores volvió a su valor
+inicial. Con `--keep-running` deja los destinos arriba e imprime su comando `--stop`; así la colección de Postman
+de `tools/postman/` corre contra un backend ya desplegado.
+
+### Generar y levantar un backend desde el editor
+
+```bash
+python tools/acceptance/acceptance.py --keep-running   # URL base del diagramador
+cd web && npm install && npm run dev                   # http://localhost:5173
+```
+
+En el editor, el panel **Generation** lista los destinos del modelo, permite crear uno nuevo y lanza la
+generación con el perfil publicado. Cuando la corrida termina, el botón de descarga baja el ZIP. El ZIP trae su
+propio `docker-compose.yml` y un `.env.example` sin secretos, así que el backend generado se levanta solo:
+
+```bash
+unzip generated-<destino>.zip -d mi-backend && cd mi-backend
+mvn -o -B package            # desde la caché local, sin red; deja el jar en target/
+cp .env.example .env         # y completar los valores: base, usuario, clave y el par de puertos
+docker compose up -d --build # el Dockerfile copia target/*.jar
+curl http://localhost:19001/actuator/health
+```
+
+Cada destino es su propio proyecto Compose con su propio volumen, así que **dos destinos del mismo modelo corren
+a la vez** mientras su par de puertos difiera. El par sale del convenio `1900N`/`2543N`: `19001`/`25433` para el
+primero, `19002`/`25434` para el segundo.
 
 ### Desarrollo del editor
 
@@ -78,12 +121,13 @@ y `gen_random_uuid()`.
 Este es un **monorepo**. Todo el código fuente se versiona dentro de este mismo repositorio.
 
 ```text
-backend/     Servicio Spring Boot (Java 21) — modelo canónico, comandos, persistencia, API REST
-web/         Editor web (React + TypeScript + Vite) con lienzo UML sobre React Flow
-mobile/      Cliente móvil (Flutter + Dart) — Incremento posterior
+backend/     Servicio Spring Boot (Java 21) — modelo canónico, comandos, persistencia, API REST y generación
+web/         Editor web (React + TypeScript + Vite) con lienzo UML sobre React Flow y panel de generación
+mobile/      Cliente móvil (Flutter + Dart) — todavía no creado: es un incremento posterior
 spikes/      Pruebas de riesgo desechables del Incremento 0; no es código de producto
-tools/       Arnés de verificación y evidencia (pruebas de contrato, inventario XMI, aceptación, bench de IA)
-docs/        Requisitos, análisis, diseño, contratos, fixtures, diagramas y capturas
+tools/       Arneses y evidencia: aceptación del corte visible, generación y despliegue, Postman,
+             pruebas de contrato, inventario XMI y bench de IA
+docs/        Requisitos, análisis, diseño, contratos, generación, cierre, fixtures, diagramas y capturas
 odd/         Planificación de tareas del repositorio
 ```
 
@@ -125,9 +169,11 @@ leen como síntoma, nunca como contrato.
 ## Planificación
 
 El trabajo del repositorio vive en `odd/tasks/`. El incremento vigente es
-[Incremento 1 — modelo y editor visual](odd/tasks/incremento-1-modelo-y-editor.md), ya implementado, que reemplazó
-la etapa de «interfaz mínima» del plan original por un lienzo tipo draw.io y dejó registradas catorce decisiones
-de diseño con la alternativa que cada una descarta.
+[Incremento 2 — generación, exportación y despliegue](odd/tasks/incremento-2-generacion-y-exportacion.md), ya
+implementado y cerrado por su [acta](docs/puds/cierre/04-cierre-incremento-2.md). El anterior,
+[Incremento 1 — modelo y editor visual](odd/tasks/incremento-1-modelo-y-editor.md), reemplazó la etapa de
+«interfaz mínima» del plan original por un lienzo tipo draw.io y dejó registradas catorce decisiones de diseño
+con la alternativa que cada una descarta. El siguiente es el de colaboración.
 
 ## Entorno medido
 

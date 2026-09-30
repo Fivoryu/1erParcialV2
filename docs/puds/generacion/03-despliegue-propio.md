@@ -1,210 +1,217 @@
-# Own deployment of a generated backend, and the AWS/Floci preparation
+# Despliegue propio de un backend generado y preparación AWS/Floci
 
-> Increment 2, task T13. This document records a deployment that was executed, the emulator steps that were
-> run, and the limits that were not verified. Nothing here is projected from intent.
+> Incremento 2, tarea T13. Este documento registra un despliegue **ejecutado**, los pasos de emulador que
+> **se corrieron**, y los límites que **no** se verificaron. Nada de lo que sigue se proyecta desde la
+> intención: cada cifra es un valor observado.
 
-[Design](01-diseno-generador.md) · [Local execution](02-ejecucion-local.md) · [Task plan](../../../odd/tasks/incremento-2-generacion-y-exportacion.md)
+[Diseño](01-diseno-generador.md) · [Ejecución local](02-ejecucion-local.md) · [Plan de tareas](../../../odd/tasks/incremento-2-generacion-y-exportacion.md)
 
-## 1. What this covers
+## 1. Qué cubre
 
-Increment 2 delivers a generated Spring Boot backend as a ZIP. This document covers the step after that: the
-ZIP is unpacked on a machine that is not the diagrammer's, built, and started with **its own** PostgreSQL, and
-two destinations of the same model run **at the same time without interfering**. It also records the AWS
-preparation executed against the local AWS emulator.
+El Incremento 2 entrega un backend Spring Boot generado como ZIP. Este documento cubre el paso siguiente: el ZIP
+se descomprime en una máquina que no es la del diagramador, se compila y se levanta con **su propia** PostgreSQL,
+y dos destinos del mismo modelo corren **a la vez sin interferirse**. También registra la preparación AWS
+ejecutada contra el emulador local.
 
-Two facts define the shape of the artifact:
+Dos hechos definen la forma del artefacto:
 
-- A destination is independent. Its Compose project, its containers, its database and its volume carry its own
-  identity, so two destinations never share state even when their generated content is identical.
-- The generated project carries **no secret**. Every credential enters through the environment of the machine
-  that deploys it.
+- Un destino es independiente. Su proyecto Compose, sus contenedores, su base y su volumen llevan identidad
+  propia, así que dos destinos nunca comparten estado aunque su contenido generado sea idéntico.
+- El proyecto generado **no lleva ningún secreto**. Toda credencial entra por el entorno de la máquina que lo
+  despliega.
 
-## 2. The deployment artifacts inside the ZIP
+## 2. Los artefactos de despliegue dentro del ZIP
 
-The emitter writes three artifacts for deployment, alongside the project source:
+El emisor escribe tres artefactos de despliegue junto al código del proyecto:
 
-| Artifact | Role |
+| Artefacto | Rol |
 | --- | --- |
-| `docker-compose.yml` | The destination's own stack: the application service, its PostgreSQL, the datasource wiring and both healthchecks. |
-| `.env.example` | Every value the destination needs, documented, with no usable secret. The operator copies it to `.env`. |
-| `Dockerfile` | Already present since T6: the runtime base image from the classpath baseline, and the packaged jar. |
+| `docker-compose.yml` | El stack propio del destino: el servicio de la aplicación, su PostgreSQL, el cableado del datasource y los dos healthchecks. |
+| `.env.example` | Todos los valores que el destino necesita, documentados, sin ningún secreto usable. El operador lo copia a `.env`. |
+| `Dockerfile` | Ya existía desde T6: la imagen base del runtime desde la línea base del classpath, y el jar empaquetado. |
 
-Design rules that the emitter enforces, each with a test that fails without it:
+Reglas que el emisor impone y que cada prueba hace fallar si se rompen:
 
-1. **Identity comes from the target key.** The Compose project is `generated-<slug>`, and the same slug names
-   the application service, the database service and the database volume. `<slug>` is the kebab-case form of the
-   target key, the same identity the Maven artifact already uses. Two destinations cannot collide on a service
-   or a volume name, by construction.
-2. **The database image and the runtime base image come from the classpath baseline**
-   (`backend/src/main/resources/baseline.properties`), so a baseline change reaches the destination.
-3. **Ports are the destination's own configuration, not a guess.** The Compose file reads
-   `GENERATED_HTTP_HOST_PORT` and `GENERATED_POSTGRES_HOST_PORT`, defaulting to the first pair of the
-   convention in [02-ejecucion-local.md](02-ejecucion-local.md). The pair lives in the destination's `.env`, so
-   nothing invents a port from an identifier.
-4. **No secret is emitted.** The example file documents the variables; it carries a value that is clearly not
-   usable. The emitted `.gitignore` excludes `.env`, so a real value never reaches version control.
-5. **The Compose file is valid YAML.** It is parsed through a real YAML parser in the suite, not compared
-   against a string. Section 6 explains why that guard exists.
+1. **La identidad viene de la clave del destino.** El proyecto Compose es `generated-<slug>`, y el mismo slug
+   nombra el servicio de la aplicación, el servicio de la base y el volumen de la base. `<slug>` es la forma
+   kebab-case de la clave del destino, la misma identidad que ya usa el artefacto Maven. Por construcción, dos
+   destinos no pueden chocar en un nombre de servicio ni de volumen.
+2. **La imagen de la base y la imagen base del runtime vienen de la línea base del classpath**
+   (`backend/src/main/resources/baseline.properties`), así que un cambio de línea base llega al destino.
+3. **Los puertos son configuración del destino, no una adivinanza.** El Compose lee
+   `GENERATED_HTTP_HOST_PORT` y `GENERATED_POSTGRES_HOST_PORT`, con el primer par del convenio de
+   [02-ejecucion-local.md](02-ejecucion-local.md) como default. El par vive en el `.env` del destino, así que
+   nada inventa un puerto a partir de un identificador.
+4. **No se emite ningún secreto.** El archivo de ejemplo documenta las variables y lleva un valor que
+   claramente no es usable. El `.gitignore` emitido excluye `.env`, así que un valor real nunca llega al control
+   de versiones.
+5. **El archivo Compose es YAML válido.** La suite lo **parsea con un parser YAML real**, no lo compara contra
+   un string. La sección 6 explica por qué ese guardián existe.
 
-The documented order is deliberate: the `Dockerfile` copies `target/*.jar`, so the jar is built first.
+El orden documentado es deliberado: el `Dockerfile` copia `target/*.jar`, así que primero se construye el jar.
 
 ```sh
-mvn -o -B package                     # from the local Maven cache, no network
-cp .env.example .env                  # then set every value
+mvn -o -B package                     # desde la caché local de Maven, sin red
+cp .env.example .env                  # y luego se completa cada valor
 docker compose up -d --build
 curl http://localhost:19001/actuator/health
 ```
 
-## 3. The executed run
+## 3. La corrida ejecutada
 
-Environment: Windows 11, Docker Desktop 29.8.0, Java 21, Maven 3.9.15, PostgreSQL images already local,
-`eclipse-temurin:21-jre-alpine` downloaded once for this run (the declared re-download). The diagrammer was
-started by `tools/acceptance/acceptance.py --keep-running` on `postgres:16`, which is Debian-based.
+Entorno: Windows 11, Docker Desktop 29.8.0, Java 21, Maven 3.9.15, imágenes de PostgreSQL ya locales,
+`eclipse-temurin:21-jre-alpine` descargada una vez para esta corrida (la re-descarga declarada). El diagramador
+se levantó con `tools/acceptance/acceptance.py --keep-running` sobre `postgres:16`, que es la variante Debian.
 
-The model was created through the public command API: two classes, three attributes (`String`, `String` with a
-default, `BigDecimal`), one operation returning `String`, and one association whose many end is navigable, so
-the generated `Order` owns the foreign key to `Customer`.
+El modelo se creó por la API pública de comandos: dos clases, tres atributos (`String`, `String` con default,
+`BigDecimal`), una operación que devuelve `String`, y una asociación cuyo extremo muchos es navegable, de modo
+que el `Order` generado es dueño de la clave foránea a `Customer`.
 
-### 3.1 Generation
+### 3.1 Generación
 
-| Destination | Target key | Database | `artifactSetHash` | `artifactZipHash` | ZIP bytes |
+| Destino | Clave | Base | `artifactSetHash` | `artifactZipHash` | Bytes del ZIP |
 | --- | --- | --- | --- | --- | --- |
 | Reporting service | `reporting-service` | `reporting_db` | `de111ac47713e1ae6c29a6facf4c125adb86501bcd418eb5933215418a42b054` | `35d6a7a9f2ae306ef8a399f8107e50a13f11eaef986bf588215cdcdfb2e5e8cb` | 42086 |
 | Billing service | `billing-service` | `billing_db` | `87119262b6eec2abd123cc686762360d67e874cdb41d3eab3be5b3f0ce2405d4` | `93e95e7579117385598843ee97da5fe19291c45c04183dc6cb5d746f483f70be` | 41900 |
 
-Both archives were downloaded with `content-type: application/zip`, started with the `PK` signature, and their
-SHA-256 equals the `artifactZipHash` the run persisted. **Two destinations of one model produce two different
-sets and two different archives**, which is D14 observed rather than asserted. Each archive holds 24 artifacts
-and 37 874 bytes of content.
+Los dos archivos se bajaron con `content-type: application/zip`, empezando con la firma `PK`, y su SHA-256 es
+**igual** al `artifactZipHash` que la corrida persistió. **Dos destinos de un modelo producen dos conjuntos y
+dos archivos distintos**: eso es D14 observado, no afirmado. Cada archivo trae 24 artefactos y 37 874 bytes de
+contenido.
 
-### 3.2 Deployment, per destination
+### 3.2 Despliegue, destino por destino
 
-Each destination was unpacked into its own directory, packaged offline, given its own `.env`, and started with
-its own Compose project:
+Cada destino se descomprimió en su propio directorio, se empaquetó sin red, recibió su propio `.env` y se
+levantó con su propio proyecto Compose:
 
-| Check | Reporting service | Billing service |
+| Verificación | Reporting service | Billing service |
 | --- | --- | --- |
 | `mvn -o -B package` | exit 0, `generated-reporting-service-0.1.0.jar` | exit 0, `generated-billing-service-0.1.0.jar` |
-| `docker compose config` | exit 0, 1627 bytes rendered | exit 0, 1593 bytes rendered |
-| `docker compose up -d --build` | exit 0, both containers healthy | exit 0, both containers healthy |
+| `docker compose config` | exit 0, 1627 bytes renderizados | exit 0, 1593 bytes renderizados |
+| `docker compose up -d --build` | exit 0, los dos contenedores sanos | exit 0, los dos contenedores sanos |
 | `GET /actuator/health` | `{"status":"UP"}` | `{"status":"UP"}` |
-| Own database | `reporting_db`, 3 tables, 1 customer, 1 order | `billing_db`, 3 tables, 1 customer, 1 order |
-| Own volume | `generated-reporting-service_reporting-service-postgres-data` | `generated-billing-service_billing-service-postgres-data` |
+| Base propia | `reporting_db`, 3 tablas, 1 customer, 1 order | `billing_db`, 3 tablas, 1 customer, 1 order |
+| Volumen propio | `generated-reporting-service_reporting-service-postgres-data` | `generated-billing-service_billing-service-postgres-data` |
 
-Flyway applied the generated migration against the destination's own database inside the container
-(`Migrating schema "public" to version "1 - init"`). The CRUD of the two generated resources answered
-`201`/`200`, and the generated foreign key resolution held:
+Flyway aplicó la migración generada contra la base propia del destino dentro del contenedor
+(`Migrating schema "public" to version "1 - init"`). El CRUD de los dos recursos generados respondió `201`/`200`,
+y la resolución de la clave foránea generada se sostuvo:
 
 ```text
 POST /api/customer            -> 201 {"id":"bbd92548-…","email":"borges@example.org","displayName":"Borges"}
 POST /api/order               -> 201 {"id":"827d8300-…","total":42.5,"customerId":"bbd92548-…"}
 GET  /api/order/827d8300-…    -> 200 {"id":"827d8300-…","total":42.50,"customerId":"bbd92548-…"}
-POST /api/order (unknown parent) -> 400 {"code":"INVALID_REFERENCE", …}
+POST /api/order (padre inexistente) -> 400 {"code":"INVALID_REFERENCE", …}
 GET  /api/order/22222222-…    -> 404 {"code":"NOT_FOUND", …}
 ```
 
-Both destinations were up **at the same time**, each answering on its own host port, each with its own database
-and its own volume, and the two rows in the two databases have different identities. This is the criterion
-"two distinct destinations of the same model produce two independent backends, even if their content is equal".
+Los dos destinos estuvieron **arriba al mismo tiempo**, cada uno contestando en su puerto, cada uno con su base y
+su volumen, y las dos filas de las dos bases tienen identidades distintas. Ese es el criterio «dos destinos
+distintos del mismo modelo producen dos backends independientes, aun si su contenido es igual».
 
-## 4. The AWS/Floci preparation that was executed
+## 4. La preparación AWS/Floci que sí se ejecutó
 
-**Executed against the local emulator only.** Floci v2.1.0 is running on `127.0.0.1:4566` and is used by another
-project: this run **consumed** it and administered nothing beyond the resources it created for itself. No real
-AWS credential was used, nothing outside the emulator was created, and no cost was incurred.
+**Ejecutada sólo contra el emulador local.** Floci v2.1.0 corre en `127.0.0.1:4566` y lo usa otro proyecto: esta
+corrida lo **consumió** y no administró nada más allá de los recursos que creó para sí misma. No se usó ninguna
+credencial real de AWS, no se creó nada fuera del emulador y no hubo ningún costo.
 
-| Step | Command shape | Observed |
+| Paso | Forma del comando | Observado |
 | --- | --- | --- |
-| Identity | `aws --endpoint-url http://127.0.0.1:4566 sts get-caller-identity` | `Account 000000000000`, `arn:aws:iam::000000000000:root` |
-| Artifact store, read-only | `aws … s3api list-buckets` | One pre-existing bucket, `generation-artifacts`, belonging to another project. Listed and left untouched. |
-| Configuration | `aws … ssm put-parameter /generated-<slug>/deployment` | Written and read back identical: 267 bytes and 261 bytes, **no secret field**. |
-| Registry | `aws … ecr create-repository --repository-name generated-<slug>` | Both repositories created; `repositoryUri` `000000000000.dkr.ecr.us-east-1.localhost:4566/generated-<slug>`. |
-| Image | `docker tag` the built image to the repository URI | Both images tagged locally under the emulator's URI. |
-| Image push | `docker push <uri>:0.1.0` | **Refused.** See the declared limit below. |
+| Identidad | `aws --endpoint-url http://127.0.0.1:4566 sts get-caller-identity` | `Account 000000000000`, `arn:aws:iam::000000000000:root` |
+| Almacén de artefactos, sólo lectura | `aws … s3api list-buckets` | Un bucket preexistente, `generation-artifacts`, de otro proyecto. Listado y **no tocado**. |
+| Configuración | `aws … ssm put-parameter /generated-<slug>/deployment` | Escrito y releído idéntico: 267 y 261 bytes, **sin ningún campo secreto**. |
+| Registro | `aws … ecr create-repository --repository-name generated-<slug>` | Los dos repositorios creados; `repositoryUri` `000000000000.dkr.ecr.us-east-1.localhost:4566/generated-<slug>`. |
+| Imagen | `docker tag` de la imagen construida contra el URI del repositorio | Las dos imágenes etiquetadas localmente bajo el URI del emulador. |
+| Subida de la imagen | `docker push <uri>:0.1.0` | **Rechazada.** Ver el límite declarado. |
 
-Resource names are derived, never invented: the registry repository and the SSM parameter path both use the
-emitted Maven artifact name `generated-<slug>`, which the POM already carries.
+Los nombres de recurso se derivan, nunca se inventan: el repositorio del registro y la ruta del parámetro SSM
+usan el nombre del artefacto Maven emitido, `generated-<slug>`, que el POM ya lleva.
 
-Against real AWS, every step above differs by a single flag: `--endpoint-url http://127.0.0.1:4566` disappears.
-That substitution is the whole distance between this preparation and a real deployment.
+Contra AWS real, cada paso de arriba difiere en **un solo flag**: desaparece
+`--endpoint-url http://127.0.0.1:4566`. Esa sustitución es toda la distancia entre esta preparación y un
+despliegue real.
 
-### 4.1 Declared limits of the AWS path
+### 4.1 Límites declarados del camino AWS
 
-- **The image push was not completed.** The emulator answers the ECR registry API, but the Docker registry path
-  fails: with the URI host it returns `no such host`, and against `127.0.0.1:4566` it answers
-  `400 Bad Request` on the blob upload. The image is built and tagged locally; the push is **documented and not
-  claimed as executed**. A real registry is where this step is completed.
-- **No ECS, EC2, RDS or IAM resource was provisioned.** This run prepared the configuration and registry path
-  only. The managed database and the task definition are outside the increment.
-- **No cost is stated.** The emulator has no billable resource, and this document asserts nothing about the cost
-  of a real deployment.
+- **La subida de la imagen no se completó.** El emulador contesta la API de ECR, pero el camino de registro
+  Docker falla: con el host del URI devuelve `no such host`, y contra `127.0.0.1:4566` responde
+  `400 Bad Request` en la subida de blobs. La imagen se construye y se etiqueta localmente; la subida queda
+  **documentada y no se reclama como ejecutada**. Un registro real es donde se completa ese paso.
+- **No se aprovisionó ningún recurso de ECS, EC2, RDS ni IAM.** Esta corrida preparó la configuración y el
+  camino del registro, nada más. La base gestionada y la definición de tarea quedan fuera del incremento.
+- **No se afirma ningún costo.** El emulador no tiene recurso facturable, y este documento no afirma nada sobre
+  el costo de un despliegue real.
 
-## 5. Return to the baseline
+## 5. Vuelta a la línea base
 
-Everything this run created was removed and the result verified:
+Todo lo que esta corrida creó se eliminó y el resultado se verificó:
 
-| Resource | Before | After |
+| Recurso | Antes | Después |
 | --- | --- | --- |
-| Containers | 36 | 36 |
-| Volumes | 68 | 68 |
-| Emulator parameters | none | none |
-| Emulator repositories | none | none |
-| Emulator buckets | `generation-artifacts` | `generation-artifacts` (untouched) |
+| Contenedores | 36 | 36 |
+| Volúmenes | 68 | 68 |
+| Parámetros del emulador | ninguno | ninguno |
+| Repositorios del emulador | ninguno | ninguno |
+| Buckets del emulador | `generation-artifacts` | `generation-artifacts` (intacto) |
 
-The two destination stacks were removed with `docker compose down -v`, the emulator resources with
-`ecr delete-repository` and `ssm delete-parameter`, the diagrammer with the acceptance harness's own `--stop`,
-and four orphaned anonymous volumes left by the harness's PostgreSQL containers and by one integration-test
-container were identified by creation date and removed after checking that no container referenced them.
+Los dos stacks de destino se eliminaron con `docker compose down -v`, los recursos del emulador con
+`ecr delete-repository` y `ssm delete-parameter`, el diagramador con el `--stop` del propio arnés de aceptación,
+y cuatro volúmenes anónimos huérfanos —dejados por los contenedores PostgreSQL del arnés y por un contenedor de
+prueba de integración— se identificaron por fecha de creación y se borraron **después de comprobar que ningún
+contenedor los referenciaba**.
 
-## 6. Two defects this run found
+## 6. Dos defectos que esta corrida encontró
 
-Both were found by executing, not by reading, and both are fixed. Each fix carries a test that fails without it,
-verified by restoring the defect, observing the failure, and restoring the fix from a hash-checked copy.
+Los dos aparecieron **ejecutando**, no leyendo, y los dos están corregidos. Cada corrección lleva una prueba que
+falla sin ella, verificada reponiendo el defecto, observando el fallo y restaurando la corrección desde una copia
+verificada por hash.
 
-**`RUN_NOT_COMPLETE` for a run that had succeeded.** The download answered
-`{"code":"RUN_NOT_COMPLETE","message":"… its persisted artifact manifest is incomplete."}` although the run was
-`SUCCEEDED` with both hashes persisted. Root cause: the manifest was compared against the persisted rows **by
-position**, while the rows come back ordered by the database. A database collation is not the artifact's
-canonical path order: under `en_US.utf8`, PostgreSQL returns `docker-compose.yml`, `Dockerfile`,
-`.env.example`, `.gitignore`, …, while the emitter's manifest is in Java path order (`.env.example`,
-`.gitignore`, `Dockerfile`, …). The integration suite runs on `postgres:16-alpine`, whose collation behaves as
-`C`, so the positional comparison agreed there and the archive was unreachable only in the deployment path.
-The comparison is now a set equality keyed by path, which is what it always meant.
+**`RUN_NOT_COMPLETE` para una corrida que había terminado bien.** La descarga respondía
+`{"code":"RUN_NOT_COMPLETE","message":"… its persisted artifact manifest is incomplete."}` aunque la corrida
+estaba en `SUCCEEDED` con los dos hashes persistidos. Causa raíz: el manifiesto se comparaba contra las filas
+persistidas **por posición**, y las filas vuelven ordenadas por la base. La colación de una base no es el orden
+canónico de paths del artefacto: bajo `en_US.utf8`, PostgreSQL devuelve `docker-compose.yml`, `Dockerfile`,
+`.env.example`, `.gitignore`, …, mientras que el manifiesto del emisor está en el orden de paths de Java
+(`.env.example`, `.gitignore`, `Dockerfile`, …). La suite de integración corre sobre `postgres:16-alpine`, cuya
+colación se comporta como `C`, así que la comparación posicional coincidía ahí y el archivo era inalcanzable
+**sólo en el camino de despliegue**. La comparación ahora es una igualdad de conjuntos por clave de path, que es
+lo que el chequeo siempre quiso decir.
 
-**A Compose file that was not YAML.** The first generated `docker-compose.yml` wrote
-`test: ["CMD-SHELL", "pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}""]`: inner double quotes that were
-never escaped, so `docker compose config` refused it with `did not find expected ',' or ']'`. The suite now
-parses the emitted Compose file with a real YAML parser and asserts the healthcheck commands, so this class of
-defect fails in the suite instead of at a deployment.
+**Un archivo Compose que no era YAML.** El primer `docker-compose.yml` generado escribía
+`test: ["CMD-SHELL", "pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}""]`: comillas dobles internas sin
+escapar, así que `docker compose config` lo rechazaba con `did not find expected ',' or ']'`. La suite ahora
+parsea el Compose emitido con un parser YAML real y afirma los comandos de los healthchecks, así que esta clase
+de defecto falla en la suite y no en un despliegue.
 
-## 7. What was not verified
+## 7. Lo que no se verificó
 
-- **The image push to a registry**, for the reason in §4.1.
-- **Any deployment outside this machine**: no cloud host, no managed database, no orchestrator.
-- **A third party repeating the run.** The evidence is a transcript of the commands and their observed output;
-  the harness that would make it repeatable without a human is task T10 and is not part of this document.
-- **The generated backend's security posture.** `spring-boot-starter-security` is not emitted for version
-  3.4.5, so the generated API has no authentication or authorization and must not be exposed to untrusted
-  networks. This is a declared limit inherited from T6, not a result of this run.
+- **La subida de la imagen a un registro**, por lo de §4.1.
+- **Cualquier despliegue fuera de esta máquina**: ni host en la nube, ni base gestionada, ni orquestador.
+- **Que un tercero repita la corrida a mano.** La evidencia de T13 es una transcripción de comandos y su salida;
+  el arnés que la hace repetible sin manos humanas es T10 y su transcripción está en
+  `docs/capturas/incremento-2/14-arnes-aceptacion-generacion.txt`.
+- **La postura de seguridad del backend generado.** `spring-boot-starter-security` no se emite para la versión
+  3.4.5, así que la API generada no tiene autenticación ni autorización y no debe exponerse a redes no
+  confiables. Es un límite heredado de T6, no un resultado de esta corrida.
 
-## 8. A finding about the primitive vocabulary
+## 8. Un hallazgo sobre el vocabulario de primitivos
 
-The acceptance model of Increment 1 contains an operation returning `boolean`, and generation rejected it with a
-blocking diagnostic naming the feature:
+El modelo de aceptación del Incremento 1 contiene una operación que devuelve `boolean`, y la generación lo
+rechazó con un diagnóstico bloqueante que **nombra la característica**:
 
 ```text
 code=UNRESOLVABLE_TYPE feature=returnType severity=ERROR blocking=True
 message=Primitive type 'boolean' has no mapping in profile option 'primitiveTypeMappings.boolean'.
 ```
 
-The profile's vocabulary is PascalCase (`Boolean`, `String`, `Integer`, `Long`, `Double`, `BigDecimal`,
-`LocalDate`, `LocalDateTime`, `UUID`), and a model may carry any non-blank primitive name. Rejecting an unmapped
-one **naming the feature** is the designed behaviour; what this run adds is the concrete case, and the fact that
-the Increment 1 demonstration model is not generable for that reason. The T13 run therefore used a model
-authored for the increment's declared subset.
+El vocabulario del perfil es PascalCase (`Boolean`, `String`, `Integer`, `Long`, `Double`, `BigDecimal`,
+`LocalDate`, `LocalDateTime`, `UUID`), y un modelo puede llevar cualquier nombre de primitivo no vacío. Rechazar
+uno sin mapeo **nombrando la característica** es el comportamiento diseñado; lo que esta corrida agrega es el
+caso concreto, y el hecho de que el modelo de demostración del Incremento 1 no sea generable por esa razón. Por
+eso la corrida de T13 usó un modelo escrito para el subconjunto declarado del incremento.
 
-## 9. Document numbering
+## 9. Numeración del documento
 
-The task plan names this document `02-despliegue-propio.md`. `02-ejecucion-local.md` already holds that number
-and is referenced from the repository's Compose file, so this document is `03-despliegue-propio.md` and the
-deviation is declared here rather than resolved by renaming a referenced file.
+El plan de tareas nombra este documento `02-despliegue-propio.md`. `02-ejecucion-local.md` ya tiene ese número y
+está referenciado desde el archivo Compose del repositorio, así que este documento es `03-despliegue-propio.md`
+y la desviación se declara acá en lugar de resolverse renombrando un archivo que ya está referenciado.
