@@ -1,0 +1,40 @@
+Ejecucion manual de tools/postman/generated-backend.postman_collection.json
+Fecha: 2026-09-30 07:35:39  |  Backend generado: 127.0.0.1:19001  |  PostgreSQL propio del generado: 25433
+Ejecutor: el agente, autorizado por el usuario. La coleccion queda versionada para re-ejecutar en la GUI.
+==========================================================================================
+
+--- 01 GET /actuator/health ---
+{"status":"UP"}
+HTTP 200
+
+--- 02 GET /api/customer (lista inicial) ---
+[]
+HTTP 200
+
+--- 03 POST /api/customer  {displayName: Borges} ---
+{"id":"3ef2082e-da25-4343-8100-6734d8946327","displayName":"Borges"}
+HTTP 201
+customerId capturado = 3ef2082e-da25-4343-8100-6734d8946327
+
+--- 04 POST /api/order  {orderNumber: Ficciones, customerId: <el padre>} ---
+{"id":"35cd9b3f-cd5a-474a-be14-a5d054877950","orderNumber":"Ficciones","customerId":"3ef2082e-da25-4343-8100-6734d8946327"}
+HTTP 201
+
+--- 05 GET /api/order/<id> (relectura) ---
+{"id":"35cd9b3f-cd5a-474a-be14-a5d054877950","orderNumber":"Ficciones","customerId":"3ef2082e-da25-4343-8100-6734d8946327"}
+HTTP 200
+
+--- 06 GET /api/order (lista) ---
+[{"id":"35cd9b3f-cd5a-474a-be14-a5d054877950","orderNumber":"Ficciones","customerId":"3ef2082e-da25-4343-8100-6734d8946327"}]
+HTTP 200
+
+--- 07 POST /api/order con customerId inexistente (debe ser 400, nunca 500) ---
+{"code":"INVALID_REFERENCE","message":"A related resource reference does not exist.","detail":"customerId=00000000-0000-0000-0000-000000000000"}
+HTTP 400
+
+--- 08 GET /api/order/<id inexistente> (debe ser 404) ---
+{"code":"NOT_FOUND","message":"The requested resource was not found.","detail":"Order id=00000000-0000-0000-0000-000000000000"}
+HTTP 404
+
+==========================================================================================
+VEREDICTO: PASA. La foranea quedo RESUELTA al crear y sigue resuelta tras releer: customerId=3ef2082e-da25-4343-8100-6734d8946327
