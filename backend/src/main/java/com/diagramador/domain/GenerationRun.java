@@ -78,6 +78,20 @@ public class GenerationRun {
     protected GenerationRun() {
     }
 
+    public static GenerationRun create(UmlModel model, ModelVersion version, GenerationTarget target,
+            int targetConfigRevision, GenerationProfile profile, TemplateVersion template, String inputSnapshotHash) {
+        GenerationRun run = new GenerationRun();
+        run.model = model;
+        run.version = version;
+        run.target = target;
+        run.targetConfigRevision = targetConfigRevision;
+        run.profile = profile;
+        run.template = template;
+        run.inputSnapshotHash = inputSnapshotHash;
+        run.state = GenerationState.PENDING;
+        return run;
+    }
+
     public UUID getId() {
         return id;
     }

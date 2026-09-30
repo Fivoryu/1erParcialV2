@@ -60,6 +60,21 @@ public class VerificationResult {
     protected VerificationResult() {
     }
 
+    public static VerificationResult create(GenerationRun run, String checkName, VerificationState state,
+            String evidence, String evidenceHash, String toolName, OffsetDateTime startedAt,
+            OffsetDateTime finishedAt) {
+        VerificationResult result = new VerificationResult();
+        result.run = run;
+        result.checkName = checkName;
+        result.state = state;
+        result.evidence = evidence;
+        result.evidenceHash = evidenceHash;
+        result.toolName = toolName;
+        result.startedAt = startedAt;
+        result.finishedAt = finishedAt;
+        return result;
+    }
+
     public UUID getId() {
         return id;
     }

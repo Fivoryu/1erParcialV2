@@ -56,6 +56,21 @@ public class GenerationTarget {
     protected GenerationTarget() {
     }
 
+    public static GenerationTarget create(UmlModel model, String targetKey, String name, String databaseEngine,
+            String databaseName, String databaseSchema, String connectionConfigRef) {
+        GenerationTarget target = new GenerationTarget();
+        target.model = model;
+        target.targetKey = targetKey;
+        target.name = name;
+        target.databaseEngine = databaseEngine;
+        target.databaseName = databaseName;
+        target.databaseSchema = databaseSchema;
+        target.connectionConfigRef = connectionConfigRef;
+        target.configurationRevision = 1;
+        target.updatedAt = OffsetDateTime.now();
+        return target;
+    }
+
     public UUID getId() {
         return id;
     }

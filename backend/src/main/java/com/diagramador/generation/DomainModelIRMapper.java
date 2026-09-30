@@ -40,8 +40,10 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
+import org.springframework.stereotype.Component;
 
 /** Pure mapper from an immutable semantic snapshot to a deterministic generation IR. */
+@Component
 public final class DomainModelIRMapper {
 
     private static final Comparator<UUID> UUID_ORDER = Comparator.nullsFirst(Comparator.comparing(UUID::toString));
@@ -72,7 +74,13 @@ public final class DomainModelIRMapper {
             "volatile", "while", "true", "false", "null", "_");
 
     public DomainModelIR map(InputSnapshot snapshot) {
+        return map(snapshot, VersionedGenerationProfileConfiguration.primitiveTypes(
+                VersionedGenerationProfileConfiguration.v1()));
+    }
+
+    DomainModelIR map(InputSnapshot snapshot, Map<String, ProvisionalGenerationProfile.TypeMapping> primitiveTypes) {
         Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(primitiveTypes, "primitiveTypes");
 
         List<GenerationDiagnostic> diagnostics = new ArrayList<>();
         Map<UUID, ClassifierElement> classifiersById = index(
@@ -94,7 +102,7 @@ public final class DomainModelIRMapper {
 
         List<PackageDeclaration> packages = buildPackages(classifiers, classifiersById, typeNamesById, diagnostics);
         List<TypeDeclaration> types = buildTypes(snapshot, classifiers, classifiersById, typeReferencesById,
-                typeNamesById, diagnostics);
+                typeNamesById, primitiveTypes, diagnostics);
         RelationshipMapping relationshipMapping = buildRelationships(snapshot, classifiersById, typeNamesById,
                 diagnostics);
         rejectUnmappedConstraints(snapshot, diagnostics);
@@ -138,6 +146,7 @@ public final class DomainModelIRMapper {
             Map<UUID, ClassifierElement> classifiersById,
             Map<UUID, TypeReferenceElement> typeReferencesById,
             Map<UUID, TypeName> typeNamesById,
+            Map<String, ProvisionalGenerationProfile.TypeMapping> primitiveTypes,
             List<GenerationDiagnostic> diagnostics) {
         Map<UUID, List<AttributeElement>> attributesByClassifier = group(snapshot.attributes(),
                 AttributeElement::classifierId);
@@ -164,7 +173,7 @@ public final class DomainModelIRMapper {
         List<AttributeElement> attributes = snapshot.attributes().stream().sorted(ATTRIBUTE_ORDER).toList();
         for (AttributeElement attribute : attributes) {
             TypeUse type = resolveType(attribute.typeReferenceId(), attribute.id(), "type",
-                    typeReferencesById, classifiersById, typeNamesById, diagnostics, false);
+                    typeReferencesById, classifiersById, typeNamesById, primitiveTypes, diagnostics, false);
             String visibility = normalizedVisibility(attribute.visibility(), attribute.id(), diagnostics);
             MultiplicityBounds bounds = bounds(attribute.multiplicity());
             CollectionIntent collectionIntent = collectionIntent(attribute.multiplicity());
@@ -201,14 +210,14 @@ public final class DomainModelIRMapper {
         List<OperationElement> operations = snapshot.operations().stream().sorted(OPERATION_ORDER).toList();
         for (OperationElement operation : operations) {
             TypeUse returnType = resolveType(operation.returnTypeReferenceId(), operation.id(), "returnType",
-                    typeReferencesById, classifiersById, typeNamesById, diagnostics, true);
+                    typeReferencesById, classifiersById, typeNamesById, primitiveTypes, diagnostics, true);
             String visibility = normalizedVisibility(operation.visibility(), operation.id(), diagnostics);
             List<ParameterDeclaration> parameters = new ArrayList<>();
             List<ParameterElement> operationParameters = parametersByOperation.getOrDefault(operation.id(), List.of())
                     .stream().sorted(PARAMETER_ORDER).toList();
             for (ParameterElement parameter : operationParameters) {
                 TypeUse parameterType = resolveType(parameter.typeReferenceId(), parameter.id(), "type",
-                        typeReferencesById, classifiersById, typeNamesById, diagnostics, false);
+                        typeReferencesById, classifiersById, typeNamesById, primitiveTypes, diagnostics, false);
                 parameters.add(new ParameterDeclaration(parameter.id(), safeName(parameter.name(), "unnamed"),
                         javaIdentifier(parameter.name()), safeName(parameter.direction(), "UNKNOWN"), parameterType,
                         parameter.ordinal()));
@@ -358,6 +367,7 @@ public final class DomainModelIRMapper {
             Map<UUID, TypeReferenceElement> typeReferencesById,
             Map<UUID, ClassifierElement> classifiersById,
             Map<UUID, TypeName> typeNamesById,
+            Map<String, ProvisionalGenerationProfile.TypeMapping> primitiveTypes,
             List<GenerationDiagnostic> diagnostics,
             boolean allowVoid) {
         if (typeReferenceId == null && allowVoid) {
@@ -379,11 +389,12 @@ public final class DomainModelIRMapper {
             return TypeUse.unresolved(typeReferenceId);
         }
         if (referencesPrimitive) {
-            ProvisionalGenerationProfile.TypeMapping mapping =
-                    ProvisionalGenerationProfile.primitiveType(reference.primitiveName());
+            ProvisionalGenerationProfile.TypeMapping mapping = primitiveTypes.get(reference.primitiveName());
             if (mapping == null) {
                 addDiagnostic(diagnostics, "UNRESOLVABLE_TYPE", elementId, feature,
-                        "Primitive type '" + reference.primitiveName() + "' has no mapping in the provisional V1 profile.");
+                        "Primitive type '" + reference.primitiveName()
+                                + "' has no mapping in profile option 'primitiveTypeMappings."
+                                + reference.primitiveName() + "'.");
                 return TypeUse.unresolved(typeReferenceId);
             }
             return new TypeUse(typeReferenceId, null, reference.primitiveName(), mapping.javaTypeName(),

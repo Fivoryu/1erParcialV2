@@ -44,6 +44,15 @@ public class TemplateVersion {
     protected TemplateVersion() {
     }
 
+    public static TemplateVersion create(GenerationProfile profile, String label, int revision, String contentHash) {
+        TemplateVersion template = new TemplateVersion();
+        template.profile = profile;
+        template.label = label;
+        template.revision = revision;
+        template.contentHash = contentHash;
+        return template;
+    }
+
     public UUID getId() {
         return id;
     }

@@ -53,6 +53,18 @@ public class GenerationProfile {
     protected GenerationProfile() {
     }
 
+    public static GenerationProfile create(Project project, String profileKey, String name, int revision,
+            JsonNode configuration, String configurationHash) {
+        GenerationProfile profile = new GenerationProfile();
+        profile.project = project;
+        profile.profileKey = profileKey;
+        profile.name = name;
+        profile.revision = revision;
+        profile.configuration = configuration.deepCopy();
+        profile.configurationHash = configurationHash;
+        return profile;
+    }
+
     public UUID getId() {
         return id;
     }
