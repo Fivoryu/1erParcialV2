@@ -8,7 +8,14 @@ import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.RelationshipKind;
 import com.diagramador.generation.DomainModelIR.RelationshipDescriptor;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,7 +26,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.PostgreSQLContainer;
 
 class DomainProjectEmitterTest {
 
@@ -36,8 +46,48 @@ class DomainProjectEmitterTest {
     private static final Pattern TIMESTAMP = Pattern.compile(
             "\\b[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.+-]+(?:Z|[+-][0-9:]+)?\\b");
 
-    private final DomainModelIRMapper mapper = new DomainModelIRMapper();
-    private final DomainProjectEmitter emitter = new DomainProjectEmitter();
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final HttpClient HTTP = HttpClient.newHttpClient();
+    private static final DomainModelIRMapper MAPPER = new DomainModelIRMapper();
+    private static final DomainProjectEmitter EMITTER = new DomainProjectEmitter();
+    private static Path generatedProject;
+    private static Path generatedAppLog;
+    private static PostgreSQLContainer<?> postgres;
+    private static Process generatedApp;
+    private static int generatedPort;
+
+    private final DomainModelIRMapper mapper = MAPPER;
+    private final DomainProjectEmitter emitter = EMITTER;
+
+    @BeforeAll
+    static void buildAndStartGeneratedCrudApplication() throws Exception {
+        Map<String, String> files = EMITTER.emit("course-store", MAPPER.map(snapshot(false)));
+        generatedProject = Files.createTempDirectory(Path.of("target"), "generated-emitter-crud-").toAbsolutePath();
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            Path output = generatedProject.resolve(entry.getKey()).normalize();
+            assertThat(output.startsWith(generatedProject)).isTrue();
+            Files.createDirectories(output.getParent());
+            Files.write(output, entry.getValue().getBytes(StandardCharsets.UTF_8));
+        }
+        buildGeneratedProject();
+
+        postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+        postgres.start();
+        generatedPort = availablePort();
+        generatedAppLog = generatedProject.resolve("generated-app.log");
+        Path java = Path.of(System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java");
+        ProcessBuilder appBuilder = new ProcessBuilder(java.toString(), "-jar",
+                generatedProject.resolve("target/generated-course-store-0.1.0.jar").toString())
+                .directory(generatedProject.toFile())
+                .redirectErrorStream(true)
+                .redirectOutput(generatedAppLog.toFile());
+        appBuilder.environment().put("SERVER_PORT", Integer.toString(generatedPort));
+        appBuilder.environment().put("SPRING_DATASOURCE_URL", postgres.getJdbcUrl());
+        appBuilder.environment().put("SPRING_DATASOURCE_USERNAME", postgres.getUsername());
+        appBuilder.environment().put("SPRING_DATASOURCE_PASSWORD", postgres.getPassword());
+        generatedApp = appBuilder.start();
+        awaitGeneratedApplication();
+    }
 
     @Test
     void emitsExpectedFourLayerPathsForTwoClassFixture() {
@@ -49,7 +99,10 @@ class DomainProjectEmitterTest {
                 "README.md",
                 "pom.xml",
                 "src/main/java/com/generated/course/store/GeneratedApplication.java",
+                "src/main/java/com/generated/course/store/api/ApiErrorResponse.java",
                 "src/main/java/com/generated/course/store/api/CustomerController.java",
+                "src/main/java/com/generated/course/store/api/GeneratedApiException.java",
+                "src/main/java/com/generated/course/store/api/GeneratedApiExceptionHandler.java",
                 "src/main/java/com/generated/course/store/api/OrderController.java",
                 "src/main/java/com/generated/course/store/api/dto/CustomerDto.java",
                 "src/main/java/com/generated/course/store/api/dto/OrderDto.java",
@@ -72,7 +125,10 @@ class DomainProjectEmitterTest {
         assertThat(files.get("README.md")).contains("Security limitation", "no generated authentication");
         assertThat(files.get("src/main/java/com/generated/course/store/service/CustomerService.java"))
                 .contains("@Transactional(readOnly = true)",
-                        "repository.findAll().stream().map(CustomerDto::from).toList()");
+                        "repository.findAll().stream().map(CustomerDto::from).toList()",
+                        "public CustomerDto create(CustomerDto request)", "public boolean delete(UUID id)");
+        assertThat(files.get("src/main/java/com/generated/course/store/api/OrderController.java"))
+                .contains("@GetMapping", "@PostMapping", "@PutMapping", "@DeleteMapping");
         assertThat(files.get("src/main/java/com/generated/course/store/domain/Customer.java"))
                 .contains("private String displayName =", "Guest");
         assertThat(files.get("src/main/resources/db/migration/V1__init.sql"))
@@ -150,38 +206,88 @@ class DomainProjectEmitterTest {
     }
 
     @Test
-    void emittedProjectBuildsWithTheOfflineMavenCache() throws Exception {
-        Map<String, String> files = emitter.emit("course-store", mapper.map(snapshot(false)));
-        Path project = Files.createTempDirectory(Path.of("target"), "generated-emitter-build-").toAbsolutePath();
-        for (Map.Entry<String, String> entry : files.entrySet()) {
-            Path output = project.resolve(entry.getKey()).normalize();
-            assertThat(output.startsWith(project)).isTrue();
-            Files.createDirectories(output.getParent());
-            Files.write(output, entry.getValue().getBytes(StandardCharsets.UTF_8));
-        }
+    void generatedCrudRoutesPersistAndReturnTheResolvedParentReference() throws Exception {
+        HttpResponse<String> customerList = request("GET", "/api/customer", null);
+        HttpResponse<String> orderList = request("GET", "/api/order", null);
+        assertThat(customerList.statusCode()).isEqualTo(200);
+        assertThat(orderList.statusCode()).isEqualTo(200);
 
-        Path buildLog = project.resolve("nested-maven-build.log");
-        List<String> command = isWindows()
-                ? List.of("cmd.exe", "/c", "mvn", "-o", "-B", "package")
-                : List.of("mvn", "-o", "-B", "package");
-        long started = System.nanoTime();
-        Process process = new ProcessBuilder(command)
-                .directory(project.toFile())
-                .redirectErrorStream(true)
-                .redirectOutput(buildLog.toFile())
-                .start();
-        boolean completed = process.waitFor(5, TimeUnit.MINUTES);
-        long durationMillis = Duration.ofNanos(System.nanoTime() - started).toMillis();
-        if (!completed) {
-            process.destroyForcibly();
-        }
-        String output = Files.exists(buildLog) ? Files.readString(buildLog, StandardCharsets.UTF_8) : "";
-        int exitCode = completed ? process.exitValue() : -1;
-        System.out.printf("NESTED_OFFLINE_BUILD command=%s exitCode=%d durationMs=%d%n%s%n",
-                String.join(" ", command), exitCode, durationMillis, output);
-        assertThat(completed).as("nested mvn -o -B package completed within five minutes\n" + output).isTrue();
-        assertThat(exitCode).as("nested mvn -o -B package output\n" + output).isZero();
-        assertThat(output).contains("BUILD SUCCESS");
+        String suffix = UUID.randomUUID().toString();
+        HttpResponse<String> createdCustomer = request("POST", "/api/customer",
+                JSON.writeValueAsString(Map.of("displayName", "Parent " + suffix)));
+        assertThat(createdCustomer.statusCode()).isEqualTo(201);
+        String parentId = JSON.readTree(createdCustomer.body()).get("id").asText();
+
+        HttpResponse<String> createdOrder = request("POST", "/api/order",
+                JSON.writeValueAsString(Map.of("orderNumber", "Order " + suffix, "customerId", parentId)));
+        assertThat(createdOrder.statusCode()).isEqualTo(201);
+        JsonNode createdBody = JSON.readTree(createdOrder.body());
+        String orderId = createdBody.get("id").asText();
+        assertThat(createdBody.get("customerId").asText()).isEqualTo(parentId);
+
+        HttpResponse<String> readOrder = request("GET", "/api/order/" + orderId, null);
+        assertThat(readOrder.statusCode()).isEqualTo(200);
+        assertThat(JSON.readTree(readOrder.body()).get("customerId").asText()).isEqualTo(parentId);
+
+        HttpResponse<String> updatedOrder = request("PUT", "/api/order/" + orderId,
+                JSON.writeValueAsString(Map.of("orderNumber", "Updated " + suffix, "customerId", parentId)));
+        assertThat(updatedOrder.statusCode()).isEqualTo(200);
+        assertThat(JSON.readTree(updatedOrder.body()).get("customerId").asText()).isEqualTo(parentId);
+
+        HttpResponse<String> deletedOrder = request("DELETE", "/api/order/" + orderId, null);
+        assertThat(deletedOrder.statusCode()).isEqualTo(204);
+        UUID missingId = UUID.randomUUID();
+        HttpResponse<String> updateUnknown = request("PUT", "/api/order/" + missingId,
+                JSON.writeValueAsString(Map.of("orderNumber", "missing", "customerId", parentId)));
+        HttpResponse<String> deleteUnknown = request("DELETE", "/api/order/" + missingId, null);
+        assertThat(updateUnknown.statusCode()).isEqualTo(404);
+        assertThat(deleteUnknown.statusCode()).isEqualTo(404);
+        assertErrorShape(JSON.readTree(updateUnknown.body()), "NOT_FOUND");
+        assertErrorShape(JSON.readTree(deleteUnknown.body()), "NOT_FOUND");
+        System.out.printf("CRUD_HTTP_STATUS listCustomer=%d listOrder=%d postCustomer=%d postOrder=%d get=%d put=%d delete=%d putUnknown=%d deleteUnknown=%d%n",
+                customerList.statusCode(), orderList.statusCode(), createdCustomer.statusCode(),
+                createdOrder.statusCode(), readOrder.statusCode(), updatedOrder.statusCode(),
+                deletedOrder.statusCode(), updateUnknown.statusCode(), deleteUnknown.statusCode());
+    }
+
+    @Test
+    void missingRelatedIdReturns400ThroughTheReferenceResolutionPath() throws Exception {
+        UUID missingParentId = UUID.randomUUID();
+        HttpResponse<String> response = request("POST", "/api/order",
+                JSON.writeValueAsString(Map.of("orderNumber", "valid-order", "customerId", missingParentId.toString())));
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.statusCode()).isLessThan(500);
+        JsonNode error = JSON.readTree(response.body());
+        assertErrorShape(error, "INVALID_REFERENCE");
+        assertThat(error.get("detail").asText()).contains("customerId=" + missingParentId);
+        System.out.printf("MISSING_REFERENCE_HTTP_STATUS status=%d code=%s detail=%s%n",
+                response.statusCode(), error.get("code").asText(), error.get("detail").asText());
+    }
+
+    @Test
+    void unknownGetIdReturns404WithTheUniformErrorBody() throws Exception {
+        UUID unknownId = UUID.randomUUID();
+        HttpResponse<String> response = request("GET", "/api/order/" + unknownId, null);
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        JsonNode error = JSON.readTree(response.body());
+        assertErrorShape(error, "NOT_FOUND");
+        assertThat(error.get("detail").asText()).contains("Order id=" + unknownId);
+        System.out.printf("UNKNOWN_GET_HTTP_STATUS status=%d code=%s detail=%s%n",
+                response.statusCode(), error.get("code").asText(), error.get("detail").asText());
+    }
+
+    @Test
+    void invalidRequestReturns400WithTheUniformErrorBody() throws Exception {
+        HttpResponse<String> response = request("POST", "/api/customer", "{}");
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        JsonNode error = JSON.readTree(response.body());
+        assertErrorShape(error, "VALIDATION_FAILED");
+        assertThat(error.get("detail").asText()).contains("displayName");
+        System.out.printf("VALIDATION_HTTP_STATUS status=%d code=%s detail=%s%n",
+                response.statusCode(), error.get("code").asText(), error.get("detail").asText());
     }
 
     private static InputSnapshot snapshot(boolean invertEndIds) {
@@ -220,6 +326,107 @@ class DomainProjectEmitterTest {
                                 "customer", MultiplicityKind.ZERO_OR_ONE, NavigationKind.NAVIGABLE, "NONE")),
                 List.of(),
                 projection);
+    }
+
+    private static void buildGeneratedProject() throws Exception {
+        Path buildLog = generatedProject.resolve("nested-maven-build.log");
+        List<String> command = isWindows()
+                ? List.of("cmd.exe", "/c", "mvn", "-o", "-B", "package")
+                : List.of("mvn", "-o", "-B", "package");
+        long started = System.nanoTime();
+        Process process = new ProcessBuilder(command)
+                .directory(generatedProject.toFile())
+                .redirectErrorStream(true)
+                .redirectOutput(buildLog.toFile())
+                .start();
+        boolean completed = process.waitFor(5, TimeUnit.MINUTES);
+        long durationMillis = Duration.ofNanos(System.nanoTime() - started).toMillis();
+        if (!completed) {
+            process.destroyForcibly();
+        }
+        String output = Files.exists(buildLog) ? Files.readString(buildLog, StandardCharsets.UTF_8) : "";
+        int exitCode = completed ? process.exitValue() : -1;
+        System.out.printf("NESTED_OFFLINE_BUILD command=%s exitCode=%d durationMs=%d%n%s%n",
+                String.join(" ", command), exitCode, durationMillis, output);
+        assertThat(completed).as("nested mvn -o -B package completed within five minutes\n" + output).isTrue();
+        assertThat(exitCode).as("nested mvn -o -B package output\n" + output).isZero();
+        assertThat(output).contains("Compiling 14 source files", "BUILD SUCCESS");
+    }
+
+    private static void awaitGeneratedApplication() throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
+        String lastFailure = "application did not answer HTTP";
+        while (System.nanoTime() < deadline) {
+            if (generatedApp == null || !generatedApp.isAlive()) {
+                throw new AssertionError("Generated application exited during startup. " + generatedAppOutput());
+            }
+            try {
+                HttpResponse<String> response = request("GET", "/api/customer", null);
+                if (response.statusCode() == 200) {
+                    return;
+                }
+                lastFailure = "GET /api/customer returned " + response.statusCode() + ": " + response.body();
+            } catch (IOException exception) {
+                lastFailure = exception.getMessage();
+            }
+            Thread.sleep(500);
+        }
+        throw new AssertionError("Generated application did not become ready: " + lastFailure + "\n"
+                + generatedAppOutput());
+    }
+
+    @AfterAll
+    static void stopGeneratedCrudApplication() throws Exception {
+        if (generatedApp != null && generatedApp.isAlive()) {
+            generatedApp.destroy();
+            if (!generatedApp.waitFor(10, TimeUnit.SECONDS)) {
+                generatedApp.destroyForcibly();
+            }
+        }
+        if (postgres != null) {
+            postgres.stop();
+        }
+    }
+
+    private static HttpResponse<String> request(String method, String path, String body)
+            throws IOException, InterruptedException {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + generatedPort + path))
+                .timeout(Duration.ofSeconds(5));
+        if (body == null) {
+            if (method.equals("GET")) {
+                builder.GET();
+            } else {
+                builder.method(method, HttpRequest.BodyPublishers.noBody());
+            }
+        } else {
+            builder.header("Content-Type", "application/json")
+                    .method(method, HttpRequest.BodyPublishers.ofString(body));
+        }
+        return HTTP.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static void assertErrorShape(JsonNode error, String expectedCode) {
+        assertThat(error.get("code")).isNotNull();
+        assertThat(error.get("message")).isNotNull();
+        assertThat(error.get("detail")).isNotNull();
+        assertThat(error.size()).isEqualTo(3);
+        assertThat(error.get("code").asText()).isEqualTo(expectedCode);
+        assertThat(error.get("message").asText()).isNotBlank();
+        assertThat(error.get("detail").asText()).isNotBlank();
+    }
+
+    private static int availablePort() throws IOException {
+        try (ServerSocket server = new ServerSocket(0)) {
+            return server.getLocalPort();
+        }
+    }
+
+    private static String generatedAppOutput() {
+        try {
+            return generatedAppLog == null ? "no application log" : Files.readString(generatedAppLog);
+        } catch (IOException exception) {
+            return "unable to read application log: " + exception.getMessage();
+        }
     }
 
     private static UUID id(long low) {

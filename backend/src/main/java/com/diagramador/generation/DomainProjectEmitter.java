@@ -78,6 +78,10 @@ public final class DomainProjectEmitter {
         put(files, "Dockerfile", dockerfile());
         put(files, "README.md", readme(target));
         put(files, "pom.xml", pom(target));
+        put(files, javaPath(target.basePackage() + ".api", "ApiErrorResponse"), apiErrorResponse(target));
+        put(files, javaPath(target.basePackage() + ".api", "GeneratedApiException"), generatedApiException(target));
+        put(files, javaPath(target.basePackage() + ".api", "GeneratedApiExceptionHandler"),
+                generatedApiExceptionHandler(target));
         put(files, javaPath(target.basePackage(), "GeneratedApplication"), application(target));
 
         List<EntityPlan> orderedPlans = plans.values().stream()
@@ -271,16 +275,18 @@ public final class DomainProjectEmitter {
                     .append(descriptor.inverseCollectionFieldName()).append(" = new ArrayList<>();\n");
         }
 
-        source.append("\n    protected ").append(plan.type.javaName()).append("() {\n    }\n")
+        source.append("\n    public ").append(plan.type.javaName()).append("() {\n    }\n")
                 .append("\n    public UUID getId() {\n        return id;\n    }\n");
         for (AttributePlan attribute : plan.attributes) {
             String type = attribute.source().collectionIntent() == CollectionIntent.COLLECTION
                     ? "List<" + boxed(attribute.javaType()) + ">"
                     : attribute.javaType();
             appendGetter(source, type, attribute.source().javaName());
+            appendSetter(source, type, attribute.source().javaName());
         }
         for (OwningRelationshipPlan relation : plan.owningRelationships) {
             appendGetter(source, relation.referenced().qualifiedName, relation.descriptor().owningFieldName());
+            appendSetter(source, relation.referenced().qualifiedName, relation.descriptor().owningFieldName());
         }
         for (InverseRelationshipPlan relation : plan.inverseRelationships) {
             appendGetter(source, "List<" + relation.owning().qualifiedName + ">",
@@ -293,36 +299,50 @@ public final class DomainProjectEmitter {
 
     private String dtoSource(EntityPlan plan, String rootPackage) {
         TreeSet<String> imports = new TreeSet<>(Set.of("java.util.UUID", plan.qualifiedName));
-        if (plan.attributes.stream().anyMatch(attribute -> attribute.source().collectionIntent() == CollectionIntent.COLLECTION)) {
+        boolean hasCollections = plan.attributes.stream()
+                .anyMatch(attribute -> attribute.source().collectionIntent() == CollectionIntent.COLLECTION);
+        boolean hasRequiredFields = plan.attributes.stream().anyMatch(attribute -> !attribute.source().nullable())
+                || plan.owningRelationships.stream().anyMatch(value -> !value.descriptor().owningFieldNullable());
+        if (hasCollections) {
             imports.add("java.util.List");
         }
-        plan.attributes.stream().filter(attribute -> attribute.referencedType() == null
-                && attribute.source().collectionIntent() != CollectionIntent.COLLECTION)
+        if (hasRequiredFields) {
+            imports.add("jakarta.validation.constraints.NotNull");
+        }
+        plan.attributes.stream().filter(attribute -> attribute.referencedType() == null)
                 .map(AttributePlan::javaType).filter(DomainProjectEmitter::isImportable).forEach(imports::add);
 
         String dtoPackage = rootPackage + ".api.dto";
         String dtoName = plan.type.javaName() + "Dto";
         List<String> components = new ArrayList<>();
-        components.add("UUID id");
         List<String> expressions = new ArrayList<>();
-        expressions.add("source.getId()");
+        Set<String> componentNames = new TreeSet<>();
+        addDtoComponent(components, expressions, componentNames, "UUID", "id", "source.getId()", false);
         for (AttributePlan attribute : plan.attributes) {
             FieldDeclaration field = attribute.source();
             String componentName = field.javaName();
             String componentType;
-            String expression = "source.get" + capitalize(field.javaName()) + "()";
+            String getter = "source.get" + capitalize(field.javaName()) + "()";
+            String expression = getter;
             if (attribute.referencedType() != null) {
                 componentName += "Id";
                 componentType = "UUID";
-                expression = expression + " == null ? null : " + expression + ".getId()";
+                expression = getter + " == null ? null : " + getter + ".getId()";
             } else if (field.collectionIntent() == CollectionIntent.COLLECTION) {
                 componentType = "List<" + boxed(attribute.javaType()) + ">";
-                expression = "List.copyOf(" + expression + ")";
+                expression = getter + " == null ? List.of() : List.copyOf(" + getter + ")";
             } else {
                 componentType = attribute.javaType();
             }
-            components.add(componentType + " " + componentName);
-            expressions.add(expression);
+            addDtoComponent(components, expressions, componentNames, componentType, componentName, expression,
+                    !field.nullable());
+        }
+        for (OwningRelationshipPlan relationship : plan.owningRelationships) {
+            RelationshipDescriptor descriptor = relationship.descriptor();
+            String name = descriptor.owningFieldName() + "Id";
+            String getter = "source.get" + capitalize(descriptor.owningFieldName()) + "()";
+            addDtoComponent(components, expressions, componentNames, "UUID", name,
+                    getter + " == null ? null : " + getter + ".getId()", !descriptor.owningFieldNullable());
         }
 
         StringBuilder source = new StringBuilder("package ").append(dtoPackage).append(";\n\n");
@@ -334,6 +354,16 @@ public final class DomainProjectEmitter {
                 .append("        return new ").append(dtoName).append('(').append(String.join(", ", expressions))
                 .append(");\n    }\n}\n");
         return source.toString();
+    }
+
+    private static void addDtoComponent(List<String> components, List<String> expressions, Set<String> names,
+            String type, String name, String expression, boolean required) {
+        requireJavaIdentifier(name, "DTO component");
+        if (!names.add(name)) {
+            throw new IllegalArgumentException("Duplicate generated DTO component: " + name);
+        }
+        components.add((required ? "@NotNull " : "") + type + " " + name);
+        expressions.add(expression);
     }
 
     private String repositorySource(EntityPlan plan, String rootPackage) {
@@ -355,34 +385,83 @@ public final class DomainProjectEmitter {
         String packageName = rootPackage + ".service";
         String dtoName = plan.type.javaName() + "Dto";
         String repositoryName = plan.type.javaName() + "Repository";
-        return lines(
-                "package " + packageName + ";",
-                "",
-                "import " + rootPackage + ".api.dto." + dtoName + ";",
-                "import " + rootPackage + ".repository." + repositoryName + ";",
-                "import java.util.List;",
-                "import java.util.Optional;",
-                "import java.util.UUID;",
-                "import org.springframework.stereotype.Service;",
-                "import org.springframework.transaction.annotation.Transactional;",
-                "",
-                "@Service",
-                "@Transactional(readOnly = true)",
-                "public class " + plan.type.javaName() + "Service {",
-                "    private final " + repositoryName + " repository;",
-                "",
-                "    public " + plan.type.javaName() + "Service(" + repositoryName + " repository) {",
-                "        this.repository = repository;",
-                "    }",
-                "",
-                "    public List<" + dtoName + "> list() {",
-                "        return repository.findAll().stream().map(" + dtoName + "::from).toList();",
-                "    }",
-                "",
-                "    public Optional<" + dtoName + "> findById(UUID id) {",
-                "        return repository.findById(id).map(" + dtoName + "::from);",
-                "    }",
-                "}");
+        boolean hasReferences = plan.attributes.stream().anyMatch(attribute -> attribute.referencedType() != null)
+                || !plan.owningRelationships.isEmpty();
+        StringBuilder source = new StringBuilder();
+        source.append("package ").append(packageName).append(";\n\n")
+                .append("import ").append(rootPackage).append(".api.dto.").append(dtoName).append(";\n")
+                .append("import ").append(rootPackage).append(".repository.").append(repositoryName).append(";\n")
+                .append("import ").append(plan.qualifiedName).append(";\n")
+                .append("import java.util.List;\n")
+                .append("import java.util.Optional;\n")
+                .append("import java.util.UUID;\n")
+                .append("import org.springframework.stereotype.Service;\n")
+                .append("import org.springframework.transaction.annotation.Transactional;\n");
+        if (hasReferences) {
+            source.append("import jakarta.persistence.EntityManager;\n")
+                    .append("import jakarta.persistence.PersistenceContext;\n")
+                    .append("import ").append(rootPackage).append(".api.GeneratedApiException;\n");
+        }
+        source.append("\n@Service\n@Transactional(readOnly = true)\npublic class ")
+                .append(plan.type.javaName()).append("Service {\n")
+                .append("    private final ").append(repositoryName).append(" repository;\n");
+        if (hasReferences) {
+            source.append("\n    @PersistenceContext\n    private EntityManager entityManager;\n");
+        }
+        source.append("\n    public ").append(plan.type.javaName()).append("Service(").append(repositoryName)
+                .append(" repository) {\n        this.repository = repository;\n    }\n")
+                .append("\n    public List<").append(dtoName).append("> list() {\n")
+                .append("        return repository.findAll().stream().map(").append(dtoName).append("::from).toList();\n")
+                .append("    }\n")
+                .append("\n    public Optional<").append(dtoName).append("> findById(UUID id) {\n")
+                .append("        return repository.findById(id).map(").append(dtoName).append("::from);\n")
+                .append("    }\n")
+                .append("\n    @Transactional\n    public ").append(dtoName).append(" create(").append(dtoName)
+                .append(" request) {\n        ").append(plan.type.javaName()).append(" entity = new ")
+                .append(plan.type.javaName()).append("();\n        applyRequest(entity, request);\n")
+                .append("        return ").append(dtoName).append(".from(repository.saveAndFlush(entity));\n    }\n")
+                .append("\n    @Transactional\n    public Optional<").append(dtoName).append("> update(UUID id, ")
+                .append(dtoName).append(" request) {\n")
+                .append("        return repository.findById(id).map(entity -> {\n")
+                .append("            applyRequest(entity, request);\n")
+                .append("            return ").append(dtoName).append(".from(repository.saveAndFlush(entity));\n")
+                .append("        });\n    }\n")
+                .append("\n    @Transactional\n    public boolean delete(UUID id) {\n")
+                .append("        if (!repository.existsById(id)) {\n            return false;\n        }\n")
+                .append("        repository.deleteById(id);\n        return true;\n    }\n")
+                .append("\n    private void applyRequest(").append(plan.type.javaName()).append(" entity, ")
+                .append(dtoName).append(" request) {\n");
+        for (AttributePlan attribute : plan.attributes) {
+            FieldDeclaration field = attribute.source();
+            String component = field.javaName() + (attribute.referencedType() == null ? "" : "Id");
+            String value = "request." + component + "()";
+            if (attribute.referencedType() != null) {
+                value = "resolveReference(" + value + ", \"" + component + "\", "
+                        + attribute.referencedType().qualifiedName + ".class)";
+            } else if (field.collectionIntent() == CollectionIntent.COLLECTION) {
+                value = value + " == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(" + value + ")";
+            }
+            source.append("        entity.set").append(capitalize(field.javaName())).append('(')
+                    .append(value).append(");\n");
+        }
+        for (OwningRelationshipPlan relationship : plan.owningRelationships) {
+            String component = relationship.descriptor().owningFieldName() + "Id";
+            String value = "resolveReference(request." + component + "(), \"" + component + "\", "
+                    + relationship.referenced().qualifiedName + ".class)";
+            source.append("        entity.set").append(capitalize(relationship.descriptor().owningFieldName()))
+                    .append('(').append(value).append(");\n");
+        }
+        source.append("    }\n");
+        if (hasReferences) {
+            source.append("\n    private <T> T resolveReference(UUID id, String field, Class<T> type) {\n")
+                    .append("        if (id == null) {\n            return null;\n        }\n")
+                    .append("        T referenced = entityManager.find(type, id);\n")
+                    .append("        if (referenced == null) {\n")
+                    .append("            throw GeneratedApiException.invalidReference(field + \"=\" + id);\n")
+                    .append("        }\n        return referenced;\n    }\n");
+        }
+        source.append("}\n");
+        return source.toString();
     }
 
     private String controllerSource(EntityPlan plan, String rootPackage) {
@@ -393,11 +472,18 @@ public final class DomainProjectEmitter {
                 "",
                 "import " + rootPackage + ".api.dto." + dtoName + ";",
                 "import " + rootPackage + ".service." + serviceName + ";",
+                "import " + rootPackage + ".api.GeneratedApiException;",
+                "import jakarta.validation.Valid;",
                 "import java.util.List;",
                 "import java.util.UUID;",
+                "import org.springframework.http.HttpStatus;",
                 "import org.springframework.http.ResponseEntity;",
+                "import org.springframework.web.bind.annotation.DeleteMapping;",
                 "import org.springframework.web.bind.annotation.GetMapping;",
                 "import org.springframework.web.bind.annotation.PathVariable;",
+                "import org.springframework.web.bind.annotation.PostMapping;",
+                "import org.springframework.web.bind.annotation.PutMapping;",
+                "import org.springframework.web.bind.annotation.RequestBody;",
                 "import org.springframework.web.bind.annotation.RequestMapping;",
                 "import org.springframework.web.bind.annotation.RestController;",
                 "",
@@ -415,10 +501,141 @@ public final class DomainProjectEmitter {
                 "        return service.list();",
                 "    }",
                 "",
+                "    @PostMapping",
+                "    public ResponseEntity<" + dtoName + "> create(@Valid @RequestBody " + dtoName + " request) {",
+                "        return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));",
+                "    }",
+                "",
                 "    @GetMapping(\"/{id}\")",
                 "    public ResponseEntity<" + dtoName + "> findById(@PathVariable UUID id) {",
-                "        return service.findById(id).map(ResponseEntity::ok)"
-                        + ".orElseGet(() -> ResponseEntity.<" + dtoName + ">notFound().build());",
+                "        return ResponseEntity.ok(service.findById(id).orElseThrow(() ->",
+                "                GeneratedApiException.notFound(\"" + plan.type.javaName() + " id=\" + id)));",
+                "    }",
+                "",
+                "    @PutMapping(\"/{id}\")",
+                "    public ResponseEntity<" + dtoName + "> update(@PathVariable UUID id,",
+                "            @Valid @RequestBody " + dtoName + " request) {",
+                "        return ResponseEntity.ok(service.update(id, request).orElseThrow(() ->",
+                "                GeneratedApiException.notFound(\"" + plan.type.javaName() + " id=\" + id)));",
+                "    }",
+                "",
+                "    @DeleteMapping(\"/{id}\")",
+                "    public ResponseEntity<Void> delete(@PathVariable UUID id) {",
+                "        if (!service.delete(id)) {",
+                "            throw GeneratedApiException.notFound(\"" + plan.type.javaName() + " id=\" + id);",
+                "        }",
+                "        return ResponseEntity.noContent().build();",
+                "    }",
+                "}");
+    }
+
+    private String apiErrorResponse(TargetNames target) {
+        return lines(
+                "package " + target.basePackage() + ".api;",
+                "",
+                "public record ApiErrorResponse(String code, String message, String detail) {",
+                "}");
+    }
+
+    private String generatedApiException(TargetNames target) {
+        String apiPackage = target.basePackage() + ".api";
+        return lines(
+                "package " + apiPackage + ";",
+                "",
+                "import org.springframework.http.HttpStatus;",
+                "",
+                "public final class GeneratedApiException extends RuntimeException {",
+                "    private final HttpStatus status;",
+                "    private final String code;",
+                "    private final String detail;",
+                "",
+                "    public GeneratedApiException(HttpStatus status, String code, String message, String detail) {",
+                "        super(message);",
+                "        this.status = status;",
+                "        this.code = code;",
+                "        this.detail = detail;",
+                "    }",
+                "",
+                "    public HttpStatus status() { return status; }",
+                "    public String code() { return code; }",
+                "    public String detail() { return detail; }",
+                "",
+                "    public static GeneratedApiException notFound(String detail) {",
+                "        return new GeneratedApiException(HttpStatus.NOT_FOUND, \"NOT_FOUND\",",
+                "                \"The requested resource was not found.\", detail);",
+                "    }",
+                "",
+                "    public static GeneratedApiException invalidReference(String detail) {",
+                "        return new GeneratedApiException(HttpStatus.BAD_REQUEST, \"INVALID_REFERENCE\",",
+                "                \"A related resource reference does not exist.\", detail);",
+                "    }",
+                "}");
+    }
+
+    private String generatedApiExceptionHandler(TargetNames target) {
+        String apiPackage = target.basePackage() + ".api";
+        return lines(
+                "package " + apiPackage + ";",
+                "",
+                "import jakarta.validation.ConstraintViolationException;",
+                "import java.util.stream.Collectors;",
+                "import org.springframework.dao.DataIntegrityViolationException;",
+                "import org.springframework.http.HttpStatus;",
+                "import org.springframework.http.ResponseEntity;",
+                "import org.springframework.http.converter.HttpMessageNotReadableException;",
+                "import org.springframework.web.bind.MethodArgumentNotValidException;",
+                "import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;",
+                "import org.springframework.web.bind.annotation.ExceptionHandler;",
+                "import org.springframework.web.bind.annotation.RestControllerAdvice;",
+                "import org.springframework.web.servlet.resource.NoResourceFoundException;",
+                "",
+                "@RestControllerAdvice",
+                "public final class GeneratedApiExceptionHandler {",
+                "    @ExceptionHandler(GeneratedApiException.class)",
+                "    public ResponseEntity<ApiErrorResponse> handleGenerated(GeneratedApiException exception) {",
+                "        return response(exception.status(), exception.code(), exception.getMessage(), exception.detail());",
+                "    }",
+                "",
+                "    @ExceptionHandler(MethodArgumentNotValidException.class)",
+                "    public ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException exception) {",
+                "        String detail = exception.getBindingResult().getFieldErrors().stream()",
+                "                .map(error -> error.getField() + \": \" + String.valueOf(error.getDefaultMessage()))",
+                "                .sorted().collect(Collectors.joining(\"; \"));",
+                "        return response(HttpStatus.BAD_REQUEST, \"VALIDATION_FAILED\",",
+                "                \"Request validation failed.\", detail.isBlank() ? \"Request body is invalid.\" : detail);",
+                "    }",
+                "",
+                "    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,",
+                "            ConstraintViolationException.class})",
+                "    public ResponseEntity<ApiErrorResponse> handleMalformed(Exception exception) {",
+                "        return response(HttpStatus.BAD_REQUEST, \"INVALID_REQUEST\",",
+                "                \"Request data is invalid.\", exception.getMessage() == null",
+                "                        ? \"Malformed request body or parameter.\" : exception.getMessage());",
+                "    }",
+                "",
+                "    @ExceptionHandler(NoResourceFoundException.class)",
+                "    public ResponseEntity<ApiErrorResponse> handleUnknownRoute(NoResourceFoundException exception) {",
+                "        return response(HttpStatus.NOT_FOUND, \"NOT_FOUND\", \"The requested route was not found.\",",
+                "                \"route=\" + String.valueOf(exception.getResourcePath()));",
+                "    }",
+                "",
+                "    @ExceptionHandler(DataIntegrityViolationException.class)",
+                "    public ResponseEntity<ApiErrorResponse> handleConstraint(DataIntegrityViolationException exception) {",
+                "        String detail = exception.getMostSpecificCause().getMessage();",
+                "        return response(HttpStatus.BAD_REQUEST, \"DATA_CONSTRAINT_VIOLATION\",",
+                "                \"The request violates a data constraint.\",",
+                "                detail == null ? \"database-constraint\" : detail);",
+                "    }",
+                "",
+                "    @ExceptionHandler(Exception.class)",
+                "    public ResponseEntity<ApiErrorResponse> handleUnexpected(Exception exception) {",
+                "        return response(HttpStatus.INTERNAL_SERVER_ERROR, \"INTERNAL_ERROR\",",
+                "                \"An unexpected server error occurred.\", \"failureType=\" + exception.getClass().getSimpleName());",
+                "    }",
+                "",
+                "    private ResponseEntity<ApiErrorResponse> response(HttpStatus status, String code, String message,",
+                "            String detail) {",
+                "        return ResponseEntity.status(status).body(new ApiErrorResponse(code, message, detail));",
                 "    }",
                 "}");
     }
@@ -891,6 +1108,12 @@ public final class DomainProjectEmitter {
     private static void appendGetter(StringBuilder source, String type, String fieldName) {
         source.append("\n    public ").append(type).append(" get").append(capitalize(fieldName)).append("() {\n")
                 .append("        return ").append(fieldName).append(";\n    }\n");
+    }
+
+    private static void appendSetter(StringBuilder source, String type, String fieldName) {
+        source.append("\n    public void set").append(capitalize(fieldName)).append('(').append(type).append(' ')
+                .append(fieldName).append(") {\n        this.").append(fieldName).append(" = ").append(fieldName)
+                .append(";\n    }\n");
     }
 
     private static String capitalize(String value) {
