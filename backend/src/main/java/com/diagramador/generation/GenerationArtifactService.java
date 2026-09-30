@@ -9,6 +9,10 @@ import com.diagramador.generation.GenerationArtifactBundleBuilder.GenerationIden
 import com.diagramador.persistence.GeneratedArtifactRepository;
 import com.diagramador.persistence.GenerationRunRepository;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -98,16 +102,42 @@ public class GenerationArtifactService {
     }
 
     private boolean persistedManifestMatches(UUID runId, GeneratedArtifactBundle bundle) {
-        var persisted = artifactRepository.findByRunIdOrderByPathAsc(runId);
-        if (persisted.size() != bundle.completeManifest().size()) {
+        List<ArtifactDescriptor> persisted = new ArrayList<>();
+        for (var row : artifactRepository.findByRunIdOrderByPathAsc(runId)) {
+            if (row.getSizeBytes() == null) {
+                return false;
+            }
+            persisted.add(new ArtifactDescriptor(row.getPath(), row.getKind(), row.getContentHash(),
+                    row.getSizeBytes()));
+        }
+        return manifestsMatch(bundle.completeManifest(), persisted);
+    }
+
+    /**
+     * Compares the emitted manifest against the persisted rows without depending on either order.
+     *
+     * <p>The persisted rows come back ordered by the database, and a database collation is not the
+     * artifact's canonical path order: under a word-based collation `Dockerfile` sorts before
+     * `.gitignore` and `Dockerfile` before `docker-compose.yml`. Comparing the two lists positionally
+     * therefore made the archive downloadable on one PostgreSQL build and not on another. The rows are
+     * keyed by path here so the comparison is a set equality, which is what the check always meant.
+     */
+    static boolean manifestsMatch(List<ArtifactDescriptor> expected, List<ArtifactDescriptor> persisted) {
+        if (expected.size() != persisted.size()) {
             return false;
         }
-        for (int index = 0; index < persisted.size(); index++) {
-            var actual = persisted.get(index);
-            ArtifactDescriptor expected = bundle.completeManifest().get(index);
-            if (!expected.path().equals(actual.getPath()) || !expected.kind().equals(actual.getKind())
-                    || !expected.contentHash().equals(actual.getContentHash())
-                    || actual.getSizeBytes() == null || expected.sizeBytes() != actual.getSizeBytes()) {
+        Map<String, ArtifactDescriptor> byPath = new HashMap<>();
+        for (ArtifactDescriptor artifact : persisted) {
+            byPath.put(artifact.path(), artifact);
+        }
+        if (byPath.size() != persisted.size()) {
+            return false;
+        }
+        for (ArtifactDescriptor artifact : expected) {
+            ArtifactDescriptor actual = byPath.get(artifact.path());
+            if (actual == null || !artifact.kind().equals(actual.kind())
+                    || !artifact.contentHash().equals(actual.contentHash())
+                    || artifact.sizeBytes() != actual.sizeBytes()) {
                 return false;
             }
         }
