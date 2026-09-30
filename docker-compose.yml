@@ -1,0 +1,54 @@
+name: uml-diagrammer
+
+# Required environment variables: DIAGRAMMER_DB_NAME (database), DIAGRAMMER_DB_USER (database username),
+# and DIAGRAMMER_DB_PASSWORD (database password). Provide them in the environment; no .env file is required.
+# Optional host ports: DIAGRAMMER_POSTGRES_HOST_PORT defaults to 25432; DIAGRAMMER_HTTP_HOST_PORT defaults to 18090.
+# Port convention: the diagrammer owns 18090 and 25432. A generated backend takes its own pair from the
+# 1900N and 2543N ranges, one per destination, so two generated backends and the diagrammer can run at the
+# same time without fighting over a port. See docs/puds/generacion/02-ejecucion-local.md.
+x-postgres-image: &postgres-image postgres:16-alpine
+
+services:
+  diagrammer-db:
+    image: *postgres-image
+    environment:
+      POSTGRES_DB: ${DIAGRAMMER_DB_NAME:?DIAGRAMMER_DB_NAME must be provided in the environment}
+      POSTGRES_USER: ${DIAGRAMMER_DB_USER:?DIAGRAMMER_DB_USER must be provided in the environment}
+      POSTGRES_PASSWORD: ${DIAGRAMMER_DB_PASSWORD:?DIAGRAMMER_DB_PASSWORD must be provided in the environment}
+    ports:
+      - "${DIAGRAMMER_POSTGRES_HOST_PORT:-25432}:5432"
+    volumes:
+      - diagrammer-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  diagrammer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        JAVA_VERSION: "21"
+        SPRING_BOOT_VERSION: "3.4.5"
+        POSTGRES_IMAGE: *postgres-image
+        RUNTIME_BASE_IMAGE: "eclipse-temurin:21-jre-alpine"
+    environment:
+      DIAGRAMADOR_DB_URL: jdbc:postgresql://diagrammer-db:5432/${DIAGRAMMER_DB_NAME:?DIAGRAMMER_DB_NAME must be provided in the environment}
+      DIAGRAMADOR_DB_USERNAME: ${DIAGRAMMER_DB_USER:?DIAGRAMMER_DB_USER must be provided in the environment}
+      DIAGRAMADOR_DB_PASSWORD: ${DIAGRAMMER_DB_PASSWORD:?DIAGRAMMER_DB_PASSWORD must be provided in the environment}
+    ports:
+      - "${DIAGRAMMER_HTTP_HOST_PORT:-18090}:8080"
+    depends_on:
+      diagrammer-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  diagrammer-postgres-data:

@@ -1,0 +1,13 @@
+# Keep the host-built executable jar, but exclude stale Maven output from the context.
+target/*
+!target/*.jar
+
+# IDE and local environment files.
+.idea
+.vscode
+*.iml
+*.swp
+.DS_Store
+.env
+.env.*
+.git

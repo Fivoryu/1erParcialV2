@@ -3,8 +3,8 @@ spring:
     name: uml-diagrammer-backend
   datasource:
     url: ${DIAGRAMADOR_DB_URL:jdbc:postgresql://localhost:5432/diagramador}
-    username: diagramador
-    password: diagramador
+    username: ${DIAGRAMADOR_DB_USERNAME:diagramador}
+    password: ${DIAGRAMADOR_DB_PASSWORD:diagramador}
     hikari:
       # The schema authority (docs/puds/datos/02-esquema-fisico.sql) runs
       # `SET search_path TO diagrammer, public` before creating the extensions and the types of
