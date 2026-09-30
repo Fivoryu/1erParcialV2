@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import org.yaml.snakeyaml.Yaml;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -258,6 +259,38 @@ class DomainProjectEmitterTest {
                 "GENERATED_DB_NAME=", "GENERATED_DB_PASSWORD=replace-with-a-local-only-value",
                 "GENERATED_HTTP_HOST_PORT=19001", "GENERATED_POSTGRES_HOST_PORT=25433");
         assertThat(reporting.get(".gitignore")).contains(".env");
+    }
+
+    /**
+     * The Compose file must be valid YAML before any container is involved.
+     *
+     * <p>A healthcheck written with unescaped inner double quotes parsed as neither YAML nor Compose:
+     * `docker compose config` refused it with "did not find expected ',' or ']'". Serializing the file
+     * through a real parser is the guard that catches that class of defect in the suite instead of at a
+     * deployment.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void emittedComposeParsesAsYamlAndItsHealthchecksRunAsWritten() {
+        Map<String, String> files = emitter.emit("reporting-service", mapper.map(snapshot(false)));
+        String compose = files.get("docker-compose.yml");
+
+        Map<String, Object> parsed = new Yaml().load(compose);
+        assertThat(parsed).containsEntry("name", "generated-reporting-service");
+        Map<String, Object> services = (Map<String, Object>) parsed.get("services");
+        assertThat(services).containsOnlyKeys("reporting-service-db", "reporting-service");
+
+        Map<String, Object> database = (Map<String, Object>) services.get("reporting-service-db");
+        Map<String, Object> databaseHealthcheck = (Map<String, Object>) database.get("healthcheck");
+        assertThat(databaseHealthcheck.get("test")).isEqualTo(List.of("CMD-SHELL",
+                "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"));
+
+        Map<String, Object> application = (Map<String, Object>) services.get("reporting-service");
+        Map<String, Object> applicationHealthcheck = (Map<String, Object>) application.get("healthcheck");
+        assertThat(applicationHealthcheck.get("test")).isEqualTo(List.of("CMD-SHELL",
+                "wget -q --spider http://127.0.0.1:8080/actuator/health"));
+        assertThat((Map<String, Object>) application.get("environment")).containsKey("SPRING_DATASOURCE_URL");
+        assertThat((Map<String, Object>) parsed.get("volumes")).containsOnlyKeys("reporting-service-postgres-data");
     }
 
     @Test
