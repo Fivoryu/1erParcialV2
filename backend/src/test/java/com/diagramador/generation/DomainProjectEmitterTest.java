@@ -94,9 +94,11 @@ class DomainProjectEmitterTest {
         Map<String, String> files = emitter.emit("course-store", mapper.map(snapshot(false)));
 
         assertThat(new ArrayList<>(files.keySet())).containsExactly(
+                ".env.example",
                 ".gitignore",
                 "Dockerfile",
                 "README.md",
+                "docker-compose.yml",
                 "pom.xml",
                 "src/main/java/com/generated/course/store/GeneratedApplication.java",
                 "src/main/java/com/generated/course/store/api/ApiErrorResponse.java",
@@ -127,6 +129,7 @@ class DomainProjectEmitterTest {
         assertThat(files.get("pom.xml")).contains("<artifactId>spring-boot-starter-actuator</artifactId>");
         assertThat(files.get("src/main/resources/application.yml")).contains("include: health");
         assertThat(files.get("README.md")).contains("Security limitation", "no generated authentication");
+        assertThat(files.get("README.md")).contains("## Deploy with Docker Compose", "docker compose up -d --build");
         assertThat(files.get("src/main/java/com/generated/course/store/service/CustomerService.java"))
                 .contains("@Transactional(readOnly = true)",
                         "repository.findAll().stream().map(CustomerDto::from).toList()",
@@ -207,6 +210,54 @@ class DomainProjectEmitterTest {
         assertThat(files.get("pom.xml")).contains("<version>9.8.7</version>");
         assertThat(files.get("pom.xml")).doesNotContain("<version>3.4.5</version>");
         assertThat(GenerationBaseline.load().springBootVersion()).isEqualTo("3.4.5");
+        // The Compose file reads the same baseline, so a baseline change reaches the destination too.
+        assertThat(files.get("docker-compose.yml")).contains("image: postgres:16-alpine");
+    }
+
+    @Test
+    void emittedComposeGivesEachDestinationItsOwnStackWithoutSecrets() {
+        DomainModelIR ir = mapper.map(snapshot(false));
+        Map<String, String> reporting = emitter.emit("reporting-service", ir);
+        Map<String, String> billing = emitter.emit("billing-service", ir);
+        String reportingCompose = reporting.get("docker-compose.yml");
+        String billingCompose = billing.get("docker-compose.yml");
+
+        assertThat(reportingCompose).contains(
+                "name: generated-reporting-service",
+                "  reporting-service-db:",
+                "  reporting-service:",
+                "      - reporting-service-postgres-data:/var/lib/postgresql/data",
+                "  reporting-service-postgres-data:");
+        assertThat(billingCompose).contains(
+                "name: generated-billing-service",
+                "  billing-service-postgres-data:");
+        // Two destinations must not share a Compose project, a service name, or a database volume.
+        assertThat(billingCompose).doesNotContain("reporting-service");
+        assertThat(reportingCompose).doesNotContain("billing-service");
+
+        // The database is the classpath baseline, and the application reads its datasource from the environment.
+        assertThat(reportingCompose).contains("image: postgres:16-alpine");
+        assertThat(reportingCompose).contains(
+                "      SPRING_DATASOURCE_URL: jdbc:postgresql://reporting-service-db:5432/${GENERATED_DB_NAME}",
+                "      SPRING_DATASOURCE_USERNAME: ${GENERATED_DB_USER}",
+                "      SPRING_DATASOURCE_PASSWORD: ${GENERATED_DB_PASSWORD}",
+                "        condition: service_healthy",
+                "/actuator/health");
+
+        // No literal credential, no uri user-info, and no host path in any deployment artifact.
+        assertThat(reportingCompose).doesNotContain("replace-with-a-local-only-value");
+        for (String path : List.of("docker-compose.yml", ".env.example", "README.md", ".gitignore")) {
+            String content = reporting.get(path);
+            assertThat(ConnectionConfigRefValidator.looksCredentialLike(content))
+                    .as("credential-shaped value in " + path)
+                    .isFalse();
+            assertThat(HOST_PATH.matcher(content).find()).as("host path in " + path).isFalse();
+        }
+
+        assertThat(reporting.get(".env.example")).contains(
+                "GENERATED_DB_NAME=", "GENERATED_DB_PASSWORD=replace-with-a-local-only-value",
+                "GENERATED_HTTP_HOST_PORT=19001", "GENERATED_POSTGRES_HOST_PORT=25433");
+        assertThat(reporting.get(".gitignore")).contains(".env");
     }
 
     @Test

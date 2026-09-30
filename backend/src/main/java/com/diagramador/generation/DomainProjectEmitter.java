@@ -70,13 +70,16 @@ public final class DomainProjectEmitter {
         validatePlans(plans.values());
 
         TreeMap<String, String> files = new TreeMap<>();
+        put(files, ".env.example", envExample(target));
         put(files, ".gitignore", lines(
                 "/target/",
+                ".env",
                 ".idea/",
                 ".vscode/",
                 "*.iml"));
         put(files, "Dockerfile", dockerfile());
         put(files, "README.md", readme(target));
+        put(files, "docker-compose.yml", compose(target));
         put(files, "pom.xml", pom(target));
         put(files, javaPath(target.basePackage() + ".api", "ApiErrorResponse"), apiErrorResponse(target));
         put(files, javaPath(target.basePackage() + ".api", "GeneratedApiException"), generatedApiException(target));
@@ -750,6 +753,83 @@ public final class DomainProjectEmitter {
                 "ENTRYPOINT [\"java\", \"-jar\", \"/app/app.jar\"]");
     }
 
+    /**
+     * The destination's own Compose project.
+     *
+     * The slug names the Compose project, the application service, the database service, and the database
+     * volume, so two destinations of the same model are two independent stacks with two independent
+     * databases. Host ports stay environment-driven because the destination's port pair belongs to the
+     * destination's configuration, and the default pair is the first one of the 1900N/2543N convention.
+     */
+    private String compose(TargetNames target) {
+        String slug = target.slug();
+        return lines(
+                "name: generated-" + slug,
+                "",
+                "# One Compose project per destination: its own application service, its own PostgreSQL, and its",
+                "# own database volume. No secret is stored in this file.",
+                "",
+                "services:",
+                "  " + slug + "-db:",
+                "    image: " + baseline.postgresImage(),
+                "    environment:",
+                "      POSTGRES_DB: ${GENERATED_DB_NAME}",
+                "      POSTGRES_USER: ${GENERATED_DB_USER}",
+                "      POSTGRES_PASSWORD: ${GENERATED_DB_PASSWORD}",
+                "    ports:",
+                "      - \"${GENERATED_POSTGRES_HOST_PORT:-25433}:5432\"",
+                "    volumes:",
+                "      - " + slug + "-postgres-data:/var/lib/postgresql/data",
+                "    healthcheck:",
+                "      test: [\"CMD-SHELL\", \"pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"\"]",
+                "      interval: 5s",
+                "      timeout: 3s",
+                "      retries: 12",
+                "",
+                "  " + slug + ":",
+                "    build:",
+                "      context: .",
+                "      dockerfile: Dockerfile",
+                "    environment:",
+                "      SPRING_DATASOURCE_URL: jdbc:postgresql://" + slug + "-db:5432/${GENERATED_DB_NAME}",
+                "      SPRING_DATASOURCE_USERNAME: ${GENERATED_DB_USER}",
+                "      SPRING_DATASOURCE_PASSWORD: ${GENERATED_DB_PASSWORD}",
+                "    ports:",
+                "      - \"${GENERATED_HTTP_HOST_PORT:-19001}:8080\"",
+                "    depends_on:",
+                "      " + slug + "-db:",
+                "        condition: service_healthy",
+                "    healthcheck:",
+                "      test: [\"CMD-SHELL\", \"wget -q --spider http://127.0.0.1:8080/actuator/health\"]",
+                "      interval: 10s",
+                "      timeout: 5s",
+                "      retries: 12",
+                "      start_period: 30s",
+                "",
+                "volumes:",
+                "  " + slug + "-postgres-data:");
+    }
+
+    /** The values a destination must set before it can start. It documents them without carrying a secret. */
+    private String envExample(TargetNames target) {
+        return lines(
+                "# Deployment values for the generated backend `" + target.slug() + "`.",
+                "#",
+                "# Copy this file to .env in this directory and set every value before running",
+                "# `docker compose up -d --build`. Compose reads .env automatically. This example file carries no",
+                "# usable secret, and the emitted .gitignore keeps the real .env out of version control.",
+                "",
+                "# Database created and used by this destination alone.",
+                "GENERATED_DB_NAME=generated_db",
+                "GENERATED_DB_USER=generated_user",
+                "GENERATED_DB_PASSWORD=replace-with-a-local-only-value",
+                "",
+                "# Host ports for this destination, one pair per destination from the 1900N and 2543N ranges:",
+                "# 19001/25433 for the first, 19002/25434 for the second, and so on.",
+                "GENERATED_HTTP_HOST_PORT=19001",
+                "GENERATED_POSTGRES_HOST_PORT=25433");
+    }
+
     private String readme(TargetNames target) {
         return lines(
                 "# Generated backend for target `" + target.slug() + "`",
@@ -763,6 +843,15 @@ public final class DomainProjectEmitter {
                 "Set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the runtime environment.",
                 "Flyway applies `src/main/resources/db/migration/V1__init.sql` at startup.",
                 "List and lookup services map entities to DTOs inside read-only transactions; the API does not serialize lazy entities.",
+                "",
+                "## Deploy with Docker Compose",
+                "",
+                "1. `mvn -o -B package` leaves the runnable jar in `target/`.",
+                "2. Copy `.env.example` to `.env` and set every value. The emitted `.gitignore` keeps `.env` out of version control.",
+                "3. `docker compose up -d --build` starts this destination and its own PostgreSQL.",
+                "4. `curl http://localhost:19001/actuator/health` answers `{\"status\":\"UP\"}` once Flyway applied the migration.",
+                "",
+                "Each destination is its own Compose project with its own database volume, so two destinations of the same model run at the same time as long as their host port pairs differ. Take the pair from the `1900N` and `2543N` ranges: `19001`/`25433` for the first destination, `19002`/`25434` for the second, and so on.",
                 "",
                 "## Security limitation",
                 "",
@@ -1144,8 +1233,8 @@ public final class DomainProjectEmitter {
     }
 
     private static void put(Map<String, String> files, String path, String content) {
-        if (!path.startsWith("src/") && !Set.of(".gitignore", "Dockerfile", "README.md", "pom.xml")
-                .contains(path)) {
+        if (!path.startsWith("src/") && !Set.of(".env.example", ".gitignore", "Dockerfile", "README.md",
+                "docker-compose.yml", "pom.xml").contains(path)) {
             throw new IllegalArgumentException("Invalid emitted path " + path);
         }
         if (files.putIfAbsent(path, content) != null) {
