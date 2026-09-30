@@ -1,0 +1,206 @@
+[INFO] Generation acceptance run 36b5ec4d-f28f-4ad3-8a2b-b33b1481a38a
+[OK] Locate Docker
+  expected: docker available in PATH
+  got:      C:\Program Files\Docker\Docker\resources\bin\docker.EXE
+[OK] Locate Maven
+  expected: mvn available in PATH; the generated project builds from the local cache
+  got:      C:\Program Files\apache-maven-3.9.15\bin\mvn.CMD
+[INFO] Containers before: 37
+[OK] Inspect the local PostgreSQL image
+  expected: local postgres:16-alpine; the run never pulls
+  got:      sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+[OK] Inspect the generated runtime base image
+  expected: local eclipse-temurin:21-jre-alpine; otherwise the generated image needs one declared download
+  got:      sha256:51ab5e3302e7141ce665ca3ea85e8b5cd648eafbc3c0c90dd79d6537684e4555
+[OK] Reach the running diagrammer
+  expected: {"HTTP": 200, "status": "UP"}
+  got:      {"HTTP": 200, "base": "http://127.0.0.1:63080", "body": {"status": "UP"}, "hint": "start one with tools/acceptance/acceptance.py --keep-running"}
+[OK] Reserve the destination host ports
+  expected: ports 19001..19002 and 25433.. free
+  got:      all free
+[OK] Create the project over HTTP
+  expected: HTTP 201 with a project id
+  got:      {"HTTP": 201, "body": {"description": "Created by tools/generation-acceptance", "id": "718a511f-662c-4e6d-83d0-19bbeb928a43", "name": "Generation acceptance t36b5e"}}
+[OK] Read the initial model
+  expected: {"HTTP": 200, "classifiers": 0, "versionId": "a UUID"}
+  got:      {"HTTP": 200, "body": "as expected", "classifiers": 0, "versionId": "606ed798-d44e-4777-9b60-cf7c31594606"}
+[OK] Apply classifier.create at revision 1
+  expected: {"HTTP": 200, "resultRevision": 2, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "a16aad39-57a2-43ad-9a2e-012bc646bedb", "resultRevision": 2, "status": "ACCEPTED"}}
+[OK] Apply classifier.create at revision 2
+  expected: {"HTTP": 200, "resultRevision": 3, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "7f929ee1-8c9a-4926-bc67-674ff61e52fa", "resultRevision": 3, "status": "ACCEPTED"}}
+[OK] Apply attribute.add at revision 3
+  expected: {"HTTP": 200, "resultRevision": 4, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "d29b4f04-90fd-44e3-9e4b-ea94778124cc", "resultRevision": 4, "status": "ACCEPTED"}}
+[OK] Apply attribute.add at revision 4
+  expected: {"HTTP": 200, "resultRevision": 5, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "6e50afb3-7237-4890-94fd-38b666a22267", "resultRevision": 5, "status": "ACCEPTED"}}
+[OK] Apply attribute.add at revision 5
+  expected: {"HTTP": 200, "resultRevision": 6, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "0aba9287-ff18-43d6-a724-8dcec549d20c", "resultRevision": 6, "status": "ACCEPTED"}}
+[OK] Apply operation.add at revision 6
+  expected: {"HTTP": 200, "resultRevision": 7, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "5430051e-1985-4fff-973f-8a05a49c4e92", "resultRevision": 7, "status": "ACCEPTED"}}
+[OK] Apply relationship.create at revision 7
+  expected: {"HTTP": 200, "resultRevision": 8, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "73ccc1b9-897c-4852-8d1f-9fc2065baae8", "resultRevision": 8, "status": "ACCEPTED"}}
+[OK] Read the built model back and take its current version
+  expected: {"HTTP": 200, "versionId": "a new UUID, different from the initial one"}
+  got:      {"HTTP": 200, "current": "39cd4b1a-df11-40a8-8b18-5a2baa1f7b97", "initial": "606ed798-d44e-4777-9b60-cf7c31594606", "revision": 8}
+[INFO] Model 37ff7c47-f2ee-4556-98f4-d7c9d5ab59a9 at revision 8, version 39cd4b1a-df11-40a8-8b18-5a2baa1f7b97
+[OK] Create destination reporting-service-t36b5e
+  expected: {"HTTP": 200, "outcome": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"code": "TARGET_CREATED", "idempotencyKey": null, "message": "Generation target was created.", "outcome": "ACCEPTED", "result": {"configurationRevision": 1, "connectionConfigRef": null, "createdAt": null, "databaseEngine": "POSTGRESQL", "databaseName": "reporting_t36b5e_db", "databaseSchema": "public", "modelId": "37ff7c47-f2ee-4556-98f4-d7c9d5ab59a9", "name": "Reporting service t36b5e", "targetId": "13c593d0-baed-483c-ab4a-dca552f1eaf5", "targetKey": "reporting-service-t36b5e", "updatedAt": "2026-09-30T12:14:10.5984683-04:00"}}}
+[OK] Create destination billing-service-t36b5e
+  expected: {"HTTP": 200, "outcome": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"code": "TARGET_CREATED", "idempotencyKey": null, "message": "Generation target was created.", "outcome": "ACCEPTED", "result": {"configurationRevision": 1, "connectionConfigRef": null, "createdAt": null, "databaseEngine": "POSTGRESQL", "databaseName": "billing_t36b5e_db", "databaseSchema": "public", "modelId": "37ff7c47-f2ee-4556-98f4-d7c9d5ab59a9", "name": "Billing service t36b5e", "targetId": "6b979e31-0373-4f3a-8a54-5be91349fd98", "targetKey": "billing-service-t36b5e", "updatedAt": "2026-09-30T12:14:10.6423203-04:00"}}}
+[OK] Read the published generation profile
+  expected: HTTP 200 with at least one profile carrying its exact revision and template
+  got:      {"HTTP": 200, "body": [{"name": "Spring Boot PostgreSQL", "profileId": "d4dc0f07-7685-41eb-8bb1-e1a01d3883fb", "profileKey": "spring-boot-postgresql", "profileRevision": 1, "templateId": "ca1e2186-ae7a-4343-b802-3d0ac6189c92", "templateRevision": 1}]}
+[OK] Start and finish the generation for reporting-service-t36b5e
+  expected: {"HTTP": 200, "blockingDiagnostics": 0, "state": "SUCCEEDED"}
+  got:      {"HTTP": 200, "code": "GENERATION_ACCEPTED", "diagnostics": [], "outcome": "ACCEPTED", "state": "SUCCEEDED"}
+[OK] Download the archive for reporting-service-t36b5e
+  expected: {"HTTP": 200, "sha256": "1463807bbc5372850e995dcb35069e27fa50f68f2208feca6d723280f6a897ed", "starts with PK": true}
+  got:      {"HTTP": 200, "bytes": 42737, "sha256": "1463807bbc5372850e995dcb35069e27fa50f68f2208feca6d723280f6a897ed", "starts with PK": true}
+[INFO] reporting-service-t36b5e: 24 artifacts, 42737 bytes, artifactSetHash=1d7f270a043ce412dca18978533b6badc3fef741bd301eecf01982812250693f
+[OK] The archive carries the deployment artifacts for reporting-service-t36b5e
+  expected: [".env.example", "Dockerfile", "README.md", "docker-compose.yml", "pom.xml", "src/main/resources/db/migration/V1__init.sql"]
+  got:      all present
+[OK] Read the published generation profile
+  expected: HTTP 200 with at least one profile carrying its exact revision and template
+  got:      {"HTTP": 200, "body": [{"name": "Spring Boot PostgreSQL", "profileId": "d4dc0f07-7685-41eb-8bb1-e1a01d3883fb", "profileKey": "spring-boot-postgresql", "profileRevision": 1, "templateId": "ca1e2186-ae7a-4343-b802-3d0ac6189c92", "templateRevision": 1}]}
+[OK] Start and finish the generation for billing-service-t36b5e
+  expected: {"HTTP": 200, "blockingDiagnostics": 0, "state": "SUCCEEDED"}
+  got:      {"HTTP": 200, "code": "GENERATION_ACCEPTED", "diagnostics": [], "outcome": "ACCEPTED", "state": "SUCCEEDED"}
+[OK] Download the archive for billing-service-t36b5e
+  expected: {"HTTP": 200, "sha256": "e3fed138bc50214bb2d6f00ace3ef156839c38afa8f4fbe8ef24144af3db8d0a", "starts with PK": true}
+  got:      {"HTTP": 200, "bytes": 42551, "sha256": "e3fed138bc50214bb2d6f00ace3ef156839c38afa8f4fbe8ef24144af3db8d0a", "starts with PK": true}
+[INFO] billing-service-t36b5e: 24 artifacts, 42551 bytes, artifactSetHash=28a9923b80710c02f81096ffae578a9a0ecfbe4d52a258d16bfb9f7846849559
+[OK] The archive carries the deployment artifacts for billing-service-t36b5e
+  expected: [".env.example", "Dockerfile", "README.md", "docker-compose.yml", "pom.xml", "src/main/resources/db/migration/V1__init.sql"]
+  got:      all present
+[OK] Compile the generated project for reporting-service-t36b5e offline
+  expected: exit 0 with a packaged jar, no network
+  got:      {"exit": 0, "jars": ["generated-reporting-service-t36b5e-0.1.0.jar"], "tail": ""}
+[OK] The emitted Compose file resolves for reporting-service-t36b5e
+  expected: docker compose config exit 0
+  got:      {"exit": 0, "tail": "g-service-t36b5e-postgres-data\n        target: /var/lib/postgresql/data\n        volume: {}\nnetworks:\n  default:\n    name: generated-reporting-service-t36b5e_default\nvolumes:\n  reporting-service-t36b5e-postgres-data:\n    name: generated-reporting-service-t36b5e_reporting-service-t36b5e-postgres-data\n"}
+[OK] Deploy reporting-service-t36b5e with its own database
+  expected: docker compose up exit 0, no image pulled
+  got:      {"exit": 0, "tail": "-reporting-service-t36b5e-reporting-service-t36b5e-db-1 Started \n Container generated-reporting-service-t36b5e-reporting-service-t36b5e-db-1 Waiting \n Container generated-reporting-service-t36b5e-reporting-service-t36b5e-db-1 Healthy \n Container generated-reporting-service-t36b5e-reporting-service-t36b5e-1 Starting \n Container generated-reporting-service-t36b5e-reporting-service-t36b5e-1 Started \n"}
+[OK] The reporting-service-t36b5e stack reports its containers
+  expected: docker compose ps lists at least one container
+  got:      {"containers": ["597a0a87d7f62dfd022296028564ade27a307deb7441f085f09e52fad8533d13", "3773cef4b7b8eed2d934f34977ee8628883dfd344d516aed5fe2b005d691e4c7"], "exit": 0, "tail": "597a0a87d7f62dfd022296028564ade27a307deb7441f085f09e52fad8533d13\n3773cef4b7b8eed2d934f34977ee8628883dfd344d516aed5fe2b005d691e4c7\n"}
+[OK] The reporting-service-t36b5e stack declares one Compose project
+  expected: exactly one Compose project
+  got:      ["generated-reporting-service-t36b5e"]
+[OK] reporting-service-t36b5e answers health UP on its own base
+  expected: {"HTTP": 200, "status": "UP"}
+  got:      {"status":"UP"}
+[OK] Compile the generated project for billing-service-t36b5e offline
+  expected: exit 0 with a packaged jar, no network
+  got:      {"exit": 0, "jars": ["generated-billing-service-t36b5e-0.1.0.jar"], "tail": ""}
+[OK] The emitted Compose file resolves for billing-service-t36b5e
+  expected: docker compose config exit 0
+  got:      {"exit": 0, "tail": ": billing-service-t36b5e-postgres-data\n        target: /var/lib/postgresql/data\n        volume: {}\nnetworks:\n  default:\n    name: generated-billing-service-t36b5e_default\nvolumes:\n  billing-service-t36b5e-postgres-data:\n    name: generated-billing-service-t36b5e_billing-service-t36b5e-postgres-data\n"}
+[OK] Deploy billing-service-t36b5e with its own database
+  expected: docker compose up exit 0, no image pulled
+  got:      {"exit": 0, "tail": " Container generated-billing-service-t36b5e-billing-service-t36b5e-db-1 Started \n Container generated-billing-service-t36b5e-billing-service-t36b5e-db-1 Waiting \n Container generated-billing-service-t36b5e-billing-service-t36b5e-db-1 Healthy \n Container generated-billing-service-t36b5e-billing-service-t36b5e-1 Starting \n Container generated-billing-service-t36b5e-billing-service-t36b5e-1 Started \n"}
+[OK] The billing-service-t36b5e stack reports its containers
+  expected: docker compose ps lists at least one container
+  got:      {"containers": ["0dae11e33938d7f02a4676e428f67a7c25fe62c614dd380f576abef89b28bf51", "c73f46487ed47253986a680a8735440f1e7ede07942219851cddbfb3941b96be"], "exit": 0, "tail": "0dae11e33938d7f02a4676e428f67a7c25fe62c614dd380f576abef89b28bf51\nc73f46487ed47253986a680a8735440f1e7ede07942219851cddbfb3941b96be\n"}
+[OK] The billing-service-t36b5e stack declares one Compose project
+  expected: exactly one Compose project
+  got:      ["generated-billing-service-t36b5e"]
+[OK] billing-service-t36b5e answers health UP on its own base
+  expected: {"HTTP": 200, "status": "UP"}
+  got:      {"status":"UP"}
+[OK] POST /api/customer on reporting-service-t36b5e
+  expected: HTTP 201 with the created resource
+  got:      {"HTTP": 201, "body": "{\"id\":\"68a65430-06d8-4b38-933d-fa80f27b2000\",\"email\":\"acceptance@example.org\",\"displayName\":\"Acceptance\"}"}
+[OK] POST /api/order resolves the parent reference on reporting-service-t36b5e
+  expected: {"HTTP": 201, "customerId": "68a65430-06d8-4b38-933d-fa80f27b2000"}
+  got:      {"HTTP": 201, "body": "{\"id\":\"67ba4fff-87b4-4a6a-913d-ee9cdcbc6f41\",\"total\":19.99,\"customerId\":\"68a65430-06d8-4b38-933d-fa80f27b2000\"}"}
+[OK] GET /api/order/{id} keeps the reference on reporting-service-t36b5e
+  expected: {"HTTP": 200, "customerId": "68a65430-06d8-4b38-933d-fa80f27b2000"}
+  got:      {"HTTP": 200, "body": "{\"id\":\"67ba4fff-87b4-4a6a-913d-ee9cdcbc6f41\",\"total\":19.99,\"customerId\":\"68a65430-06d8-4b38-933d-fa80f27b2000\"}"}
+[OK] GET /api/order lists on reporting-service-t36b5e
+  expected: HTTP 200 with one element
+  got:      {"HTTP": 200, "body": "[{\"id\":\"67ba4fff-87b4-4a6a-913d-ee9cdcbc6f41\",\"total\":19.99,\"customerId\":\"68a65430-06d8-4b38-933d-fa80f27b2000\"}]"}
+[OK] A missing parent is 400 and never 500 on reporting-service-t36b5e
+  expected: {"HTTP": 400}
+  got:      {"HTTP": 400, "body": "{\"code\":\"INVALID_REFERENCE\",\"message\":\"A related resource reference does not exist.\",\"detail\":\"customerId=11111111-1111-4111-8111-111111111111\"}"}
+[OK] An unknown id is 404 on reporting-service-t36b5e
+  expected: {"HTTP": 404}
+  got:      {"HTTP": 404, "body": "{\"code\":\"NOT_FOUND\",\"message\":\"The requested resource was not found.\",\"detail\":\"Order id=22222222-2222-4222-8222-222222222222\"}"}
+[OK] POST /api/customer on billing-service-t36b5e
+  expected: HTTP 201 with the created resource
+  got:      {"HTTP": 201, "body": "{\"id\":\"6e886e26-7844-4a00-a8c7-fc5ae7793a06\",\"email\":\"acceptance@example.org\",\"displayName\":\"Acceptance\"}"}
+[OK] POST /api/order resolves the parent reference on billing-service-t36b5e
+  expected: {"HTTP": 201, "customerId": "6e886e26-7844-4a00-a8c7-fc5ae7793a06"}
+  got:      {"HTTP": 201, "body": "{\"id\":\"007a7104-e82e-42d0-8ba0-fbb3dceee792\",\"total\":19.99,\"customerId\":\"6e886e26-7844-4a00-a8c7-fc5ae7793a06\"}"}
+[OK] GET /api/order/{id} keeps the reference on billing-service-t36b5e
+  expected: {"HTTP": 200, "customerId": "6e886e26-7844-4a00-a8c7-fc5ae7793a06"}
+  got:      {"HTTP": 200, "body": "{\"id\":\"007a7104-e82e-42d0-8ba0-fbb3dceee792\",\"total\":19.99,\"customerId\":\"6e886e26-7844-4a00-a8c7-fc5ae7793a06\"}"}
+[OK] GET /api/order lists on billing-service-t36b5e
+  expected: HTTP 200 with one element
+  got:      {"HTTP": 200, "body": "[{\"id\":\"007a7104-e82e-42d0-8ba0-fbb3dceee792\",\"total\":19.99,\"customerId\":\"6e886e26-7844-4a00-a8c7-fc5ae7793a06\"}]"}
+[OK] A missing parent is 400 and never 500 on billing-service-t36b5e
+  expected: {"HTTP": 400}
+  got:      {"HTTP": 400, "body": "{\"code\":\"INVALID_REFERENCE\",\"message\":\"A related resource reference does not exist.\",\"detail\":\"customerId=11111111-1111-4111-8111-111111111111\"}"}
+[OK] An unknown id is 404 on billing-service-t36b5e
+  expected: {"HTTP": 404}
+  got:      {"HTTP": 404, "body": "{\"code\":\"NOT_FOUND\",\"message\":\"The requested resource was not found.\",\"detail\":\"Order id=22222222-2222-4222-8222-222222222222\"}"}
+[OK] reporting-service-t36b5e declares a database service ending in -db
+  expected: a service named <slug>-db
+  got:      ["reporting-service-t36b5e", "reporting-service-t36b5e-db"]
+[OK] reporting-service-t36b5e declares a real data volume
+  expected: at least one volume belonging to this destination exists
+  got:      {"declared": ["generated-reporting-service-t36b5e_reporting-service-t36b5e-postgres-data"], "present": ["generated-reporting-service-t36b5e_reporting-service-t36b5e-postgres-data"]}
+[OK] reporting-service-t36b5e uses its own database
+  expected: reporting_t36b5e_db|1
+  got:      reporting_t36b5e_db|1
+[OK] billing-service-t36b5e declares a database service ending in -db
+  expected: a service named <slug>-db
+  got:      ["billing-service-t36b5e", "billing-service-t36b5e-db"]
+[OK] billing-service-t36b5e declares a real data volume
+  expected: at least one volume belonging to this destination exists
+  got:      {"declared": ["generated-billing-service-t36b5e_billing-service-t36b5e-postgres-data"], "present": ["generated-billing-service-t36b5e_billing-service-t36b5e-postgres-data"]}
+[OK] billing-service-t36b5e uses its own database
+  expected: billing_t36b5e_db|1
+  got:      billing_t36b5e_db|1
+[OK] Two destinations carry two different set hashes
+  expected: two independent artifact sets
+  got:      {"left": "1d7f270a043ce412dca18978533b6badc3fef741bd301eecf01982812250693f", "right": "28a9923b80710c02f81096ffae578a9a0ecfbe4d52a258d16bfb9f7846849559"}
+[OK] Two destinations carry two different database names
+  expected: two independent databases
+  got:      {"left": "reporting_t36b5e_db", "right": "billing_t36b5e_db"}
+[OK] Two destinations hold two different rows
+  expected: two independent identities
+  got:      {"left": "68a65430-06d8-4b38-933d-fa80f27b2000", "right": "6e886e26-7844-4a00-a8c7-fc5ae7793a06"}
+[OK] Two destinations use two different volumes
+  expected: two disjoint, existing data volumes
+  got:      {"left": ["generated-reporting-service-t36b5e_reporting-service-t36b5e-postgres-data"], "right": ["generated-billing-service-t36b5e_billing-service-t36b5e-postgres-data"], "shared": []}
+[OK] Both destinations answer at the same time
+  expected: ["billing-service-t36b5e", "reporting-service-t36b5e"]
+  got:      ["reporting-service-t36b5e", "billing-service-t36b5e"]
+[OK] Stop reporting-service-t36b5e
+  expected: docker compose down -v exit 0, container and volume removed
+  got:      {"exit": 0, "tail": "e generated-reporting-service-t36b5e_reporting-service-t36b5e-postgres-data Removing \n Network generated-reporting-service-t36b5e_default Removing \n Volume generated-reporting-service-t36b5e_reporting-service-t36b5e-postgres-data Removed \n Network generated-reporting-service-t36b5e_default Removed \n"}
+[OK] Stop billing-service-t36b5e
+  expected: docker compose down -v exit 0, container and volume removed
+  got:      {"exit": 0, "tail": "oved \n Network generated-billing-service-t36b5e_default Removing \n Volume generated-billing-service-t36b5e_billing-service-t36b5e-postgres-data Removing \n Volume generated-billing-service-t36b5e_billing-service-t36b5e-postgres-data Removed \n Network generated-billing-service-t36b5e_default Removed \n"}
+[OK] Container count returned to its initial value
+  expected: 37
+  got:      37
+[OK] No data volume survived the teardown
+  expected: every volume recorded during this run is gone
+  got:      none
+[OK] No destination container survived
+  expected: none of this run's Compose projects remain
+  got:      none
+
+=== Generation acceptance summary: 66 passed, 0 failed ===
+[INFO] Teardown verified: the container count is back at its initial value.
