@@ -56,6 +56,7 @@ final class ConnectionConfigRefValidator {
         return normalized.contains("password") || normalized.equals("passwd") || normalized.equals("pwd")
                 || normalized.contains("token") || normalized.contains("secret")
                 || normalized.contains("credential") || normalized.contains("privatekey")
-                || normalized.contains("connectionstring") || normalized.contains("connectionurl");
+                || normalized.contains("connectionstring") || normalized.contains("connectionurl")
+                || normalized.contains("connectionconfigref") || normalized.contains("vaultref");
     }
 }

@@ -17,6 +17,7 @@ import com.diagramador.command.Target;
 import com.diagramador.domain.GenerationProfile;
 import com.diagramador.domain.GenerationRun;
 import com.diagramador.domain.GenerationState;
+import com.diagramador.domain.GeneratedArtifact;
 import com.diagramador.domain.GenerationTarget;
 import com.diagramador.domain.ModelVersion;
 import com.diagramador.domain.Project;
@@ -27,10 +28,15 @@ import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UserAccount;
 import com.diagramador.domain.VerificationResult;
 import com.diagramador.domain.VerificationState;
+import com.diagramador.generation.GenerationArtifactBundleBuilder.GeneratedArtifactBundle;
+import com.diagramador.generation.GenerationArtifactService;
 import com.diagramador.generation.GenerationDiagnostic;
 import com.diagramador.generation.GenerationIdentityService;
+import com.diagramador.generation.InputSnapshot;
+import com.diagramador.generation.InputSnapshotFactory;
 import com.diagramador.generation.GenerationIdentityService.GenerationRunStart;
 import com.diagramador.generation.GenerationIdentityService.TargetConfiguration;
+import com.diagramador.persistence.GeneratedArtifactRepository;
 import com.diagramador.persistence.GenerationProfileRepository;
 import com.diagramador.persistence.GenerationRunRepository;
 import com.diagramador.persistence.GenerationTargetRepository;
@@ -59,6 +65,8 @@ class GenerationIdentityServiceTest extends AbstractPostgresIntegrationTest {
     private static final UUID SEED_OWNER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private final GenerationIdentityService identityService;
+    private final GenerationArtifactService artifactService;
+    private final InputSnapshotFactory snapshotFactory;
     private final CommandService commandService;
     private final ObjectMapper objectMapper;
     private final UserAccountRepository userAccountRepository;
@@ -70,18 +78,23 @@ class GenerationIdentityServiceTest extends AbstractPostgresIntegrationTest {
     private final TemplateVersionRepository templateRepository;
     private final GenerationTargetRepository targetRepository;
     private final GenerationRunRepository runRepository;
+    private final GeneratedArtifactRepository artifactRepository;
     private final VerificationResultRepository verificationRepository;
     private final TransactionTemplate transactionTemplate;
 
     @Autowired
-    GenerationIdentityServiceTest(GenerationIdentityService identityService, CommandService commandService,
-            ObjectMapper objectMapper, UserAccountRepository userAccountRepository, ProjectRepository projectRepository,
+    GenerationIdentityServiceTest(GenerationIdentityService identityService,
+            GenerationArtifactService artifactService, InputSnapshotFactory snapshotFactory,
+            CommandService commandService, ObjectMapper objectMapper,
+            UserAccountRepository userAccountRepository, ProjectRepository projectRepository,
             ProjectMemberRepository projectMemberRepository, UmlModelRepository modelRepository,
             ModelVersionRepository versionRepository, GenerationProfileRepository profileRepository,
             TemplateVersionRepository templateRepository, GenerationTargetRepository targetRepository,
-            GenerationRunRepository runRepository, VerificationResultRepository verificationRepository,
-            TransactionTemplate transactionTemplate) {
+            GenerationRunRepository runRepository, GeneratedArtifactRepository artifactRepository,
+            VerificationResultRepository verificationRepository, TransactionTemplate transactionTemplate) {
         this.identityService = identityService;
+        this.artifactService = artifactService;
+        this.snapshotFactory = snapshotFactory;
         this.commandService = commandService;
         this.objectMapper = objectMapper;
         this.userAccountRepository = userAccountRepository;
@@ -93,6 +106,7 @@ class GenerationIdentityServiceTest extends AbstractPostgresIntegrationTest {
         this.templateRepository = templateRepository;
         this.targetRepository = targetRepository;
         this.runRepository = runRepository;
+        this.artifactRepository = artifactRepository;
         this.verificationRepository = verificationRepository;
         this.transactionTemplate = transactionTemplate;
     }
@@ -218,6 +232,19 @@ class GenerationIdentityServiceTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void profileConfigurationReferenceIsRejectedBeforeItsHashCanBeProvisioned() {
+        Fixture fixture = fixture("profile-secret-reference");
+        ObjectNode configuration = objectMapper.createObjectNode();
+        configuration.put("connectionConfigRef", "vault://diagrammer/t7/profile-secret");
+
+        assertThatThrownBy(() -> identityService.provisionProfile(fixture.projectId(), configuration))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("configuration.connectionConfigRef");
+        assertThat(profileRepository.findFirstByProjectIdAndProfileKeyOrderByRevisionDesc(fixture.projectId(),
+                GenerationIdentityService.V1_PROFILE_KEY)).isEmpty();
+    }
+
+    @Test
     void sameRunIdentityReturnsExistingRun() {
         Fixture fixture = fixtureWithClassifier("idempotent-run", "CLASS");
         ModelVersion version = currentVersion(fixture);
@@ -277,6 +304,105 @@ class GenerationIdentityServiceTest extends AbstractPostgresIntegrationTest {
                         + "reportingTargetConfigRevision=%d%n",
                 primaryStart.run().getId(), primaryStart.run().getTargetConfigRevision(),
                 reportingStart.run().getId(), reportingStart.run().getTargetConfigRevision());
+    }
+
+    @Test
+    void artifactGenerationIsDeterministicTargetScopedSecretSafeAndPersisted() throws Exception {
+        Fixture fixture = fixtureWithClassifier("t7-artifact-persistence", "CLASS");
+        ModelVersion version = currentVersion(fixture);
+        GenerationProfile profile = identityService.provisionV1Profile(fixture.projectId());
+        TemplateVersion template = identityService.provisionV1Template(profile.getId());
+        GenerationTarget primary = identityService.createTarget(fixture.model().getId(), "primary",
+                targetConfiguration("Primary", "primary_database", "vault://diagrammer/targets/primary"));
+        GenerationTarget reporting = identityService.createTarget(fixture.model().getId(), "reporting",
+                targetConfiguration("Reporting", "reporting_database", "vault://diagrammer/targets/reporting"));
+        reporting = identityService.updateTargetConfiguration(reporting.getId(),
+                targetConfiguration("Reporting v2", "reporting_database_v2",
+                        "vault://diagrammer/targets/reporting-v2"));
+
+        GenerationRun primaryRun = identityService.startRun(primary.getId(), version.getId(), profile.getId(),
+                template.getId()).run();
+        GenerationRun reportingRun = identityService.startRun(reporting.getId(), version.getId(), profile.getId(),
+                template.getId()).run();
+        assertThat(primaryRun.getModel().getId()).isEqualTo(reportingRun.getModel().getId());
+        assertThat(primaryRun.getVersion().getId()).isEqualTo(reportingRun.getVersion().getId());
+        assertThat(primaryRun.getProfile().getId()).isEqualTo(reportingRun.getProfile().getId());
+        assertThat(primaryRun.getTemplate().getId()).isEqualTo(reportingRun.getTemplate().getId());
+        assertThat(primary.getId()).isNotEqualTo(reporting.getId());
+        assertThat(primary.getTargetKey()).isNotEqualTo(reporting.getTargetKey());
+        assertThat(primaryRun.getId()).isNotEqualTo(reportingRun.getId());
+        assertThat(primaryRun.getTargetConfigRevision()).isEqualTo(1);
+        assertThat(reportingRun.getTargetConfigRevision()).isEqualTo(2);
+
+        InputSnapshot snapshot = snapshotFactory.create(version);
+        String firstSecretReference = "vault://diagrammer/t7/target-config/secret-a";
+        String secondSecretReference = "vault://diagrammer/t7/target-config/secret-b";
+        primary.setConnectionConfigRef(firstSecretReference);
+        targetRepository.saveAndFlush(primary);
+        GeneratedArtifactBundle primaryFirst = artifactService.generate(primaryRun.getId(), snapshot);
+        primary.setConnectionConfigRef(secondSecretReference);
+        targetRepository.saveAndFlush(primary);
+        GeneratedArtifactBundle primaryRepeat = artifactService.generate(primaryRun.getId(), snapshot);
+
+        assertThat(firstSecretReference).isNotEqualTo(secondSecretReference);
+        assertThat(primaryFirst.artifactSetHash()).isEqualTo(primaryRepeat.artifactSetHash());
+        assertThat(primaryFirst.artifactZipHash()).isEqualTo(primaryRepeat.artifactZipHash());
+        assertThat(primaryFirst.zipBytes()).containsExactly(primaryRepeat.zipBytes());
+        assertThat(primaryFirst.files().values()).noneMatch(content -> content.contains(firstSecretReference)
+                || content.contains(secondSecretReference));
+        assertThat(primaryFirst.provenanceJson()).doesNotContain(firstSecretReference, secondSecretReference);
+
+        String reportingSecretReference = "vault://diagrammer/t7/target-config/reporting-secret";
+        reporting.setConnectionConfigRef(reportingSecretReference);
+        targetRepository.saveAndFlush(reporting);
+        GeneratedArtifactBundle reportingBundle = artifactService.generate(reportingRun.getId(), snapshot);
+        JsonNode primaryProvenance = objectMapper.readTree(primaryFirst.provenanceJson());
+        JsonNode reportingProvenance = objectMapper.readTree(reportingBundle.provenanceJson());
+        assertThat(primaryProvenance.path("target").path("targetId").asText()).isEqualTo(primary.getId().toString());
+        assertThat(primaryProvenance.path("target").path("targetKey").asText()).isEqualTo("primary");
+        assertThat(primaryProvenance.path("target").path("configurationRevision").asInt()).isEqualTo(1);
+        assertThat(reportingProvenance.path("target").path("targetId").asText()).isEqualTo(reporting.getId().toString());
+        assertThat(reportingProvenance.path("target").path("targetKey").asText()).isEqualTo("reporting");
+        assertThat(reportingProvenance.path("target").path("configurationRevision").asInt()).isEqualTo(2);
+        assertThat(primaryProvenance.path("verificationStatus").asText()).isEqualTo("NOT_RUN");
+        assertThat(reportingBundle.files().values()).noneMatch(content -> content.contains(reportingSecretReference));
+        assertThat(primaryFirst.files().get("pom.xml")).isNotEqualTo(reportingBundle.files().get("pom.xml"));
+        assertThat(primaryFirst.files().get("pom.xml")).contains("<artifactId>generated-primary</artifactId>");
+        assertThat(reportingBundle.files().get("pom.xml")).contains("<artifactId>generated-reporting</artifactId>");
+        assertThat(primaryFirst.files().get("src/main/java/com/generated/primary/GeneratedApplication.java"))
+                .contains("package com.generated.primary;");
+        assertThat(reportingBundle.files().get("src/main/java/com/generated/reporting/GeneratedApplication.java"))
+                .contains("package com.generated.reporting;");
+        assertThat(primaryFirst.artifactSetHash()).isNotEqualTo(reportingBundle.artifactSetHash());
+        assertThat(primaryFirst.artifactZipHash()).isNotEqualTo(reportingBundle.artifactZipHash());
+        assertThat(java.util.Arrays.equals(primaryFirst.zipBytes(), reportingBundle.zipBytes())).isFalse();
+
+        for (var expected : primaryFirst.completeManifest()) {
+            GeneratedArtifact persisted = artifactRepository.findByRunIdOrderByPathAsc(primaryRun.getId()).stream()
+                    .filter(artifact -> artifact.getPath().equals(expected.path())).findFirst().orElseThrow();
+            assertThat(persisted.getKind()).isEqualTo(expected.kind());
+            assertThat(persisted.getContentHash()).isEqualTo(expected.contentHash());
+            assertThat(persisted.getSizeBytes()).isEqualTo(expected.sizeBytes());
+        }
+        List<GeneratedArtifact> persistedRows = artifactRepository.findByRunIdOrderByPathAsc(primaryRun.getId());
+        assertThat(persistedRows).hasSize(primaryFirst.completeManifest().size());
+        assertThat(persistedRows).extracting(GeneratedArtifact::getPath)
+                .containsExactlyElementsOf(primaryFirst.files().keySet().stream().toList());
+        GenerationRun persistedPrimaryRun = runRepository.findById(primaryRun.getId()).orElseThrow();
+        GenerationRun persistedReportingRun = runRepository.findById(reportingRun.getId()).orElseThrow();
+        assertThat(persistedPrimaryRun.getState()).isEqualTo(GenerationState.SUCCEEDED);
+        assertThat(persistedPrimaryRun.getArtifactSetHash()).isEqualTo(primaryFirst.artifactSetHash());
+        assertThat(persistedPrimaryRun.getArtifactZipHash()).isEqualTo(primaryFirst.artifactZipHash());
+        assertThat(persistedReportingRun.getState()).isEqualTo(GenerationState.SUCCEEDED);
+        assertThat(persistedReportingRun.getArtifactSetHash()).isEqualTo(reportingBundle.artifactSetHash());
+        assertThat(persistedReportingRun.getArtifactZipHash()).isEqualTo(reportingBundle.artifactZipHash());
+        assertThat(runRepository.countByTargetId(primary.getId())).isEqualTo(1);
+        assertThat(runRepository.countByTargetId(reporting.getId())).isEqualTo(1);
+        System.out.printf("T7_D14 primarySet=%s primaryZip=%s primaryZipBytes=%d reportingSet=%s "
+                        + "reportingZip=%s reportingZipBytes=%d persistedArtifacts=%d%n",
+                primaryFirst.artifactSetHash(), primaryFirst.artifactZipHash(), primaryFirst.zipBytes().length,
+                reportingBundle.artifactSetHash(), reportingBundle.artifactZipHash(), reportingBundle.zipBytes().length,
+                persistedRows.size());
     }
 
     @Test
