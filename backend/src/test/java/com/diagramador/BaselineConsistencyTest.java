@@ -15,7 +15,7 @@ class BaselineConsistencyTest {
     @Test
     void baselineMatchesPomDockerfileAndComposeDeclarations() throws IOException {
         Path root = repositoryRoot();
-        byte[] baselineBytes = Files.readAllBytes(root.resolve("backend/baseline.properties"));
+        byte[] baselineBytes = Files.readAllBytes(root.resolve("backend/src/main/resources/baseline.properties"));
         byte[] pomBytes = Files.readAllBytes(root.resolve("backend/pom.xml"));
         byte[] dockerfileBytes = Files.readAllBytes(root.resolve("backend/Dockerfile"));
         byte[] composeBytes = Files.readAllBytes(root.resolve("docker-compose.yml"));

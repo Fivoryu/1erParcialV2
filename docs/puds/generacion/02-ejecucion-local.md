@@ -45,4 +45,10 @@ recorded per target rather than guessed.
 
 ## Baseline consistency
 
-`backend/baseline.properties` records the Java, Spring Boot, PostgreSQL image, and runtime base-image baseline. `backend/src/test/java/com/diagramador/BaselineConsistencyTest.java` reads that file, the Maven POM, the Dockerfile, and this repository's Compose file from disk and checks that their declarations agree. The POM's real `<java.version>` and Spring Boot parent `<version>` are authoritative Maven declarations. Compose defines its PostgreSQL tag once as an image anchor and references it for both the database image and Docker build argument.
+`backend/src/main/resources/baseline.properties` is the single baseline-values file. It is on the runtime classpath so generation emission and consistency checks read the same Java, Spring Boot, PostgreSQL image, and runtime base-image values. `backend/src/test/java/com/diagramador/BaselineConsistencyTest.java` compares it with the Maven POM, Dockerfile, and this repository's Compose file. The POM's real `<java.version>` and Spring Boot parent `<version>` are authoritative Maven declarations. Compose defines its PostgreSQL tag once as an image anchor and references it for both the database image and Docker build argument.
+
+## Emitted backend project
+
+The generation emitter returns a lexically sorted POSIX path-to-content map. Generated files use UTF-8-compatible text, LF line endings, and a final newline. The target key determines the generated package and artifact names; model names are not used as a substitute for target identity. The emitted Maven project contains JPA entities, repositories, transaction-scoped services that map list results to DTOs before returning, REST controllers, environment-driven datasource configuration, an explicit `V1__init.sql`, and a Dockerfile based on the runtime image in the classpath baseline.
+
+The generated project intentionally omits `spring-boot-starter-security`: version 3.4.5 is unavailable in the configured local Maven cache. No authentication or authorization layer is emitted, so the generated backend must not be exposed to untrusted networks until a reviewed security dependency and policy are supplied. The emitter's repeatability and generated-project build are covered by the backend verification suite.
