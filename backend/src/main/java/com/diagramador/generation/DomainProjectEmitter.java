@@ -690,6 +690,10 @@ public final class DomainProjectEmitter {
                 "      <artifactId>spring-boot-starter-validation</artifactId>",
                 "    </dependency>",
                 "    <dependency>",
+                "      <groupId>org.springframework.boot</groupId>",
+                "      <artifactId>spring-boot-starter-actuator</artifactId>",
+                "    </dependency>",
+                "    <dependency>",
                 "      <groupId>org.flywaydb</groupId>",
                 "      <artifactId>flyway-core</artifactId>",
                 "    </dependency>",
@@ -729,7 +733,12 @@ public final class DomainProjectEmitter {
                 "    open-in-view: false",
                 "  flyway:",
                 "    enabled: true",
-                "    locations: classpath:db/migration");
+                "    locations: classpath:db/migration",
+                "management:",
+                "  endpoints:",
+                "    web:",
+                "      exposure:",
+                "        include: health");
     }
 
     private String dockerfile() {

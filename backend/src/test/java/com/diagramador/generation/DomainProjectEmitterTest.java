@@ -122,6 +122,10 @@ class DomainProjectEmitterTest {
                         "${SPRING_DATASOURCE_PASSWORD}");
         assertThat(files.get("pom.xml")).doesNotContain("<artifactId>spring-boot-starter-security</artifactId>");
         assertThat(files.get("pom.xml")).contains("spring-boot-starter-security is omitted");
+        // The generated backend must answer a health endpoint: the increment's definition of done and
+        // CU-20 both require "health UP" from the started artefact, so the emitter has to ship it.
+        assertThat(files.get("pom.xml")).contains("<artifactId>spring-boot-starter-actuator</artifactId>");
+        assertThat(files.get("src/main/resources/application.yml")).contains("include: health");
         assertThat(files.get("README.md")).contains("Security limitation", "no generated authentication");
         assertThat(files.get("src/main/java/com/generated/course/store/service/CustomerService.java"))
                 .contains("@Transactional(readOnly = true)",
