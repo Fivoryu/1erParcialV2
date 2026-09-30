@@ -198,6 +198,13 @@ Cada tarea cierra con **un commit de unidad de trabajo** con sus pruebas al lado
 
 - **Objetivo:** congelar la entrada de una generación de forma que dos corridas con el mismo estado den el mismo
   hash, y que tocar el dibujo no lo cambie.
+- **Dos hashes con alcances distintos, y por eso dos pruebas distintas:** el snapshot lleva el `modelStateHash`
+  **congelado** de la versión —que incluye la disposición, porque `ModelStateHasher` recorre vistas, geometrías y
+  trazados— y su propio `snapshotHash` semántico, que **excluye** esos tres grupos. Consecuencia exigida: mover
+  una clase cambia el `modelStateHash` de la versión nueva y **no** cambia el `snapshotHash`. Además el snapshot
+  incluye `type_reference` (id, clasificador y nombre primitivo), que `ModelStateHasher` no mira: sin eso, cambiar
+  el tipo de un atributo de `String` a `int` no movería el hash y la generación quedaría creyendo que la entrada
+  es la misma.
 - **Entregable:** constructor de `InputSnapshot` desde una `ModelVersion` **validada** (rechaza `INVALID` y
   `PENDING` nombrando el estado); recorrido de clasificadores, atributos, operaciones, parámetros, relaciones,
   extremos y restricciones con orden canónico; `input_snapshot_hash`; exclusión explícita de geometría,
@@ -447,7 +454,9 @@ apareciera, sería una señal de que la frontera está mal puesta.
 - [ ] Dos generaciones desde el mismo estado producen el mismo `artifact_set_hash`.
 - [ ] **Dos destinos distintos del mismo modelo producen dos backends independientes**, con su propia base,
       aun si su contenido es igual.
-- [ ] Mover una clase en el lienzo **no** cambia el `input_snapshot_hash`; renombrarla, sí.
+- [x] Mover una clase en el lienzo **no** cambia el `input_snapshot_hash`; renombrarla, sí.
+- [x] Cada uno de los ocho grupos semánticos del snapshot contribuye al hash, probado uno por uno, y el fixture
+      usado por esas pruebas puebla los ocho.
 - [ ] Una característica no soportada se rechaza **nombrando la característica**, no se descarta en silencio.
 - [ ] El ZIP se entrega sólo si la corrida terminó completa; una salida parcial se etiqueta y no se presenta
       como lista.
@@ -466,7 +475,7 @@ apareciera, sería una señal de que la frontera está mal puesta.
 | --- | --- | --- |
 | T1 — Migración V4 con el esquema de generación | **hecho** | Commit `c64216b`; `mvn -o -B verify` = **95 pruebas, 0 fallos, 0 errores, 0 saltadas**, sin red; Flyway aplica `V1`–`V4` y reporta `now at version v4`; las 6 tablas, los 2 tipos enum, los 2 comentarios y los **5 índices** son idénticos a `02-esquema-fisico.sql` (comparación de texto extraído, no de intención); el guardián gana la comprobación de índices que le faltaba y **se probó que dispara**: quitar la línea de `idx_verification_run` hace fallar `supportIndexesDeclaredByTheAuthorityExist` nombrando `diagrammer.verification_result`, y el archivo se restauró verificando el hash. **Hallazgo durante la tarea:** `V3` no copió los 4 índices que la autoridad declara para sus tablas; queda como **T1b** |
 | T1b — Índices de apoyo faltantes del Incremento 1 | **hecho** | Commit `9842417`; `mvn -o -B verify` = **95 pruebas, 0 fallos, 0 errores, 0 saltadas**, Flyway ahora en `v5`; los 4 índices de `V5` son idénticos a las líneas 518–521 de la autoridad (comparados con `repr`, no a ojo); `cascade_group` no tiene ningún índice declarado y el guardián lo fija en vacío. El guardián pasa a cubrir las **25 tablas** creadas por V1–V5 con igualdad exacta en las dos direcciones, separando los índices de PK y de unicidad por `pg_constraint`. **Falsificado en ambas direcciones antes de commitear:** quitar `idx_version_model_rev` falla nombrando `diagrammer.model_version`, y agregar `idx_inventado_no_declarado` falla nombrando `diagrammer.tombstone`; el archivo se restauró y se verificó por hash. **`V1`–`V4` no se tocaron.** |
-| T2 — Snapshot inmutable e identidad de corrida | pendiente | — |
+| T2 — Snapshot inmutable e identidad de corrida | **hecho** | Commit `d4fb99e`; `mvn -o -B verify` = **109 pruebas, 0 fallos, 0 errores, 0 saltadas**, sin red; `ModelStateHasher` y las migraciones `V1`–`V5` **intactas**. Los dos alcances quedan probados con valores observados, no afirmados: **mover una clase, cambiar un waypoint y agregar una vista** dejan `snapshotHash` **fijo** en `286a902e…` mientras el `modelStateHash` cambia las tres veces (`9855ce41…` → `d3c3b81c…` → `0676730f…` → `3c0f21b8…`); renombrar un atributo lo mueve (`d71b1894…` → `b9397273…`); cambiar el nombre primitivo de un `type_reference` lo mueve (`18a9659d…` → `5d4356cc…`) con el `modelStateHash` **congelado**. Los **ocho** grupos de la proyección tienen una prueba propia que demuestra que contribuyen (clasificador, atributo, operación, parámetro, `type_reference`, relación, extremo y constraint), más una que exige que el fixture pueble los ocho. **Falsificado:** sacar el bloque `constraints` de la proyección hace fallar exactamente `updatingConstraintChangesSnapshotHash`; el archivo se restauró y se verificó por hash |
 | T3 — Representación intermedia y reglas de mapeo | pendiente | — |
 | T4 — Perfil, plantilla y destinos versionados | pendiente | — |
 | T5 — Línea base de versión única y contenerización | pendiente | — |
