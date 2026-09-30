@@ -3,6 +3,7 @@ package com.diagramador.api;
 import static com.diagramador.api.GenerationResources.ArtifactDownload;
 import static com.diagramador.api.GenerationResources.CreateGenerationRequest;
 import static com.diagramador.api.GenerationResources.CreateGenerationTargetRequest;
+import static com.diagramador.api.GenerationResources.GenerationProfileResource;
 import static com.diagramador.api.GenerationResources.OperationOutcomeResource;
 
 import jakarta.validation.Valid;
@@ -39,6 +40,11 @@ public class GenerationController {
     public List<GenerationResources.GenerationTargetResource> listTargets(
             @PathVariable("projectId") UUID projectId) {
         return generationApiService.listTargets(projectId);
+    }
+
+    @GetMapping("/{projectId}/generation-profiles")
+    public List<GenerationProfileResource> listProfiles(@PathVariable("projectId") UUID projectId) {
+        return generationApiService.listProfiles(projectId);
     }
 
     @PostMapping(path = "/{projectId}/generations", consumes = MediaType.APPLICATION_JSON_VALUE)

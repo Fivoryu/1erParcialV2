@@ -12,6 +12,7 @@ public record ModelResource(
         UUID id,
         UUID projectId,
         long revision,
+        UUID versionId,
         List<ViewResource> views,
         List<ClassifierResource> classifiers,
         List<RelationshipResource> relationships) {

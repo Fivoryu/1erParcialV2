@@ -39,6 +39,15 @@ public final class GenerationResources {
             OffsetDateTime updatedAt) {
     }
 
+    public record GenerationProfileResource(
+            UUID profileId,
+            String profileKey,
+            String name,
+            int profileRevision,
+            UUID templateId,
+            int templateRevision) {
+    }
+
     public record CreateGenerationRequest(
             @NotNull UUID modelId,
             @NotNull UUID versionId,

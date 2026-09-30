@@ -36,6 +36,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -55,12 +56,14 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
     private final GenerationRunRepository runRepository;
     private final GenerationTargetRepository targetRepository;
     private final VerificationResultRepository verificationRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     @Autowired
     GenerationApiTest(MockMvc mockMvc, ObjectMapper objectMapper, GenerationIdentityService identityService,
             GenerationArtifactService artifactService, InputSnapshotFactory snapshotFactory,
             ModelVersionRepository versionRepository, GenerationRunRepository runRepository,
-            GenerationTargetRepository targetRepository, VerificationResultRepository verificationRepository) {
+            GenerationTargetRepository targetRepository, VerificationResultRepository verificationRepository,
+            JdbcTemplate jdbcTemplate) {
         this.mockMvc = mockMvc;
         this.objectMapper = objectMapper;
         this.identityService = identityService;
@@ -70,6 +73,7 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         this.runRepository = runRepository;
         this.targetRepository = targetRepository;
         this.verificationRepository = verificationRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Test
@@ -87,6 +91,100 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         assertThat(primary.path("targetId").asText()).isNotEqualTo(reporting.path("targetId").asText());
         assertThat(targets).hasSize(2);
         assertThat(targets.findValuesAsText("targetKey")).containsExactly("primary", "reporting");
+    }
+
+    @Test
+    void generationCanBeStartedUsingOnlyDiscoveredModelAndProfileIdentities() throws Exception {
+        JsonNode project = createProject("Generation API client flow " + UUID.randomUUID());
+        UUID projectId = UUID.fromString(project.path("id").asText());
+        JsonNode initialModel = getJson("/projects/{projectId}/model", projectId);
+        UUID modelId = UUID.fromString(initialModel.path("id").asText());
+        postCommand(projectId, modelId, UUID.randomUUID());
+
+        MvcResult modelResponse = mockMvc.perform(get("/projects/{projectId}/model", projectId)
+                .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode model = objectMapper.readTree(modelResponse.getResponse().getContentAsByteArray());
+        MvcResult profilesResponse = mockMvc.perform(get("/projects/{projectId}/generation-profiles", projectId)
+                .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode profiles = objectMapper.readTree(profilesResponse.getResponse().getContentAsByteArray());
+        assertThat(profiles).hasSize(1);
+        JsonNode profile = profiles.get(0);
+
+        Map<String, Object> targetRequest = new HashMap<>();
+        targetRequest.put("targetKey", "client");
+        targetRequest.put("name", "Client");
+        targetRequest.put("databaseEngine", "POSTGRESQL");
+        targetRequest.put("databaseName", "client_database");
+        targetRequest.put("databaseSchema", "public");
+        targetRequest.put("connectionConfigRef", null);
+        byte[] targetRequestBody = objectMapper.writeValueAsBytes(targetRequest);
+        MvcResult targetResponse = mockMvc.perform(post("/projects/{projectId}/generation-targets", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(targetRequestBody))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode target = objectMapper.readTree(targetResponse.getResponse().getContentAsByteArray()).path("result");
+        Map<String, Object> request = Map.of(
+                "modelId", model.path("id").asText(),
+                "versionId", model.path("versionId").asText(),
+                "targetId", target.path("targetId").asText(),
+                "profileId", profile.path("profileId").asText(),
+                "templateId", profile.path("templateId").asText(),
+                "idempotencyKey", "client-flow-" + UUID.randomUUID());
+        byte[] generationRequestBody = objectMapper.writeValueAsBytes(request);
+        MvcResult generationResponse = mockMvc.perform(post("/projects/{projectId}/generations", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(generationRequestBody))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode response = objectMapper.readTree(generationResponse.getResponse().getContentAsByteArray());
+        JsonNode run = response.path("result");
+
+        System.out.printf("T9_CLIENT_FLOW modelResponse=%s profilesResponse=%s targetRequest=%s "
+                        + "targetResponse=%s generationRequest=%s generationResponse=%s%n",
+                new String(modelResponse.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8),
+                new String(profilesResponse.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8),
+                new String(targetRequestBody, StandardCharsets.UTF_8),
+                new String(targetResponse.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8),
+                new String(generationRequestBody, StandardCharsets.UTF_8),
+                new String(generationResponse.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8));
+
+        assertThat(response.path("outcome").asText()).isEqualTo("ACCEPTED");
+        assertThat(run.path("state").asText()).isEqualTo("SUCCEEDED");
+        assertThat(run.path("modelId").asText()).isEqualTo(model.path("id").asText());
+        assertThat(run.path("versionId").asText()).isEqualTo(model.path("versionId").asText());
+        assertThat(run.path("modelRevision").asLong()).isEqualTo(model.path("revision").asLong());
+        assertThat(run.path("profileId").asText()).isEqualTo(profile.path("profileId").asText());
+        assertThat(run.path("profileRevision").asInt()).isEqualTo(profile.path("profileRevision").asInt());
+        assertThat(run.path("templateId").asText()).isEqualTo(profile.path("templateId").asText());
+        assertThat(run.path("templateRevision").asInt()).isEqualTo(profile.path("templateRevision").asInt());
+    }
+
+    @Test
+    void generationProfileListingIsIdempotentAndReturnsExactRevisionIdentities() throws Exception {
+        JsonNode project = createProject("Generation API profile listing " + UUID.randomUUID());
+        UUID projectId = UUID.fromString(project.path("id").asText());
+
+        JsonNode first = getJson("/projects/{projectId}/generation-profiles", projectId);
+        JsonNode second = getJson("/projects/{projectId}/generation-profiles", projectId);
+
+        assertThat(first).hasSize(1);
+        assertThat(second).hasSize(1);
+        assertThat(second.get(0).path("profileId").asText())
+                .isEqualTo(first.get(0).path("profileId").asText());
+        assertThat(second.get(0).path("profileRevision").asInt())
+                .isEqualTo(first.get(0).path("profileRevision").asInt());
+        assertThat(second.get(0).path("templateId").asText())
+                .isEqualTo(first.get(0).path("templateId").asText());
+        assertThat(second.get(0).path("templateRevision").asInt())
+                .isEqualTo(first.get(0).path("templateRevision").asInt());
+        Long profileCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM diagrammer.generation_profile WHERE project_id = ?", Long.class, projectId);
+        assertThat(profileCount).isEqualTo(1L);
     }
 
     @Test
@@ -283,6 +381,22 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void unknownProjectsUseHouseNotFoundShapeForModelAndProfileDiscovery() throws Exception {
+        UUID unknownProjectId = UUID.randomUUID();
+
+        for (String path : List.of("/projects/{projectId}/model", "/projects/{projectId}/generation-profiles")) {
+            MvcResult response = mockMvc.perform(get(path, unknownProjectId).accept(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isNotFound())
+                    .andReturn();
+            JsonNode error = objectMapper.readTree(response.getResponse().getContentAsByteArray());
+            assertThat(error.path("code").asText()).isEqualTo("NOT_FOUND");
+            assertThat(error.path("message").asText()).isEqualTo("Project was not found.");
+            assertThat(error.path("details").isArray()).isTrue();
+            assertThat(error.has("operationId")).isTrue();
+        }
+    }
+
+    @Test
     void verificationResultsStayAttachedToTheRequestedRun() throws Exception {
         Fixture fixture = fixture("verification-run-isolation");
         JsonNode primary = createTarget(fixture, "primary", "Primary", "primary_database", null).path("result");
@@ -308,6 +422,27 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
                 result -> assertThat(result.getRun().getId()).isEqualTo(primaryRunId));
         assertThat(verificationRepository.findByRunIdOrderByCreatedAtAsc(reportingRunId)).isNotEmpty()
                 .allSatisfy(result -> assertThat(result.getRun().getId()).isEqualTo(reportingRunId));
+    }
+
+    @Test
+    void generationRequestRequiresExplicitVersionProfileAndTemplateIdentities() throws Exception {
+        Fixture fixture = fixture("required-generation-identities");
+        JsonNode target = createTarget(fixture, "main", "Main", "main_database", null).path("result");
+        Map<String, Object> completeRequest = generationRequest(fixture, target.path("targetId").asText(),
+                "required-identities-" + UUID.randomUUID());
+
+        for (String identity : List.of("versionId", "profileId", "templateId")) {
+            Map<String, Object> request = new HashMap<>(completeRequest);
+            request.remove(identity);
+            MvcResult response = mockMvc.perform(post("/projects/{projectId}/generations", fixture.projectId())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsBytes(request)))
+                    .andExpect(status().isBadRequest())
+                    .andReturn();
+            assertThat(objectMapper.readTree(response.getResponse().getContentAsByteArray())
+                    .path("code").asText()).isEqualTo("INVALID_PAYLOAD");
+        }
+        assertThat(runRepository.countByTargetId(UUID.fromString(target.path("targetId").asText()))).isZero();
     }
 
     @Test
@@ -400,6 +535,11 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
 
     private JsonNode createTarget(Fixture fixture, String key, String name, String databaseName,
             String connectionConfigRef) throws Exception {
+        return createTarget(fixture.projectId(), key, name, databaseName, connectionConfigRef);
+    }
+
+    private JsonNode createTarget(UUID projectId, String key, String name, String databaseName,
+            String connectionConfigRef) throws Exception {
         Map<String, Object> request = new HashMap<>();
         request.put("targetKey", key);
         request.put("name", name);
@@ -407,8 +547,7 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         request.put("databaseName", databaseName);
         request.put("databaseSchema", "public");
         request.put("connectionConfigRef", connectionConfigRef);
-        return objectMapper.readTree(mockMvc.perform(post("/projects/{projectId}/generation-targets",
-                fixture.projectId())
+        return objectMapper.readTree(mockMvc.perform(post("/projects/{projectId}/generation-targets", projectId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsBytes(request)))
                 .andExpect(status().isOk())

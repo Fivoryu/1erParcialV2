@@ -33,6 +33,7 @@ import com.diagramador.persistence.ClassifierRepository;
 import com.diagramador.persistence.ConnectorPathRepository;
 import com.diagramador.persistence.DiagramViewRepository;
 import com.diagramador.persistence.ElementGeometryRepository;
+import com.diagramador.persistence.ModelVersionRepository;
 import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.ProjectRepository;
 import com.diagramador.persistence.RelationshipEndRepository;
@@ -61,6 +62,7 @@ public class ProjectApiService {
 
     private final ProjectRepository projectRepository;
     private final UmlModelRepository modelRepository;
+    private final ModelVersionRepository versionRepository;
     private final ClassifierRepository classifierRepository;
     private final UmlAttributeRepository attributeRepository;
     private final UmlOperationRepository operationRepository;
@@ -74,7 +76,8 @@ public class ProjectApiService {
     private final com.diagramador.command.CommandService commandService;
 
     public ProjectApiService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
-            ClassifierRepository classifierRepository, UmlAttributeRepository attributeRepository,
+            ModelVersionRepository versionRepository, ClassifierRepository classifierRepository,
+            UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, OperationParameterRepository parameterRepository,
             UmlConstraintRepository constraintRepository, UmlRelationshipRepository relationshipRepository,
             RelationshipEndRepository relationshipEndRepository, DiagramViewRepository viewRepository,
@@ -82,6 +85,7 @@ public class ProjectApiService {
             com.diagramador.command.CommandService commandService) {
         this.projectRepository = projectRepository;
         this.modelRepository = modelRepository;
+        this.versionRepository = versionRepository;
         this.classifierRepository = classifierRepository;
         this.attributeRepository = attributeRepository;
         this.operationRepository = operationRepository;
@@ -168,8 +172,11 @@ public class ProjectApiService {
                         relationshipConstraints.getOrDefault(relationship.getId(), List.of())))
                 .toList();
 
-        return new ModelResource(model.getId(), projectId, model.getCurrentRevision(), views, classifiers,
-                relationships);
+        UUID versionId = versionRepository.findTopByModelIdOrderByRevisionDesc(model.getId())
+                .map(version -> version.getId())
+                .orElseThrow(() -> notFound("Model version was not found."));
+        return new ModelResource(model.getId(), projectId, model.getCurrentRevision(), versionId, views,
+                classifiers, relationships);
     }
 
     private Project requireProject(UUID projectId) {

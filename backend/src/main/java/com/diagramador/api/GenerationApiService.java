@@ -3,6 +3,7 @@ package com.diagramador.api;
 import static com.diagramador.api.GenerationResources.ArtifactDownload;
 import static com.diagramador.api.GenerationResources.CreateGenerationRequest;
 import static com.diagramador.api.GenerationResources.CreateGenerationTargetRequest;
+import static com.diagramador.api.GenerationResources.GenerationProfileResource;
 import static com.diagramador.api.GenerationResources.GenerationRunResource;
 import static com.diagramador.api.GenerationResources.GenerationTargetResource;
 import static com.diagramador.api.GenerationResources.OperationOutcomeResource;
@@ -77,6 +78,14 @@ public class GenerationApiService {
         UmlModel model = requireModel(projectId);
         return identityService.listTargets(model.getId()).stream()
                 .map(target -> targetResource(target, model.getId())).toList();
+    }
+
+    public List<GenerationProfileResource> listProfiles(UUID projectId) {
+        requireModel(projectId);
+        var profile = identityService.provisionV1Profile(projectId);
+        var template = identityService.provisionV1Template(profile.getId());
+        return List.of(new GenerationProfileResource(profile.getId(), profile.getProfileKey(), profile.getName(),
+                profile.getRevision(), template.getId(), template.getRevision()));
     }
 
     public OperationOutcomeResource createTarget(UUID projectId, CreateGenerationTargetRequest request) {
