@@ -255,6 +255,14 @@ class DomainProjectEmitterTest {
     }
 
     @Test
+    void generatedApplicationAnswersHealthWithUp() throws Exception {
+        HttpResponse<String> health = request("GET", "/actuator/health", null);
+
+        assertThat(health.statusCode()).isEqualTo(200);
+        assertThat(JSON.readTree(health.body()).get("status").asText()).isEqualTo("UP");
+    }
+
+    @Test
     void missingRelatedIdReturns400ThroughTheReferenceResolutionPath() throws Exception {
         UUID missingParentId = UUID.randomUUID();
         HttpResponse<String> response = request("POST", "/api/order",
