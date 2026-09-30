@@ -10,6 +10,7 @@ import com.diagramador.persistence.GeneratedArtifactRepository;
 import com.diagramador.persistence.GenerationRunRepository;
 import java.time.OffsetDateTime;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,18 +37,12 @@ public class GenerationArtifactService {
     public GeneratedArtifactBundle generate(UUID runId, InputSnapshot snapshot) {
         Objects.requireNonNull(runId, "runId");
         Objects.requireNonNull(snapshot, "snapshot");
-        GenerationRun run = runRepository.findById(runId)
-                .orElseThrow(() -> new IllegalArgumentException("Generation run " + runId + " does not exist"));
-        validateFrozenRun(run, snapshot);
+        GenerationRun run = requireRun(runId);
         if (run.getState() == GenerationState.FAILED) {
             throw new IllegalStateException("Cannot generate artifacts for a failed generation run");
         }
 
-        GenerationIdentity identity = bundleBuilder.identity(run, snapshot);
-        DomainModelIR ir = irMapper.map(snapshot,
-                VersionedGenerationProfileConfiguration.primitiveTypes(run.getProfile().getConfiguration()));
-        // Verification is a separate lifecycle stage; generation provenance must not change afterward.
-        GeneratedArtifactBundle bundle = bundleBuilder.build(identity, snapshot, ir, VerificationState.NOT_RUN);
+        GeneratedArtifactBundle bundle = buildBundle(run, snapshot);
         for (ArtifactDescriptor artifact : bundle.completeManifest()) {
             int affected = artifactRepository.upsertForRun(runId, artifact.path(), artifact.kind(),
                     artifact.contentHash(), artifact.sizeBytes());
@@ -66,6 +61,57 @@ public class GenerationArtifactService {
         run.setFinishedAt(now);
         runRepository.saveAndFlush(run);
         return bundle;
+    }
+
+    /** Reconstructs a ZIP only when the persisted run and complete artifact manifest agree. */
+    @Transactional(readOnly = true)
+    public Optional<GeneratedArtifactBundle> downloadComplete(UUID runId, InputSnapshot snapshot) {
+        Objects.requireNonNull(runId, "runId");
+        Objects.requireNonNull(snapshot, "snapshot");
+        GenerationRun run = requireRun(runId);
+        if (run.getState() != GenerationState.SUCCEEDED || run.getArtifactSetHash() == null
+                || run.getArtifactZipHash() == null) {
+            return Optional.empty();
+        }
+
+        GeneratedArtifactBundle bundle = buildBundle(run, snapshot);
+        if (!run.getArtifactSetHash().equals(bundle.artifactSetHash())
+                || !run.getArtifactZipHash().equals(bundle.artifactZipHash())
+                || !persistedManifestMatches(runId, bundle)) {
+            return Optional.empty();
+        }
+        return Optional.of(bundle);
+    }
+
+    private GenerationRun requireRun(UUID runId) {
+        return runRepository.findById(runId)
+                .orElseThrow(() -> new IllegalArgumentException("Generation run " + runId + " does not exist"));
+    }
+
+    private GeneratedArtifactBundle buildBundle(GenerationRun run, InputSnapshot snapshot) {
+        validateFrozenRun(run, snapshot);
+        GenerationIdentity identity = bundleBuilder.identity(run, snapshot);
+        DomainModelIR ir = irMapper.map(snapshot,
+                VersionedGenerationProfileConfiguration.primitiveTypes(run.getProfile().getConfiguration()));
+        // Verification is a separate lifecycle stage; generation provenance must not change afterward.
+        return bundleBuilder.build(identity, snapshot, ir, VerificationState.NOT_RUN);
+    }
+
+    private boolean persistedManifestMatches(UUID runId, GeneratedArtifactBundle bundle) {
+        var persisted = artifactRepository.findByRunIdOrderByPathAsc(runId);
+        if (persisted.size() != bundle.completeManifest().size()) {
+            return false;
+        }
+        for (int index = 0; index < persisted.size(); index++) {
+            var actual = persisted.get(index);
+            ArtifactDescriptor expected = bundle.completeManifest().get(index);
+            if (!expected.path().equals(actual.getPath()) || !expected.kind().equals(actual.getKind())
+                    || !expected.contentHash().equals(actual.getContentHash())
+                    || actual.getSizeBytes() == null || expected.sizeBytes() != actual.getSizeBytes()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void validateFrozenRun(GenerationRun run, InputSnapshot snapshot) {

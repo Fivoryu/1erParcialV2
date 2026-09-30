@@ -218,6 +218,16 @@ public class GenerationIdentityService {
         }
     }
 
+    /** Reads diagnostics persisted for a run without creating or changing its identity. */
+    public List<GenerationDiagnostic> readDiagnostics(UUID runId) {
+        Objects.requireNonNull(runId, "runId");
+        return transactionTemplate.execute(status -> {
+            GenerationRun run = runRepository.findById(runId)
+                    .orElseThrow(() -> new IllegalArgumentException("Generation run " + runId + " does not exist"));
+            return diagnosticsFor(run);
+        });
+    }
+
     private GenerationProfile provisionProfileInTransaction(UUID projectId, JsonNode configuration,
             String configurationHash) {
         Project project = projectRepository.findById(projectId)
