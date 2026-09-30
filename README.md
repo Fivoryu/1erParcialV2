@@ -38,9 +38,9 @@ sin red y se levanta con su propia base PostgreSQL.
 
 **Ojo con los límites:** el Incremento 2 cierra con **siete puntos abiertos** y con **lo que no se verificó**
 declarado en el [acta](docs/puds/cierre/04-cierre-incremento-2.md) §5 y §7. Los tres que más importan: la subida
-de la imagen a un registro no la completa el emulador local, no se verificó ningún despliegue fuera de esta
-máquina, y el backend generado **no tiene capa de seguridad** porque `spring-boot-starter-security` no está
-disponible para la versión 3.4.5 en la caché local.
+de la imagen no la completa el **emulador** de AWS, aunque contra un **registro real** está verificada de ida y
+vuelta; no se verificó ningún despliegue fuera de esta máquina; y el backend generado **no tiene capa de
+seguridad** porque `spring-boot-starter-security` no está disponible para la versión 3.4.5 en la caché local.
 
 > **Importante:** `SOFTWARE.md` describe el **intento anterior** del mismo producto. Se conserva como evidencia y
 > como referencia de requisitos, pero **no describe el código de este repositorio**. Cualquier afirmación de
