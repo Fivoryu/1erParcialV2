@@ -133,6 +133,19 @@ turnos terminan bloqueados después de escribir; en una de esas vueltas reportó
 escrito 580 líneas. Consecuencia adoptada: **el padre verifica el árbol y el diff en cada tarea** en vez de
 confiar en el resumen del escritor. Así se detectó que el emisor había salido solo de lectura.
 
+**Disposición registrada del candidato `sha256:c0eda3f4…` (T6, el CRUD del emisor, hoy en `a614c7f`):** el
+expuesto en el párrafo anterior cubre T7–T14 y ese candidato es anterior a la decisión, así que **no** se saltea
+por una exclusión explícita del usuario. Se inspeccionó como manda el contrato, y la autoridad —el propio
+proveedor— devolvió que el candidato **actual** del worktree es `sha256:a92f5bab…` con `paths: []` y
+`candidate_tree` igual a `base_tree`: **no hay cambios sin commitear y no hay candidato que disponer**. La
+transición ofrecida es un slot de `base_ref` para revisar un rango commiteado, que es la revisión del slice; no se
+satisface, porque nominar ese borde sería inventar una decisión del usuario. La revisión pendiente es la del
+**slice del PR**, ya acordada. Esto queda escrito para que la disposición sea auditable y no una omisión.
+
+**Nota operativa para lanzar escritores:** si el encargo no incluye la frase de exclusión explícita, el arnés
+**intercepta el lanzamiento** y la tarea no corre. Ocurrió al reemitir el arreglo de T9 y se resolvió agregando la
+frase con el digest del candidato.
+
 ### 4.3 P1, resuelta en esta sesión
 
 | # | Cuestión | Resolución |
