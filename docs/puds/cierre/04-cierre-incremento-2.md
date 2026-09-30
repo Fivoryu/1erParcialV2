@@ -107,10 +107,12 @@ administró.** No se usó ninguna credencial real de AWS y no se creó nada fuer
 | Parámetro SSM por destino (`/generated-<slug>/deployment`) | Escrito y releído idéntico (267 y 261 bytes), **sin ningún campo secreto** |
 | Repositorio ECR por destino (`generated-<slug>`) | Creado, con `repositoryUri` del emulador |
 | Etiquetado local de las dos imágenes | Hecho |
-| `docker push` al registro | **Rechazado por el emulador**: con el host del URI, `no such host`; contra `127.0.0.1:4566`, `400 Bad Request` en la subida de blobs |
+| `docker push` al registro **del emulador** | **Rechazado por el emulador**: con el host del URI, `no such host`; contra `127.0.0.1:4566`, `400 Bad Request` en la subida de blobs |
+| `docker push` a un registro **real** (`registry:2` local, sin descargar nada) | **Completado**: las dos repositorios en el catálogo, las dos etiquetas `0.1.0`, manifiesto `sha256:57d44498…`; la imagen se borró localmente, se trajo de vuelta con **el mismo image id** y **arrancó** con `health` `UP` y el CRUD resolviendo la foránea. **19 aserciones, 0 fallos** |
 
-**El push queda documentado y no se reclama como ejecutado.** Nada de ECS, EC2, RDS o IAM se aprovisionó, y no
-se afirma ningún costo.
+El push contra el emulador queda **documentado y no reclamado**; el push contra un registro real está **ejecutado**
+(transcripción en `docs/capturas/incremento-2/17-registro-real.txt`, que incluye la corrida del arnés que
+construye las dos imágenes). Nada de ECS, EC2, RDS o IAM se aprovisionó, y no se afirma ningún costo.
 
 **Vuelta a la línea base, verificada:** contenedores **36 → 36**, volúmenes **68 → 68**, y el emulador de vuelta
 a `ssm=[]`, `ecr=[]` y su bucket ajeno intacto.
@@ -119,7 +121,7 @@ a `ssm=[]`, `ecr=[]` y su bucket ajeno intacto.
 
 | # | Abierto | Por qué queda abierto | Responsable |
 | --- | --- | --- | --- |
-| A1 | La subida de la imagen a un registro | El emulador no completa el camino Docker; un registro real sí | Equipo, con un registro destino |
+| A1 | Push a un **ECR de AWS real** | El push contra un registro real **ya está cerrado** (§4); falta el proveedor con credenciales reales | Equipo, con una cuenta AWS |
 | A2 | Despliegue en AWS real: base gestionada, orquestador, definición de tarea | Fuera del alcance del incremento; el camino queda documentado con **un solo flag** de diferencia | Equipo |
 | A3 | La colección Postman con capturas de la GUI | La corrida se documentó como transcripción; el guion sí es repetible | Equipo, abriendo Postman |
 | A4 | `spring-boot-starter-security` no se emite | La versión 3.4.5 no está en la caché local sin red | Equipo, con la dependencia aprobada |
@@ -147,7 +149,10 @@ a `ssm=[]`, `ecr=[]` y su bucket ajeno intacto.
 
 Esta lista existe para que nadie la tenga que deducir.
 
-- **No se verificó la subida de la imagen a un registro**, porque el emulador no la completa.
+- ~~No se verificó la subida de la imagen a un registro~~: **verificada contra un registro real** en
+  `docs/capturas/incremento-2/17-registro-real.txt` (19 aserciones, 0 fallos, con la imagen borrada localmente y
+  traída de vuelta con el mismo image id). Lo que **no** se verificó es la subida a un **ECR de AWS real** con
+  credenciales reales.
 - **No se verificó ningún despliegue fuera de esta máquina**: ni nube, ni base gestionada, ni orquestador.
 - **No se verificó que un tercero recorra el corte con las manos.** La repetición sin manos humanas sí está
   verificada por el arnés, que es lo que T10 agregó; lo que no se verificó es otra persona ejecutándolo.
@@ -170,6 +175,7 @@ Medido en esta sesión, sobre la rama `feat/incremento-2-generacion-y-exportacio
 | Editor web | `npm run lint` = 0 errores; `npx vitest run` = **71 pruebas, 0 fallos**, 4 saltadas (las 3 de lienzo vivo y la de cliente vivo, todas por backend ausente); `npm run build` en verde |
 | Arnés del corte visible | `python tools/acceptance/acceptance.py` = **30 pasos OK**, 0 fallos |
 | Arnés de generación y despliegue | `python tools/generation-acceptance/acceptance_generation.py` = **66 aserciones, 0 fallos**, teardown verificado |
+| Subida a un registro real | `python` del cierre de registro = **19 aserciones, 0 fallos**: push, borrado local, pull de vuelta con el mismo image id y arranque con `health` `UP` y CRUD |
 | Proyecto generado | Compila offline dentro de la suite y en el despliegue; **24 artefactos**; dos ZIP de **42.086** y **41.900** bytes, byte-deterministas |
 | Docker al terminar | **36 contenedores**, **68 volúmenes**: exactamente la línea base del inicio |
 
@@ -179,7 +185,7 @@ El incremento se cierra con **el corte completo y verificado**, y con **siete pu
 en §5, de los cuales ninguno bloquea la demostración. Lo que sí conviene resolver antes de mostrarlo:
 
 1. **A1 y A2** si la defensa exige un despliegue en la nube. El camino está documentado y a **un flag** de
-   distancia; falta un registro real.
+   distancia, y el paso de transferencia de imagen ya está probado contra un registro real; falta el proveedor.
 2. **A3** si la defensa exige la captura de la GUI de Postman; es abrir Postman y correr una colección que ya
    está versionada.
 3. **A7**, la unificación de la numeración de requisitos, antes de armar la matriz final del informe.

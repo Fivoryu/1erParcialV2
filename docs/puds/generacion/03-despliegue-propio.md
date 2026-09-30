@@ -122,7 +122,8 @@ credencial real de AWS, no se creó nada fuera del emulador y no hubo ningún co
 | Configuración | `aws … ssm put-parameter /generated-<slug>/deployment` | Escrito y releído idéntico: 267 y 261 bytes, **sin ningún campo secreto**. |
 | Registro | `aws … ecr create-repository --repository-name generated-<slug>` | Los dos repositorios creados; `repositoryUri` `000000000000.dkr.ecr.us-east-1.localhost:4566/generated-<slug>`. |
 | Imagen | `docker tag` de la imagen construida contra el URI del repositorio | Las dos imágenes etiquetadas localmente bajo el URI del emulador. |
-| Subida de la imagen | `docker push <uri>:0.1.0` | **Rechazada.** Ver el límite declarado. |
+| Subida de la imagen | `docker push <uri>:0.1.0` | **Rechazada por el emulador.** Ver §4.1. |
+| Subida de la imagen, contra un registro **real** | `docker push 127.0.0.1:5050/generated-<slug>:0.1.0` | **Completada.** Los dos repositorios en el catálogo, las dos etiquetas `0.1.0`, y el digest del manifiesto reportado por el propio registro. Ver §4.2. |
 
 Los nombres de recurso se derivan, nunca se inventan: el repositorio del registro y la ruta del parámetro SSM
 usan el nombre del artefacto Maven emitido, `generated-<slug>`, que el POM ya lleva.
@@ -131,16 +132,37 @@ Contra AWS real, cada paso de arriba difiere en **un solo flag**: desaparece
 `--endpoint-url http://127.0.0.1:4566`. Esa sustitución es toda la distancia entre esta preparación y un
 despliegue real.
 
-### 4.1 Límites declarados del camino AWS
+### 4.1 Límite del emulador: su camino de registro Docker no completa la subida
 
-- **La subida de la imagen no se completó.** El emulador contesta la API de ECR, pero el camino de registro
+- **Con el emulador, la subida no se completa.** El emulador contesta la API de ECR, pero el camino de registro
   Docker falla: con el host del URI devuelve `no such host`, y contra `127.0.0.1:4566` responde
-  `400 Bad Request` en la subida de blobs. La imagen se construye y se etiqueta localmente; la subida queda
-  **documentada y no se reclama como ejecutada**. Un registro real es donde se completa ese paso.
+  `400 Bad Request` en la subida de blobs. Ese es un **límite del emulador**, no del artefacto generado: la
+  imagen se construye y se etiqueta bien. La subida contra el emulador queda **documentada y no reclamada**.
 - **No se aprovisionó ningún recurso de ECS, EC2, RDS ni IAM.** Esta corrida preparó la configuración y el
   camino del registro, nada más. La base gestionada y la definición de tarea quedan fuera del incremento.
 - **No se afirma ningún costo.** El emulador no tiene recurso facturable, y este documento no afirma nada sobre
   el costo de un despliegue real.
+
+### 4.2 La subida, cerrada contra un registro real
+
+El límite de §4.1 se cerró ejecutando la subida contra un **Docker registry real** (`registry:2`, ya presente
+localmente: **no se descargó nada**), en `127.0.0.1:5050`. Evidencia completa en
+`docs/capturas/incremento-2/17-registro-real.txt`.
+
+| Paso | Observado |
+| --- | --- |
+| Registro real levantado desde la imagen local | `docker run --pull=never registry:2` exit 0, `/v2/_catalog` respondiendo |
+| Push de los dos destinos | exit 0; el manifiesto del destino de reporting quedó en `sha256:57d44498d2d623373e9ca85852316a62b0c8ff80daff6f554ae429bf71aa4215` |
+| Catálogo del registro, leído por su propia API HTTP | las dos repositorios presentes, y cada uno con la etiqueta `0.1.0` |
+| La imagen empujada **era** la construida | se borraron localmente **las dos** etiquetas de la imagen, `docker image inspect` falló, y el `docker pull` posterior devolvió **el mismo image id** (`sha256:57d44498d2d6…`) |
+| La imagen traída de vuelta **sigue funcionando** | levantada contra una PostgreSQL nueva: `{"status":"UP"}`, `POST /api/customer` **201** y `POST /api/order` **201** con la foránea resuelta |
+| Teardown | registros, base y aplicación detenidos; **36 contenedores y 68 volúmenes**, la línea base |
+
+**19 aserciones, 0 fallos.** Con esto el paso de transferencia de imagen deja de ser un límite declarado: está
+ejecutado contra un registro real, y la imagen que vuelve del registro es la misma y arranca.
+
+**Lo que sigue abierto con esto:** un **ECR de AWS real** con credenciales reales, y el resto del camino AWS
+(base gestionada y orquestador). El registro local prueba el paso de transferencia, no el proveedor.
 
 ## 5. Vuelta a la línea base
 
@@ -185,7 +207,8 @@ de defecto falla en la suite y no en un despliegue.
 
 ## 7. Lo que no se verificó
 
-- **La subida de la imagen a un registro**, por lo de §4.1.
+- **La subida de la imagen al emulador**, que no la completa; contra un **registro real sí está verificada**
+  (§4.2). Un ECR de AWS real con credenciales reales no se verificó.
 - **Cualquier despliegue fuera de esta máquina**: ni host en la nube, ni base gestionada, ni orquestador.
 - **Que un tercero repita la corrida a mano.** La evidencia de T13 es una transcripción de comandos y su salida;
   el arnés que la hace repetible sin manos humanas es T10 y su transcripción está en
