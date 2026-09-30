@@ -170,6 +170,9 @@ No son preferencias: son lo que medí en disco antes de escribir este plan.
 | `springdoc-openapi-starter-webmvc-ui` | **sólo 2.1.0** | Confirma D2: el OpenAPI se emite, no se genera en runtime |
 | `unzip` | Info-ZIP 6.00 | El arnés puede descomprimir el ZIP sin agregar dependencias |
 | H2 | ausente | Prohibido probar el backend generado contra base en memoria: su migración es PostgreSQL |
+| **Floci (emulador AWS)** | **corriendo**, `floci/floci:latest` v2.1.0 edición «always free», en el 4566, con S3, SQS, DynamoDB, Lambda, IAM y SSM activos. Lo usa otro proyecto (`backend-main-integration-floci-1`) | T13 lo **consume**, no lo administra. Es el camino de AWS real ejecutable sin costo |
+| `aws` CLI | disponible; `floci`, `localstack` y `awslocal` **ausentes** | La preparación AWS se ejecuta con `aws --endpoint-url http://127.0.0.1:4566` |
+| **Imagen base del runtime** | **ausente** tras el reinicio de Docker Desktop | T13 necesita **una re-descarga declarada** (~149 MB). Es el segundo costo de red del incremento, después del de T5 |
 
 **Definición operativa de «sin red» para este incremento:** el backend del diagramador compila y prueba con
 `mvn -o`; el ZIP generado se compila con `mvn -o` desde la caché local; PostgreSQL sale de una imagen que ya
@@ -426,6 +429,11 @@ Cada tarea cierra con **un commit de unidad de trabajo** con sus pruebas al lado
 ### T13 — Despliegue propio del ZIP y preparación AWS/Floci (Etapa G)
 
 - **Objetivo:** que el backend generado se levante con su propia base, en la máquina de un tercero.
+- **Profundidad acordada:** el **emulador se ejecuta** y el camino a AWS real se **documenta sin ejecutarse**.
+  Se construye la imagen de la aplicación generada sobre la misma base que el diagramador, se levanta el ZIP con
+  su compose y su base propia, se prueban **dos destinos a la vez**, y la preparación AWS se ejecuta contra
+  **Floci** con `aws --endpoint-url http://127.0.0.1:4566`. **Cero recursos facturables**, y no se inventan
+  nombres de recursos ni costos. Floci ya está corriendo y lo usa otro proyecto: se consume, no se administra.
 - **Entregable:** `docker-compose.yml` dentro del ZIP con el servicio de la aplicación, su PostgreSQL y la
   configuración por variables de entorno, más un `.env.example` documentado y sin secretos; camino de
   despliegue AWS/Floci **ejecutado** (imagen construida localmente y pasos de Floci corridos) documentado en
@@ -462,6 +470,32 @@ registro de corridas. **Los writes son de un solo hilo**, salvo que el usuario a
 **T6 es la tarea de riesgo del incremento.** Su resultado puede obligar a cambiar el perfil antes de que existan
 plantillas, y por eso está antes que todo lo demás. T5 debe estar cerrada antes que T6 porque T6 lee su línea
 base.
+
+### 6.3 Punto de entrada para la siguiente sesión
+
+**Hecho:** T1, T1b, T2, T3, T4, T5, T6, T7, T8, T9 y T11, más el cierre del hueco de `health` de T10. El
+suite está en **174 pruebas, 0 fallos**, sin red, y el proyecto generado compila offline dentro del suite. Cada
+tarea tiene su evidencia y su falsificación en §9. El corte de §1 está probado de punta a punta: el backend
+generado arranca contra su propia PostgreSQL, responde `health` `UP`, y su CRUD resuelve la clave foránea.
+
+**Orden acordado para lo que falta:** `T12 → T13 → T10 → T14`. T12 y T13 primero porque son producto y
+evidencia de defensa; T10 al final porque es herramienta de operador y su valor principal ya está cubierto por
+el suite y por la corrida de T11.
+
+**Primer paso concreto:** T12. Abrir `web/src/pages/ProjectEditorPage.tsx`, agregar el panel que lista los
+destinos del modelo, permite elegir o crear uno, lanza la generación, muestra estado y diagnósticos, y descarga
+el ZIP. La API ya lo permite y es descubrible: `GET /projects/{id}/model` da `versionId`, `GET
+/projects/{id}/generation-profiles` da el perfil con su revisión exacta y el template, `POST
+/projects/{id}/generation-targets` crea el destino, `POST /projects/{id}/generations` arranca con identidades
+explícitas, y `GET /projects/{id}/generations/{runId}/artifacts` baja el ZIP sólo si la corrida está completa.
+**Regla heredada:** la pantalla no muestra UUID, `run_id` ni nombres de tabla.
+
+**Decisiones ya tomadas para la próxima sesión:** (1) **T13 ejecuta el emulador y documenta AWS real sin
+ejecutarlo**: imagen construida sobre la misma base, ZIP levantado con su compose y su base propia, dos destinos
+a la vez, y preparación ejecutada contra Floci por `aws --endpoint-url` sin crear recursos facturables. (2)
+**T12 y T10 los escribe el padre, no el escritor delegado**: el escritor se colgó dos veces seguidas (4 minutos
+cada una, sin dejar archivo) y además ya había reportado «files_changed: None» habiendo escrito 580 líneas.
+Verificar el árbol con las manos propias es lo que viene detectando los defectos reales.
 
 ### 6.2 Superficies que este incremento agrega
 
