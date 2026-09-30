@@ -84,16 +84,33 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             "invitation", "model_conflict",
             "name_collision", "ai_proposal", "detected_element", "xmi_exchange", "xmi_loss_item", "audit_log");
 
-    /**
-     * Support indexes the physical schema authority declares for the generation tables. Named
-     * explicitly because a previous increment copied the tables and the enum types but skipped the
-     * index section, and nothing noticed: the guard did not look at indexes.
-     */
-    private static final Map<String, Set<String>> SUPPORT_INDEXES_OF_GENERATION_TABLES = Map.of(
-            "generation_target", Set.of("idx_generation_target_model"),
-            "generation_run", Set.of("idx_run_model", "idx_run_target"),
-            "generated_artifact", Set.of("idx_artifact_run"),
-            "verification_result", Set.of("idx_verification_run"));
+    /** Support indexes declared by the physical schema authority for every migrated table. */
+    private static final Map<String, Set<String>> SUPPORT_INDEXES = Map.ofEntries(
+            Map.entry("user_account", Set.of()),
+            Map.entry("project", Set.of("idx_project_owner")),
+            Map.entry("project_member", Set.of("idx_member_user")),
+            Map.entry("uml_model", Set.of()),
+            Map.entry("model_version", Set.of("idx_version_model_rev")),
+            Map.entry("model_command", Set.of("idx_command_model_rev", "idx_command_author")),
+            Map.entry("cascade_group", Set.of()),
+            Map.entry("tombstone", Set.of("idx_tombstone_model")),
+            Map.entry("classifier", Set.of("idx_classifier_model", "idx_classifier_namespace")),
+            Map.entry("type_reference", Set.of()),
+            Map.entry("uml_attribute", Set.of("idx_attribute_classifier")),
+            Map.entry("uml_operation", Set.of("idx_operation_classifier")),
+            Map.entry("operation_parameter", Set.of("idx_parameter_operation")),
+            Map.entry("uml_relationship", Set.of("idx_relationship_model")),
+            Map.entry("relationship_end", Set.of("idx_relationship_end_rel", "idx_relationship_end_cls")),
+            Map.entry("uml_constraint", Set.of("idx_constraint_model")),
+            Map.entry("diagram_view", Set.of()),
+            Map.entry("element_geometry", Set.of()),
+            Map.entry("connector_path", Set.of()),
+            Map.entry("generation_target", Set.of("idx_generation_target_model")),
+            Map.entry("generation_profile", Set.of()),
+            Map.entry("template_version", Set.of()),
+            Map.entry("generation_run", Set.of("idx_run_model", "idx_run_target")),
+            Map.entry("generated_artifact", Set.of("idx_artifact_run")),
+            Map.entry("verification_result", Set.of("idx_verification_run")));
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -111,7 +128,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2", "3", "4");
+                .contains("1", "2", "3", "4", "5");
     }
 
     @Test
@@ -174,14 +191,23 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
-    void supportIndexesDeclaredByTheAuthorityExist() {
-        for (Map.Entry<String, Set<String>> entry : SUPPORT_INDEXES_OF_GENERATION_TABLES.entrySet()) {
+    void supportIndexesExactlyMatchTheAuthority() {
+        for (Map.Entry<String, Set<String>> entry : SUPPORT_INDEXES.entrySet()) {
             Set<String> indexes = Set.copyOf(jdbcTemplate.queryForList(
-                    "SELECT indexname FROM pg_indexes WHERE schemaname = 'diagrammer' AND tablename = ?",
+                    "SELECT index_relation.relname "
+                            + "FROM pg_class table_relation "
+                            + "JOIN pg_namespace table_namespace ON table_namespace.oid = table_relation.relnamespace "
+                            + "JOIN pg_index index_metadata ON index_metadata.indrelid = table_relation.oid "
+                            + "JOIN pg_class index_relation ON index_relation.oid = index_metadata.indexrelid "
+                            + "WHERE table_namespace.nspname = 'diagrammer' AND table_relation.relname = ? "
+                            + "AND NOT EXISTS (SELECT 1 FROM pg_constraint constraint_metadata "
+                            + "WHERE constraint_metadata.conrelid = table_relation.oid "
+                            + "AND constraint_metadata.conname = index_relation.relname "
+                            + "AND constraint_metadata.contype IN ('p', 'u'))",
                     String.class, entry.getKey()));
 
             assertThat(indexes).as("support indexes of diagrammer.%s", entry.getKey())
-                    .containsAll(entry.getValue());
+                    .containsExactlyInAnyOrderElementsOf(entry.getValue());
         }
     }
 
