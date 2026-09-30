@@ -438,7 +438,7 @@ apareciera, sería una señal de que la frontera está mal puesta.
 ## 8. Definición de terminado
 
 - [ ] El corte de §1 funciona de punta a punta y se puede repetir desde cero.
-- [ ] Las migraciones reproducen la sección de índices de la autoridad para todas las tablas creadas, y el
+- [x] Las migraciones reproducen la sección de índices de la autoridad para todas las tablas creadas, y el
       guardián lo comprueba y **dispara** si falta uno.
 - [ ] El ZIP generado compila con **`mvn -o`**, sin red.
 - [ ] El backend generado usa **la misma** línea base de versión que el diagramador, y una prueba falla si
@@ -465,7 +465,7 @@ apareciera, sería una señal de que la frontera está mal puesta.
 | Tarea | Estado | Evidencia |
 | --- | --- | --- |
 | T1 — Migración V4 con el esquema de generación | **hecho** | Commit `c64216b`; `mvn -o -B verify` = **95 pruebas, 0 fallos, 0 errores, 0 saltadas**, sin red; Flyway aplica `V1`–`V4` y reporta `now at version v4`; las 6 tablas, los 2 tipos enum, los 2 comentarios y los **5 índices** son idénticos a `02-esquema-fisico.sql` (comparación de texto extraído, no de intención); el guardián gana la comprobación de índices que le faltaba y **se probó que dispara**: quitar la línea de `idx_verification_run` hace fallar `supportIndexesDeclaredByTheAuthorityExist` nombrando `diagrammer.verification_result`, y el archivo se restauró verificando el hash. **Hallazgo durante la tarea:** `V3` no copió los 4 índices que la autoridad declara para sus tablas; queda como **T1b** |
-| T1b — Índices de apoyo faltantes del Incremento 1 | pendiente | — |
+| T1b — Índices de apoyo faltantes del Incremento 1 | **hecho** | Commit `9842417`; `mvn -o -B verify` = **95 pruebas, 0 fallos, 0 errores, 0 saltadas**, Flyway ahora en `v5`; los 4 índices de `V5` son idénticos a las líneas 518–521 de la autoridad (comparados con `repr`, no a ojo); `cascade_group` no tiene ningún índice declarado y el guardián lo fija en vacío. El guardián pasa a cubrir las **25 tablas** creadas por V1–V5 con igualdad exacta en las dos direcciones, separando los índices de PK y de unicidad por `pg_constraint`. **Falsificado en ambas direcciones antes de commitear:** quitar `idx_version_model_rev` falla nombrando `diagrammer.model_version`, y agregar `idx_inventado_no_declarado` falla nombrando `diagrammer.tombstone`; el archivo se restauró y se verificó por hash. **`V1`–`V4` no se tocaron.** |
 | T2 — Snapshot inmutable e identidad de corrida | pendiente | — |
 | T3 — Representación intermedia y reglas de mapeo | pendiente | — |
 | T4 — Perfil, plantilla y destinos versionados | pendiente | — |
