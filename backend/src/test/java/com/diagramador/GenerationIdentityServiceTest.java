@@ -32,6 +32,9 @@ import com.diagramador.generation.GenerationArtifactBundleBuilder.GeneratedArtif
 import com.diagramador.generation.GenerationArtifactService;
 import com.diagramador.generation.GenerationDiagnostic;
 import com.diagramador.generation.GenerationIdentityService;
+import com.diagramador.generation.GenerationVerificationService;
+import com.diagramador.generation.GenerationVerificationService.CheckSummary;
+import com.diagramador.generation.GenerationVerificationService.VerificationSummary;
 import com.diagramador.generation.InputSnapshot;
 import com.diagramador.generation.InputSnapshotFactory;
 import com.diagramador.generation.GenerationIdentityService.GenerationRunStart;
@@ -53,6 +56,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,6 +70,7 @@ class GenerationIdentityServiceTest extends AbstractPostgresIntegrationTest {
 
     private final GenerationIdentityService identityService;
     private final GenerationArtifactService artifactService;
+    private final GenerationVerificationService verificationService;
     private final InputSnapshotFactory snapshotFactory;
     private final CommandService commandService;
     private final ObjectMapper objectMapper;
@@ -84,7 +89,8 @@ class GenerationIdentityServiceTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     GenerationIdentityServiceTest(GenerationIdentityService identityService,
-            GenerationArtifactService artifactService, InputSnapshotFactory snapshotFactory,
+            GenerationArtifactService artifactService, GenerationVerificationService verificationService,
+            InputSnapshotFactory snapshotFactory,
             CommandService commandService, ObjectMapper objectMapper,
             UserAccountRepository userAccountRepository, ProjectRepository projectRepository,
             ProjectMemberRepository projectMemberRepository, UmlModelRepository modelRepository,
@@ -94,6 +100,7 @@ class GenerationIdentityServiceTest extends AbstractPostgresIntegrationTest {
             VerificationResultRepository verificationRepository, TransactionTemplate transactionTemplate) {
         this.identityService = identityService;
         this.artifactService = artifactService;
+        this.verificationService = verificationService;
         this.snapshotFactory = snapshotFactory;
         this.commandService = commandService;
         this.objectMapper = objectMapper;
@@ -403,6 +410,164 @@ class GenerationIdentityServiceTest extends AbstractPostgresIntegrationTest {
                 primaryFirst.artifactSetHash(), primaryFirst.artifactZipHash(), primaryFirst.zipBytes().length,
                 reportingBundle.artifactSetHash(), reportingBundle.artifactZipHash(), reportingBundle.zipBytes().length,
                 persistedRows.size());
+    }
+
+    @Test
+    void verificationRecordsTheCompletePerRunCheckSetAndKeepsRunsIsolated() {
+        Fixture fixture = fixtureWithClassifier("t8-verification-runs", "CLASS");
+        ModelVersion version = currentVersion(fixture);
+        GenerationProfile profile = identityService.provisionV1Profile(fixture.projectId());
+        TemplateVersion template = identityService.provisionV1Template(profile.getId());
+        GenerationTarget primary = identityService.createTarget(fixture.model().getId(), "primary",
+                targetConfiguration("Primary", "primary_database", "vault://diagrammer/t8/primary"));
+        GenerationTarget reporting = identityService.createTarget(fixture.model().getId(), "reporting",
+                targetConfiguration("Reporting", "reporting_database", "vault://diagrammer/t8/reporting"));
+        GenerationRun primaryRun = identityService.startRun(primary.getId(), version.getId(), profile.getId(),
+                template.getId()).run();
+        GenerationRun reportingRun = identityService.startRun(reporting.getId(), version.getId(), profile.getId(),
+                template.getId()).run();
+        InputSnapshot snapshot = snapshotFactory.create(version);
+        artifactService.generate(primaryRun.getId(), snapshot);
+        artifactService.generate(reportingRun.getId(), snapshot);
+
+        VerificationSummary primarySummary = verificationService.verify(primaryRun.getId(), snapshot);
+        VerificationSummary reportingSummary = verificationService.verify(reportingRun.getId(), snapshot);
+        Set<String> expectedExecutedCheckNames = Set.of(
+                "artifact_set_structure", "flyway_migration_file", "artifact_hashes",
+                "frozen_input_determinism", "target_safe_configuration");
+        Set<String> expectedNotRunCheckNames = Set.of(
+                "jpa_entities_and_relationships", "repositories", "services_and_supported_operations",
+                "rest_dto_openapi_behavior", "validation_and_error_handling", "security", "authorization", "audit",
+                "postgres_migration_execution", "generated_backend_compilation", "generated_backend_startup",
+                "generated_backend_health", "generated_backend_contract_smoke", "generated_backend_tests",
+                "docker_compose_execution", "generated_backend_runtime_reproducibility");
+        Set<String> expectedCheckNames = new java.util.HashSet<>(expectedExecutedCheckNames);
+        expectedCheckNames.addAll(expectedNotRunCheckNames);
+        assertThat(GenerationVerificationService.EXECUTED_CHECK_NAMES)
+                .containsExactlyInAnyOrderElementsOf(expectedExecutedCheckNames);
+        assertThat(GenerationVerificationService.NOT_EXECUTED_CHECKS)
+                .extracting(GenerationVerificationService.NotRunCheck::checkName)
+                .containsExactlyInAnyOrderElementsOf(expectedNotRunCheckNames);
+        Map<String, VerificationState> primaryStates = primarySummary.checks().stream()
+                .collect(java.util.stream.Collectors.toMap(CheckSummary::checkName, CheckSummary::state));
+
+        assertThat(primarySummary.generationState()).isEqualTo(GenerationState.SUCCEEDED);
+        assertThat(primarySummary.status()).isEqualTo(VerificationState.NOT_RUN);
+        assertThat(primarySummary.verifiedBackend()).isFalse();
+        assertThat(primaryStates.keySet()).containsExactlyInAnyOrderElementsOf(expectedCheckNames);
+        assertThat(expectedExecutedCheckNames).allSatisfy(checkName ->
+                assertThat(primaryStates.get(checkName)).isEqualTo(VerificationState.PASSED));
+        assertThat(GenerationVerificationService.NOT_EXECUTED_CHECKS).allSatisfy(check -> {
+            assertThat(primaryStates.get(check.checkName())).isEqualTo(VerificationState.NOT_RUN);
+            assertThat(check.reason()).isNotBlank();
+            CheckSummary notRunResult = primarySummary.checks().stream()
+                    .filter(result -> result.checkName().equals(check.checkName())).findFirst().orElseThrow();
+            assertThat(notRunResult.evidence()).contains("NOT_RUN", check.reason(), primaryRun.getId().toString());
+            assertThat(notRunResult.toolName()).isEqualTo("Cycle 3 per-run check not executed");
+        });
+        assertThat(reportingSummary.checks()).extracting(CheckSummary::checkName)
+                .containsExactlyInAnyOrderElementsOf(expectedCheckNames);
+        assertThat(reportingSummary.status()).isEqualTo(VerificationState.NOT_RUN);
+        assertThat(reportingSummary.verifiedBackend()).isFalse();
+        assertThat(primarySummary.checks()).allSatisfy(result -> {
+            assertThat(result.evidence()).contains(primaryRun.getId().toString());
+            assertThat(result.evidenceHash()).isNull();
+        });
+        assertThat(primarySummary.checks()).filteredOn(result -> result.state() == VerificationState.PASSED)
+                .extracting(CheckSummary::toolName).containsExactlyInAnyOrder(
+                        "generated artifact structure inspection",
+                        "generated migration content inspection",
+                        "frozen artifact hash recomputation",
+                        "frozen input artifact rebuild comparison",
+                        "credential-shaped value inspection");
+
+        List<VerificationResult> primaryRows = verificationRepository
+                .findByRunIdOrderByCreatedAtAsc(primaryRun.getId());
+        List<VerificationResult> reportingRows = verificationRepository
+                .findByRunIdOrderByCreatedAtAsc(reportingRun.getId());
+        assertThat(primaryRows).hasSize(expectedCheckNames.size());
+        assertThat(reportingRows).hasSize(expectedCheckNames.size());
+        assertThat(primaryRows).allSatisfy(result ->
+                assertThat(result.getRun().getId()).isEqualTo(primaryRun.getId()));
+        assertThat(reportingRows).allSatisfy(result ->
+                assertThat(result.getRun().getId()).isEqualTo(reportingRun.getId()));
+        assertThat(verificationService.readSummary(primaryRun.getId()).checks())
+                .extracting(CheckSummary::checkName).containsExactlyInAnyOrderElementsOf(expectedCheckNames);
+        assertThat(runRepository.findById(primaryRun.getId()).orElseThrow().getState())
+                .isEqualTo(GenerationState.SUCCEEDED);
+        assertThat(runRepository.findById(reportingRun.getId()).orElseThrow().getState())
+                .isEqualTo(GenerationState.SUCCEEDED);
+
+        primarySummary.checks().stream().sorted(java.util.Comparator.comparing(CheckSummary::checkName))
+                .forEach(result -> System.out.printf("T8_NORMAL run=%s check=%s state=%s tool=%s evidence=%s%n",
+                        primaryRun.getId(), result.checkName(), result.state(), result.toolName(), result.evidence()));
+    }
+
+    @Test
+    void incompletePersistedArtifactManifestFailsStructureAndNeverClaimsVerifiedBackend() {
+        Fixture fixture = fixtureWithClassifier("t8-incomplete-artifact-set", "CLASS");
+        ModelVersion version = currentVersion(fixture);
+        GenerationProfile profile = identityService.provisionV1Profile(fixture.projectId());
+        TemplateVersion template = identityService.provisionV1Template(profile.getId());
+        GenerationTarget target = identityService.createTarget(fixture.model().getId(), "primary",
+                targetConfiguration("Primary", "primary_database", "vault://diagrammer/t8/incomplete"));
+        GenerationRun run = identityService.startRun(target.getId(), version.getId(), profile.getId(),
+                template.getId()).run();
+        InputSnapshot snapshot = snapshotFactory.create(version);
+        artifactService.generate(run.getId(), snapshot);
+
+        GeneratedArtifact missingRepository = artifactRepository.findByRunIdOrderByPathAsc(run.getId()).stream()
+                .filter(artifact -> artifact.getKind().equals("repository")).findFirst().orElseThrow();
+        artifactRepository.delete(missingRepository);
+        artifactRepository.flush();
+
+        VerificationSummary summary = verificationService.verify(run.getId(), snapshot);
+        CheckSummary structure = summary.checks().stream()
+                .filter(result -> result.checkName().equals(GenerationVerificationService.ARTIFACT_SET_STRUCTURE))
+                .findFirst().orElseThrow();
+
+        assertThat(structure.state()).isEqualTo(VerificationState.FAILED);
+        assertThat(structure.state()).isNotEqualTo(VerificationState.PASSED);
+        assertThat(structure.evidence()).contains("Structure evaluation executed", "persistence/repositories");
+        assertThat(summary.status()).isEqualTo(VerificationState.FAILED);
+        assertThat(summary.verifiedBackend()).isFalse();
+        assertThat(runRepository.findById(run.getId()).orElseThrow().getState())
+                .isEqualTo(GenerationState.SUCCEEDED);
+        System.out.printf("T8_INCOMPLETE run=%s check=%s state=%s evidence=%s%n",
+                run.getId(), structure.checkName(), structure.state(), structure.evidence());
+    }
+
+    @Test
+    void credentialShapedTargetConfigurationNeverReachesVerificationEvidenceOrHashes() {
+        Fixture fixture = fixtureWithClassifier("t8-secret-evidence", "CLASS");
+        ModelVersion version = currentVersion(fixture);
+        GenerationProfile profile = identityService.provisionV1Profile(fixture.projectId());
+        TemplateVersion template = identityService.provisionV1Template(profile.getId());
+        GenerationTarget target = identityService.createTarget(fixture.model().getId(), "primary",
+                targetConfiguration("Primary", "primary_database", "vault://diagrammer/t8/safe"));
+        GenerationRun run = identityService.startRun(target.getId(), version.getId(), profile.getId(),
+                template.getId()).run();
+        InputSnapshot snapshot = snapshotFactory.create(version);
+        GeneratedArtifactBundle generated = artifactService.generate(run.getId(), snapshot);
+        String credential = "jdbc:postgresql://db.example.test/orders?password=t8-hidden-credential";
+        target.setConnectionConfigRef(credential);
+        targetRepository.saveAndFlush(target);
+
+        VerificationSummary summary = verificationService.verify(run.getId(), snapshot);
+        CheckSummary targetSafety = summary.checks().stream()
+                .filter(result -> result.checkName().equals(GenerationVerificationService.TARGET_SAFE_CONFIGURATION))
+                .findFirst().orElseThrow();
+        List<VerificationResult> rows = verificationRepository.findByRunIdOrderByCreatedAtAsc(run.getId());
+
+        assertThat(targetSafety.state()).isEqualTo(VerificationState.FAILED);
+        assertThat(targetSafety.evidence()).contains("credential-shaped data was detected")
+                .doesNotContain(credential, "t8-hidden-credential");
+        assertThat(generated.files().values()).noneMatch(content -> content.contains(credential));
+        assertThat(generated.provenanceJson()).doesNotContain(credential);
+        assertThat(rows).allSatisfy(result -> {
+            assertThat(result.getEvidence()).doesNotContain(credential, "t8-hidden-credential");
+            assertThat(result.getEvidenceHash()).isNull();
+        });
     }
 
     @Test

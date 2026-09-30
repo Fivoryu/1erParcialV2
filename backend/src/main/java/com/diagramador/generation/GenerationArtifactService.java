@@ -2,16 +2,13 @@ package com.diagramador.generation;
 
 import com.diagramador.domain.GenerationRun;
 import com.diagramador.domain.GenerationState;
-import com.diagramador.domain.VerificationResult;
 import com.diagramador.domain.VerificationState;
 import com.diagramador.generation.GenerationArtifactBundleBuilder.ArtifactDescriptor;
 import com.diagramador.generation.GenerationArtifactBundleBuilder.GeneratedArtifactBundle;
 import com.diagramador.generation.GenerationArtifactBundleBuilder.GenerationIdentity;
 import com.diagramador.persistence.GeneratedArtifactRepository;
 import com.diagramador.persistence.GenerationRunRepository;
-import com.diagramador.persistence.VerificationResultRepository;
 import java.time.OffsetDateTime;
-import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -23,16 +20,14 @@ public class GenerationArtifactService {
 
     private final GenerationRunRepository runRepository;
     private final GeneratedArtifactRepository artifactRepository;
-    private final VerificationResultRepository verificationRepository;
     private final GenerationArtifactBundleBuilder bundleBuilder;
     private final DomainModelIRMapper irMapper;
 
     public GenerationArtifactService(GenerationRunRepository runRepository,
-            GeneratedArtifactRepository artifactRepository, VerificationResultRepository verificationRepository,
-            GenerationArtifactBundleBuilder bundleBuilder, DomainModelIRMapper irMapper) {
+            GeneratedArtifactRepository artifactRepository, GenerationArtifactBundleBuilder bundleBuilder,
+            DomainModelIRMapper irMapper) {
         this.runRepository = Objects.requireNonNull(runRepository, "runRepository");
         this.artifactRepository = Objects.requireNonNull(artifactRepository, "artifactRepository");
-        this.verificationRepository = Objects.requireNonNull(verificationRepository, "verificationRepository");
         this.bundleBuilder = Objects.requireNonNull(bundleBuilder, "bundleBuilder");
         this.irMapper = Objects.requireNonNull(irMapper, "irMapper");
     }
@@ -51,8 +46,8 @@ public class GenerationArtifactService {
         GenerationIdentity identity = bundleBuilder.identity(run, snapshot);
         DomainModelIR ir = irMapper.map(snapshot,
                 VersionedGenerationProfileConfiguration.primitiveTypes(run.getProfile().getConfiguration()));
-        VerificationState verificationStatus = verificationStatus(runId);
-        GeneratedArtifactBundle bundle = bundleBuilder.build(identity, snapshot, ir, verificationStatus);
+        // Verification is a separate lifecycle stage; generation provenance must not change afterward.
+        GeneratedArtifactBundle bundle = bundleBuilder.build(identity, snapshot, ir, VerificationState.NOT_RUN);
         for (ArtifactDescriptor artifact : bundle.completeManifest()) {
             int affected = artifactRepository.upsertForRun(runId, artifact.path(), artifact.kind(),
                     artifact.contentHash(), artifact.sizeBytes());
@@ -71,17 +66,6 @@ public class GenerationArtifactService {
         run.setFinishedAt(now);
         runRepository.saveAndFlush(run);
         return bundle;
-    }
-
-    private VerificationState verificationStatus(UUID runId) {
-        List<VerificationResult> results = verificationRepository.findByRunIdOrderByCreatedAtAsc(runId);
-        if (results.stream().anyMatch(result -> result.getState() == VerificationState.FAILED)) {
-            return VerificationState.FAILED;
-        }
-        if (results.isEmpty() || results.stream().anyMatch(result -> result.getState() == VerificationState.NOT_RUN)) {
-            return VerificationState.NOT_RUN;
-        }
-        return VerificationState.PASSED;
     }
 
     private void validateFrozenRun(GenerationRun run, InputSnapshot snapshot) {
