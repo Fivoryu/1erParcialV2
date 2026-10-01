@@ -24,8 +24,11 @@ Uso, desde la raiz del repositorio:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
+import re
+import subprocess
 import sys
 from typing import Any
 
@@ -401,3 +404,166 @@ def test_declared_owning_side_ends_all_carry_a_role_name(inventory: dict[str, An
     ends = inventory["findings"]["associationEnds"]
     assert ends["total"] == 10
     assert ends["named"] == 10
+
+
+# --------------------------------------------------------------------------
+# 4. Oraculo ejecutable del intercambio y de la geometria del diagrama
+# --------------------------------------------------------------------------
+
+
+def test_fixture_identity_is_pinned_and_byte_exact(inventory: dict[str, Any]) -> None:
+    raw = DEFAULT_FIXTURE.read_bytes()
+    expected_sha256 = "336d13b1ae87da5643dc74903e9787899aaeb3896eb2ca30d5c5a74a2cd0dab2"
+
+    assert len(raw) == 91440
+    assert inventory["bytes"] == 91440
+    declaration = re.search(rb'encoding="([^"]+)"', raw[:120])
+    assert declaration is not None
+    assert declaration.group(1).decode("ascii") == "windows-1252"
+    assert inventory["declaredEncoding"] == "windows-1252"
+    assert "Prueba didáctica" in inventory["findings"]["notes"]["examples"][0]
+    assert hashlib.sha256(raw).hexdigest() == expected_sha256
+    assert inventory["fixtureIdentity"]["sha256"] == expected_sha256
+
+    attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+    assert "docs/fixtures/** -text" in attributes.splitlines()
+    head_blob = subprocess.run(
+        ["git", "show", "HEAD:docs/fixtures/xmi/Prueba3.xml"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert head_blob == raw
+    assert hashlib.sha256(head_blob).hexdigest() == expected_sha256
+
+
+def test_extension_structure_and_model_root_are_pinned(inventory: dict[str, Any]) -> None:
+    exchange = inventory["interchange"]
+    extension = exchange["extension"]
+    assert extension["directChildEntryCounts"] == {
+        "elements": 11,
+        "connectors": 8,
+        "primitivetypes": 1,
+        "profiles": 1,
+        "diagrams": 1,
+    }
+    assert extension["directChildTags"] == [
+        "elements",
+        "connectors",
+        "primitivetypes",
+        "profiles",
+        "diagrams",
+    ]
+    assert extension["connectorsIsDirectChild"] is True
+    assert extension["connectorsInsideDiagrams"] == 0
+
+    model = exchange["model"]
+    assert model["name"] == "EA_Model"
+    assert model["id"] == ""
+    assert model["elementCountsByType"] == {
+        "uml:Class": 8,
+        "uml:PrimitiveType": 4,
+        "uml:Interface": 1,
+        "uml:Enumeration": 1,
+        "uml:Package": 1,
+    }
+    assert model["featureCountsByKind"] == {
+        "ownedAttribute": 23,
+        "ownedOperation": 11,
+        "ownedParameter": 11,
+    }
+    assert len(model["relations"]) == 8
+
+
+def test_interchange_relations_measure_endpoints_roles_and_labels(
+    inventory: dict[str, Any],
+) -> None:
+    exchange = inventory["interchange"]
+    assert len(exchange["connectors"]) == 8
+    assert exchange["labels"]["connectorsWithCompleteLabels"] >= 1
+    assert exchange["labels"]["keyCounts"] == {
+        "lt": 6,
+        "rt": 6,
+        "lb": 6,
+        "rb": 6,
+        "mt": 8,
+    }
+    assert all(relation["source"]["id"] for relation in exchange["connectors"])
+    assert all(relation["target"]["id"] for relation in exchange["connectors"])
+    assert exchange["roles"] == {
+        "total": 16,
+        "byParent": {"source": 8, "target": 8},
+    }
+
+
+def test_diagram_placements_are_split_by_geometry_and_subject_resolution(
+    inventory: dict[str, Any],
+) -> None:
+    diagram = inventory["interchange"]["diagram"]
+    assert diagram["count"] == 1
+    assert diagram["placementCount"] == 18
+    assert len(diagram["shapePlacements"]) == 10
+    assert len(diagram["connectorPlacements"]) == 8
+    assert diagram["unclassifiedPlacements"] == []
+    assert all(
+        set(placement["bounds"]) == {"Left", "Top", "Right", "Bottom"}
+        and placement["seqno"]
+        and re.fullmatch(r"[0-9A-F]{8}", placement["duid"])
+        for placement in diagram["shapePlacements"]
+    )
+    assert all(
+        all(f"{key}=" in placement["geometry"] for key in ("SX", "SY", "EX", "EY", "Path"))
+        and not any(f"{key}=" in placement["geometry"] for key in ("Left", "Top", "Right", "Bottom"))
+        and "seqno" not in placement
+        for placement in diagram["connectorPlacements"]
+    )
+    assert len(diagram["shapePlacements"]) + len(diagram["connectorPlacements"]) == 18
+    assert len(diagram["unresolvedSubjects"]) == 0
+    assert all(
+        placement["subjectResolved"]
+        for placement in diagram["shapePlacements"] + diagram["connectorPlacements"]
+    )
+
+    # The fixture contradicts the prose claim that all eight Path values are empty.
+    assert diagram["pathCounts"] == {"empty": 7, "nonempty": 1}
+    assert diagram["nonemptyPathValues"] == ["622:-260$"]
+
+    measured = inventory["findings"]["diagrams"]
+    assert measured["withGeometry"] == 18  # legacy aggregate remains compatible
+    assert measured["shapeWithGeometry"] == 10
+    assert measured["connectorWithGeometry"] == 8
+    assert inventory["interchange"]["notRepresentable"]["unresolvedTypeReferences"] == 4
+
+
+def test_connector_anchors_match_shape_duids_in_the_style_attribute(
+    inventory: dict[str, Any],
+) -> None:
+    diagram = inventory["interchange"]["diagram"]
+    assert len(diagram["anchoredPlacements"]) >= 1
+    anchor = diagram["anchoredPlacements"][0]
+    assert anchor["mode"] == "3"
+    assert anchor["sourceDuid"] in diagram["shapeDuids"]
+    assert anchor["targetDuid"] in diagram["shapeDuids"]
+    assert anchor["sourceMatchesShape"] is True
+    assert anchor["targetMatchesShape"] is True
+
+    placement = next(
+        item
+        for item in diagram["connectorPlacements"]
+        if item["anchors"]["sourceDuid"] and item["anchors"]["targetDuid"]
+    )
+    assert "Mode=3" in placement["style"]
+    assert "SOID=" in placement["style"] and "EOID=" in placement["style"]
+    assert "Mode=" not in placement["geometry"]
+    assert "SOID=" not in placement["geometry"] and "EOID=" not in placement["geometry"]
+
+
+def test_render_includes_the_interchange_measurements(inventory: dict[str, Any]) -> None:
+    from xmi_inventory import render
+
+    output = render(inventory)
+    assert "Intercambio XMI:" in output
+    assert "10 figuras" in output
+    assert "8 conectores" in output
+    assert "Path de conectores" in output
+    assert "labels" in output

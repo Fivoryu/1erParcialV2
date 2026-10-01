@@ -45,6 +45,7 @@ Uso, desde la raiz del repositorio:
 from __future__ import annotations
 
 import collections
+import hashlib
 import json
 import pathlib
 import re
@@ -186,6 +187,19 @@ def _attributes(element: ET.Element) -> dict[str, str]:
     return {key.split("}")[-1]: value for key, value in element.attrib.items()}
 
 
+def _declared_encoding(raw: bytes) -> str:
+    declared = re.search(rb'''encoding=["']([^"']+)["']''', raw[:120])
+    return declared.group(1).decode("ascii") if declared else "utf-8"
+
+
+def _parse_fixture(raw: bytes) -> ET.Element:
+    """Decodifica y parsea XML respetando la codificacion declarada."""
+    encoding = _declared_encoding(raw)
+    text = raw.decode(encoding, errors="strict")
+    text = re.sub(r"^<\?xml[^>]*\?>", '<?xml version="1.0"?>', text, count=1)
+    return ET.fromstring(text)
+
+
 def load_fixture(path: pathlib.Path) -> ET.Element:
     """Carga el fixture respetando su codificacion declarada.
 
@@ -194,12 +208,7 @@ def load_fixture(path: pathlib.Path) -> ET.Element:
     declaracion de codificacion. Se decodifica a mano y se neutraliza la
     declaracion. El archivo en disco no se modifica.
     """
-    raw = path.read_bytes()
-    declared = re.search(rb'encoding="([^"]+)"', raw[:120])
-    encoding = declared.group(1).decode("ascii") if declared else "utf-8"
-    text = raw.decode(encoding, errors="strict")
-    text = re.sub(r"^<\?xml[^>]*\?>", '<?xml version="1.0"?>', text, count=1)
-    return ET.fromstring(text)
+    return _parse_fixture(path.read_bytes())
 
 
 def _classify(tag: str, xmi_type: str, incoming_context: str) -> str:
@@ -215,7 +224,8 @@ def _classify(tag: str, xmi_type: str, incoming_context: str) -> str:
 
 
 def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
-    root = load_fixture(path)
+    raw = path.read_bytes()
+    root = _parse_fixture(raw)
 
     family_counts: collections.Counter[str] = collections.Counter()
     tag_counts: collections.Counter[str] = collections.Counter()
@@ -420,6 +430,9 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
             walk(child, subtree, next_context, tag, inside_diagram)
 
     walk(root, "", "", "", False)
+    interchange = _build_interchange_inventory(root, type_refs_without_target)
+    totals["diagram_shape_with_geometry"] = interchange["diagram"]["shapeGeometryCount"]
+    totals["diagram_connector_with_geometry"] = interchange["diagram"]["connectorGeometryCount"]
 
     declared = STRUCTURAL_TAGS | UML_TAGS | EA_TAGS
     undeclared = sorted(tag for tag in tag_counts if tag not in declared)
@@ -429,8 +442,10 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
 
     return {
         "source": str(path.relative_to(REPO_ROOT)) if path.is_relative_to(REPO_ROOT) else str(path),
-        "bytes": path.stat().st_size,
-        "declaredEncoding": "windows-1252",
+        "bytes": len(raw),
+        "declaredEncoding": _declared_encoding(raw),
+        "fixtureIdentity": {"sha256": hashlib.sha256(raw).hexdigest()},
+        "interchange": interchange,
         "xmiVersion": root.attrib.get(f"{{{XMI_NS}}}version", ""),
         "exporter": _child_attributes(root, "Documentation"),
         "extension": _child_attributes(root, "Extension"),
@@ -504,9 +519,310 @@ def build_inventory(path: pathlib.Path = DEFAULT_FIXTURE) -> dict:
             "diagrams": {
                 "placedElements": totals["diagram_placed_elements"],
                 "withGeometry": totals["diagram_placed_with_geometry"],
+                "shapeWithGeometry": totals["diagram_shape_with_geometry"],
+                "connectorWithGeometry": totals["diagram_connector_with_geometry"],
                 "metadataMirrorElements": totals["metadata_mirror_elements"],
                 "connectors": totals["connectors"],
             },
+        },
+    }
+
+
+def _direct_child(element: ET.Element, tag: str) -> ET.Element | None:
+    return next((child for child in element if _tag(child) == tag), None)
+
+
+def _field_values(value: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for part in value.split(";"):
+        if "=" in part:
+            key, field_value = part.split("=", 1)
+            fields[key] = field_value
+    return fields
+
+
+def _build_interchange_inventory(root: ET.Element, unresolved_type_refs: int) -> dict:
+    extension = next(
+        (
+            child
+            for child in root
+            if _tag(child) == "Extension"
+            and child.attrib.get("extender") == "Enterprise Architect"
+        ),
+        None,
+    )
+    model = next(
+        (
+            child
+            for child in root
+            if _tag(child) == "Model" and _xmi_type(child) == "uml:Model"
+        ),
+        None,
+    )
+    if extension is None or model is None:
+        return {"extension": {}, "model": {}, "connectors": [], "diagram": {}}
+
+    extension_children = collections.Counter(_tag(child) for child in extension)
+    direct_child_counts = {
+        _tag(child): len(child) for child in extension
+    }
+    extension_connectors = _direct_child(extension, "connectors")
+    connector_nodes = (
+        [child for child in extension_connectors if _tag(child) == "connector"]
+        if extension_connectors is not None
+        else []
+    )
+    diagrams_container = _direct_child(extension, "diagrams")
+    diagram_nodes = (
+        [child for child in diagrams_container if _tag(child) == "diagram"]
+        if diagrams_container is not None
+        else []
+    )
+    connectors_inside_diagrams = [
+        node
+        for diagram in root.iter()
+        if _tag(diagram) == "diagram"
+        for node in diagram.iter()
+        if _tag(node) == "connectors"
+    ]
+
+    model_ids = {
+        _xmi_attribute(node, "id")
+        for node in model.iter()
+        if _xmi_attribute(node, "id")
+    }
+    classifier_types = {
+        "uml:Class",
+        "uml:Interface",
+        "uml:Enumeration",
+        "uml:Package",
+        "uml:PrimitiveType",
+    }
+    relation_types = {"uml:Association", "uml:Generalization", "uml:Realization"}
+    elements: list[dict] = []
+    features: list[dict] = []
+    model_relations: dict[str, dict] = {}
+
+    def collect_model(node: ET.Element, owner: dict | None = None) -> None:
+        node_type = _xmi_type(node)
+        identifier = _xmi_attribute(node, "id")
+        attributes = _attributes(node)
+        current_owner = owner
+        if node_type in classifier_types:
+            current_owner = {
+                "id": identifier,
+                "name": attributes.get("name", ""),
+            }
+            elements.append(
+                {
+                    "id": identifier,
+                    "type": node_type,
+                    "name": attributes.get("name", ""),
+                    "visibility": attributes.get("visibility", ""),
+                }
+            )
+        if node_type in relation_types and identifier:
+            model_relations[identifier] = {
+                "id": identifier,
+                "type": node_type,
+                "name": attributes.get("name", ""),
+            }
+        child_owner = current_owner
+        if _tag(node) in {"ownedAttribute", "ownedOperation", "ownedParameter"}:
+            type_node = _direct_child(node, "type")
+            features.append(
+                {
+                    "id": identifier,
+                    "kind": _tag(node),
+                    "name": attributes.get("name", ""),
+                    "ownerId": current_owner.get("id", "") if current_owner else "",
+                    "ownerName": current_owner.get("name", "") if current_owner else "",
+                    "typeId": _xmi_attribute(type_node, "idref") if type_node is not None else "",
+                }
+            )
+            if _tag(node) == "ownedOperation" and identifier:
+                child_owner = {"id": identifier, "name": attributes.get("name", "")}
+        for child in node:
+            collect_model(child, child_owner)
+
+    collect_model(model)
+    element_type_counts = collections.Counter(element["type"] for element in elements)
+    feature_kind_counts = collections.Counter(feature["kind"] for feature in features)
+
+    relationships: list[dict] = []
+    label_key_counts: collections.Counter[str] = collections.Counter()
+    connectors_with_complete_labels = 0
+    for connector in connector_nodes:
+        labels_node = _direct_child(connector, "labels")
+        labels = dict(labels_node.attrib) if labels_node is not None else {}
+        label_key_counts.update(labels.keys())
+        if {"lt", "rt", "lb", "rb", "mt"} <= labels.keys():
+            connectors_with_complete_labels += 1
+
+        endpoints = {}
+        for side in ("source", "target"):
+            endpoint = _direct_child(connector, side)
+            role = _direct_child(endpoint, "role") if endpoint is not None else None
+            end_type = _direct_child(endpoint, "type") if endpoint is not None else None
+            endpoint_model = _direct_child(endpoint, "model") if endpoint is not None else None
+            endpoints[side] = {
+                "id": _xmi_attribute(endpoint, "idref") if endpoint is not None else "",
+                "name": endpoint_model.attrib.get("name", "") if endpoint_model is not None else "",
+                "type": endpoint_model.attrib.get("type", "") if endpoint_model is not None else "",
+                "role": role.attrib.get("name", "") if role is not None else "",
+                "multiplicity": (
+                    end_type.attrib.get("multiplicity", "") if end_type is not None else ""
+                ),
+            }
+        relation_id = _xmi_attribute(connector, "idref")
+        properties = _direct_child(connector, "properties")
+        relationships.append(
+            {
+                "id": relation_id,
+                "name": connector.attrib.get("name", ""),
+                "modelType": model_relations.get(relation_id, {}).get("type", ""),
+                "eaType": properties.attrib.get("ea_type", "") if properties is not None else "",
+                "source": endpoints["source"],
+                "target": endpoints["target"],
+                "labels": labels,
+            }
+        )
+
+    role_parent_counts: collections.Counter[str] = collections.Counter()
+    for parent in root.iter():
+        role_parent_counts.update(
+            _tag(parent) for child in parent if _tag(child) == "role"
+        )
+
+    placement_nodes = [
+        child
+        for diagram in diagram_nodes
+        for container in diagram
+        if _tag(container) == "elements"
+        for child in container
+        if _tag(child) == "element"
+    ]
+    shape_placements: list[dict] = []
+    connector_placements: list[dict] = []
+    unclassified_placements: list[dict] = []
+    for placement in placement_nodes:
+        attributes = _attributes(placement)
+        geometry = attributes.get("geometry", "")
+        style = attributes.get("style", "")
+        geometry_fields = _field_values(geometry)
+        style_fields = _field_values(style)
+        subject = attributes.get("subject", "")
+        rectangle_fields = {"Left", "Top", "Right", "Bottom"}
+        connector_fields = {"SX", "SY", "EX", "EY", "Path"}
+        duid = style_fields.get("DUID", "")
+        if (
+            rectangle_fields <= geometry_fields.keys()
+            and attributes.get("seqno")
+            and duid
+        ):
+            shape_placements.append(
+                {
+                    "subject": subject,
+                    "geometry": geometry,
+                    "bounds": {key: geometry_fields[key] for key in ("Left", "Top", "Right", "Bottom")},
+                    "seqno": attributes["seqno"],
+                    "duid": duid,
+                    "subjectResolved": subject in model_ids,
+                }
+            )
+        elif (
+            connector_fields <= geometry_fields.keys()
+            and "seqno" not in attributes
+            and not (rectangle_fields & geometry_fields.keys())
+        ):
+            path = geometry_fields["Path"]
+            connector_placements.append(
+                {
+                    "subject": subject,
+                    "geometry": geometry,
+                    "style": style,
+                    "path": path,
+                    "pathEmpty": path == "",
+                    "subjectResolved": subject in model_ids,
+                    "anchors": {
+                        "mode": style_fields.get("Mode", ""),
+                        "sourceDuid": style_fields.get("SOID", ""),
+                        "targetDuid": style_fields.get("EOID", ""),
+                    },
+                }
+            )
+        else:
+            unclassified_placements.append(
+                {"subject": subject, "geometry": geometry, "style": style}
+            )
+
+    shape_duids = {placement["duid"] for placement in shape_placements}
+    anchored_placements = [
+        {
+            "subject": placement["subject"],
+            **placement["anchors"],
+            "sourceMatchesShape": placement["anchors"]["sourceDuid"] in shape_duids,
+            "targetMatchesShape": placement["anchors"]["targetDuid"] in shape_duids,
+        }
+        for placement in connector_placements
+        if placement["anchors"]["sourceDuid"] and placement["anchors"]["targetDuid"]
+    ]
+    unresolved_subjects = [
+        placement["subject"]
+        for placement in shape_placements + connector_placements
+        if not placement["subjectResolved"]
+    ]
+    paths = [placement["path"] for placement in connector_placements]
+
+    return {
+        "extension": {
+            "directChildTags": [_tag(child) for child in extension],
+            "directChildEntryCounts": direct_child_counts,
+            "directChildBlockCounts": dict(extension_children),
+            "connectorsIsDirectChild": extension_connectors is not None,
+            "connectorsInsideDiagrams": len(connectors_inside_diagrams),
+        },
+        "model": {
+            "name": model.attrib.get("name", ""),
+            "id": _xmi_attribute(model, "id"),
+            "elements": elements,
+            "elementCountsByType": dict(element_type_counts.most_common()),
+            "features": features,
+            "featureCountsByKind": dict(feature_kind_counts.most_common()),
+            "relations": list(model_relations.values()),
+        },
+        "connectors": relationships,
+        "labels": {
+            "connectorsWithCompleteLabels": connectors_with_complete_labels,
+            "keyCounts": {
+                key: label_key_counts.get(key, 0)
+                for key in ("lt", "rt", "lb", "rb", "mt")
+            },
+        },
+        "roles": {
+            "total": sum(role_parent_counts.values()),
+            "byParent": dict(role_parent_counts.most_common()),
+        },
+        "diagram": {
+            "count": len(diagram_nodes),
+            "placementCount": len(placement_nodes),
+            "shapePlacements": shape_placements,
+            "shapeGeometryCount": sum(bool(item["geometry"]) for item in shape_placements),
+            "connectorPlacements": connector_placements,
+            "connectorGeometryCount": sum(bool(item["geometry"]) for item in connector_placements),
+            "unclassifiedPlacements": unclassified_placements,
+            "unresolvedSubjects": unresolved_subjects,
+            "shapeDuids": sorted(shape_duids),
+            "anchoredPlacements": anchored_placements,
+            "pathCounts": {
+                "empty": sum(path == "" for path in paths),
+                "nonempty": sum(path != "" for path in paths),
+            },
+            "nonemptyPathValues": [path for path in paths if path != ""],
+        },
+        "notRepresentable": {
+            "unresolvedTypeReferences": unresolved_type_refs,
+            "unresolvedDiagramSubjects": len(unresolved_subjects),
         },
     }
 
@@ -592,9 +908,61 @@ def render(inventory: dict) -> str:
     lines.append(f"Extremos     : {ends['total']} totales, {ends['named']} con nombre de rol")
     dia = findings["diagrams"]
     lines.append(
-        f"Diagrama     : {dia['placedElements']} elementos colocados ({dia['withGeometry']} con geometria),"
-        f" {dia['connectors']} conectores, {dia['metadataMirrorElements']} entradas del espejo de metadatos"
+        f"Diagrama     : {dia['placedElements']} colocaciones ({dia['shapeWithGeometry']} figuras,"
+        f" {dia['connectorWithGeometry']} conectores con geometria);"
+        f" {dia['metadataMirrorElements']} entradas del espejo de metadatos"
     )
+
+    exchange = inventory["interchange"]
+    identity = inventory["fixtureIdentity"]
+    extension = exchange["extension"]
+    model = exchange["model"]
+    diagram = exchange["diagram"]
+    lines.append("")
+    lines.append("Intercambio XMI:")
+    lines.append(f"  Fixture SHA-256 : {identity['sha256']}")
+    lines.append(f"  Extension       : {extension['directChildEntryCounts']}")
+    lines.append(
+        f"  connectors      : hijo directo={extension['connectorsIsDirectChild']},"
+        f" dentro de diagram={extension['connectorsInsideDiagrams']} bloques"
+    )
+    lines.append(
+        f"  Model           : {model['name']!r}, xmi:id={model['id']!r};"
+        f" elementos={len(model['elements'])}, caracteristicas={len(model['features'])},"
+        f" relaciones={len(model['relations'])}"
+    )
+    lines.append(f"  Tipos de elemento: {model['elementCountsByType']}")
+    lines.append(f"  Caracteristicas : {model['featureCountsByKind']}")
+    for relation in exchange["connectors"]:
+        source = relation["source"]
+        target = relation["target"]
+        lines.append(
+            f"  Relacion {relation['name']!r}: {source['role'] or source['name'] or source['id']}"
+            f" [{source['multiplicity'] or '?'}] -> {target['role'] or target['name'] or target['id']}"
+            f" [{target['multiplicity'] or '?'}]; labels={relation['labels']}"
+        )
+    lines.append(
+        f"  Colocaciones    : {len(diagram['shapePlacements'])} figuras +"
+        f" {len(diagram['connectorPlacements'])} conectores;"
+        f" subjects sin resolver={len(diagram['unresolvedSubjects'])}"
+    )
+    for placement in diagram["shapePlacements"]:
+        lines.append(
+            f"    Figura {placement['subject']}: {placement['bounds']}"
+            f" seqno={placement['seqno']} DUID={placement['duid']}"
+        )
+    for placement in diagram["connectorPlacements"]:
+        lines.append(
+            f"    Conector {placement['subject']}: geometry={placement['geometry']}"
+            f" Path={placement['path']!r} anchors(style)={placement['anchors']}"
+        )
+    lines.append(
+        f"  Path de conectores: {diagram['pathCounts']};"
+        f" valores no vacios={diagram['nonemptyPathValues']}"
+    )
+    lines.append(f"  Keys de labels   : {exchange['labels']['keyCounts']}")
+    lines.append(f"  Roles             : {exchange['roles']}")
+    lines.append(f"  No representable : {exchange['notRepresentable']}")
 
     return "\n".join(lines)
 
