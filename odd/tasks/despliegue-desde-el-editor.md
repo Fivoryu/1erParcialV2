@@ -177,7 +177,9 @@ pruebas al lado y sin atribución de IA. **Los writes son de un solo hilo.**
 - [ ] La URL del teléfono se muestra y **está armada con el host real** que el usuario usó.
 - [ ] Detener un despliegue deja el conteo de contenedores y volúmenes en su valor inicial, verificado.
 - [ ] Ninguna fila de despliegue ni ningún log contiene un secreto, y una prueba lo comprueba.
-- [ ] El alcance desde la LAN está **medido y declarado**, incluido lo que la medición no prueba.
+- [x] El alcance desde la LAN está **medido y declarado**, incluido lo que la medición no prueba. Ver D2 y §3
+del documento: la regla de entrada de Docker cubre el perfil `Public` con cualquier puerto, y los tres orígenes
+medidos **no** recorren la Wi-Fi, así que el paso del teléfono queda como el único que cierra la duda.
 - [ ] El documento de cierre declara lo que **no** se verificó.
 
 ## 9. Registro de progreso
@@ -185,7 +187,7 @@ pruebas al lado y sin atribución de IA. **Los writes son de un solo hilo.**
 | Tarea | Estado | Evidencia |
 | --- | --- | --- |
 | D1 — Endurecer el compose emitido | **hecho** | El compose emitido publica el puerto de PostgreSQL atado a `127.0.0.1` y el de la aplicación en todas las interfaces, con el motivo escrito en el propio archivo, en el `.env.example` y en el README emitidos — porque es un archivo que va a leer un tercero. **Aserciones en las dos direcciones:** el puerto de la base es exactamente `127.0.0.1:${GENERATED_POSTGRES_HOST_PORT:-25433}:5432` y el de la app es `${GENERATED_HTTP_HOST_PORT:-19001}:8080` y **no contiene** `127.0.0.1`. La aserción se hace sobre el YAML **parseado**, no sobre un string. **Falsificado:** reponer la base publicada abierta hace fallar el test con `expected ["127.0.0.1:…"] but was ["${…}:5432"]`; el archivo se restauró y se verificó por hash (`8d46cea4…`). `mvn -o -B verify` = **179 pruebas, 0 fallos**, sin red; el ZIP sigue siendo determinista (`artifactSetHash` `47e8f956…`, ZIP de 42.438 bytes, `byteIdentical=true`) |
-| D2 — Medir el alcance desde la LAN | pendiente | — |
+| D2 — Medir el alcance desde la LAN | **hecho** | Sección §3 de `docs/puds/generacion/04-despliegue-desde-el-editor.md`. **El hecho que decide:** la Wi-Fi está en perfil **`Public`**, y Docker Desktop tiene reglas de entrada **`Allow`, perfil `Public`, puerto `Any`, proceso `com.docker.backend.exe`**, habilitadas. Como el backend generado se publica como **puerto de un contenedor**, el proceso que escucha es ese, así que el camino de LAN **debería funcionar sin agregar nada**. **Hallazgo de diseño que sale de la misma medición:** un **proceso del host** no tiene esa regla, así que levantar el backend como `java -jar` suelto no sería alcanzable desde la Wi-Fi sin una regla manual → el operador tiene que desplegar con **Compose**, que es como ya despliega el arnés (D5). **Medición hecha:** dos escuchas (contenedor publicado `19001`, proceso del host `19099`) alcanzadas desde tres orígenes —la propia máquina por su IP de LAN, WSL y un contenedor—, las tres con `200` en los dos puertos. **Límite declarado, y es el importante:** los tres orígenes recorren interfaces que **no** son la Wi-Fi, así que **ninguno prueba que un teléfono entre**; lo único que prueba el camino del teléfono es el teléfono, y queda el paso de **un comando** para hacerlo (§3.3). También se declaran las dos trampas que ahorran tiempo: la IP es **DHCP**, y **HTTP en claro está bloqueado por defecto en Androide 9+** y por ATS en iOS. La regla de firewall necesaria si falla queda escrita y **no se ejecutó**: es un cambio de seguridad en la máquina del usuario y se pide antes. Sondas y escucha de host eliminadas; **36 contenedores y 68 volúmenes** |
 | D3 — Esquema y dominio del despliegue | pendiente | — |
 | D4 — API de despliegues | pendiente | — |
 | D5 — Operador de despliegue en el host | pendiente | — |
