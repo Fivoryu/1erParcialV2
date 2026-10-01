@@ -1,0 +1,72 @@
+=== 1. A project with one finished generation run ===
+[OK] One finished generation run
+  expected: SUCCEEDED
+  got:      {'state': 'SUCCEEDED', 'code': 'GENERATION_ACCEPTED'}
+[INFO] baseline containers=37 volumes=69
+
+=== 2. Order from the API and let the operator deploy ===
+[OK] The order reserves the first port pair
+  expected: ('PENDING', 19001)
+  got:      ('PENDING', 19001)
+[OK] claimed bd4d01e8-c63c-4f0e-bd31-a5030c1e8a8f as d5-operator (ports 19001/25433)
+[INFO] downloaded 29011 bytes for d5-service-f6cd3
+[OK] compiled the generated project for d5-service-f6cd3 offline
+[OK] d5-service-f6cd3 is up: {"status":"UP"}
+[INFO] from another device on the same network: http://192.168.0.11:19001/api/...
+[INFO] once -> deployed
+
+[OK] The operator exits successfully
+  expected: 0
+  got:      0
+[OK] The deployment is UP and names its Compose project
+  expected: {'state': 'UP', 'composeProject': 'generated-<slug>'}
+  got:      {'state': 'UP', 'composeProject': 'generated-d5-service-f6cd3', 'failure': None}
+[OK] The deployed backend answers health UP
+  expected: {"status":"UP"}
+  got:      {"status":"UP"}
+[OK] The operator announced the LAN address
+  expected: a line with the LAN URL
+  got:      ['[INFO] from another device on the same network: http://192.168.0.11:19001/api/...']
+[OK] A second order of the same destination is refused
+  expected: 409
+  got:      409
+[OK] The stack added two containers and one volume
+  expected: (2, 1)
+  got:      (2, 1)
+
+=== 3. Stop, and verify nothing is left ===
+[OK] Stopping a running deployment asks the operator
+  expected: STOPPING
+  got:      STOPPING
+[OK] bd4d01e8-c63c-4f0e-bd31-a5030c1e8a8f stopped; containers back at 37 from 39
+[INFO] once -> stopped
+
+[OK] The deployment ends STOPPED
+  expected: STOPPED
+  got:      {'state': 'STOPPED', 'failure': None}
+[OK] Container and volume counts are back at the baseline
+  expected: (37, 69)
+  got:      (37, 69)
+
+=== 4. Ctrl-C mid-flight leaves nothing behind ===
+[OK] The operator reached the point of creating containers
+  expected: True
+  got:      containers appeared
+[OK] claimed dc103014-78e6-4f3c-9fa4-90dd31769959 as d5-operator (ports 19001/25433)
+[INFO] downloaded 29011 bytes for d5-service-f6cd3
+[OK] compiled the generated project for d5-service-f6cd3 offline
+[FAIL] interrupted; taking the stack down before leaving
+[INFO] interrupted
+
+[OK] No container and no volume survived the interrupt
+  expected: {'containers': [], 'volumes': []}
+  got:      {'containers': [], 'volumes': []}
+[OK] The counts are back at the baseline after the interrupt
+  expected: (37, 69)
+  got:      (37, 69)
+[OK] The interrupted deployment is reported FAILED with its own code
+  expected: {'state': 'FAILED', 'failureCode': 'OPERATOR_INTERRUPTED'}
+  got:      {'state': 'FAILED', 'failureCode': 'OPERATOR_INTERRUPTED'}
+
+=== D5 summary: 15 passed, 0 failed ===
+[INFO] project=3be6e7e4-c256-4de0-8c4b-30e56b91a7c0 deployment=bd4d01e8-c63c-4f0e-bd31-a5030c1e8a8f
