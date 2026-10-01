@@ -42,10 +42,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class GenerationApiTest extends AbstractPostgresIntegrationTest {
-
-    private static final UUID SEED_OWNER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final String SEED_OWNER_SUBJECT = "seed-owner-local";
+class GenerationApiTest extends AuthenticatedApiTest {
 
     private final MockMvc mockMvc;
     private final ObjectMapper objectMapper;
@@ -101,13 +98,13 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         UUID modelId = UUID.fromString(initialModel.path("id").asText());
         postCommand(projectId, modelId, UUID.randomUUID());
 
-        MvcResult modelResponse = mockMvc.perform(get("/projects/{projectId}/model", projectId)
-                .accept(MediaType.APPLICATION_JSON))
+        MvcResult modelResponse = mockMvc.perform(authorized(get("/projects/{projectId}/model", projectId)
+                .accept(MediaType.APPLICATION_JSON)))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode model = objectMapper.readTree(modelResponse.getResponse().getContentAsByteArray());
-        MvcResult profilesResponse = mockMvc.perform(get("/projects/{projectId}/generation-profiles", projectId)
-                .accept(MediaType.APPLICATION_JSON))
+        MvcResult profilesResponse = mockMvc.perform(authorized(get("/projects/{projectId}/generation-profiles", projectId)
+                .accept(MediaType.APPLICATION_JSON)))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode profiles = objectMapper.readTree(profilesResponse.getResponse().getContentAsByteArray());
@@ -122,9 +119,9 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         targetRequest.put("databaseSchema", "public");
         targetRequest.put("connectionConfigRef", null);
         byte[] targetRequestBody = objectMapper.writeValueAsBytes(targetRequest);
-        MvcResult targetResponse = mockMvc.perform(post("/projects/{projectId}/generation-targets", projectId)
+        MvcResult targetResponse = mockMvc.perform(authorized(post("/projects/{projectId}/generation-targets", projectId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(targetRequestBody))
+                .content(targetRequestBody)))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode target = objectMapper.readTree(targetResponse.getResponse().getContentAsByteArray()).path("result");
@@ -136,9 +133,9 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
                 "templateId", profile.path("templateId").asText(),
                 "idempotencyKey", "client-flow-" + UUID.randomUUID());
         byte[] generationRequestBody = objectMapper.writeValueAsBytes(request);
-        MvcResult generationResponse = mockMvc.perform(post("/projects/{projectId}/generations", projectId)
+        MvcResult generationResponse = mockMvc.perform(authorized(post("/projects/{projectId}/generations", projectId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(generationRequestBody))
+                .content(generationRequestBody)))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode response = objectMapper.readTree(generationResponse.getResponse().getContentAsByteArray());
@@ -369,8 +366,8 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         assertThat(unknownRun.path("code").asText()).isEqualTo("RUN_NOT_FOUND");
         assertThat(unknownRun.path("result").isNull()).isTrue();
 
-        MvcResult unknownProject = mockMvc.perform(get("/projects/{projectId}/generation-targets", UUID.randomUUID())
-                .accept(MediaType.APPLICATION_JSON))
+        MvcResult unknownProject = mockMvc.perform(authorized(get("/projects/{projectId}/generation-targets", UUID.randomUUID())
+                .accept(MediaType.APPLICATION_JSON)))
                 .andExpect(status().isNotFound())
                 .andReturn();
         JsonNode error = objectMapper.readTree(unknownProject.getResponse().getContentAsByteArray());
@@ -385,7 +382,8 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         UUID unknownProjectId = UUID.randomUUID();
 
         for (String path : List.of("/projects/{projectId}/model", "/projects/{projectId}/generation-profiles")) {
-            MvcResult response = mockMvc.perform(get(path, unknownProjectId).accept(MediaType.APPLICATION_JSON))
+            MvcResult response = mockMvc.perform(authorized(get(path, unknownProjectId)
+                    .accept(MediaType.APPLICATION_JSON)))
                     .andExpect(status().isNotFound())
                     .andReturn();
             JsonNode error = objectMapper.readTree(response.getResponse().getContentAsByteArray());
@@ -434,9 +432,9 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         for (String identity : List.of("versionId", "profileId", "templateId")) {
             Map<String, Object> request = new HashMap<>(completeRequest);
             request.remove(identity);
-            MvcResult response = mockMvc.perform(post("/projects/{projectId}/generations", fixture.projectId())
+            MvcResult response = mockMvc.perform(authorized(post("/projects/{projectId}/generations", fixture.projectId())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsBytes(request)))
+                    .content(objectMapper.writeValueAsBytes(request))))
                     .andExpect(status().isBadRequest())
                     .andReturn();
             assertThat(objectMapper.readTree(response.getResponse().getContentAsByteArray())
@@ -448,8 +446,8 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
     @Test
     void malformedBodiesAndMissingIdempotencyKeyRemainTransportErrors() throws Exception {
         UUID unknownProjectId = UUID.randomUUID();
-        MvcResult malformed = mockMvc.perform(post("/projects/{projectId}/generation-targets", unknownProjectId)
-                .contentType(MediaType.APPLICATION_JSON).content("{"))
+        MvcResult malformed = mockMvc.perform(authorized(post("/projects/{projectId}/generation-targets", unknownProjectId)
+                .contentType(MediaType.APPLICATION_JSON).content("{")))
                 .andExpect(status().isBadRequest())
                 .andReturn();
         assertThat(objectMapper.readTree(malformed.getResponse().getContentAsByteArray())
@@ -460,8 +458,8 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         Map<String, Object> request = new HashMap<>(
                 generationRequest(fixture, target.path("targetId").asText(), "ignored"));
         request.remove("idempotencyKey");
-        MvcResult missingKey = mockMvc.perform(post("/projects/{projectId}/generations", fixture.projectId())
-                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(request)))
+        MvcResult missingKey = mockMvc.perform(authorized(post("/projects/{projectId}/generations", fixture.projectId())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(request))))
                 .andExpect(status().isBadRequest())
                 .andReturn();
         assertThat(objectMapper.readTree(missingKey.getResponse().getContentAsByteArray())
@@ -505,9 +503,9 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
     }
 
     private JsonNode createProject(String name) throws Exception {
-        return objectMapper.readTree(mockMvc.perform(post("/projects")
+        return objectMapper.readTree(mockMvc.perform(authorized(post("/projects")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(Map.of("name", name))))
+                .content(objectMapper.writeValueAsBytes(Map.of("name", name)))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsByteArray());
     }
@@ -516,7 +514,6 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         Map<String, Object> envelope = new HashMap<>();
         envelope.put("operationId", UUID.randomUUID());
         envelope.put("type", "classifier.create");
-        envelope.put("author", Map.of("userId", SEED_OWNER_ID, "externalSubject", SEED_OWNER_SUBJECT));
         envelope.put("projectId", projectId);
         envelope.put("modelId", modelId);
         envelope.put("baseRevision", 1L);
@@ -525,9 +522,9 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         envelope.put("payload", Map.of("id", classifierId, "name", "Customer", "kind", "CLASS"));
         envelope.put("origin", "MANUAL");
         envelope.put("idempotencyKey", UUID.randomUUID().toString());
-        JsonNode result = objectMapper.readTree(mockMvc.perform(post("/projects/{projectId}/commands", projectId)
+        JsonNode result = objectMapper.readTree(mockMvc.perform(authorized(post("/projects/{projectId}/commands", projectId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(envelope)))
+                .content(objectMapper.writeValueAsBytes(envelope))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray());
         assertThat(result.path("status").asText()).isEqualTo("ACCEPTED");
@@ -547,9 +544,9 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
         request.put("databaseName", databaseName);
         request.put("databaseSchema", "public");
         request.put("connectionConfigRef", connectionConfigRef);
-        return objectMapper.readTree(mockMvc.perform(post("/projects/{projectId}/generation-targets", projectId)
+        return objectMapper.readTree(mockMvc.perform(authorized(post("/projects/{projectId}/generation-targets", projectId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(request)))
+                .content(objectMapper.writeValueAsBytes(request))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray());
     }
@@ -565,22 +562,23 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
     }
 
     private JsonNode postGeneration(UUID projectId, Map<String, Object> request) throws Exception {
-        return objectMapper.readTree(mockMvc.perform(post("/projects/{projectId}/generations", projectId)
+        return objectMapper.readTree(mockMvc.perform(authorized(post("/projects/{projectId}/generations", projectId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(request)))
+                .content(objectMapper.writeValueAsBytes(request))))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray());
     }
 
     private JsonNode getJson(String path, Object... variables) throws Exception {
-        return objectMapper.readTree(mockMvc.perform(get(path, variables).accept(MediaType.APPLICATION_JSON))
+        return objectMapper.readTree(mockMvc.perform(authorized(get(path, variables)
+                .accept(MediaType.APPLICATION_JSON)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray());
     }
 
     private MvcResult requestArtifacts(UUID projectId, UUID runId) throws Exception {
-        return mockMvc.perform(get("/projects/{projectId}/generations/{runId}/artifacts", projectId, runId)
-                .accept(MediaType.ALL))
+        return mockMvc.perform(authorized(get("/projects/{projectId}/generations/{runId}/artifacts", projectId, runId)
+                .accept(MediaType.ALL)))
                 .andExpect(status().isOk())
                 .andReturn();
     }
@@ -597,8 +595,8 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
     }
 
     private byte[] download(UUID projectId, UUID runId) throws Exception {
-        MvcResult result = mockMvc.perform(get("/projects/{projectId}/generations/{runId}/artifacts", projectId, runId)
-                .accept(MediaType.parseMediaType("application/zip")))
+        MvcResult result = mockMvc.perform(authorized(get("/projects/{projectId}/generations/{runId}/artifacts", projectId, runId)
+                .accept(MediaType.parseMediaType("application/zip"))))
                 .andExpect(status().isOk())
                 .andReturn();
         assertThat(result.getResponse().getContentType()).isEqualTo("application/zip");
@@ -618,9 +616,9 @@ class GenerationApiTest extends AbstractPostgresIntegrationTest {
     }
 
     private JsonNode postVerification(UUID projectId, UUID runId) throws Exception {
-        return objectMapper.readTree(mockMvc.perform(post(
+        return objectMapper.readTree(mockMvc.perform(authorized(post(
                 "/projects/{projectId}/generations/{runId}/verification", projectId, runId)
-                .accept(MediaType.APPLICATION_JSON))
+                .accept(MediaType.APPLICATION_JSON)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray());
     }

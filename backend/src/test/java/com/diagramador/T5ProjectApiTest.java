@@ -25,10 +25,8 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
+class T5ProjectApiTest extends AuthenticatedApiTest {
 
-    private static final UUID SEED_OWNER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final String SEED_OWNER_SUBJECT = "seed-owner-local";
     private static final String EDITOR_ORIGIN = "http://localhost:5173";
 
     private final MockMvc mockMvc;
@@ -62,9 +60,9 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void blankProjectNameReturnsBadRequestWithTheTransportErrorShape() throws Exception {
-        MvcResult result = mockMvc.perform(post("/projects")
+        MvcResult result = mockMvc.perform(authorized(post("/projects")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(Map.of("name", "   "))))
+                .content(objectMapper.writeValueAsBytes(Map.of("name", "   ")))))
                 .andExpect(status().isBadRequest())
                 .andReturn();
 
@@ -75,9 +73,9 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void malformedJsonReturnsBadRequestWithTheTransportErrorShape() throws Exception {
-        MvcResult result = mockMvc.perform(post("/projects")
+        MvcResult result = mockMvc.perform(authorized(post("/projects")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{"))
+                .content("{")))
                 .andExpect(status().isBadRequest())
                 .andReturn();
 
@@ -87,7 +85,7 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void unknownProjectReturnsNotFoundWithTheTransportErrorShape() throws Exception {
-        MvcResult result = mockMvc.perform(get("/projects/{id}", UUID.randomUUID()))
+        MvcResult result = mockMvc.perform(authorized(get("/projects/{id}", UUID.randomUUID())))
                 .andExpect(status().isNotFound())
                 .andReturn();
 
@@ -97,7 +95,7 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void malformedProjectPathIdReturnsBadRequestWithTheTransportErrorShape() throws Exception {
-        MvcResult result = mockMvc.perform(get("/projects/not-a-uuid"))
+        MvcResult result = mockMvc.perform(authorized(get("/projects/not-a-uuid")))
                 .andExpect(status().isBadRequest())
                 .andReturn();
 
@@ -419,10 +417,12 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void corsAllowsOnlyTheViteDevelopmentOriginForApiMethods() throws Exception {
+        // A browser never sends Authorization on a CORS preflight: the preflight is what asks permission
+        // to send it. This request must therefore carry no credentials and still succeed.
         mockMvc.perform(options("/projects")
                 .header("Origin", EDITOR_ORIGIN)
                 .header("Access-Control-Request-Method", "POST")
-                .header("Access-Control-Request-Headers", "content-type"))
+                .header("Access-Control-Request-Headers", "authorization,content-type"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", EDITOR_ORIGIN))
                 .andExpect(header().string("Access-Control-Allow-Methods", org.hamcrest.Matchers.containsString("POST")));
@@ -432,17 +432,17 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
         Map<String, Object> request = new HashMap<>();
         request.put("name", name);
         request.put("description", description);
-        MvcResult result = mockMvc.perform(post("/projects")
+        MvcResult result = mockMvc.perform(authorized(post("/projects")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(request)))
+                .content(objectMapper.writeValueAsBytes(request))))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsByteArray());
     }
 
     private JsonNode getJson(String path, Object... pathVariables) throws Exception {
-        MvcResult result = mockMvc.perform(get(path, pathVariables)
-                .accept(MediaType.APPLICATION_JSON))
+        MvcResult result = mockMvc.perform(authorized(get(path, pathVariables)
+                .accept(MediaType.APPLICATION_JSON)))
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsByteArray());
@@ -470,11 +470,9 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
     private org.springframework.test.web.servlet.ResultActions postEnvelope(UUID pathProjectId, UUID envelopeProjectId,
             UUID modelId, UUID operationId, long baseRevision, String type, List<Map<String, Object>> targets,
             Map<String, Object> payload, List<Map<String, Object>> preconditions) throws Exception {
-        Map<String, Object> author = Map.of("userId", SEED_OWNER_ID, "externalSubject", SEED_OWNER_SUBJECT);
         Map<String, Object> envelope = new HashMap<>();
         envelope.put("operationId", operationId);
         envelope.put("type", type);
-        envelope.put("author", author);
         envelope.put("projectId", envelopeProjectId);
         envelope.put("modelId", modelId);
         envelope.put("baseRevision", baseRevision);
@@ -483,10 +481,10 @@ class T5ProjectApiTest extends AbstractPostgresIntegrationTest {
         envelope.put("payload", payload);
         envelope.put("origin", "MANUAL");
         envelope.put("idempotencyKey", UUID.randomUUID().toString());
-        return mockMvc.perform(post("/projects/{id}/commands", pathProjectId)
+        return mockMvc.perform(authorized(post("/projects/{id}/commands", pathProjectId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(envelope)));
+                .content(objectMapper.writeValueAsBytes(envelope))));
     }
 
     private JsonNode assertErrorShape(MvcResult result) throws Exception {

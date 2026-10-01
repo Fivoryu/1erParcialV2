@@ -15,12 +15,15 @@ import com.diagramador.command.CommandOrigin;
 import com.diagramador.command.CommandResult;
 import com.diagramador.command.CommandStatus;
 import com.diagramador.command.OperationEnvelope;
+import com.diagramador.identity.CurrentUser;
+import com.diagramador.identity.CurrentUserContext;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ConnectorPath;
 import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.ElementGeometry;
 import com.diagramador.domain.OperationParameter;
 import com.diagramador.domain.Project;
+import com.diagramador.domain.ProjectMember;
 import com.diagramador.domain.RelationshipEnd;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.TypeReference;
@@ -35,6 +38,7 @@ import com.diagramador.persistence.DiagramViewRepository;
 import com.diagramador.persistence.ElementGeometryRepository;
 import com.diagramador.persistence.ModelVersionRepository;
 import com.diagramador.persistence.OperationParameterRepository;
+import com.diagramador.persistence.ProjectMemberRepository;
 import com.diagramador.persistence.ProjectRepository;
 import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
@@ -47,6 +51,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Sort;
@@ -57,10 +62,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ProjectApiService {
 
-    private static final UUID SEED_OWNER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final String SEED_OWNER_SUBJECT = "seed-owner-local";
-
     private final ProjectRepository projectRepository;
+    private final ProjectMemberRepository projectMemberRepository;
+    private final CurrentUserContext currentUserContext;
     private final UmlModelRepository modelRepository;
     private final ModelVersionRepository versionRepository;
     private final ClassifierRepository classifierRepository;
@@ -82,8 +86,11 @@ public class ProjectApiService {
             UmlConstraintRepository constraintRepository, UmlRelationshipRepository relationshipRepository,
             RelationshipEndRepository relationshipEndRepository, DiagramViewRepository viewRepository,
             ElementGeometryRepository geometryRepository, ConnectorPathRepository connectorPathRepository,
+            ProjectMemberRepository projectMemberRepository, CurrentUserContext currentUserContext,
             com.diagramador.command.CommandService commandService) {
         this.projectRepository = projectRepository;
+        this.projectMemberRepository = projectMemberRepository;
+        this.currentUserContext = currentUserContext;
         this.modelRepository = modelRepository;
         this.versionRepository = versionRepository;
         this.classifierRepository = classifierRepository;
@@ -103,11 +110,12 @@ public class ProjectApiService {
         UUID operationId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
         UUID modelId = UUID.randomUUID();
+        CurrentUser currentUser = currentUserContext.require();
         Map<String, Object> payload = new HashMap<>();
         payload.put("name", request.name());
         payload.put("description", request.description());
         OperationEnvelope envelope = new OperationEnvelope(operationId, "project.create",
-                new Author(SEED_OWNER_ID, SEED_OWNER_SUBJECT), projectId, modelId, 0L,
+                new Author(currentUser.userId(), currentUser.username()), projectId, modelId, 0L,
                 List.of(), List.of(), payload, CommandOrigin.MANUAL, null, operationId.toString());
 
         CommandResult result = commandService.execute(envelope);
@@ -122,13 +130,23 @@ public class ProjectApiService {
 
     @Transactional(readOnly = true)
     public List<ProjectResource> listProjects() {
+        UUID userId = currentUserContext.require().userId();
+        Set<UUID> activeProjectIds = projectMemberRepository.findByUserId(userId).stream()
+                .filter(member -> "ACTIVE".equals(member.getStatus()))
+                .map(member -> member.getId().getProjectId())
+                .collect(Collectors.toSet());
         Sort stableOrder = Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"));
-        return projectRepository.findAll(stableOrder).stream().map(ProjectApiService::projectResource).toList();
+        return projectRepository.findAll(stableOrder).stream()
+                .filter(project -> activeProjectIds.contains(project.getId()))
+                .map(ProjectApiService::projectResource)
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public ProjectResource getProject(UUID projectId) {
-        return projectResource(requireProject(projectId));
+        Project project = requireProject(projectId);
+        requireActiveMembership(projectId);
+        return projectResource(project);
     }
 
     public CommandResult executeCommand(UUID pathProjectId, OperationEnvelope envelope) {
@@ -141,12 +159,19 @@ public class ProjectApiService {
                     "The path project id must match envelope.projectId.", List.of(), envelope.operationId());
         }
         requireProject(pathProjectId);
-        return commandService.execute(envelope);
+        CurrentUser currentUser = currentUserContext.require();
+        requireActiveMembership(pathProjectId);
+        OperationEnvelope authenticatedEnvelope = new OperationEnvelope(envelope.operationId(), envelope.type(),
+                new Author(currentUser.userId(), currentUser.username()), envelope.projectId(), envelope.modelId(),
+                envelope.baseRevision(), envelope.targets(), envelope.preconditions(), envelope.payload(),
+                envelope.origin(), envelope.causalParentOperationId(), envelope.idempotencyKey());
+        return commandService.execute(authenticatedEnvelope);
     }
 
     @Transactional(readOnly = true)
     public ModelResource getModel(UUID projectId) {
         requireProject(projectId);
+        requireActiveMembership(projectId);
         UmlModel model = modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> notFound("Model was not found."));
 
@@ -181,6 +206,17 @@ public class ProjectApiService {
 
     private Project requireProject(UUID projectId) {
         return projectRepository.findById(projectId).orElseThrow(() -> notFound("Project was not found."));
+    }
+
+    private void requireActiveMembership(UUID projectId) {
+        UUID userId = currentUserContext.require().userId();
+        boolean activeMember = projectMemberRepository.findByProjectIdAndUserId(projectId, userId)
+                .filter(member -> "ACTIVE".equals(member.getStatus()))
+                .isPresent();
+        if (!activeMember) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have access to this project.",
+                    List.of(), null);
+        }
     }
 
     private ViewResource viewResource(DiagramView view) {

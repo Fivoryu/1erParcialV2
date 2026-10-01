@@ -50,10 +50,7 @@ import org.springframework.test.web.servlet.MvcResult;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-class DeploymentApiTest extends AbstractPostgresIntegrationTest {
-
-    private static final String SEED_OWNER_ID = "00000000-0000-0000-0000-000000000001";
-    private static final String SEED_OWNER_SUBJECT = "seed-owner-local";
+class DeploymentApiTest extends AuthenticatedApiTest {
 
     private final MockMvc mockMvc;
     private final ObjectMapper objectMapper;
@@ -183,9 +180,9 @@ class DeploymentApiTest extends AbstractPostgresIntegrationTest {
                 String operatorId = "host-" + index + ":1";
                 attempts.add(pool.submit(() -> {
                     start.await();
-                    return mockMvc.perform(post("/deployments/{id}/claim", id)
+                    return mockMvc.perform(authorized(post("/deployments/{id}/claim", id)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsBytes(Map.of("operatorId", operatorId))))
+                            .content(objectMapper.writeValueAsBytes(Map.of("operatorId", operatorId)))))
                             .andReturn().getResponse().getStatus();
                 }));
             }
@@ -340,7 +337,7 @@ class DeploymentApiTest extends AbstractPostgresIntegrationTest {
         report(id, Map.of("outcome", "FAILED", "failureCode", "COMPOSE_UP_FAILED",
                 "failureMessage", "The migration could not be applied."), 200);
 
-        String body = mockMvc.perform(get("/projects/{projectId}/deployments", fixture.projectId()))
+        String body = mockMvc.perform(authorized(get("/projects/{projectId}/deployments", fixture.projectId())))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
@@ -360,13 +357,13 @@ class DeploymentApiTest extends AbstractPostgresIntegrationTest {
     }
 
     private Fixture fixture(String label) throws Exception {
-        JsonNode project = objectMapper.readTree(mockMvc.perform(post("/projects")
+        JsonNode project = objectMapper.readTree(mockMvc.perform(authorized(post("/projects")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(Map.of("name", "Deployment API " + label))))
+                .content(objectMapper.writeValueAsBytes(Map.of("name", "Deployment API " + label)))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsByteArray());
         UUID projectId = UUID.fromString(project.path("id").asText());
-        JsonNode model = readJson(mockMvc.perform(get("/projects/{id}/model", projectId))
+        JsonNode model = readJson(mockMvc.perform(authorized(get("/projects/{id}/model", projectId)))
                 .andExpect(status().isOk())
                 .andReturn());
         UUID modelId = UUID.fromString(model.path("id").asText());
@@ -381,7 +378,6 @@ class DeploymentApiTest extends AbstractPostgresIntegrationTest {
         Map<String, Object> envelope = new HashMap<>();
         envelope.put("operationId", UUID.randomUUID());
         envelope.put("type", "classifier.create");
-        envelope.put("author", Map.of("userId", SEED_OWNER_ID, "externalSubject", SEED_OWNER_SUBJECT));
         envelope.put("projectId", projectId);
         envelope.put("modelId", modelId);
         envelope.put("baseRevision", 1L);
@@ -390,9 +386,9 @@ class DeploymentApiTest extends AbstractPostgresIntegrationTest {
         envelope.put("payload", Map.of("id", UUID.randomUUID(), "name", "Customer", "kind", "CLASS"));
         envelope.put("origin", "MANUAL");
         envelope.put("idempotencyKey", UUID.randomUUID().toString());
-        JsonNode result = readJson(mockMvc.perform(post("/projects/{projectId}/commands", projectId)
+        JsonNode result = readJson(mockMvc.perform(authorized(post("/projects/{projectId}/commands", projectId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(envelope)))
+                .content(objectMapper.writeValueAsBytes(envelope))))
                 .andExpect(status().isOk())
                 .andReturn());
         assertThat(result.path("status").asText()).isEqualTo("ACCEPTED");
@@ -425,9 +421,9 @@ class DeploymentApiTest extends AbstractPostgresIntegrationTest {
     }
 
     private JsonNode order(UUID projectId, UUID runId, int expectedStatus) throws Exception {
-        return readJson(mockMvc.perform(post("/projects/{projectId}/deployments", projectId)
+        return readJson(mockMvc.perform(authorized(post("/projects/{projectId}/deployments", projectId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(Map.of("runId", runId.toString()))))
+                .content(objectMapper.writeValueAsBytes(Map.of("runId", runId.toString())))))
                 .andExpect(status()
                         .is(expectedStatus))
                 .andReturn());
@@ -438,9 +434,9 @@ class DeploymentApiTest extends AbstractPostgresIntegrationTest {
     }
 
     private JsonNode claim(String deploymentId, String operatorId, int expectedStatus) throws Exception {
-        return readJson(mockMvc.perform(post("/deployments/{id}/claim", deploymentId)
+        return readJson(mockMvc.perform(authorized(post("/deployments/{id}/claim", deploymentId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(Map.of("operatorId", operatorId))))
+                .content(objectMapper.writeValueAsBytes(Map.of("operatorId", operatorId)))))
                 .andExpect(status()
                         .is(expectedStatus))
                 .andReturn());
@@ -451,9 +447,9 @@ class DeploymentApiTest extends AbstractPostgresIntegrationTest {
     }
 
     private JsonNode report(String deploymentId, Map<String, Object> body, int expectedStatus) throws Exception {
-        return readJson(mockMvc.perform(post("/deployments/{id}/report", deploymentId)
+        return readJson(mockMvc.perform(authorized(post("/deployments/{id}/report", deploymentId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsBytes(body)))
+                .content(objectMapper.writeValueAsBytes(body))))
                 .andExpect(status()
                         .is(expectedStatus))
                 .andReturn());
@@ -465,7 +461,7 @@ class DeploymentApiTest extends AbstractPostgresIntegrationTest {
     }
 
     private JsonNode stop(String deploymentId, int expectedStatus) throws Exception {
-        return readJson(mockMvc.perform(post("/deployments/{id}/stop", deploymentId))
+        return readJson(mockMvc.perform(authorized(post("/deployments/{id}/stop", deploymentId)))
                 .andExpect(status()
                         .is(expectedStatus))
                 .andReturn());
