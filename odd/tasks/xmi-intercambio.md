@@ -622,10 +622,41 @@ su C10. Tres hechos que afectan la consolidación, tomados de su aviso y no supu
    (`/projects/{projectId}/xmi/...`). **No hay que tocarlo.** Vale la pena recordar por qué: un prefijo faltante da
    **404 silencioso en desarrollo con el build en verde**, que ya les pasó con `/deployments` y `/invitations`.
 
-Y una frontera de propiedad que hay que respetar: el paquete `com.diagramador.collaboration` es **suyo** (C11,
-`ProjectEventBus` y `GET /projects/{id}/events`). Ahí vive `EditingLeaseService`, que es exactamente lo que mi X4
-tiene que llamar en la consolidación para la guarda `requireExportAllowed`. O sea: la integración pendiente
-declarada en §2 **no se implementa por duplicado, se llama**, y hay que leer su firma real en vez de inventarla.
+Y una frontera de propiedad que hay que respetar, con una corrección que el par me hizo y que cambia la delegación de X4: el
+paquete `com.diagramador.collaboration` es **suyo**, pero `EditingLeaseService` **no nace en C11** —C11 es solo el bus de
+eventos y `GET /projects/{id}/events`—. La concesión de edición es **C19, de la etapa S5**. La consecuencia práctica es
+dura:
+
+> **X4 no debe referenciar `EditingLeaseService`.** La interfaz no existe en esta base y cualquier llamada no compilaría.
+> La guarda de exportación nace ausente, como ya declara §2, y se cablea en la consolidación con una línea.
+
+La firma está congelada en el contrato §S6b de `odd/tasks/incremento-3-colaboracion.md` y es esta, textual:
+
+```java
+package com.diagramador.collaboration;
+
+import java.util.UUID;
+
+/** La concesión de edición de un modelo. Mientras otra sesión la tenga viva, exportar queda bloqueado. */
+public interface EditingLeaseService {
+    /**
+     * Lanza {@code ApiException(409, "EXPORT_BLOCKED_EDITING")} cuando otra sesión tiene una concesión viva
+     * sobre el modelo. El principal de operador queda exento: entrega un artefacto que un usuario ya ordenó.
+     */
+    void requireExportAllowed(UUID modelId);
+}
+```
+
+La forma compartida del bloqueo: código `EXPORT_BLOCKED_EDITING`; en endpoints de archivo **HTTP 409** con el sobre
+`ApiErrorResource`; en `POST /projects/{id}/generations` el mismo código dentro del cuerpo `outcome` con **HTTP 200**
+(convención D7 del Incremento 2). Las claves de `details[0]` van **en este orden**: `editorDisplayName`,
+`targetType`, `targetId`, `reclaimable`, `retryAfterSeconds`.
+
+Y una nota de esquema que mueve el punto de fusión: `V8` (invitaciones y `invitation.role`) ya está en su rama desde
+`568f25d`, y `V9` (chat, `diagram_message`) llega en su S4. Cuando eso pase, el conflicto real no es el SQL sino
+**`SchemaOwnershipTest`**, y se resuelve por **unión de listas**: sus líneas de `invitation` y las mías de
+`xmi_exchange` y `xmi_loss_item`. Pero el conteo de índices de soporte **no se suma**: es una compuerta exacta, y para
+cada tabla se toma lo que la autoridad del esquema declara para esa tabla.
 
 Dos reglas de proceso que su experiencia aporta, y que aplican a cualquier corrida de revisión nativa mía:
 
