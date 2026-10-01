@@ -10,7 +10,9 @@ import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
+import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.RelationshipKind;
+import com.diagramador.domain.TargetType;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -44,6 +46,8 @@ public final class XmiSemanticEmitter {
     private static final String EXPORTER = "UML Class Diagrammer";
     private static final String EXPORTER_VERSION = "0.1.0";
     private static final String MODEL_NAME = "EA_Model";
+    private static final String EA_PRIMITIVES_PACKAGE_ID = "EAPrimitiveTypesPackage";
+    private static final String EA_JAVA_TYPES_PACKAGE_ID = "EAJavaTypesPackage";
 
     public XmiEmissionResult emit(ModelResource snapshot) {
         Objects.requireNonNull(snapshot, "snapshot");
@@ -78,6 +82,7 @@ public final class XmiSemanticEmitter {
         }
         appendRelationships(document, model, snapshot.relationships(), context);
         appendPrimitiveTypes(document, model, context);
+        appendExtension(document, root, snapshot, context);
         return document;
     }
 
@@ -248,6 +253,10 @@ public final class XmiSemanticEmitter {
                 context.loss("unsupported_relationship_kind");
                 continue;
             }
+            long explicitNavigability = ends.stream()
+                    .filter(end -> end.navigability() != null && end.navigability() != NavigationKind.UNSPECIFIED)
+                    .count();
+            context.loss("unsupported_relationship_navigability", Math.toIntExact(explicitNavigability));
             switch (kind) {
                 case ASSOCIATION, AGGREGATION, COMPOSITION ->
                     appendAssociation(document, model, relationship, ends, kind, context);
@@ -328,7 +337,8 @@ public final class XmiSemanticEmitter {
         Element generalization = document.createElementNS(UML_NAMESPACE, "generalization");
         setXmiAttribute(generalization, "type", "uml:Generalization");
         setXmiAttribute(generalization, "id", context.registerId(XmiIdCodec.classifierId(relationship.id())));
-        generalization.setAttribute("general", XmiIdCodec.classifierId(general.classifierId()));
+        generalization.setAttribute("general",
+                classifierXmiId(context.classifierById.get(general.classifierId())));
         specificClassifier.appendChild(generalization);
         appendConstraints(document, generalization, relationship.constraints(), context);
         if (relationship.name() != null) {
@@ -342,8 +352,10 @@ public final class XmiSemanticEmitter {
         setXmiAttribute(directed, "type", "uml:" + xmiType);
         setXmiAttribute(directed, "id", context.registerId(XmiIdCodec.classifierId(relationship.id())));
         setOptionalAttribute(directed, "name", relationship.name());
-        directed.setAttribute("client", XmiIdCodec.classifierId(ends.get(0).classifierId()));
-        directed.setAttribute("supplier", XmiIdCodec.classifierId(ends.get(1).classifierId()));
+        directed.setAttribute("client",
+                classifierXmiId(context.classifierById.get(ends.get(0).classifierId())));
+        directed.setAttribute("supplier",
+                classifierXmiId(context.classifierById.get(ends.get(1).classifierId())));
         if ("Realization".equals(xmiType)) {
             directed.setAttribute("visibility", "public");
         }
@@ -423,6 +435,186 @@ public final class XmiSemanticEmitter {
             element.setAttribute("name", primitive.getValue());
             model.appendChild(element);
         }
+    }
+
+    private void appendExtension(Document document, Element root, ModelResource snapshot, Context context) {
+        Element extension = document.createElementNS(XMI_NAMESPACE, "xmi:Extension");
+        extension.setAttribute("extender", "Enterprise Architect");
+        root.appendChild(extension);
+
+        appendExtensionElements(document, extension, snapshot, context);
+        extension.appendChild(document.createElement("connectors"));
+        appendExtensionPrimitiveTypes(document, extension, context);
+        extension.appendChild(document.createElement("profiles"));
+        extension.appendChild(document.createElement("diagrams"));
+    }
+
+    private void appendExtensionElements(Document document, Element extension, ModelResource snapshot,
+            Context context) {
+        Element elements = document.createElement("elements");
+        extension.appendChild(elements);
+        for (ClassifierResource classifier : extensionClassifiers(snapshot, context)) {
+            appendExtensionElement(document, elements, classifier, context);
+        }
+    }
+
+    private List<ClassifierResource> extensionClassifiers(ModelResource snapshot, Context context) {
+        List<ModelResource.ViewResource> defaults = snapshot.views().stream()
+                .filter(ModelResource.ViewResource::isDefault)
+                .sorted(Comparator.comparing(ModelResource.ViewResource::id,
+                        Comparator.nullsFirst(Comparator.naturalOrder())))
+                .toList();
+        if (defaults.size() > 1) {
+            context.loss("multiple_default_views", defaults.size() - 1);
+        }
+
+        Set<UUID> selectedIds = new HashSet<>();
+        if (!defaults.isEmpty()) {
+            for (ModelResource.GeometryResource geometry : defaults.get(0).elementGeometry()) {
+                if (geometry.targetType() != TargetType.CLASSIFIER) {
+                    continue;
+                }
+                ClassifierResource classifier = context.classifierById.get(geometry.targetId());
+                if (classifier == null || !context.emittableClassifierIds.contains(classifier.id())) {
+                    context.loss("extension_unresolved_placement");
+                    continue;
+                }
+                selectedIds.add(classifier.id());
+                UUID namespaceId = classifier.namespaceId();
+                while (namespaceId != null) {
+                    ClassifierResource namespace = context.classifierById.get(namespaceId);
+                    if (namespace == null || namespace.kind() != ClassifierKind.PACKAGE) {
+                        break;
+                    }
+                    selectedIds.add(namespace.id());
+                    namespaceId = namespace.namespaceId();
+                }
+            }
+        }
+        return selectedIds.stream()
+                .map(context.classifierById::get)
+                .sorted(Comparator.comparingInt((ClassifierResource classifier) -> classifierDepth(classifier, context))
+                        .thenComparing(classifier -> classifier.kind() == ClassifierKind.PACKAGE ? 0 : 1)
+                        .thenComparing(ClassifierResource::name, Comparator.nullsFirst(String::compareTo))
+                        .thenComparing(ClassifierResource::id))
+                .toList();
+    }
+
+    private int classifierDepth(ClassifierResource classifier, Context context) {
+        int depth = 0;
+        UUID namespaceId = classifier.namespaceId();
+        Set<UUID> visited = new HashSet<>();
+        while (namespaceId != null && visited.add(namespaceId)) {
+            ClassifierResource namespace = context.classifierById.get(namespaceId);
+            if (namespace == null || namespace.kind() != ClassifierKind.PACKAGE) {
+                break;
+            }
+            depth++;
+            namespaceId = namespace.namespaceId();
+        }
+        return depth;
+    }
+
+    private void appendExtensionElement(Document document, Element elements, ClassifierResource classifier,
+            Context context) {
+        Element element = document.createElement("element");
+        setXmiAttribute(element, "idref", classifierXmiId(classifier));
+        setXmiAttribute(element, "type", "uml:" + classifierType(classifier.kind()));
+        element.setAttribute("name", Objects.requireNonNull(classifier.name(), "classifier.name"));
+        elements.appendChild(element);
+        // Scope, documentation, EA-local identifiers, and per-element styling are not in ModelResource.
+        context.loss("extension_element_vendor_metadata");
+
+        Element model = document.createElement("model");
+        model.setAttribute("ea_eleType", classifier.kind() == ClassifierKind.PACKAGE ? "package" : "element");
+        ClassifierResource namespace = context.classifierById.get(classifier.namespaceId());
+        if (namespace != null && namespace.kind() == ClassifierKind.PACKAGE) {
+            model.setAttribute("package", XmiIdCodec.packageId(namespace.id()));
+        }
+        element.appendChild(model);
+
+        Element properties = document.createElement("properties");
+        properties.setAttribute("sType", classifierType(classifier.kind()));
+        if (classifier.kind() != ClassifierKind.PACKAGE) {
+            properties.setAttribute("isAbstract", Boolean.toString(classifier.isAbstract()
+                    || classifier.kind() == ClassifierKind.ABSTRACT_CLASS));
+        }
+        element.appendChild(properties);
+
+        if (!classifier.attributes().isEmpty()) {
+            Element attributes = document.createElement("attributes");
+            element.appendChild(attributes);
+            for (AttributeResource attribute : orderedAttributes(classifier)) {
+                appendExtensionAttribute(document, attributes, attribute, context);
+            }
+        }
+    }
+
+    private void appendExtensionAttribute(Document document, Element attributes, AttributeResource attribute,
+            Context context) {
+        Element element = document.createElement("attribute");
+        setXmiAttribute(element, "idref", XmiIdCodec.classifierId(attribute.id()));
+        element.setAttribute("name", Objects.requireNonNull(attribute.name(), "attribute.name"));
+        String scope = extensionVisibility(attribute.visibility());
+        if (scope != null) {
+            element.setAttribute("scope", scope);
+        }
+        attributes.appendChild(element);
+
+        Element coords = document.createElement("coords");
+        coords.setAttribute("ordered", "0");
+        element.appendChild(coords);
+        context.loss("attribute_layout_coordinates");
+
+        Element containment = document.createElement("containment");
+        containment.setAttribute("position", Integer.toString(attribute.ordinal()));
+        element.appendChild(containment);
+        context.loss("attribute_layout_position_approximation");
+        context.loss("attribute_layout_containment_kind");
+
+        if (attribute.multiplicity() == MultiplicityKind.EXACTLY_ONE) {
+            Element bounds = document.createElement("bounds");
+            bounds.setAttribute("lower", "1");
+            bounds.setAttribute("upper", "1");
+            element.appendChild(bounds);
+        } else {
+            context.loss("attribute_layout_bounds");
+        }
+    }
+
+    private String extensionVisibility(String rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        return switch (rawValue.toLowerCase(Locale.ROOT)) {
+            case "public" -> "Public";
+            case "private" -> "Private";
+            case "protected" -> "Protected";
+            case "package" -> "Package";
+            default -> null;
+        };
+    }
+
+    private void appendExtensionPrimitiveTypes(Document document, Element extension, Context context) {
+        Element primitiveTypes = document.createElement("primitivetypes");
+        extension.appendChild(primitiveTypes);
+
+        Element rootPackage = document.createElement("packagedElement");
+        setXmiAttribute(rootPackage, "type", "uml:Package");
+        setXmiAttribute(rootPackage, "id", EA_PRIMITIVES_PACKAGE_ID);
+        rootPackage.setAttribute("name", "EA_PrimitiveTypes_Package");
+        rootPackage.setAttribute("visibility", "public");
+        primitiveTypes.appendChild(rootPackage);
+
+        Element javaPackage = document.createElement("packagedElement");
+        setXmiAttribute(javaPackage, "type", "uml:Package");
+        setXmiAttribute(javaPackage, "id", EA_JAVA_TYPES_PACKAGE_ID);
+        javaPackage.setAttribute("name", "EA_Java_Types_Package");
+        javaPackage.setAttribute("visibility", "public");
+        rootPackage.appendChild(javaPackage);
+
+        // The snapshot has type names, but no measured way to assign them to EA's Java/none namespaces.
+        context.loss("extension_primitive_type_catalog", context.primitiveTypes.size());
     }
 
     private String visibility(String rawValue, Context context) {

@@ -7,13 +7,16 @@ import com.diagramador.api.ModelResource;
 import com.diagramador.api.ModelResource.AttributeResource;
 import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
+import com.diagramador.api.ModelResource.GeometryResource;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
+import com.diagramador.api.ModelResource.ViewResource;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
+import com.diagramador.domain.TargetType;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -48,7 +51,24 @@ class XmiSemanticEmitterTest {
         assertThat(find(document, XMI_NAMESPACE, "Documentation").getAttribute("exporter"))
                 .isEqualTo("UML Class Diagrammer")
                 .isNotEqualTo("Enterprise Architect");
-        assertThat(findOptional(document, XMI_NAMESPACE, "Extension")).isNull();
+        Element extension = find(document, XMI_NAMESPACE, "Extension");
+        assertThat(extension.getAttribute("extender")).isEqualTo("Enterprise Architect");
+        assertThat(childNames(extension)).containsExactly("elements", "connectors", "primitivetypes", "profiles",
+                "diagrams");
+        assertThat(directChildrenNoNamespace(extension, "elements")).hasSize(1);
+        assertThat(directChildrenNoNamespace(extension, "elements").get(0).getChildNodes().getLength()).isZero();
+        assertThat(directChildrenNoNamespace(extension, "connectors")).hasSize(1);
+        assertThat(directChildrenNoNamespace(extension, "connectors").get(0).getChildNodes().getLength()).isZero();
+        Element primitiveTypes = directChildrenNoNamespace(extension, "primitivetypes").get(0);
+        Element primitivePackage = directChildrenNoNamespace(primitiveTypes, "packagedElement").get(0);
+        assertThat(primitivePackage.getAttributeNS(XMI_NAMESPACE, "id")).isEqualTo("EAPrimitiveTypesPackage");
+        assertThat(primitivePackage.getAttribute("name")).isEqualTo("EA_PrimitiveTypes_Package");
+        Element javaPackage = directChildrenNoNamespace(primitivePackage, "packagedElement").get(0);
+        assertThat(javaPackage.getAttributeNS(XMI_NAMESPACE, "id")).isEqualTo("EAJavaTypesPackage");
+        assertThat(javaPackage.getAttribute("name")).isEqualTo("EA_Java_Types_Package");
+        assertThat(directChildrenNoNamespace(javaPackage, "packagedElement")).isEmpty();
+        assertThat(directChildrenNoNamespace(extension, "profiles").get(0).getChildNodes().getLength()).isZero();
+        assertThat(directChildrenNoNamespace(extension, "diagrams").get(0).getChildNodes().getLength()).isZero();
 
         Element umlModel = find(document, UML_NAMESPACE, "Model");
         assertThat(umlModel.getAttribute("name")).isEqualTo("EA_Model");
@@ -139,8 +159,10 @@ class XmiSemanticEmitterTest {
         assertThat(upper.getAttribute("value")).isEqualTo("-1");
         assertThat(upper.getAttributeNS(XMI_NAMESPACE, "type")).isEqualTo("uml:LiteralUnlimitedNatural");
         assertThat(upper.getAttributeNS(XMI_NAMESPACE, "id")).isNotEmpty();
-        assertThat(allElements(document)).noneMatch(element -> element.hasAttribute("value")
-                && element.getAttribute("value").equals("*"));
+        assertThat(allElements(document).stream()
+                .filter(element -> Set.of("lowerValue", "upperValue").contains(element.getLocalName()))
+                .map(element -> element.getAttribute("value")))
+                .doesNotContain("*");
 
         Element generalization = find(document, UML_NAMESPACE, "generalization");
         assertThat(generalization.getAttributeNS(XMI_NAMESPACE, "id"))
@@ -181,7 +203,131 @@ class XmiSemanticEmitterTest {
         Element constraint = find(document, UML_NAMESPACE, "ownedRule");
         assertThat(findDirect(findDirect(constraint, UML_NAMESPACE, "specification"), UML_NAMESPACE, "body")
                 .getTextContent()).isEqualTo("label <> ''");
-        assertThat(result.losses()).containsExactly(new XmiEmissionResult.Loss("constraint_severity", 1));
+        assertThat(result.losses()).containsExactly(
+                new XmiEmissionResult.Loss("constraint_severity", 1),
+                new XmiEmissionResult.Loss("extension_primitive_type_catalog", 2));
+        assertAllReferencesResolve(document);
+    }
+
+    @Test
+    void emitsMeasuredExtensionElementAndAttributeLayoutWithoutInventingGeometry() throws Exception {
+        ModelResource model = sampleModel();
+        ViewResource defaultView = new ViewResource(id(300), "Default", true,
+                List.of(new GeometryResource(id(301), TargetType.CLASSIFIER, id(13), 20, 30, 100, 80, 1),
+                        new GeometryResource(id(302), TargetType.CLASSIFIER, id(14), 140, 30, 120, 90, 2)),
+                List.of());
+        ModelResource placedModel = new ModelResource(model.id(), model.projectId(), model.revision(), model.versionId(),
+                List.of(defaultView), model.classifiers(), model.relationships());
+
+        XmiEmissionResult result = emitter.emit(placedModel);
+        Document document = parse(result.document());
+        Element extension = find(document, XMI_NAMESPACE, "Extension");
+        Element elements = directChildrenNoNamespace(extension, "elements").get(0);
+        List<Element> records = directChildrenNoNamespace(elements, "element");
+
+        assertThat(records).hasSize(4);
+        assertThat(records).extracting(record -> record.getAttribute("name"))
+                .containsExactly("Outer", "Feature", "Inner", "Nested");
+        Element outerPackage = extensionElementByIdref(elements, XmiIdCodec.packageId(id(10)));
+        Element innerPackage = extensionElementByIdref(elements, XmiIdCodec.packageId(id(11)));
+        Element nested = extensionElementByIdref(elements, XmiIdCodec.classifierId(id(13)));
+        Element feature = extensionElementByIdref(elements, XmiIdCodec.classifierId(id(14)));
+        assertThat(outerPackage.getAttributeNS(XMI_NAMESPACE, "type")).isEqualTo("uml:Package");
+        assertThat(outerPackage.getAttribute("name")).isEqualTo("Outer");
+        assertThat(innerPackage.getAttribute("name")).isEqualTo("Inner");
+        assertThat(findDirectNoNamespace(innerPackage, "model").getAttribute("package"))
+                .isEqualTo(XmiIdCodec.packageId(id(10)));
+        assertThat(findDirectNoNamespace(nested, "model").getAttribute("package"))
+                .isEqualTo(XmiIdCodec.packageId(id(11)));
+        assertThat(feature.getAttributeNS(XMI_NAMESPACE, "type")).isEqualTo("uml:Class");
+        assertThat(feature.hasAttribute("scope")).isFalse();
+        assertThat(findDirectNoNamespace(feature, "properties").getAttribute("sType")).isEqualTo("Class");
+        assertThat(findDirectNoNamespace(feature, "properties").getAttribute("isAbstract")).isEqualTo("false");
+
+        List<Element> attributes = directChildrenNoNamespace(findDirectNoNamespace(feature, "attributes"),
+                "attribute");
+        assertThat(attributes).extracting(attribute -> attribute.getAttribute("name"))
+                .containsExactly("label", "nickname");
+        assertThat(attributes.get(0).getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(XmiIdCodec.classifierId(id(20)));
+        assertThat(attributes.get(0).getAttribute("scope")).isEqualTo("Private");
+        assertThat(childNames(attributes.get(0))).containsExactly("coords", "containment", "bounds");
+        Element coords = findDirectNoNamespace(attributes.get(0), "coords");
+        assertThat(coords.getAttribute("ordered")).isEqualTo("0");
+        Element containment = findDirectNoNamespace(attributes.get(0), "containment");
+        assertThat(containment.getAttribute("position")).isEqualTo("0");
+        assertThat(containment.hasAttribute("containment")).isFalse();
+        Element bounds = findDirectNoNamespace(attributes.get(0), "bounds");
+        assertThat(bounds.getAttribute("lower")).isEqualTo("1");
+        assertThat(bounds.getAttribute("upper")).isEqualTo("1");
+        assertThat(childNames(attributes.get(1))).containsExactly("coords", "containment");
+        assertThat(findDirectNoNamespace(attributes.get(1), "containment").getAttribute("position"))
+                .isEqualTo("1");
+        ViewResource reversedView = new ViewResource(defaultView.id(), defaultView.name(), true,
+                List.of(defaultView.elementGeometry().get(1), defaultView.elementGeometry().get(0)), List.of());
+        ModelResource reorderedModel = reordered(placedModel);
+        ModelResource reorderedPlacements = new ModelResource(reorderedModel.id(), reorderedModel.projectId(),
+                reorderedModel.revision(), reorderedModel.versionId(), List.of(reversedView), reorderedModel.classifiers(),
+                reorderedModel.relationships());
+        assertThat(emitter.emit(reorderedPlacements).document()).isEqualTo(result.document());
+
+        assertThat(result.losses()).containsExactly(
+                new XmiEmissionResult.Loss("attribute_layout_bounds", 1),
+                new XmiEmissionResult.Loss("attribute_layout_containment_kind", 2),
+                new XmiEmissionResult.Loss("attribute_layout_coordinates", 2),
+                new XmiEmissionResult.Loss("attribute_layout_position_approximation", 2),
+                new XmiEmissionResult.Loss("constraint_severity", 1),
+                new XmiEmissionResult.Loss("extension_element_vendor_metadata", 4),
+                new XmiEmissionResult.Loss("extension_primitive_type_catalog", 2));
+        assertAllReferencesResolve(document);
+    }
+
+    @Test
+    void packageRelationshipEndpointsResolveAndNavigabilityLossIsReported() throws Exception {
+        ClassifierResource container = new ClassifierResource(id(400), "Container", ClassifierKind.PACKAGE, false,
+                null, List.of(), List.of(), List.of());
+        AttributeResource wildcard = new AttributeResource(id(411), "wildcard", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.EXACTLY_ONE, "*", id(412), "String", 0);
+        ClassifierResource child = new ClassifierResource(id(401), "Child", ClassifierKind.CLASS, false,
+                id(400), List.of(wildcard), List.of(), List.of());
+        RelationshipResource association = new RelationshipResource(id(420), "ASSOCIATION", "association",
+                List.of(new RelationshipEndResource(id(421), id(401), "child", MultiplicityKind.EXACTLY_ONE,
+                                NavigationKind.NAVIGABLE, "none", (short) 1),
+                        new RelationshipEndResource(id(422), id(400), "container", MultiplicityKind.EXACTLY_ONE,
+                                NavigationKind.NOT_NAVIGABLE, "none", (short) 2)), List.of());
+        RelationshipResource generalization = new RelationshipResource(id(440), "GENERALIZATION", null,
+                List.of(end(id(441), id(401), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
+                        end(id(442), id(400), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 2)), List.of());
+        RelationshipResource dependency = new RelationshipResource(id(430), "DEPENDENCY", "uses",
+                List.of(end(id(431), id(401), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
+                        end(id(432), id(400), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 2)), List.of());
+        ModelResource model = new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(container, child),
+                List.of(association, generalization, dependency));
+
+        XmiEmissionResult result = emitter.emit(model);
+        Document document = parse(result.document());
+        String packageId = XmiIdCodec.packageId(id(400));
+
+        Element packageElement = byId(document, packageId);
+        Element emittedAssociation = byId(document, XmiIdCodec.classifierId(id(420)));
+        Element packageEnd = directChildren(emittedAssociation, UML_NAMESPACE, "ownedEnd").stream()
+                .filter(end -> end.getAttribute("name").equals("container"))
+                .findFirst().orElseThrow();
+        assertThat(findDirect(packageEnd, UML_NAMESPACE, "type").getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(packageId);
+        Element emittedGeneralization = find(document, UML_NAMESPACE, "generalization");
+        assertThat(emittedGeneralization.getAttribute("general")).isEqualTo(packageId);
+        Element emittedDependency = byId(document, XmiIdCodec.classifierId(id(430)));
+        assertThat(emittedDependency.getAttribute("client")).isEqualTo(XmiIdCodec.classifierId(id(401)));
+        assertThat(emittedDependency.getAttribute("supplier")).isEqualTo(packageId);
+        assertThat(packageElement.getAttributeNS(XMI_NAMESPACE, "type")).isEqualTo("uml:Package");
+
+        Element wildcardDefault = findDirect(byId(document, XmiIdCodec.classifierId(id(411))),
+                UML_NAMESPACE, "defaultValue");
+        assertThat(wildcardDefault.getAttribute("value")).isEqualTo("*");
+        assertThat(result.losses()).containsExactly(
+                new XmiEmissionResult.Loss("extension_primitive_type_catalog", 1),
+                new XmiEmissionResult.Loss("unsupported_relationship_navigability", 2));
         assertAllReferencesResolve(document);
     }
 
@@ -413,6 +559,17 @@ class XmiSemanticEmitterTest {
                 .orElseThrow(() -> new AssertionError("Missing child " + localName));
     }
 
+    private static Element findDirectNoNamespace(Element parent, String localName) {
+        return directChildrenNoNamespace(parent, localName).stream().findFirst()
+                .orElseThrow(() -> new AssertionError("Missing child " + localName));
+    }
+
+    private static Element extensionElementByIdref(Element elements, String idref) {
+        return directChildrenNoNamespace(elements, "element").stream()
+                .filter(element -> element.getAttributeNS(XMI_NAMESPACE, "idref").equals(idref))
+                .findFirst().orElseThrow(() -> new AssertionError("Missing extension element " + idref));
+    }
+
     private static List<String> childNames(Element parent) {
         List<String> names = new ArrayList<>();
         for (int index = 0; index < parent.getChildNodes().getLength(); index++) {
@@ -421,6 +578,18 @@ class XmiSemanticEmitterTest {
             }
         }
         return names;
+    }
+
+    private static List<Element> directChildrenNoNamespace(Element parent, String localName) {
+        List<Element> children = new ArrayList<>();
+        for (int index = 0; index < parent.getChildNodes().getLength(); index++) {
+            if (parent.getChildNodes().item(index) instanceof Element child
+                    && child.getNamespaceURI() == null
+                    && localName.equals(child.getLocalName())) {
+                children.add(child);
+            }
+        }
+        return children;
     }
 
     private static List<Element> directChildren(Element parent, String namespace, String localName) {
@@ -457,7 +626,7 @@ class XmiSemanticEmitterTest {
             if (!idref.isEmpty()) {
                 assertThat(ids).as("resolved xmi:idref %s", idref).contains(idref);
             }
-            for (String attribute : List.of("general", "client", "supplier", "association")) {
+            for (String attribute : List.of("general", "client", "supplier", "association", "package")) {
                 String reference = element.getAttribute(attribute);
                 if (!reference.isEmpty()) {
                     assertThat(ids).as("resolved %s reference %s", attribute, reference).contains(reference);
