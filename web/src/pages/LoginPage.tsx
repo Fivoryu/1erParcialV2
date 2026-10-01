@@ -34,6 +34,7 @@ export function loginErrorMessage(error: unknown): string {
 export function saveLoginResponse(response: LoginResponse): void {
   saveSession({
     token: response.token,
+    userId: response.user.id,
     username: response.user.username,
     displayName: response.user.displayName,
     expiresAt: response.expiresAt,

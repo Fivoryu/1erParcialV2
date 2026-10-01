@@ -6,6 +6,40 @@ export interface ProjectResource {
   description: string | null;
 }
 
+export type MemberRole = 'OWNER' | 'EDITOR' | 'VIEWER';
+export type AssignableRole = Exclude<MemberRole, 'OWNER'>;
+export type MemberStatus = 'ACTIVE' | 'REMOVED';
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+
+export interface MemberResource {
+  userId: Uuid;
+  username: string;
+  displayName: string;
+  role: MemberRole;
+  status: MemberStatus;
+}
+
+export interface InvitationResource {
+  projectId: Uuid;
+  projectName: string;
+  id: Uuid;
+  inviteeUsername: string | null;
+  inviteeDisplayName: string | null;
+  role: MemberRole;
+  status: InvitationStatus;
+  invitedByUsername: string;
+  createdAt: string;
+}
+
+export interface CreateInvitationRequest {
+  username: string;
+  role: AssignableRole;
+}
+
+export interface UpdateMemberRoleRequest {
+  role: AssignableRole;
+}
+
 export interface UserResource {
   id: Uuid;
   username: string;

@@ -4,12 +4,15 @@ import type {
   CommandResult,
   CreateGenerationRequest,
   CreateGenerationTargetRequest,
+  CreateInvitationRequest,
   CreateProjectRequest,
   DeploymentResource,
   GenerationArchiveDownload,
   GenerationProfileResource,
   GenerationRunResource,
   GenerationTargetResource,
+  InvitationResource,
+  MemberResource,
   ModelResource,
   OperationEnvelope,
   OperationOutcomeResource,
@@ -17,6 +20,7 @@ import type {
   RegisterRequest,
   LoginRequest,
   LoginResponse,
+  UpdateMemberRoleRequest,
   UserResource,
   Uuid,
 } from './types';
@@ -91,6 +95,18 @@ export interface ApiClient {
   createProject(request: CreateProjectRequest): Promise<ProjectResource>;
   listProjects(): Promise<ProjectResource[]>;
   getProject(projectId: Uuid): Promise<ProjectResource>;
+  listProjectMembers(projectId: Uuid): Promise<MemberResource[]>;
+  listProjectInvitations(projectId: Uuid): Promise<InvitationResource[]>;
+  createProjectInvitation(projectId: Uuid, request: CreateInvitationRequest): Promise<InvitationResource>;
+  acceptProjectInvitation(projectId: Uuid, invitationId: Uuid): Promise<MemberResource>;
+  revokeProjectInvitation(projectId: Uuid, invitationId: Uuid): Promise<InvitationResource>;
+  updateProjectMemberRole(
+    projectId: Uuid,
+    userId: Uuid,
+    request: UpdateMemberRoleRequest,
+  ): Promise<MemberResource>;
+  removeProjectMember(projectId: Uuid, userId: Uuid): Promise<MemberResource>;
+  listMyInvitations(): Promise<InvitationResource[]>;
   getModel(projectId: Uuid): Promise<ModelResource>;
   executeCommand(projectId: Uuid, envelope: OperationEnvelope): Promise<CommandOutcome>;
   listGenerationTargets(projectId: Uuid): Promise<GenerationTargetResource[]>;
@@ -231,6 +247,47 @@ export function createApiClient(
     },
     getProject(projectId) {
       return requestJson<ProjectResource>(`/projects/${encodeURIComponent(projectId)}`);
+    },
+    listProjectMembers(projectId) {
+      return requestJson<MemberResource[]>(`/projects/${encodeURIComponent(projectId)}/members`);
+    },
+    listProjectInvitations(projectId) {
+      return requestJson<InvitationResource[]>(`/projects/${encodeURIComponent(projectId)}/invitations`);
+    },
+    createProjectInvitation(projectId, request) {
+      return postJson<InvitationResource>(
+        `/projects/${encodeURIComponent(projectId)}/invitations`,
+        request,
+      );
+    },
+    acceptProjectInvitation(projectId, invitationId) {
+      return requestJson<MemberResource>(
+        `/projects/${encodeURIComponent(projectId)}/invitations/${encodeURIComponent(invitationId)}/accept`,
+        { method: 'POST' },
+      );
+    },
+    revokeProjectInvitation(projectId, invitationId) {
+      return requestJson<InvitationResource>(
+        `/projects/${encodeURIComponent(projectId)}/invitations/${encodeURIComponent(invitationId)}/revoke`,
+        { method: 'POST' },
+      );
+    },
+    updateProjectMemberRole(projectId, userId, request) {
+      const path = `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`;
+      return requestJson<MemberResource>(path, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+    },
+    removeProjectMember(projectId, userId) {
+      return requestJson<MemberResource>(
+        `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+        { method: 'DELETE' },
+      );
+    },
+    listMyInvitations() {
+      return requestJson<InvitationResource[]>('/invitations');
     },
     getModel(projectId) {
       return requestJson<ModelResource>(`/projects/${encodeURIComponent(projectId)}/model`);

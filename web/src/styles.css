@@ -1595,6 +1595,151 @@ h3 {
   line-height: 1.5;
 }
 
+.invitations-panel,
+.members-panel {
+  padding: 26px;
+}
+
+.invitations-panel {
+  margin-bottom: 22px;
+}
+
+.members-panel {
+  margin-top: 22px;
+}
+
+.invitations-list,
+.members-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.invitation-row,
+.member-row {
+  min-height: 66px;
+  padding: 14px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.invitation-copy,
+.member-copy {
+  min-width: 0;
+}
+
+.invitation-copy h3,
+.member-copy h3 {
+  margin-bottom: 4px;
+}
+
+.invitation-copy p,
+.member-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.invitation-copy strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.invitations-empty,
+.members-empty {
+  min-height: 74px;
+}
+
+.member-admin-grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.member-admin-section {
+  min-width: 0;
+  padding-top: 19px;
+  border-top: 1px solid var(--line);
+}
+
+.member-admin-section > h3 {
+  margin-bottom: 7px;
+}
+
+.member-admin-section .section-copy {
+  margin-bottom: 18px;
+}
+
+.member-invite-form {
+  gap: 2px;
+}
+
+.member-invite-form .field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.member-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.member-controls select,
+.member-invite-form select {
+  min-height: 36px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.member-controls select:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.member-remove-button {
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .member-admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .invitations-panel,
+  .members-panel {
+    padding: 20px;
+  }
+
+  .invitation-row,
+  .member-row {
+    align-items: flex-start;
+  }
+
+  .invitation-row {
+    flex-direction: column;
+  }
+
+  .member-controls {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+}
+
 @media (max-width: 980px) {
   .editor-workspace {
     grid-template-columns: minmax(0, 1fr);

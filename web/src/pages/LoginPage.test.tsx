@@ -109,6 +109,7 @@ describe('login page', () => {
 
     expect(loadSession()).toEqual({
       token: 'opaque-session-token',
+      userId: '22222222-2222-4222-8222-222222222222',
       username: 'diagram.user',
       displayName: 'Diagram User',
       expiresAt: '2026-10-01T12:00:00Z',

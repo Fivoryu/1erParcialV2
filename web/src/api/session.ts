@@ -1,5 +1,6 @@
 export interface Session {
   token: string;
+  userId: string;
   username: string;
   displayName: string;
   expiresAt: string;
@@ -20,6 +21,8 @@ function isSession(value: unknown): value is Session {
   const candidate = value as Partial<Session>;
   return typeof candidate.token === 'string'
     && candidate.token.length > 0
+    && typeof candidate.userId === 'string'
+    && candidate.userId.length > 0
     && typeof candidate.username === 'string'
     && typeof candidate.displayName === 'string'
     && typeof candidate.expiresAt === 'string';
@@ -46,6 +49,7 @@ export function loadSession(): Session | null {
 
     return {
       token: parsed.token,
+      userId: parsed.userId,
       username: parsed.username,
       displayName: parsed.displayName,
       expiresAt: parsed.expiresAt,

@@ -203,6 +203,62 @@ describe('typed API client', () => {
   });
 });
 
+describe('project member and invitation API client', () => {
+  it('calls all member and invitation routes with contract methods, bodies, and the session bearer', async () => {
+    const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const invitationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => new Response('[]', { status: 200 }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    saveSession({
+      token: 'opaque-session-token',
+      userId,
+      username: 'diagram.user',
+      displayName: 'Diagram User',
+      expiresAt: '2026-10-01T12:00:00Z',
+    });
+
+    await client.listProjectMembers(projectId);
+    await client.listProjectInvitations(projectId);
+    await client.createProjectInvitation(projectId, { username: 'new.member', role: 'EDITOR' });
+    await client.acceptProjectInvitation(projectId, invitationId);
+    await client.revokeProjectInvitation(projectId, invitationId);
+    await client.updateProjectMemberRole(projectId, userId, { role: 'VIEWER' });
+    await client.removeProjectMember(projectId, userId);
+    await client.listMyInvitations();
+
+    const calls = fetcher.mock.calls;
+    expect(calls.map(([input]) => String(input))).toEqual([
+      `https://diagram.test/projects/${projectId}/members`,
+      `https://diagram.test/projects/${projectId}/invitations`,
+      `https://diagram.test/projects/${projectId}/invitations`,
+      `https://diagram.test/projects/${projectId}/invitations/${invitationId}/accept`,
+      `https://diagram.test/projects/${projectId}/invitations/${invitationId}/revoke`,
+      `https://diagram.test/projects/${projectId}/members/${userId}`,
+      `https://diagram.test/projects/${projectId}/members/${userId}`,
+      'https://diagram.test/invitations',
+    ]);
+    expect(calls.map(([, init]) => init?.method)).toEqual([
+      undefined,
+      undefined,
+      'POST',
+      'POST',
+      'POST',
+      'PATCH',
+      'DELETE',
+      undefined,
+    ]);
+    expect(JSON.parse(String(calls[2]?.[1]?.body))).toEqual({ username: 'new.member', role: 'EDITOR' });
+    expect(calls[3]?.[1]?.body).toBeUndefined();
+    expect(calls[4]?.[1]?.body).toBeUndefined();
+    expect(JSON.parse(String(calls[5]?.[1]?.body))).toEqual({ role: 'VIEWER' });
+    expect(calls[6]?.[1]?.body).toBeUndefined();
+    for (const [, init] of calls) {
+      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
+    }
+  });
+});
+
 const liveBaseUrl = import.meta.env.VITE_API_BASE_URL;
 describe.skipIf(!liveBaseUrl)('live backend client contract', () => {
   it('creates, reads, and commands a project through the typed client', async () => {
@@ -279,6 +335,7 @@ describe('session-aware API client', () => {
     const client = createApiClient('https://diagram.test', fetcher);
     saveSession({
       token: loginResponse.token,
+      userId: user.id,
       username: user.username,
       displayName: user.displayName,
       expiresAt: loginResponse.expiresAt,
@@ -309,6 +366,7 @@ describe('session-aware API client', () => {
   it('clears the session after a 401 from a protected endpoint', async () => {
     saveSession({
       token: loginResponse.token,
+      userId: user.id,
       username: user.username,
       displayName: user.displayName,
       expiresAt: loginResponse.expiresAt,
@@ -335,6 +393,7 @@ describe('session-aware API client', () => {
     const client = createApiClient('https://diagram.test', fetcher);
     saveSession({
       token: loginResponse.token,
+      userId: user.id,
       username: user.username,
       displayName: user.displayName,
       expiresAt: loginResponse.expiresAt,
@@ -372,6 +431,7 @@ describe('session-aware API client', () => {
   it('does not clear an existing session for login or registration 401 responses', async () => {
     saveSession({
       token: loginResponse.token,
+      userId: user.id,
       username: user.username,
       displayName: user.displayName,
       expiresAt: loginResponse.expiresAt,

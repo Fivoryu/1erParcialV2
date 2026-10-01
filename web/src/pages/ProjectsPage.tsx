@@ -1,15 +1,16 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ApiTransportError, createApiClient } from '../api/client';
 import { clearSession, loadSession } from '../api/session';
 import type { ProjectResource } from '../api/types';
-import LoginPage from './LoginPage';
+import InvitationsSection from '../members/InvitationsSection';
+import LoginPage, { loginErrorMessage } from './LoginPage';
 
 const api = createApiClient();
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiTransportError) {
-    return error.message;
+    return loginErrorMessage(error);
   }
   return 'Projects could not be loaded. Check the connection and try again.';
 }
@@ -24,6 +25,15 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshProjects = useCallback(async () => {
+    setError(null);
+    try {
+      setProjects(await api.listProjects());
+    } catch (cause: unknown) {
+      setError(messageFor(cause));
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -120,6 +130,8 @@ export default function ProjectsPage() {
           <h1 id="projects-title">Your projects</h1>
           <p className="lede">Create a model or pick up where you left off.</p>
         </section>
+
+        <InvitationsSection onProjectAccepted={refreshProjects} />
 
         <div className="projects-layout">
           <section className="surface project-list-panel" aria-labelledby="project-list-title">

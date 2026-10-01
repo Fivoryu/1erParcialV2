@@ -45,6 +45,7 @@ afterEach(() => {
 
 const session = {
   token: 'opaque-session-token',
+  userId: '11111111-1111-4111-8111-111111111111',
   username: 'diagram.user',
   displayName: 'Diagram User',
   expiresAt: '2026-10-01T12:00:00Z',
@@ -62,6 +63,15 @@ describe('browser session store', () => {
     globalThis.localStorage.setItem(SESSION_STORAGE_KEY, '{not-json');
 
     expect(loadSession()).toBeNull();
+  });
+
+  it('discards a stored session without the required user id', () => {
+    const legacySession = { ...session } as Partial<typeof session>;
+    delete legacySession.userId;
+    globalThis.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(legacySession));
+
+    expect(loadSession()).toBeNull();
+    expect(globalThis.localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
   });
 
   it('removes the stored session when cleared', () => {
