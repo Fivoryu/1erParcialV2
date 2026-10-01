@@ -321,10 +321,15 @@ build. Un encargo que prohíbe contenedores y exige `verify` a la vez se contrad
 
 ### X3 — Emisión del dialecto
 
+**Partida en dos mitades por tamaño, no por capricho.** El subárbol semántico y la extensión con el diagrama son
+dos canales distintos, cada uno con evidencia propia y probable por separado; juntos exceden cómodamente una
+unidad de trabajo revisable.
+
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
-| X3.1 | `XmiWriter`: modelo + vista → documento del dialecto, con subárbol semántico, registros de elemento y conector, `labels` y bloque `diagrams` con geometría y `DUID`/`SOID`/`EOID` | Pruebas unitarias por constructo; el documento emitido pasa el oráculo de X1.1 |
-| X3.2 | Determinismo y reporte de pérdidas de la emisión | Dos emisiones del mismo estado dan el **mismo sha256**; el reporte enumera cada pérdida con su nombre y su recuento |
+| X3.1 | **Subárbol semántico**: `xmi:XMI` + `xmi:Documentation` + `uml:Model` con paquetes, clases, clases abstractas, interfaces y enumeraciones —cuyas constantes viajan como `ownedAttribute`, que es la forma real del dialecto y no la estándar—, atributos, operaciones, parámetros, restricciones, y asociaciones, generalizaciones y realizaciones con sus extremos, roles y multiplicidades. Identificadores `EAID_`/`EAPK_` derivados del UUID canónico por biyección reversible | Prueba por constructo; el documento parsea y cada elemento canónico tiene su contraparte; una prueba pinnea la forma de las constantes de enumeración; otra comprueba la ida y vuelta del identificador |
+| X3.2 | **Extensión y diagrama**: `xmi:Extension` con `elements`, `connectors`, `primitivetypes`, `profiles` y `diagrams`, con la geometría de cada figura (`Left/Top/Right/Bottom`, `seqno`, `DUID`), el anclaje de cada conector (`Mode`, `SOID`, `EOID` contra los `DUID`) y sus `labels`; `Path=` vacío por X-4 | Prueba por constructo contra las mediciones de §3; las 10 figuras y los 8 conectores del fixture de ida y vuelta aparecen con geometría y anclaje correctos |
+| X3.3 | Determinismo y reporte de pérdidas de la emisión | Dos emisiones del mismo estado dan el **mismo sha256**; el reporte enumera cada pérdida —ruteo, layout por atributo, etiquetas de conector, andamiaje— con su nombre y su recuento |
 
 ### X4 — Servicio y endpoint de exportación
 
