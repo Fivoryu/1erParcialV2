@@ -181,12 +181,21 @@ depende de estos nombres **sin poder escribirlos**; el dueño es esta sesión.
 **`V9`** (chat); la sesión de XMI toma **`V10`** para `xmi_exchange` y `xmi_loss_item`. Dos archivos con el mismo
 número de versión no se pueden fusionar y Flyway los rechaza.
 
-**Archivos compartidos que ambos vamos a tocar** (conflicto mecánico, no de diseño, y se resuelve tomando lo de
-los dos): `backend/src/test/java/com/diagramador/SchemaOwnershipTest.java` —sus tablas de XMI están hoy en
-`TABLES_RESERVED_FOR_LATER_TASKS`, que afirma que **no existen**, así que migrarlas exige sacarlas de ahí y
-agregarlas a `MAPPED_COLUMNS` con sus columnas exactas y sus índices— y
-`docs/puds/datos/02-esquema-fisico.sql`. También `web/src/pages/ProjectEditorPage.tsx`, que ya recibe el botón de
-la sesión de XMI además de los paneles de C14, C18 y C21.
+**Archivos compartidos** (conflicto mecánico, no de diseño, y se resuelve tomando lo de los dos):
+
+- `backend/src/test/java/com/diagramador/SchemaOwnershipTest.java`. La lista de versiones de Flyway esperada tiene que
+  terminar en **1..10**: esta sesión suma `8` (invitaciones) y `9` (chat), la sesión de XMI suma `10`. Además, las
+  **cuatro** tablas nuevas tienen que quedar declaradas en `MAPPED_COLUMNS` con sus columnas exactas y en
+  `SUPPORT_INDEXES`: `invitation` y `diagram_message` de esta sesión, `xmi_exchange` y `xmi_loss_item` de la otra.
+  Las cuatro están hoy en `TABLES_RESERVED_FOR_LATER_TASKS`, que **afirma que no existen**, así que migrar cada una
+  exige sacarla de ahí. Si cada lado resuelve el conflicto sin ver al otro, la suite rechaza la migración ajena.
+- `docs/puds/datos/02-esquema-fisico.sql`, por las mismas cuatro tablas.
+- `web/src/pages/ProjectEditorPage.tsx`, que ya recibe el botón de la sesión de XMI además de los paneles de C14,
+  C18 y C21.
+- `backend/src/main/java/com/diagramador/command/CommandService.java` — **sólo esta sesión lo toca**, en C13, para
+  publicar `operation.applied`. La sesión de XMI **no** necesita tocarlo: `CommandService` construye su mapa de
+  handlers desde una `List<CommandHandler>` inyectada por Spring, así que un `@Component` nuevo que implemente
+  `CommandHandler` con su `type()` se auto-registra. Se lo dije para que no reservara un conflicto que no tiene.
 
 **Concesión de edición (la escribe esta sesión en `com.diagramador.collaboration`):**
 
