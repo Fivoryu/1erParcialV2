@@ -246,25 +246,10 @@ export function GenerationPanelView({
         </div>
       )}
 
-      {run && (
+      {(run !== null || deployment !== null) && (
         <div className="generation-deployment" aria-live="polite">
           <h3>Deployment</h3>
-          {deployment === null ? (
-            <>
-              <p className="property-hint">
-                Deploying runs this backend on this machine with its own database, so another device on the
-                same network can call it.
-              </p>
-              <button
-                className="button button-primary"
-                type="button"
-                onClick={onDeploy}
-                disabled={busy || !ready}
-              >
-                Deploy backend
-              </button>
-            </>
-          ) : (
+          {deployment !== null && (
             <>
               <p className="generation-run-state" data-state={deployment.state}>
                 {describeDeploymentState(deployment.state)}
@@ -301,6 +286,22 @@ export function GenerationPanelView({
                   Stop backend
                 </button>
               )}
+            </>
+          )}
+          {run !== null && (deployment === null || !isDeploymentActive(deployment.state)) && (
+            <>
+              <p className="property-hint">
+                Deploying runs this backend on this machine with its own database, so another device on the
+                same network can call it.
+              </p>
+              <button
+                className="button button-primary"
+                type="button"
+                onClick={onDeploy}
+                disabled={busy || !ready}
+              >
+                Deploy backend
+              </button>
             </>
           )}
           <p className="generation-warning">{NO_AUTHENTICATION_WARNING}</p>
@@ -460,9 +461,16 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
     setDeployments(await api.listDeployments(projectId));
   }, [projectId]);
 
-  // The deployment of the run on screen: the active one if it has one, otherwise the most recent attempt.
+  // The deployment of the run on screen, or the one the selected destination is holding. A reload loses the
+  // run, which only ever lived in memory, but the backend it started keeps running: the user has to be able to
+  // see it and stop it without generating again.
   const runDeployments = run === null ? [] : deployments.filter((item) => item.runId === run.runId);
-  const deployment = runDeployments.find((item) => isDeploymentActive(item.state)) ?? runDeployments[0] ?? null;
+  const targetDeployments = deployments.filter((item) => item.targetId === selectedTargetId);
+  const deployment = runDeployments.find((item) => isDeploymentActive(item.state))
+    ?? runDeployments[0]
+    ?? targetDeployments.find((item) => isDeploymentActive(item.state))
+    ?? targetDeployments[0]
+    ?? null;
   const browserHost = typeof window === 'undefined' ? 'localhost' : window.location.hostname;
   const phoneUrl = deployment === null ? null : phoneBaseUrl(browserHost, deployment.httpHostPort);
   const editorOnLocalhost = editorIsLocal(browserHost);

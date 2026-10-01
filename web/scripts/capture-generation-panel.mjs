@@ -28,7 +28,7 @@ function parseArguments(argv) {
   }
   if (!parsed['editor-url'] || !parsed.out || !parsed.project) {
     throw new Error('Usage: node scripts/capture-generation-panel.mjs --editor-url <url> --project <projectId> '
-      + '--out <dir> [--chrome <path>] [--destinations 2]');
+      + '--out <dir> [--chrome <path>] [--destinations 2] [--expect-deployment <state label>]');
   }
   return parsed;
 }
@@ -120,6 +120,47 @@ const element = await page.$('.generation-panel');
 await element.screenshot({ path: path.join(outputDirectory, '16-panel-generacion-detalle.png') });
 steps.push('16-panel-generacion-detalle.png  El panel solo, a resolución de lectura');
 console.log('[SHOT] 16-panel-generacion-detalle.png  El panel solo, a resolución de lectura');
+
+// The deployment state is a second scene of the same panel, and it is only reachable when a deployment
+// exists. Asking for it makes the script fail loudly instead of writing a capture whose label is a lie.
+if (options['expect-deployment']) {
+  const expected = options['expect-deployment'];
+  const deployment = await page.evaluate(() => {
+    const root = document.querySelector('.generation-deployment');
+    if (root === null) {
+      return null;
+    }
+    const address = root.querySelector('.generation-address code');
+    return {
+      text: root.innerText,
+      state: root.querySelector('.generation-run-state')?.innerText.trim() ?? null,
+      address: address === null ? null : address.innerText.trim(),
+      localHint: root.innerText.includes('only works here'),
+    };
+  });
+  console.log(`[DEPLOYMENT] ${JSON.stringify(deployment)}`);
+  if (deployment === null) {
+    throw new Error('The panel has no deployment block, so a deployment capture cannot be backed');
+  }
+  if (deployment.state !== expected) {
+    throw new Error(`The deployment state reads '${deployment.state}' and not '${expected}'`);
+  }
+  if (deployment.address === null || !/^http:\/\/[^\s]+:\d+$/.test(deployment.address)) {
+    throw new Error(`The panel shows no usable address: ${JSON.stringify(deployment.address)}`);
+  }
+  if (UUID_PATTERN.test(deployment.text)) {
+    throw new Error(`The deployment block shows an internal identifier:
+${deployment.text}`);
+  }
+
+  const name = deployment.localHint ? '02-panel-despliegue-localhost.png' : '02-panel-despliegue.png';
+  await shot(name, `Panel de generación con el despliegue en estado ${expected} y la dirección `
+    + `${deployment.address} para otro dispositivo de la red`);
+  const deploymentElement = await page.$('.generation-deployment');
+  await deploymentElement.screenshot({ path: path.join(outputDirectory, '03-panel-despliegue-detalle.png') });
+  steps.push('03-panel-despliegue-detalle.png  El bloque de despliegue solo, a resolución de lectura');
+  console.log('[SHOT] 03-panel-despliegue-detalle.png  El bloque de despliegue solo, a resolución de lectura');
+}
 
 console.log('\n--- captures ---');
 for (const step of steps) console.log(step);

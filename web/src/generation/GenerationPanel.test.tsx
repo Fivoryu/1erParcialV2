@@ -331,4 +331,21 @@ describe('generation panel, presentational surface', () => {
       expect(markup).not.toContain(String.raw`C:\Users`);
     }
   });
+
+  it('still shows a running deployment after a reload, when no run is on screen', () => {
+    const markup = render({
+      targets: [firstTarget],
+      selectedTargetId: firstTarget.targetId,
+      run: null,
+      deployment: upDeployment,
+      phoneUrl: 'http://192.168.0.11:19001',
+    });
+
+    // The run that was generated lives in memory and a reload loses it, but the backend keeps running and the
+    // user has to be able to see it and stop it.
+    expect(markup).toContain('Running');
+    expect(markup).toContain('http://192.168.0.11:19001');
+    expect(markup).toContain('Stop backend');
+    expect(markup).not.toContain('Deploy backend');
+  });
 });

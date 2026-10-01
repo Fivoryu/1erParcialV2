@@ -1,0 +1,104 @@
+[INFO] Deployment acceptance run cd9f2254-f645-49f9-b5f8-c80579a79848
+[OK] Locate Docker
+  expected: docker available in PATH
+  got:      C:\Program Files\Docker\Docker\resources\bin\docker.EXE
+[OK] Locate Maven
+  expected: mvn available in PATH; the operator compiles from the local cache
+  got:      C:\Program Files\apache-maven-3.9.15\bin\mvn.CMD
+[OK] Inspect the local image postgres:16-alpine
+  expected: present locally; this run never pulls
+  got:      sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+[OK] Inspect the local image eclipse-temurin:21-jre-alpine
+  expected: present locally; this run never pulls
+  got:      sha256:51ab5e3302e7141ce665ca3ea85e8b5cd648eafbc3c0c90dd79d6537684e4555
+[OK] Reach the running diagrammer
+  expected: {"HTTP": 200, "status": "UP"}
+  got:      {"HTTP": 200, "body": {"status": "UP"}, "hint": "start one with tools/acceptance/acceptance.py --keep-running"}
+[INFO] Containers before: 37, volumes: 69
+[OK] Create the project over HTTP
+  expected: HTTP 201 with a project id
+  got:      {"HTTP": 201, "body": {"description": "Deployment acceptance", "id": "a81cd907-ea5a-480e-9d58-6baef64e60b0", "name": "Deployment acceptance cd9f2254"}}
+[OK] Apply classifier.create at revision 1
+  expected: {"HTTP": 200, "resultRevision": 2, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "e04e49c6-f41d-4451-b474-1b3ffe48d992", "resultRevision": 2, "status": "ACCEPTED"}}
+[OK] Apply classifier.create at revision 2
+  expected: {"HTTP": 200, "resultRevision": 3, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "0bfa3fef-ea8c-4078-a1ee-2b112ae575a5", "resultRevision": 3, "status": "ACCEPTED"}}
+[OK] Apply attribute.add at revision 3
+  expected: {"HTTP": 200, "resultRevision": 4, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "05952d8e-3405-481f-848f-c27df8d564a7", "resultRevision": 4, "status": "ACCEPTED"}}
+[OK] Apply attribute.add at revision 4
+  expected: {"HTTP": 200, "resultRevision": 5, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "3e0c7914-955b-41e7-a0c9-691b924aceb5", "resultRevision": 5, "status": "ACCEPTED"}}
+[OK] Apply relationship.create at revision 5
+  expected: {"HTTP": 200, "resultRevision": 6, "status": "ACCEPTED"}
+  got:      {"HTTP": 200, "body": {"authorizationClassification": "AUTHORIZED_ONLINE", "diagnostics": [], "operationId": "987835b7-504b-4414-89f6-ced9efd40497", "resultRevision": 6, "status": "ACCEPTED"}}
+[OK] Create the destination
+  expected: HTTP 200 with a destination
+  got:      {"HTTP": 200, "body": {"code": "TARGET_CREATED", "idempotencyKey": null, "message": "Generation target was created.", "outcome": "ACCEPTED", "result": {"configurationRevision": 1, "connectionConfigRef": null, "createdAt": null, "databaseEngine": "POSTGRESQL", "databaseName": "acceptance_cd9f2_db", "databaseSchema": "public", "modelId": "e501b91c-048d-4543-aebe-98242bfd527b", "name": "Acceptance destination", "targetId": "51344f37-f505-469f-9ceb-5798df890f79", "targetKey": "acceptance-cd9f2", "updatedAt": "2026-10-01T06:57:16.4322975-04:00"}}}
+[OK] Generate a backend for the destination
+  expected: {"blockingDiagnostics": 0, "state": "SUCCEEDED"}
+  got:      {"body": {"artifactSetHash": "be4f01f1f011e0df739b18cfc00e2566e63c30f1be0cf9b628f644c3f05f282c", "artifactZipHash": "cd173a654bfc5da33605fe7ea860649856dc575ad4b4f1ea5c8897854c4106f9", "artifactZipUri": null, "diagnostics": [], "finishedAt": "2026-10-01T10:57:17.201844Z", "inputSnapshotHash": "899c37f855a47681b28a01a8adc87cdd850f794996dbea099d62909748492b2a", "modelId": "e501b91c-048d-4543-aebe-98242bfd527b", "modelRevision": 6, "profileId": "d2833789-e140-4d54-b12d-c7df4c8ea849", "profileKey": "spring-boot-postgresql", "profileRevision": 1, "runId": "45459c57-cad7-4bc9-9bfe-959e24b7c1fd", "startedAt": "2026-10-01T10:57:17.201844Z", "state": "SUCCEEDED", "targetConfigRevision": 1, "targetId": "51344f37-f505-469f-9ceb-5798df890f79", "targetKey": "acceptance-cd9f2", "templateId": "e987b400-1c3a-4368-8d52-f68564f548d2", "templateRevision": 1, "verification": {"checks": [], "generationState": "SUCCEEDED", "runId": "45459c57-cad7-4bc9-9bfe-959e24b7c1fd", "status": "NOT_RUN", "verifiedBackend": false}, "versionId": "e80a94eb-1218-492d-820e-cc782e23ce6e"}, "code": "GENERATION_ACCEPTED", "state": "SUCCEEDED"}
+[INFO] run=45459c57-cad7-4bc9-9bfe-959e24b7c1fd artifactSetHash=be4f01f1f011e0df739b18cfc00e2566e63c30f1be0cf9b628f644c3f05f282c
+[OK] Order the deployment from the API
+  expected: {"HTTP": 201, "ports": "1900N/2543N", "state": "PENDING"}
+  got:      {"HTTP": 201, "ports": "19001/25433", "state": "PENDING"}
+[INFO] deployment=8631c918-9b73-4ce1-99e0-e42777bae0fc ports=19001/25433
+[OK] claimed 8631c918-9b73-4ce1-99e0-e42777bae0fc as deployment-acceptance (ports 19001/25433)
+[INFO] downloaded 42517 bytes for acceptance-cd9f2
+[OK] compiled the generated project for acceptance-cd9f2 offline
+[OK] acceptance-cd9f2 is up: {"status":"UP"}
+[INFO] from another device on the same network: http://192.168.0.11:19001/api/...
+[INFO] once -> deployed
+
+[OK] The operator deploys what the API ordered
+  expected: 0
+  got:      {"exit": 0, "tail": "t-acceptance (ports 19001/25433)\n[INFO] downloaded 42517 bytes for acceptance-cd9f2\n[OK] compiled the generated project for acceptance-cd9f2 offline\n[OK] acceptance-cd9f2 is up: {\"status\":\"UP\"}\n[INFO] from another device on the same network: http://192.168.0.11:19001/api/...\n[INFO] once -> deployed\n"}
+[OK] The deployment is UP and names its Compose project
+  expected: {"composeProject": "a name", "state": "UP"}
+  got:      {"composeProject": "generated-acceptance-cd9f2", "failure": null, "state": "UP"}
+[OK] health UP from loopback at http://127.0.0.1:19001
+  expected: {"HTTP": 200, "status": "UP"}
+  got:      {"status":"UP"}
+[OK] health UP from the machine's network address at http://192.168.0.11:19001
+  expected: {"HTTP": 200, "status": "UP"}
+  got:      {"status":"UP"}
+[OK] POST /api/customer against http://192.168.0.11:19001
+  expected: HTTP 201 with the created resource
+  got:      {"HTTP": 201, "body": "{\"id\":\"a2af69b2-61a9-4d4b-b398-2bdb9b112b42\",\"displayName\":\"Acceptance\"}"}
+[OK] POST /api/order resolves the parent reference
+  expected: {"HTTP": 201, "customerId": "a2af69b2-61a9-4d4b-b398-2bdb9b112b42"}
+  got:      {"HTTP": 201, "body": "{\"id\":\"b09fb807-034f-4f21-98d2-a57fe35578ab\",\"total\":42.5,\"customerId\":\"a2af69b2-61a9-4d4b-b398-2bdb9b112b42\"}"}
+[OK] GET /api/order/{id} keeps the reference
+  expected: {"HTTP": 200, "customerId": "a2af69b2-61a9-4d4b-b398-2bdb9b112b42"}
+  got:      {"HTTP": 200, "body": "{\"id\":\"b09fb807-034f-4f21-98d2-a57fe35578ab\",\"total\":42.50,\"customerId\":\"a2af69b2-61a9-4d4b-b398-2bdb9b112b42\"}"}
+[OK] GET /api/order lists from another host address
+  expected: HTTP 200 with one element
+  got:      {"HTTP": 200, "body": "[{\"id\":\"b09fb807-034f-4f21-98d2-a57fe35578ab\",\"total\":42.50,\"customerId\":\"a2af69b2-61a9-4d4b-b398-2bdb9b112b42\"}]"}
+[OK] A missing parent is 400 and never 500
+  expected: HTTP 400
+  got:      {"HTTP": 400, "body": "{\"code\":\"INVALID_REFERENCE\",\"message\":\"A related resource reference does not exist.\",\"detail\":\"customerId=11111111-1111-4111-8111-111111111111\"}"}
+[OK] An unknown id is 404
+  expected: HTTP 404
+  got:      {"HTTP": 404, "body": "{\"code\":\"NOT_FOUND\",\"message\":\"The requested resource was not found.\",\"detail\":\"Order id=22222222-2222-4222-8222-222222222222\"}"}
+[OK] A second order of the same destination is refused
+  expected: {"HTTP": 409, "code": "DEPLOYMENT_ALREADY_ACTIVE"}
+  got:      {"HTTP": 409, "code": "DEPLOYMENT_ALREADY_ACTIVE"}
+[OK] Order the stop
+  expected: {"HTTP": 200, "state": "STOPPING"}
+  got:      {"HTTP": 200, "state": "STOPPING"}
+[OK] 8631c918-9b73-4ce1-99e0-e42777bae0fc stopped; containers back at 37 from 39
+[INFO] once -> stopped
+
+[OK] The deployment ends STOPPED
+  expected: {"state": "STOPPED"}
+  got:      {"failure": null, "state": "STOPPED"}
+[OK] Container count returned to its initial value
+  expected: 37
+  got:      37
+[OK] Volume count returned to its initial value
+  expected: 69
+  got:      69
+
+=== Deployment acceptance summary: 29 passed, 0 failed ===
+[INFO] Teardown verified: no container and no volume survived.

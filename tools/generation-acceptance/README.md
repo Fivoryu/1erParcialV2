@@ -4,6 +4,34 @@ Este arnés prueba el corte visible del incremento **desde afuera del JVM y sin 
 genera dos backends independientes, compila cada uno sin red, despliega cada uno con su propia PostgreSQL,
 ejercita el CRUD generado y devuelve la máquina a su estado inicial.
 
+## El arnés hermano: el despliegue por el camino del producto
+
+`acceptance_deployment.py` prueba el **mismo corte por el camino que usa el usuario**, no alrededor de él. El
+arnés de arriba despliega un proyecto generado directamente con Compose para probar el artefacto; éste **ordena
+un despliegue por la API** y deja que `tools/deploy-operator/` lo haga, que es lo que hace el botón del editor.
+
+```sh
+python tools/generation-acceptance/acceptance_deployment.py --base-url http://127.0.0.1:PORT
+```
+
+Crea un proyecto con dos clases relacionadas y una corrida terminada, ordena el despliegue de **esa corrida**,
+corre el operador una vez, y después comprueba:
+
+- que el estado quede `UP` con su proyecto Compose;
+- que `health` responda `UP` **desde `127.0.0.1` y desde la dirección de esta máquina en la red**, porque la de
+  la red es la que va a usar el teléfono;
+- el **CRUD generado contra esa dirección**, incluida la foránea resuelta, el padre inexistente como 400 y el id
+  desconocido como 404;
+- que una **segunda orden del mismo destino se rechace**;
+- que ordenar detener, correr el operador otra vez y esperar deje el conteo de **contenedores y volúmenes de
+  vuelta en su valor inicial**.
+
+`--keep-running` deja el despliegue arriba e imprime su comando `--stop`, que sirve para capturar el panel o
+para probar la URL desde el teléfono.
+
+**Lo que este arnés no hace:** llegar al backend desde **otro** dispositivo. Eso es el paso de un comando del
+teléfono, declarado en `docs/puds/generacion/04-despliegue-desde-el-editor.md` §3.
+
 ## Qué necesita
 
 - **Un diagramador corriendo.** Levantá uno con el arnés del Incremento 1, que imprime su URL base:
