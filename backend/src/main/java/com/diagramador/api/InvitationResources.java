@@ -14,8 +14,9 @@ public final class InvitationResources {
             String status) {
     }
 
-    public record InvitationResource(UUID id, String inviteeUsername, String inviteeDisplayName,
-            ProjectMemberRole role, InvitationStatus status, String invitedByUsername, OffsetDateTime createdAt) {
+    public record InvitationResource(UUID projectId, String projectName, UUID id, String inviteeUsername,
+            String inviteeDisplayName, ProjectMemberRole role, InvitationStatus status, String invitedByUsername,
+            OffsetDateTime createdAt) {
     }
 
     public record CreateInvitationRequest(String username, String role) {

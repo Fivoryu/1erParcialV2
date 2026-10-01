@@ -69,6 +69,14 @@ public class InvitationApiService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<InvitationResource> listOwnInvitations() {
+        UUID inviteeId = currentUserContext.require().userId();
+        return invitationRepository.findByInvitee_IdOrderByCreatedAtAscIdAsc(inviteeId).stream()
+                .map(InvitationApiService::invitationResource)
+                .toList();
+    }
+
     @Transactional
     public InvitationResource createInvitation(UUID projectId, CreateInvitationRequest request) {
         Project project = requireProject(projectId);
@@ -209,9 +217,11 @@ public class InvitationApiService {
 
     private static InvitationResource invitationResource(Invitation invitation) {
         UserAccount invitee = invitation.getInvitee();
-        return new InvitationResource(invitation.getId(), invitee == null ? null : invitee.getUsername(),
-                invitee == null ? null : invitee.getDisplayName(), invitation.getRole(), invitation.getStatus(),
-                invitation.getInvitedBy().getUsername(), invitation.getCreatedAt());
+        Project project = invitation.getProject();
+        return new InvitationResource(project.getId(), project.getName(), invitation.getId(),
+                invitee == null ? null : invitee.getUsername(), invitee == null ? null : invitee.getDisplayName(),
+                invitation.getRole(), invitation.getStatus(), invitation.getInvitedBy().getUsername(),
+                invitation.getCreatedAt());
     }
 
     private static ApiException invalidPayload(String message) {

@@ -48,8 +48,11 @@ class InvitationApiTest extends AuthenticatedApiTest {
     void ownerInvitesEditorWhoAcceptsAndGainsEditorAccess() throws Exception {
         String owner = username("owner");
         String invitee = username("invitee");
+        String outsider = username("other-invitee");
+        String projectName = "Invitation test accept-editor";
         UUID projectId = createProject(owner, "accept-editor");
         bearer(invitee);
+        bearer(outsider);
 
         MvcResult inviteResult = mockMvc.perform(authorizedAs(owner,
                 post("/projects/{projectId}/invitations", projectId)
@@ -69,12 +72,30 @@ class InvitationApiTest extends AuthenticatedApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(invitationId.toString()));
 
+        mockMvc.perform(authorizedAs(invitee, get("/projects/{projectId}/model", projectId)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(authorizedAs(invitee, get("/invitations")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(invitationId.toString()))
+                .andExpect(jsonPath("$[0].projectId").value(projectId.toString()))
+                .andExpect(jsonPath("$[0].projectName").value(projectName))
+                .andExpect(jsonPath("$[0].status").value("PENDING"));
+        mockMvc.perform(authorizedAs(outsider, get("/invitations")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
         mockMvc.perform(authorizedAs(invitee, post("/projects/{projectId}/invitations/{invitationId}/accept",
                 projectId, invitationId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(userIdFor(invitee).toString()))
                 .andExpect(jsonPath("$.role").value("EDITOR"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
+
+        mockMvc.perform(authorizedAs(invitee, get("/invitations")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status").value("ACCEPTED"));
 
         ProjectMember member = projectMemberRepository.findByProjectIdAndUserId(projectId, userIdFor(invitee))
                 .orElseThrow();
@@ -89,6 +110,16 @@ class InvitationApiTest extends AuthenticatedApiTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsBytes(targetRequest("invitation-editor")))))
                 .andExpect(status().isOk());
+    }
+
+    @org.junit.jupiter.api.Test
+    void userWithoutInvitationsGetsAnEmptyList() throws Exception {
+        String user = username("no-invitations");
+        bearer(user);
+
+        mockMvc.perform(authorizedAs(user, get("/invitations")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
     }
 
     @org.junit.jupiter.api.Test

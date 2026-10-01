@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping(path = "/projects", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(produces = MediaType.APPLICATION_JSON_VALUE)
 public class InvitationController {
 
     private final InvitationApiService invitationApiService;
@@ -28,43 +28,48 @@ public class InvitationController {
         this.invitationApiService = invitationApiService;
     }
 
-    @GetMapping("/{projectId}/members")
+    @GetMapping("/projects/{projectId}/members")
     public List<MemberResource> listMembers(@PathVariable("projectId") UUID projectId) {
         return invitationApiService.listMembers(projectId);
     }
 
-    @GetMapping("/{projectId}/invitations")
+    @GetMapping("/projects/{projectId}/invitations")
     public List<InvitationResource> listInvitations(@PathVariable("projectId") UUID projectId) {
         return invitationApiService.listInvitations(projectId);
     }
 
-    @PostMapping(path = "/{projectId}/invitations", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping("/invitations")
+    public List<InvitationResource> listOwnInvitations() {
+        return invitationApiService.listOwnInvitations();
+    }
+
+    @PostMapping(path = "/projects/{projectId}/invitations", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<InvitationResource> createInvitation(@PathVariable("projectId") UUID projectId,
             @RequestBody CreateInvitationRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(invitationApiService.createInvitation(projectId, request));
     }
 
-    @PostMapping(path = "/{projectId}/invitations/{invitationId}/accept")
+    @PostMapping(path = "/projects/{projectId}/invitations/{invitationId}/accept")
     public MemberResource acceptInvitation(@PathVariable("projectId") UUID projectId,
             @PathVariable("invitationId") UUID invitationId) {
         return invitationApiService.acceptInvitation(projectId, invitationId);
     }
 
-    @PostMapping(path = "/{projectId}/invitations/{invitationId}/revoke")
+    @PostMapping(path = "/projects/{projectId}/invitations/{invitationId}/revoke")
     public InvitationResource revokeInvitation(@PathVariable("projectId") UUID projectId,
             @PathVariable("invitationId") UUID invitationId) {
         return invitationApiService.revokeInvitation(projectId, invitationId);
     }
 
-    @PatchMapping(path = "/{projectId}/members/{userId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PatchMapping(path = "/projects/{projectId}/members/{userId}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public MemberResource changeMemberRole(@PathVariable("projectId") UUID projectId,
             @PathVariable("userId") UUID userId,
             @RequestBody ChangeMemberRoleRequest request) {
         return invitationApiService.changeMemberRole(projectId, userId, request);
     }
 
-    @DeleteMapping("/{projectId}/members/{userId}")
+    @DeleteMapping("/projects/{projectId}/members/{userId}")
     public MemberResource removeMember(@PathVariable("projectId") UUID projectId,
             @PathVariable("userId") UUID userId) {
         return invitationApiService.removeMember(projectId, userId);
