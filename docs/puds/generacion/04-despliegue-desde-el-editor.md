@@ -239,6 +239,9 @@ devuelve los conteos a su valor inicial.
 
 - **Que el teléfono llegue.** El único paso que lo prueba es el de §3.3, y lo corre una persona desde el
   teléfono. Lo que sí se midió es que el backend responde en la dirección de red de la máquina.
+  **Decisión del 2026-09-30: queda para el Incremento 7**, que es el que consume el backend desde un cliente
+  (CU-21). Esta unidad entrega su **precondición** —el backend desplegado y una dirección—, no el caso de uso, y
+  no queda nada pendiente acá por eso.
 - **Un despliegue fuera de esta máquina**: ni nube, ni base gestionada, ni orquestador.
 - **Seguridad del backend generado**: no hay capa de autenticación que verificar.
 - **Concurrencia de dos operadores en máquinas distintas**: el reclamo atómico está probado con 8 operadores
