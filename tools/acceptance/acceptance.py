@@ -329,6 +329,8 @@ class Harness:
         self.backend: subprocess.Popen[bytes] | None = None
         self.backend_start: str | None = None
         self.base_url: str | None = None
+        self.api_token: str | None = None
+        self.auth_username = f"acceptance-{self.run_id.replace('-', '')}"
         self.log_path = STATE_DIR / f"{self.run_id}-backend.log"
         self.keep = False
 
@@ -454,13 +456,14 @@ class Harness:
         except OSError:
             return ""
 
-    def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> tuple[int | None, str]:
+    def _send_request(self, method: str, path: str, payload: dict[str, Any] | None = None,
+                      token: str | None = None) -> tuple[int | None, str]:
         assert self.base_url is not None
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        request = urllib.request.Request(
-            self.base_url + path, data=data,
-            headers={"Content-Type": "application/json"} if data is not None else {}, method=method,
-        )
+        headers = {"Content-Type": "application/json"} if data is not None else {}
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
+        request = urllib.request.Request(self.base_url + path, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
                 return response.status, response.read().decode("utf-8", errors="replace")
@@ -468,6 +471,31 @@ class Harness:
             return error.code, error.read().decode("utf-8", errors="replace")
         except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
             return None, f"{type(error).__name__}: {error}"
+
+    def authenticate(self) -> None:
+        if self.api_token is not None:
+            return
+        password = uuid.uuid4().hex
+        status, body = self._send_request("POST", "/auth/register", {
+            "username": self.auth_username, "password": password, "displayName": "Acceptance Harness",
+        })
+        self.check("Register acceptance user", status == 201, "HTTP 201", {"HTTP": status, "body": body})
+
+        status, body = self._send_request("POST", "/auth/login", {
+            "username": self.auth_username, "password": password,
+        })
+        self.check("Log in acceptance user", status == 200, "HTTP 200 with a bearer token", f"HTTP {status}")
+        try:
+            token = json.loads(body).get("token")
+        except (json.JSONDecodeError, AttributeError):
+            token = None
+        self.check("Read acceptance bearer token", isinstance(token, str) and bool(token),
+                   "a non-empty bearer token", "present" if token else "missing")
+        self.api_token = token
+
+    def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> tuple[int | None, str]:
+        self.authenticate()
+        return self._send_request(method, path, payload, self.api_token)
 
     def response_json(self, step: str, status: int | None, body: str, expected_status: int) -> dict[str, Any]:
         self.check(step, status == expected_status, f"HTTP {expected_status}", {"HTTP": status, "body": body})

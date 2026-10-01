@@ -130,12 +130,18 @@ public class ProjectApiService {
 
     @Transactional(readOnly = true)
     public List<ProjectResource> listProjects() {
+        Sort stableOrder = Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"));
+        if (currentUserContext.isOperator()) {
+            return projectRepository.findAll(stableOrder).stream()
+                    .map(ProjectApiService::projectResource)
+                    .toList();
+        }
+
         UUID userId = currentUserContext.require().userId();
         Set<UUID> activeProjectIds = projectMemberRepository.findByUserId(userId).stream()
                 .filter(member -> "ACTIVE".equals(member.getStatus()))
                 .map(member -> member.getId().getProjectId())
                 .collect(Collectors.toSet());
-        Sort stableOrder = Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"));
         return projectRepository.findAll(stableOrder).stream()
                 .filter(project -> activeProjectIds.contains(project.getId()))
                 .map(ProjectApiService::projectResource)

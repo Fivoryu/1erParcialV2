@@ -11,13 +11,36 @@ import org.springframework.stereotype.Component;
 public class CurrentUserContext {
 
     private final ThreadLocal<CurrentUser> currentUser = new ThreadLocal<>();
+    private final ThreadLocal<Boolean> currentOperator = new ThreadLocal<>();
 
     public void set(CurrentUser user) {
         currentUser.set(user);
+        currentOperator.remove();
+    }
+
+    public void setOperator() {
+        currentUser.remove();
+        currentOperator.set(true);
+    }
+
+    public boolean isOperator() {
+        return Boolean.TRUE.equals(currentOperator.get());
+    }
+
+    public void requireOperator() {
+        if (isOperator()) {
+            return;
+        }
+        if (currentUser.get() == null) {
+            throw unauthenticated();
+        }
+        throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "The operator principal is required.",
+                List.of(), null);
     }
 
     public void clear() {
         currentUser.remove();
+        currentOperator.remove();
     }
 
     public CurrentUser require() {
@@ -27,5 +50,10 @@ public class CurrentUserContext {
 
     public Optional<CurrentUser> optional() {
         return Optional.ofNullable(currentUser.get());
+    }
+
+    private static ApiException unauthenticated() {
+        return new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authentication is required.",
+                List.of(), null);
     }
 }

@@ -16,6 +16,28 @@ Docker y el operador nunca pide un privilegio: los dos sólo intercambian estado
 - Un diagramador accesible. Levantalo con `python tools/acceptance/acceptance.py --keep-running`, que imprime su
   URL base.
 
+## Token del operador
+
+El backend y el operador deben recibir el mismo valor en `DIAGRAMMER_OPERATOR_TOKEN`. El backend lo lee desde
+`application.yml`; si la variable está vacía o no existe, el principal de operador queda deshabilitado y esas
+rutas requieren una sesión de usuario. No hay un valor por defecto y el secreto no se guarda en archivos
+versionados.
+
+Generá el valor en la terminal desde la que vas a iniciar ambos procesos, y mantenelo fuera del repositorio:
+
+```sh
+# Linux, macOS o WSL
+export DIAGRAMMER_OPERATOR_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+
+# En PowerShell, en lugar de la línea anterior:
+$env:DIAGRAMMER_OPERATOR_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Iniciá el backend desde ese entorno para que reciba la variable; por ejemplo, el proceso lanzado por
+`tools/acceptance/acceptance.py --keep-running` la hereda. El operador también la toma del entorno. Si necesitás
+pasarla explícitamente, usá `--token "$DIAGRAMMER_OPERATOR_TOKEN"` (o `--token $env:DIAGRAMMER_OPERATOR_TOKEN`
+en PowerShell). No pongas el valor en `application.yml`, argumentos guardados en scripts ni archivos del repo.
+
 ## Cómo se corre
 
 ```sh

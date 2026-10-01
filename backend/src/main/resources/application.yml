@@ -26,6 +26,13 @@ spring:
     default-schema: diagrammer
     locations: classpath:db/migration
 
+diagrammer:
+  operator:
+    # An empty value disables the operator principal, and any request shaped like an operator
+    # credential then falls back to normal session resolution. No credential is ever committed,
+    # so this key has no default value.
+    token: ${DIAGRAMMER_OPERATOR_TOKEN:}
+
 management:
   endpoints:
     web:

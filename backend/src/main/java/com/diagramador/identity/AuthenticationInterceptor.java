@@ -3,7 +3,11 @@ package com.diagramador.identity;
 import com.diagramador.api.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.cors.CorsUtils;
@@ -19,10 +23,13 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
 
     private final IdentityService identityService;
     private final CurrentUserContext currentUserContext;
+    private final String operatorToken;
 
-    public AuthenticationInterceptor(IdentityService identityService, CurrentUserContext currentUserContext) {
+    public AuthenticationInterceptor(IdentityService identityService, CurrentUserContext currentUserContext,
+            @Value("${diagrammer.operator.token:}") String operatorToken) {
         this.identityService = identityService;
         this.currentUserContext = currentUserContext;
+        this.operatorToken = operatorToken;
     }
 
     @Override
@@ -42,6 +49,16 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
         String token = bearerToken(request.getHeader("Authorization"));
         if (token == null) {
             throw unauthenticated();
+        }
+        if (operatorToken != null && !operatorToken.isBlank()
+                && MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8),
+                        operatorToken.getBytes(StandardCharsets.UTF_8))) {
+            if (!isOperatorAllowed(request.getMethod(), path)) {
+                currentUserContext.clear();
+                throw forbiddenOperatorRequest();
+            }
+            currentUserContext.setOperator();
+            return true;
         }
         try {
             currentUserContext.set(identityService.resolve(token));
@@ -66,6 +83,42 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
         return ("POST".equalsIgnoreCase(method)
                 && (AUTH_REGISTER_PATH.equals(path) || AUTH_LOGIN_PATH.equals(path)))
                 || ACTUATOR_PATH.equals(path) || path.startsWith(ACTUATOR_PATH + "/");
+    }
+
+    // The operator must never be able to create projects, run commands, or read models.
+    private static boolean isOperatorAllowed(String method, String path) {
+        if ("GET".equalsIgnoreCase(method) && "/projects".equals(path)) {
+            return true;
+        }
+
+        String[] segments = path.split("/", -1);
+        if ("GET".equalsIgnoreCase(method) && segments.length == 4 && segments[0].isEmpty()
+                && "projects".equals(segments[1]) && isUuidPathSegment(segments[2])) {
+            return "deployments".equals(segments[3]) || "generation-targets".equals(segments[3]);
+        }
+        if ("GET".equalsIgnoreCase(method) && segments.length == 6 && segments[0].isEmpty()
+                && "projects".equals(segments[1]) && isUuidPathSegment(segments[2])
+                && "generations".equals(segments[3]) && isUuidPathSegment(segments[4])
+                && "artifacts".equals(segments[5])) {
+            return true;
+        }
+        return "POST".equalsIgnoreCase(method) && segments.length == 4 && segments[0].isEmpty()
+                && "deployments".equals(segments[1]) && isUuidPathSegment(segments[2])
+                && ("claim".equals(segments[3]) || "report".equals(segments[3])
+                        || "stop".equals(segments[3]));
+    }
+
+    private static boolean isUuidPathSegment(String segment) {
+        try {
+            return UUID.fromString(segment).toString().equalsIgnoreCase(segment);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
+    private static ApiException forbiddenOperatorRequest() {
+        return new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN",
+                "The operator principal is not allowed to access this endpoint.", List.of(), null);
     }
 
     private static String bearerToken(String authorization) {

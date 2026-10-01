@@ -107,6 +107,8 @@ class GenerationAcceptance:
         # prefix, so a token beginning with a digit would make every derived name differ from its target key.
         self.token = "t" + self.run_id.replace("-", "")[:5]
         self.base_url = base_url.rstrip("/")
+        self.api_token = None
+        self.auth_username = f"generation-{self.run_id.replace('-', '')}"
         self.keep = keep
         self.destination_count = destinations
         self.docker = shutil.which("docker")
@@ -119,12 +121,13 @@ class GenerationAcceptance:
 
     # ---------------------------------------------------------------- API
 
-    def request(self, method, path, payload=None, timeout=60):
+    def _send_request(self, method, path, payload=None, timeout=60, token=None):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        request = urllib.request.Request(
-            self.base_url + path, data=data, method=method,
-            headers={"Content-Type": "application/json", "Accept": "application/json"} if data is not None
-            else {"Accept": "application/json"})
+        headers = {"Content-Type": "application/json", "Accept": "application/json"} if data is not None \
+            else {"Accept": "application/json"}
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
+        request = urllib.request.Request(self.base_url + path, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return response.status, response.read()
@@ -134,6 +137,34 @@ class GenerationAcceptance:
             # A refused or unreachable diagrammer is an assertion failure with a readable reason, never an
             # unexpected crash: the report has to name what could not be reached.
             return None, json.dumps({"transport": f"{type(error).__name__}: {error}"}).encode("utf-8")
+
+    def authenticate(self):
+        if self.api_token is not None:
+            return
+        password = uuid.uuid4().hex
+        status, body = self._send_request("POST", "/auth/register", {
+            "username": self.auth_username, "password": password, "displayName": "Generation Acceptance",
+        })
+        require(self.results, "Register generation acceptance user", status == 201,
+                "HTTP 201", {"HTTP": status, "body": body.decode("utf-8", errors="replace")[:400]})
+
+        status, body = self._send_request("POST", "/auth/login", {
+            "username": self.auth_username, "password": password,
+        })
+        require(self.results, "Log in generation acceptance user", status == 200,
+                "HTTP 200 with a bearer token", {"HTTP": status})
+        try:
+            token = json.loads(body).get("token")
+        except (json.JSONDecodeError, AttributeError):
+            token = None
+        require(self.results, "Read generation acceptance bearer token",
+                isinstance(token, str) and bool(token), "a non-empty bearer token",
+                "present" if token else "missing")
+        self.api_token = token
+
+    def request(self, method, path, payload=None, timeout=60):
+        self.authenticate()
+        return self._send_request(method, path, payload, timeout, self.api_token)
 
     def json_request(self, method, path, payload=None, timeout=60):
         status, body = self.request(method, path, payload, timeout)

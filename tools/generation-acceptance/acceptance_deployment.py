@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import shutil
 import socket
@@ -89,6 +90,9 @@ class Harness:
     def __init__(self, base_url: str, keep: bool, operator_id: str) -> None:
         self.results: list[bool] = []
         self.run_id = str(uuid.uuid4())
+        self.auth_username = f"deployment-{self.run_id.replace('-', '')}"
+        self.api_token: str | None = None
+        self.operator_token = os.environ.get("DIAGRAMMER_OPERATOR_TOKEN", "")
         self.base_url = base_url.rstrip("/")
         self.keep = keep
         self.operator_id = operator_id
@@ -101,20 +105,50 @@ class Harness:
 
     # ---------------------------------------------------------------- API
 
-    def call(self, method: str, path: str, payload=None):
+    def _send_call(self, method: str, path: str, payload=None, token: str | None = None):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        request = urllib.request.Request(
-            self.base_url + path, data=data, method=method,
-            headers={"Content-Type": "application/json", "Accept": "application/json"} if data is not None
-            else {"Accept": "application/json"})
+        headers = {"Content-Type": "application/json", "Accept": "application/json"} if data is not None \
+            else {"Accept": "application/json"}
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
+        request = urllib.request.Request(self.base_url + path, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
-                return response.status, json.loads(response.read())
+                return response.status, response.read()
         except urllib.error.HTTPError as error:
-            return error.code, json.loads(error.read())
+            return error.code, error.read()
         except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as error:
             raise Failure(f"the diagrammer at {self.base_url} could not be reached: "
                           f"{type(error).__name__}: {error}") from error
+
+    def authenticate(self) -> None:
+        if self.api_token is not None:
+            return
+        password = uuid.uuid4().hex
+        status, body = self._send_call("POST", "/auth/register", {
+            "username": self.auth_username, "password": password, "displayName": "Deployment Acceptance",
+        })
+        require(self.results, "Register deployment acceptance user", status == 201,
+                "HTTP 201", {"HTTP": status, "body": body.decode("utf-8", errors="replace")[:400]})
+
+        status, body = self._send_call("POST", "/auth/login", {
+            "username": self.auth_username, "password": password,
+        })
+        require(self.results, "Log in deployment acceptance user", status == 200,
+                "HTTP 200 with a bearer token", {"HTTP": status})
+        try:
+            token = json.loads(body).get("token")
+        except (json.JSONDecodeError, AttributeError):
+            token = None
+        require(self.results, "Read deployment acceptance bearer token",
+                isinstance(token, str) and bool(token), "a non-empty bearer token",
+                "present" if token else "missing")
+        self.api_token = token
+
+    def call(self, method: str, path: str, payload=None):
+        self.authenticate()
+        status, body = self._send_call(method, path, payload, self.api_token)
+        return status, json.loads(body)
 
     def command(self, model_id: str, revision: int, parent: str | None, kind: str, payload, targets):
         operation = str(uuid.uuid4())
@@ -142,7 +176,8 @@ class Harness:
 
     def operator(self, *extra: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(OPERATOR), "--api", self.base_url, "--operator", self.operator_id, *extra],
+            [sys.executable, str(OPERATOR), "--api", self.base_url, "--operator", self.operator_id,
+             "--token", self.operator_token, *extra],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=OPERATOR_TIMEOUT)
 
     # ----------------------------------------------------------- Preflight

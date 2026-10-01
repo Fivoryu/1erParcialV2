@@ -91,10 +91,11 @@ def install_interrupt_handlers() -> None:
 
 
 class Operator:
-    def __init__(self, api: str, operator_id: str, poll_seconds: float) -> None:
+    def __init__(self, api: str, operator_id: str, poll_seconds: float, token: str) -> None:
         self.api = api.rstrip("/")
         self.operator_id = operator_id
         self.poll_seconds = poll_seconds
+        self.token = token
         self.docker = shutil.which("docker")
         self.maven = shutil.which("mvn")
 
@@ -102,10 +103,10 @@ class Operator:
 
     def call(self, method: str, path: str, payload=None, expect: int | None = None):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        request = urllib.request.Request(
-            self.api + path, data=data, method=method,
-            headers={"Content-Type": "application/json", "Accept": "application/json"} if data is not None
-            else {"Accept": "application/json"})
+        headers = {"Content-Type": "application/json", "Accept": "application/json"} if data is not None \
+            else {"Accept": "application/json"}
+        headers["Authorization"] = f"Bearer {self.token}"
+        request = urllib.request.Request(self.api + path, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 return response.status, response.read(), response.headers
@@ -483,6 +484,8 @@ class Operator:
 def parse_args(argv):
     parser = argparse.ArgumentParser(description="Deploy the backends an editor ordered, from the host.")
     parser.add_argument("--api", required=True, help="base URL of the running diagrammer")
+    parser.add_argument("--token", default=os.environ.get("DIAGRAMMER_OPERATOR_TOKEN"),
+                        help="operator bearer token (default: DIAGRAMMER_OPERATOR_TOKEN)")
     parser.add_argument("--operator", default=None,
                         help="this operator's identity, reported on every claim (default host-pid)")
     parser.add_argument("--once", action="store_true", help="carry out one unit of work and exit")
@@ -498,8 +501,11 @@ def default_operator_id() -> str:
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    if not args.token or not args.token.strip():
+        log("FAIL", "No operator token is available; set DIAGRAMMER_OPERATOR_TOKEN or pass --token.")
+        return 2
     install_interrupt_handlers()
-    operator = Operator(args.api, args.operator or default_operator_id(), args.poll_seconds)
+    operator = Operator(args.api, args.operator or default_operator_id(), args.poll_seconds, args.token)
 
     try:
         if args.once:
