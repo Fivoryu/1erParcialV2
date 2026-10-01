@@ -32,7 +32,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 
 | Etapa | Estado | Evidencia |
 | --- | --- | --- |
-| X1 — Oráculo del dialecto | **En verificación independiente** | `python -m pytest tools -q` = **46 pruebas, 0 fallos** (escritor y padre). El arnés **refutó dos afirmaciones mías** (§3.4). Falta el veredicto del verificador, incluida la prueba de mutación: hasta entonces no se marca cerrada |
+| X1 — Oráculo del dialecto | **Cerrada** | `python -m pytest tools -q` = **46 pruebas, 0 fallos** (escritor y padre). Verificador independiente: **6 HOLDS**, con **cuatro mutaciones** probando que las aserciones rechazan datos falsos. El arnés además **refutó dos afirmaciones mías** (§3.4) |
 | X2 — Esquema y persistencia | **Cerrada**, con un límite declarado | `mvn -o -B -f backend/pom.xml verify` = **232 pruebas, 0 fallos** (escritor y padre). Verificador independiente: **5 HOLDS**, 1 UNPROVEN que cerré inline con `git show`, y **1 FAILS que es el borde de la compuerta** —detecta deriva unilateral, no una omisión coordinada—, declarado en §5.2 |
 | X3 — Emisión del dialecto | Pendiente | Depende de X1 (oráculo) y X2 (dominio) |
 | X4 — Servicio y endpoint de exportación | Pendiente | Depende de X3 |
@@ -411,6 +411,30 @@ Se escribe al cerrar, no al planificar. Un casillero nunca se marca sobre una af
 | **X2** | `mvn -o -B -f backend/pom.xml verify` → **232 pruebas, 0 fallos**, con Flyway aplicando V10 contra PostgreSQL 16. El escritor además corrigió mi encargo: yo había dicho «desde la raíz del worktree», y la raíz no tiene `pom.xml` | El mismo comando, re-corrido por el padre → **232 pruebas, 0 fallos, BUILD SUCCESS** en 3:32 | **No evaluable**, y por un motivo **distinto** del de X1: ahora `schema-incompatible`, «no sanitized stderr diagnostic is available». O sea que el evaluador no falla por mi estado de trabajo: **no puede correr en este repositorio** | **Sí, por la vía de riesgo alto**, `gentle-ai-verify` sobre el esquema, con derivación **independiente** de las columnas desde la autoridad y prueba de mutación sobre la compuerta |
 
 #### Veredictos de los verificadores independientes
+
+**X1 — el oráculo del dialecto.** Seis puntos. El verificador contrastó los hechos contra un probe propio sobre los bytes del fixture, y después **sometió las aserciones a mutaciones** en vez de creerles:
+
+| # | Punto | Veredicto |
+| --- | --- | --- |
+| 1 | Identidad del fixture: 91.440 bytes, `windows-1252`, sha256 pinneado | **HOLDS** |
+| 2 | Enumeración **exhaustiva** de los `Path=`: 7 vacíos, 1 con `622:-260$`, y exactamente 8 apariciones en todo el documento | **HOLDS** |
+| 3 | `Mode`/`SOID`/`EOID` en **`style`** y ausentes de **`geometry`**; los anclajes resuelven a `Usuario` y `Cliente` | **HOLDS** |
+| 4 | Estructura y recuentos: hijos de `Extension` 11/8/1/1/1, `<connectors>` hijo directo y no dentro de `diagram`, 18 colocaciones = 10 figuras + 8 conectores, 16 roles = 8 source + 8 target, los 18 subjects resueltos, `uml:Model` sin `xmi:id` | **HOLDS** |
+| 5 | Que las aserciones **rechacen datos falsos** | **HOLDS** — cuatro mutaciones, cuatro rechazos |
+| 6 | Geometría agregada (18) y particionada (10 + 8) | **HOLDS** |
+
+**La quinta es la que valía el costo**, porque era el modo de falla declarado: un arnés que pasa y no puede fallar. Las cuatro mutaciones se hicieron sobre **copias en un directorio temporal, fuera del repositorio**, y las cuatro fueron rechazadas por una prueba distinta:
+
+| Mutación | Qué pasó |
+| --- | --- |
+| `Path=622:-260$` → `Path=623:-260$` | Falló la prueba de partición de colocaciones y resolución de subjects |
+| `SOID=4C5579B1` → `SOID=4C5579B2` | Falló la prueba de anclajes: dejó de coincidir con el `DUID` de una figura |
+| Agregar `Mode`/`EOID`/`SOID` **también** a `geometry` | Falló la aserción que exige su **ausencia** en ese atributo |
+| Quitar un registro `<connector>` de `Extension/connectors` | Falló la prueba de estructura, que observó 7 en vez de 8 |
+
+**Lo que el verificador declaró NO verificado**, y coincido: el significado de la gramática de `Path` —una muestra no dice si las coordenadas son absolutas o relativas, que es justo por qué X-4 emite vacío— y la interoperabilidad con EA en vivo, que es GAP-07.
+
+**Y una falla de orquestación que me costó tiempo muerto.** El resultado de este verificador **nunca llegó como notificación de cierre**, aunque el proceso había terminado: lo tuve que traer a mano cuando el usuario me preguntó por qué tardaba. Los otros cuatro cierres sí llegaron. Consecuencia declarada: **una notificación de cierre puede perderse**, así que antes de cerrar un turno esperando trabajo ajeno corresponde **una** consulta de estado por tarea en vuelo, que no es sondear en bucle sino mirar una vez en el borde.
 
 **X2 — esquema y persistencia.** Seis puntos. El verificador **derivó las columnas por su cuenta desde la autoridad** en vez de leer la prueba y darle la razón, que era el único modo de cazar el riesgo de omisión compartida:
 
