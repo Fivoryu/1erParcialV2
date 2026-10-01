@@ -62,6 +62,7 @@ CREATE TYPE exchange_direction AS ENUM ('IMPORT', 'EXPORT');
 CREATE TYPE exchange_status AS ENUM ('SUCCESS', 'PARTIAL', 'FAILED');
 CREATE TYPE generation_state AS ENUM ('PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED');
 CREATE TYPE verification_state AS ENUM ('PASSED', 'FAILED', 'NOT_RUN');
+CREATE TYPE deployment_state AS ENUM ('PENDING', 'RUNNING', 'UP', 'FAILED', 'STOPPING', 'STOPPED');
 CREATE TYPE conflict_state AS ENUM ('OPEN', 'RESOLVED', 'DISMISSED');
 CREATE TYPE collision_state AS ENUM ('OPEN', 'RESOLVED');
 CREATE TYPE target_type AS ENUM ('CLASSIFIER', 'ATTRIBUTE', 'OPERATION', 'PARAMETER', 'RELATIONSHIP', 'RELATIONSHIP_END', 'CONSTRAINT', 'DIAGRAM_VIEW');
@@ -483,7 +484,31 @@ CREATE TABLE verification_result (
 );
 
 -- ---------------------------------------------------------------------------
--- 8. Auditoría (append-only lógico)
+-- 8. Despliegue del backend generado
+-- ---------------------------------------------------------------------------
+CREATE TABLE deployment (
+    deployment_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id             UUID NOT NULL REFERENCES generation_run(run_id) ON DELETE CASCADE,
+    target_id          UUID NOT NULL REFERENCES generation_target(target_id) ON DELETE CASCADE,
+    state              deployment_state NOT NULL DEFAULT 'PENDING',
+    http_host_port     INT NOT NULL,                  -- published on every interface: a client on the network uses it
+    postgres_host_port INT NOT NULL,                  -- published on 127.0.0.1 only
+    compose_project    VARCHAR(128),                  -- Compose project name reported by the operator; never a host path
+    operator_id        VARCHAR(128),                  -- which operator holds the claim
+    failure_code       VARCHAR(64),
+    failure_message    VARCHAR(1024),                 -- sanitized: credentials never reach this column
+    requested_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at         TIMESTAMPTZ,
+    finished_at        TIMESTAMPTZ,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_deployment_ports CHECK (http_host_port BETWEEN 1024 AND 65535
+                                       AND postgres_host_port BETWEEN 1024 AND 65535)
+);
+
+COMMENT ON TABLE deployment IS 'One generated backend running on this machine. It is tied to an exact generation run, never to the latest run of its destination, so the bytes that ended up deployed are always the frozen artifact. The ports live on the machine and not in the model, so an active port pair and an active deployment per destination are unique across every model.';
+
+-- ---------------------------------------------------------------------------
+-- 9. Auditoría (append-only lógico)
 -- ---------------------------------------------------------------------------
 CREATE TABLE audit_log (
     audit_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -528,3 +553,8 @@ CREATE INDEX idx_run_model            ON generation_run(model_id, state);
 CREATE INDEX idx_run_target           ON generation_run(target_id, version_id, state);
 CREATE INDEX idx_artifact_run         ON generated_artifact(run_id);
 CREATE INDEX idx_verification_run     ON verification_result(run_id);
+CREATE INDEX idx_deployment_run       ON deployment(run_id);
+CREATE INDEX idx_deployment_state     ON deployment(state);
+CREATE UNIQUE INDEX uq_deployment_active_target        ON deployment(target_id) WHERE state IN ('PENDING', 'RUNNING', 'UP', 'STOPPING');
+CREATE UNIQUE INDEX uq_deployment_active_http_port     ON deployment(http_host_port) WHERE state IN ('PENDING', 'RUNNING', 'UP', 'STOPPING');
+CREATE UNIQUE INDEX uq_deployment_active_postgres_port ON deployment(postgres_host_port) WHERE state IN ('PENDING', 'RUNNING', 'UP', 'STOPPING');

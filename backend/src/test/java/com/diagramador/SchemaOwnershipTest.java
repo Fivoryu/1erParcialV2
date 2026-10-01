@@ -3,6 +3,7 @@ package com.diagramador;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.DeploymentState;
 import com.diagramador.domain.GenerationState;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
@@ -11,11 +12,14 @@ import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.SeverityKind;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.VerificationState;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -78,7 +82,10 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("generated_artifact", Set.of("artifact_id", "run_id", "path", "kind", "content_hash", "uri",
                     "size_bytes")),
             Map.entry("verification_result", Set.of("verification_id", "run_id", "check_name", "state", "evidence",
-                    "evidence_hash", "tool_name", "started_at", "finished_at", "created_at")));
+                    "evidence_hash", "tool_name", "started_at", "finished_at", "created_at")),
+            Map.entry("deployment", Set.of("deployment_id", "run_id", "target_id", "state", "http_host_port",
+                    "postgres_host_port", "compose_project", "operator_id", "failure_code", "failure_message",
+                    "requested_at", "started_at", "finished_at", "updated_at")));
 
     private static final Set<String> TABLES_RESERVED_FOR_LATER_TASKS = Set.of(
             "invitation", "model_conflict",
@@ -110,7 +117,10 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("template_version", Set.of()),
             Map.entry("generation_run", Set.of("idx_run_model", "idx_run_target")),
             Map.entry("generated_artifact", Set.of("idx_artifact_run")),
-            Map.entry("verification_result", Set.of("idx_verification_run")));
+            Map.entry("verification_result", Set.of("idx_verification_run")),
+            Map.entry("deployment", Set.of("idx_deployment_run", "idx_deployment_state",
+                    "uq_deployment_active_target", "uq_deployment_active_http_port",
+                    "uq_deployment_active_postgres_port")));
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -128,7 +138,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2", "3", "4", "5");
+                .contains("1", "2", "3", "4", "5", "6");
     }
 
     @Test
@@ -172,6 +182,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertColumnType("model_command", "authorization_classification", "authorization_classification");
         assertColumnType("generation_run", "state", "generation_state");
         assertColumnType("verification_result", "state", "verification_state");
+        assertColumnType("deployment", "state", "deployment_state");
     }
 
     @Test
@@ -188,6 +199,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertEnumLabels("authorization_classification", com.diagramador.command.AuthorizationClassification.class, 5);
         assertEnumLabels("generation_state", GenerationState.class, 4);
         assertEnumLabels("verification_state", VerificationState.class, 3);
+        assertEnumLabels("deployment_state", DeploymentState.class, 6);
     }
 
     @Test
@@ -211,9 +223,73 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         }
     }
 
+    /** The states the partial unique indexes hold against, read out of PostgreSQL itself. */
+    private static final Pattern QUOTED_STATE = Pattern.compile("'([A-Z_]+)'");
+
+    /**
+     * {@link DeploymentState#isActive()} and the three partial unique indexes must describe the same states.
+     *
+     * <p>One lives in Java and the other in SQL. A state added to only one of them would quietly stop protecting
+     * the destination and the host port pair, which is exactly the invariant this table exists for, so the drift
+     * fails here instead of at a deployment.
+     */
     @Test
-    void citextAndTimestamptzKeepTheirPhysicalType() {
-        assertColumnType("user_account", "email", "citext");
+    void activeDeploymentStatesAgreeBetweenJavaAndThePartialIndexes() {
+        List<String> javaStates = Arrays.stream(DeploymentState.values())
+                .filter(DeploymentState::isActive)
+                .map(Enum::name)
+                .toList();
+        assertThat(javaStates).isNotEmpty();
+
+        List<String> definitions = jdbcTemplate.queryForList(
+                "SELECT pg_get_indexdef(index_relation.oid) FROM pg_class index_relation "
+                        + "JOIN pg_namespace index_namespace ON index_namespace.oid = index_relation.relnamespace "
+                        + "WHERE index_namespace.nspname = 'diagrammer' "
+                        + "AND index_relation.relname LIKE 'uq_deployment_active%' "
+                        + "ORDER BY index_relation.relname",
+                String.class);
+        assertThat(definitions).as("the three partial unique indexes of diagrammer.deployment").hasSize(3);
+
+        for (String definition : definitions) {
+            List<String> sqlStates = new ArrayList<>();
+            Matcher matcher = QUOTED_STATE.matcher(definition);
+            while (matcher.find()) {
+                sqlStates.add(matcher.group(1));
+            }
+            assertThat(sqlStates).as("active states in: %s", definition)
+                    .containsExactlyInAnyOrderElementsOf(javaStates);
+        }
+    }
+
+    /** Fragments that would mean a deployment row can hold a credential or a location on this machine. */
+    private static final Pattern FORBIDDEN_DEPLOYMENT_COLUMN = Pattern.compile(
+            "(?i)(password|passwd|pwd|secret|token|credential|private[_-]?key|api[_-]?key|vault|connection|"
+                    + "uri|url|path|directory|dir|volume|mount)");
+
+    /**
+     * A deployment row must never be able to hold a credential or a path on this machine.
+     *
+     * <p>The operator is the one that keeps the working directory and the {@code .env}, and it reports back only
+     * a Compose project name and, on failure, a sanitized reason. This guard fails if a later change gives a
+     * deployment column a name that could carry either one.
+     */
+    @Test
+    void deploymentHasNoCredentialOrHostPathColumn() {
+        List<String> columns = jdbcTemplate.queryForList(
+                "SELECT column_name FROM information_schema.columns "
+                        + "WHERE table_schema = 'diagrammer' AND table_name = 'deployment' ORDER BY column_name",
+                String.class);
+        assertThat(columns).as("the columns of diagrammer.deployment").isNotEmpty();
+
+        for (String column : columns) {
+            assertThat(FORBIDDEN_DEPLOYMENT_COLUMN.matcher(column).find())
+                    .as("column diagrammer.deployment.%s must not name a credential or a host path", column)
+                    .isFalse();
+        }
+    }
+
+    @Test
+    void citextAndTimestamptzKeepTheirPhysicalType() {        assertColumnType("user_account", "email", "citext");
 
         List<String> dataTypes = jdbcTemplate.queryForList(
                 "SELECT data_type FROM information_schema.columns WHERE table_schema = 'diagrammer' AND table_name = 'user_account' AND column_name = 'created_at'",
