@@ -132,6 +132,18 @@ casos que ya costaron una vuelta: `ProjectApiService` (C27), el `application.yml
 los cinco el escritor se detuvo en lugar de inventar alcance, que es lo correcto: el costo lo pagó el padre por no
 derivar la lista.
 
+**Regla de la concesión y del presupuesto de tiempo** (aprendida en C10, y aplica a las 15 unidades que quedan):
+
+- El sobre de concesión que emite el START **vence a los 10 minutos sin respuesta**. Si vence, el START **no crea linaje**
+  (`lineage_created: false`, `mutation_performed: false`) y su diagnóstico dice exactamente qué hacer: volver a correr START
+  para obtener un sobre fresco. Nunca se reenvía el binding vencido, y no hay que presentarle nada al usuario en ese caso:
+  no hubo concesión que contestar.
+- La corrida del revisor puede morir por **presupuesto agregado de tiempo** (`native-status-failed`,
+  *"The negotiated review operation exceeded its aggregate time budget"*, `mutation_performed: false`). No se repite a
+  ciegas: se consulta **STATUS fresco**, y si el estado y la revisión no cambiaron y el slot sigue abierto con el mismo
+  binding y sin artefacto admitido, corresponde un **intento nuevo** sobre ese slot —que no es reenviar un resultado
+  preparado, porque no hubo ninguno—. En C10 el primer intento murió así y el segundo admitió el artefacto.
+
 ### S1 — Identidad, sesión y autorización (login propio)
 
 | # | Tarea | Evidencia que la cierra |
@@ -159,7 +171,39 @@ Exigir token rompió a los dos clientes que **no** son usuarios, y la suite Java
 | --- | --- | --- |
 | C8 | Migración `V8__invitations.sql`: tabla `invitation` del físico **más la columna `role`** que falta | Migración y prueba de esquema |
 | C9 | `InvitationService` y endpoints: invitar, listar, aceptar, revocar, cambiar rol; duplicado informado; revocar no borra historial | Integración de los cinco caminos y del duplicado |
-| C10 | Web: panel de integrantes con roles, invitar, aceptar y revocar | Pruebas de componente y lint |
+| C10 | Web: panel de integrantes con roles, invitar, aceptar y revocar | Pruebas de componente y lint; **cerrada** en `c4b5581` (ver *S2 progreso*) |
+
+### S2 progreso — C10 cerrada (2026-10-01)
+
+**Commit:** `c4b5581` — *feat(web): manage project members and answer invitations* (17 archivos, +1133/−4).
+
+**Revisión nativa:** linaje `review-b2e13cc0aa5260e6`, tier `medium`, **una** lente (`review-reliability`, orden 0), 17 caminos,
+1137 líneas cambiadas, presupuesto de corrección 200. Cerró **aprobada** y su autoridad quedó **quemada**
+(`burn_evidence: gentle-ai.review-acknowledged/v1`). El artefacto admitido del revisor: prompt 66.805 bytes, resultado 975 bytes.
+El sobre cerró `approved` **sin abrir corrección**, así que no hay hallazgo que citar: el texto del hallazgo de la lente no se
+expuso y no se inventa.
+
+**Medido al cerrar** (por el padre, y repetido por un verificador independiente que corrió los comandos él mismo):
+`npm run lint` 0 errores · `npm test` **111 pasadas, 4 omitidas**, 13 archivos · `npm run build` exit 0 ·
+`mvn -o -B -f backend/pom.xml verify` **248 pruebas, 0 fallos, 0 errores, 0 omitidas** (la línea base de C9 era 232).
+
+**Dos defectos propios, encontrados por la verificación independiente ANTES de la revisión** y corregidos dentro del mismo candidato
+(por eso **no** quedaron como hallazgos del revisor; se registran acá atribuidos a esta sesión):
+
+1. El selector de rol de un integrante ofrecía **Owner**, y `InvitationApiService.assignableRole` lo rechaza **siempre** con
+   `400 INVALID_PAYLOAD`. Ahora el selector sólo ofrece Editor/Viewer y el tipo compartido
+   `AssignableRole = Exclude<MemberRole,'OWNER'>` hace imposible producir ese valor. Es falsable: restaurar la opción
+   `<option value="Owner">` rompe `MembersPanel.test.tsx`.
+2. `EditorCorsConfig` sólo permitía `GET`, `POST` y `OPTIONS`, y C10 es el **primer** código del cliente que usa `PATCH` y `DELETE`
+   (`updateProjectMemberRole`, `removeProjectMember`): en el modo de API directa (`VITE_API_BASE_URL`) el preflight del navegador
+   rechazaba los dos verbos. Se sumaron y se fijaron con `EditorCorsPreflightTest` (preflight real por MockMvc; quitar `PATCH` de la
+   configuración hace fallar la suite; control negativo: `PUT` no está permitido).
+
+   En el mismo paso, `InvitationResource.inviteeUsername` e `inviteeDisplayName` pasaron a `string | null`, que es lo que el mapeador
+   del servidor devuelve cuando la invitación no tiene invitado.
+
+**Límite declarado:** cuando los dos campos del invitado vienen nulos, el encabezado de la fila queda vacío en lugar de fallar; está
+leído en la fuente, **no** ejercitado por una prueba.
 
 ### S3 — Tiempo real: SSE, presencia y sincronización
 
