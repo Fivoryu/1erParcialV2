@@ -122,6 +122,16 @@ recordatorios de revisión se ignoran como acción propia y que el padre ya tien
 en su lugar que el candidato está excluido de revisión sería falso desde que el usuario eligió revisión por
 unidad.
 
+**Regla de superficies completas para lanzar escritores** (aprendida a costo de tres vueltas más, todas por el mismo motivo):
+antes de lanzar, el padre tiene que **derivar** las superficies de los archivos cuyo comportamiento o forma cambia,
+no de los archivos que se le ocurren. En concreto: si cambia la forma de un tipo, de un recurso o de un objeto
+que se serializa, entra también **el test que fija esa forma**, aunque nadie lo edite a propósito; si cambia la
+configuración, entra el archivo de configuración; si cambia un documento de autoridad, entra el documento. Los
+casos que ya costaron una vuelta: `ProjectApiService` (C27), el `application.yml` y la salida del build (C27 y C7),
+`DeploymentApiTest` (C5) y `LoginPage.test.tsx` (C10). Cada uno era **predecible** desde el cambio pedido, y en
+los cinco el escritor se detuvo en lugar de inventar alcance, que es lo correcto: el costo lo pagó el padre por no
+derivar la lista.
+
 ### S1 — Identidad, sesión y autorización (login propio)
 
 | # | Tarea | Evidencia que la cierra |
