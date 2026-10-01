@@ -109,6 +109,17 @@ textarea:focus-visible {
   transition: color 140ms ease;
 }
 
+.topbar-account {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.topbar-account strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .topbar-link:hover,
 .text-button:hover {
   color: var(--accent-dark);
@@ -118,6 +129,43 @@ textarea:focus-visible {
   width: min(1120px, calc(100% - 48px));
   margin: 0 auto;
   padding: 64px 0 32px;
+}
+
+.auth-content {
+  width: min(480px, calc(100% - 48px));
+  padding-top: clamp(48px, 10vh, 96px);
+}
+
+.auth-panel {
+  padding: 32px;
+}
+
+.auth-panel h1 {
+  margin-bottom: 8px;
+  font-size: clamp(30px, 5vw, 38px);
+}
+
+.auth-form {
+  margin-top: 26px;
+}
+
+.auth-field-hint {
+  margin: -12px 0 17px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.auth-error {
+  margin-top: 18px;
+  margin-bottom: -8px;
+}
+
+.auth-mode-switch {
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
 }
 
 .page-heading {
@@ -644,6 +692,26 @@ h3 {
 
   .topbar-note {
     font-size: 10px;
+  }
+
+  .topbar-account {
+    gap: 10px;
+  }
+
+  .topbar-account .topbar-note {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .auth-content {
+    width: calc(100% - 36px);
+    padding-top: 42px;
+  }
+
+  .auth-panel {
+    padding: 22px;
   }
 
   .content-wrap,

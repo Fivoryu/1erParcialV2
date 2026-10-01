@@ -14,8 +14,13 @@ import type {
   OperationEnvelope,
   OperationOutcomeResource,
   ProjectResource,
+  RegisterRequest,
+  LoginRequest,
+  LoginResponse,
+  UserResource,
   Uuid,
 } from './types';
+import { clearSession, getAuthorizationHeaderValue } from './session';
 
 export class ApiTransportError extends Error {
   readonly kind = 'transport';
@@ -79,6 +84,10 @@ function classifyCommandResult(result: CommandResult): CommandOutcome {
 }
 
 export interface ApiClient {
+  register(request: RegisterRequest): Promise<UserResource>;
+  login(request: LoginRequest): Promise<LoginResponse>;
+  logout(): Promise<void>;
+  me(): Promise<UserResource>;
   createProject(request: CreateProjectRequest): Promise<ProjectResource>;
   listProjects(): Promise<ProjectResource[]>;
   getProject(projectId: Uuid): Promise<ProjectResource>;
@@ -113,14 +122,35 @@ export function createApiClient(
 ): ApiClient {
   const base = baseUrl.replace(/\/+$/, '');
 
+  function authorizedInit(path: string, init?: RequestInit): RequestInit {
+    const headers = new Headers(init?.headers);
+    if (path === '/auth/login' || path === '/auth/register') {
+      headers.delete('Authorization');
+    } else {
+      const authorization = getAuthorizationHeaderValue();
+      if (authorization) {
+        headers.set('Authorization', authorization);
+      }
+    }
+    return { ...init, headers };
+  }
+
+  function clearSessionOnUnauthorized(path: string, response: Response): void {
+    if (response.status === 401 && path !== '/auth/login' && path !== '/auth/register') {
+      clearSession();
+    }
+  }
+
   async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     let response: Response;
     try {
-      response = await fetcher(`${base}${path}`, init);
+      response = await fetcher(`${base}${path}`, authorizedInit(path, init));
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
       throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
     }
+
+    clearSessionOnUnauthorized(path, response);
 
     let body: unknown = null;
     try {
@@ -148,12 +178,13 @@ export function createApiClient(
     const path = `/projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(runId)}/artifacts`;
     let response: Response;
     try {
-      response = await fetcher(`${base}${path}`, { method: 'GET' });
+      response = await fetcher(`${base}${path}`, authorizedInit(path, { method: 'GET' }));
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
       throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
     }
 
+    clearSessionOnUnauthorized(path, response);
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       throw transportErrorFromBody(body, response.status);
@@ -180,6 +211,18 @@ export function createApiClient(
   }
 
   return {
+    register(request) {
+      return postJson<UserResource>('/auth/register', request);
+    },
+    login(request) {
+      return postJson<LoginResponse>('/auth/login', request);
+    },
+    async logout() {
+      await requestJson<unknown>('/auth/logout', { method: 'POST' });
+    },
+    me() {
+      return requestJson<UserResource>('/auth/me');
+    },
     createProject(request) {
       return postJson<ProjectResource>('/projects', request);
     },

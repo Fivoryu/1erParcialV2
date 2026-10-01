@@ -6,6 +6,31 @@ export interface ProjectResource {
   description: string | null;
 }
 
+export interface UserResource {
+  id: Uuid;
+  username: string;
+  displayName: string;
+  email: string | null;
+}
+
+export interface RegisterRequest {
+  username: string;
+  password: string;
+  displayName: string;
+  email?: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  expiresAt: string;
+  user: UserResource;
+}
+
 export interface CreateProjectRequest {
   name: string;
   description: string | null;

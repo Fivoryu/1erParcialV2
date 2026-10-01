@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ApiTransportError, createApiClient } from '../api/client';
+import { clearSession, loadSession } from '../api/session';
 import type { ProjectResource } from '../api/types';
+import LoginPage from './LoginPage';
 
 const api = createApiClient();
 
@@ -14,15 +16,23 @@ function messageFor(error: unknown): string {
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
+  const session = loadSession();
   const [projects, setProjects] = useState<ProjectResource[]>([]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
+    if (!loadSession()) {
+      setLoading(false);
+      return () => {
+        active = false;
+      };
+    }
 
     void api.listProjects()
       .then((items) => {
@@ -47,6 +57,22 @@ export default function ProjectsPage() {
     };
   }, []);
 
+  async function handleLogout(): Promise<void> {
+    if (loggingOut) {
+      return;
+    }
+
+    setLoggingOut(true);
+    try {
+      await api.logout();
+    } catch {
+      // Remove the local credential even if the server cannot complete logout.
+    } finally {
+      clearSession();
+      navigate('/', { replace: true });
+    }
+  }
+
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedName = name.trim();
@@ -69,6 +95,10 @@ export default function ProjectsPage() {
     }
   }
 
+  if (!session) {
+    return <LoginPage />;
+  }
+
   return (
     <main className="page-shell">
       <header className="topbar">
@@ -76,7 +106,12 @@ export default function ProjectsPage() {
           <span className="brand-mark" aria-hidden="true">C</span>
           <span>Class Diagrammer</span>
         </Link>
-        <span className="topbar-note">UML 2.5 workspace</span>
+        <div className="topbar-account">
+          <span className="topbar-note">Signed in as <strong>{session.displayName}</strong></span>
+          <button className="text-button" disabled={loggingOut} onClick={() => void handleLogout()} type="button">
+            {loggingOut ? 'Signing out…' : 'Log out'}
+          </button>
+        </div>
       </header>
 
       <div className="content-wrap">
