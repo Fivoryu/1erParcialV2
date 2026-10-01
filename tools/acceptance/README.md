@@ -14,7 +14,7 @@ cd backend && mvn -o -B package
 
 El recorrido crea un proyecto, dos clasificadores, un atributo, una operación y una asociación por HTTP; guarda los rectángulos de ambos clasificadores y los waypoints de la relación; luego vuelve a leer el modelo. Compara los campos enviados con el modelo persistido —incluidos tipos, visibilidad, abstractitud, extremos y multiplicidades, y geometrías—, informa los conteos antes y después de la relectura y calcula el SHA-256 del JSON recuperado. El conteo de elementos incluye clasificadores, atributos, operaciones, relaciones y extremos; el de geometría suma rectángulos y waypoints. No usa el frontend.
 
-Por defecto, al terminar (también ante un error o Ctrl-C) detiene el backend y elimina únicamente el contenedor creado por esa ejecución. Verifica ambos resultados y que el conteo total de contenedores vuelva al valor inicial.
+Por defecto, al terminar (también ante un error o Ctrl-C) detiene el backend y elimina únicamente el contenedor creado por esa ejecución. Verifica ambos resultados y que **no quede ningún contenedor propio de la corrida**: la comprobación se hace por el identificador fijado y por la etiqueta `gentle-ai.acceptance.run`, no por el conteo total de la máquina, porque este host Docker es compartido con otros proyectos y su movimiento no es responsabilidad de esta corrida.
 
 Para dejar backend y base disponibles mientras se desarrolla el editor:
 

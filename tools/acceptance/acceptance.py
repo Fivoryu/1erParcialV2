@@ -647,13 +647,14 @@ class Harness:
 
     def keep_services(self) -> None:
         assert self.container_id is not None and self.backend is not None and self.containers_before is not None
-        ids = container_ids(self.docker_executable)
-        count = len(ids)
-        expected_count = self.containers_before + 1
-        alive = self.backend.poll() is None and self.container_id in ids
-        self.check("Keep-running resource verification", alive and count == expected_count,
-                   {"container present": True, "backend running": True, "container count": expected_count},
-                   {"container present": self.container_id in ids, "backend exit": self.backend.poll(), "container count": count})
+        # Ownership, not the machine total: other projects share this Docker host, and their churn is not
+        # this run's business. The pinned container id and the run label are what this run is accountable for.
+        owned = owned_container_ids(self.docker_executable, self.run_id)
+        alive = self.backend.poll() is None and set(owned) == {self.container_id}
+        self.check("Keep-running resource verification", alive,
+                   {"container present": True, "backend running": True, "owned containers": [self.container_id]},
+                   {"container present": self.container_id in owned, "backend exit": self.backend.poll(),
+                    "owned containers": owned, "machine containers before": self.containers_before})
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         manifest = {
             "runId": self.run_id, "status": "running", "containerId": self.container_id,
@@ -714,11 +715,14 @@ class Harness:
             self.record("Verify no acceptance container survived", False, "pinned container ID and run label are absent", str(error))
         try:
             after = container_count(self.docker_executable)
-            self.record("Verify container count returned to baseline",
-                        self.containers_before is not None and after == self.containers_before,
-                        self.containers_before, after)
+            # Other projects share this Docker host, so a container removed by something else must not fail
+            # this run. What this run can cause is an accumulation; the run-owned check above is what pins a
+            # leak precisely, by container id and by run label.
+            self.record("Verify no container accumulated on the machine",
+                        self.containers_before is not None and after <= self.containers_before,
+                        f"at most {self.containers_before} containers", after)
         except Exception as error:
-            self.record("Verify container count returned to baseline", False, self.containers_before, str(error))
+            self.record("Verify no container accumulated on the machine", False, self.containers_before, str(error))
         pid = self.backend.pid if self.backend is not None else None
         absent_process, evidence = backend_run_processes_absent(
             self.run_id, pid, self.backend_start, self.backend,
@@ -928,11 +932,14 @@ def stop_keep_running(run_id: str) -> int:
 
     try:
         after = container_count(executable)
-        expected_count: Any = before - (1 if present else 0) if before is not None and present is not None else "unverifiable"
-        count_ok = before is not None and present is not None and after == expected_count
+        # Other projects share this Docker host, and cleanup only ever removes this run's container, so the
+        # machine must not end up with more containers than it started with. An unrelated project removing one
+        # of its own must not fail this run; the run-owned check below pins a real leak precisely.
+        count_ok = before is not None and after <= before
+        expected_count: Any = f"at most {before} containers"
     except Exception as error:
-        after, expected_count, count_ok = str(error), "count changes only by the removed container", False
-    report(results, "Verify container count after cleanup", count_ok, expected_count, after)
+        after, expected_count, count_ok = str(error), "at most the count before cleanup", False
+    report(results, "Verify no container accumulated after cleanup", count_ok, expected_count, after)
     process_absent, process_evidence = backend_run_processes_absent(run_id, pid, start_token)
     report(results, "Verify no backend process survived cleanup", stopped and process_absent,
            f"no process carrying -Dacceptance.runId={run_id} remains",
@@ -993,7 +1000,7 @@ def main(argv: list[str] | None = None) -> int:
     if harness.keep:
         print("Services remain running by request; use the printed --stop command when finished.", flush=True)
     elif failed == 0:
-        print("Backend process exited; acceptance container removed; container count verified at baseline.", flush=True)
+        print("Backend process exited; acceptance container removed; no run-owned resource survived.", flush=True)
     return 0 if failed == 0 else 1
 
 
