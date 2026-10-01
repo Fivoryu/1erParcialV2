@@ -607,3 +607,34 @@ En cualquier desenlace, **el round-trip contra EA en vivo no se declara verifica
 | CU-17 (exportar modelo XMI) | Modelo válido como precondición, pérdidas reportadas, archivo identificado por perfil |
 | Q3 (prueba de round-trip) | Aporta el round-trip **dentro de la app**; contra EA en vivo queda como GAP-07 |
 | RNF-01, RNF-04, RNF-06 | Determinismo de la emisión, rechazo de entrada inválida, y el reporte como salida observable |
+
+## 9. Integración con la sesión de Incremento 3
+
+La sesión hermana (`01a0f8fe`, rama `feat/incremento-3-colaboracion`, worktree principal, mismo clon) avisó al cerrar
+su C10. Tres hechos que afectan la consolidación, tomados de su aviso y no supuestos:
+
+1. **`web/src/pages/ProjectEditorPage.tsx`** — su cambio es un `import` más una línea de JSX
+   (`<MembersPanel projectId={project.id} />`, entre el contenedor del lienzo y `<GenerationPanel>`). Cuando yo
+   agregue el panel de XMI, la fusión es **de los dos**, y ninguno de los dos toca nada más de ese archivo.
+2. **`EditorCorsConfig`** — ahora permite `GET, POST, PATCH, DELETE, OPTIONS` (antes solo `GET, POST, OPTIONS`). Mis
+   endpoints son GET y POST, así que no me cambia nada; su C10 fue el primero en usar PATCH y DELETE.
+3. **`web/vite.config.ts`** — cada prefijo de primer nivel necesita su entrada, y `/projects` ya está, que es el mío
+   (`/projects/{projectId}/xmi/...`). **No hay que tocarlo.** Vale la pena recordar por qué: un prefijo faltante da
+   **404 silencioso en desarrollo con el build en verde**, que ya les pasó con `/deployments` y `/invitations`.
+
+Y una frontera de propiedad que hay que respetar: el paquete `com.diagramador.collaboration` es **suyo** (C11,
+`ProjectEventBus` y `GET /projects/{id}/events`). Ahí vive `EditingLeaseService`, que es exactamente lo que mi X4
+tiene que llamar en la consolidación para la guarda `requireExportAllowed`. O sea: la integración pendiente
+declarada en §2 **no se implementa por duplicado, se llama**, y hay que leer su firma real en vez de inventarla.
+
+Dos reglas de proceso que su experiencia aporta, y que aplican a cualquier corrida de revisión nativa mía:
+
+- El sobre de concesión del START **vence a los 10 minutos** sin respuesta, y al vencer **no crea linaje**. Hay que
+  volver a correr START; nunca reenviar el binding viejo.
+- Si la corrida del revisor muere por presupuesto agregado de tiempo, hay que consultar **STATUS fresco** antes de
+  reintentar, no reintentar a ciegas.
+
+Y un dato que puede ahorrarle un susto a cualquiera que corra `mvn verify` en este repositorio: la salida incluye
+líneas con `T8_INCOMPLETE`, `FAILED` y `NOT_RUN` que son **telemetría preexistente** de
+`GenerationIdentityServiceTest`, ajena a la unidad que se esté midiendo. El veredicto se lee en los totales de
+pruebas, no en esas líneas.
