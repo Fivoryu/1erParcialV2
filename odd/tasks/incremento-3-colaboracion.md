@@ -43,7 +43,7 @@ en el Incremento 5.
 
 | Fuera | Motivo |
 | --- | --- |
-| Importación XMI (CU-16) | El usuario pidió **exportación** para poder bloquearla. La importación trae el problema inverso (normalización, literales de enumeración en `ownedAttribute`, navegabilidad sólo en la extensión) y **duplicaría el tamaño** de la etapa XMI. Se declara como frontera: el dialecto ya está caracterizado y el importador tiene contrato |
+| Importación XMI (CU-16) | **Entró al incremento por encargo del usuario a la sesión `01a0f830`**, después de que este plan la declarara fuera de alcance. Esa sesión la implementa en su propio worktree; ver S6 y S6b. El límite que no cambia: el round-trip contra Enterprise Architect en vivo sigue sin poder verificarse (GAP-07) |
 | Round-trip contra EA en vivo (Q3) | **GAP-07**: el servidor de EA no responde desde este entorno. Se exporta y se mide la pérdida contra el fixture; el round-trip sigue sin poder verificarse |
 | Offline y reconciliación de conflictos (CU-15) | Es su propia unidad: requiere outbox local, clasificación pre/post revocación y panel de conflictos. Este incremento sincroniza **online** y declara la frontera |
 | `model_conflict` / `name_collision` como panel | El esquema ya los tiene, pero el pedido no los toca. La sincronización de este incremento publica lo **aceptado**; lo rechazado sigue rechazándose con diagnóstico, sin panel nuevo |
@@ -144,13 +144,74 @@ Exigir token rompió a los dos clientes que **no** son usuarios, y la suite Java
 | C20 | Guarda en `POST /generations`, en la descarga de artefactos y en la exportación XMI; respuesta con el editor, el motivo y la posibilidad de reclamar | Integración: bloqueado con lease ajeno, permitido con lease propio y tras vencer |
 | C21 | Web: botones de exportación con motivo y editor nombrado, y botón **Reclamar control** | Pruebas de componente de los tres estados |
 
-### S6 — Exportación XMI del dialecto EA (RF-09, CU-17)
+### S6 — Intercambio XMI (RF-09, CU-16, CU-17) — **cedida a otra sesión**
 
-| # | Tarea | Evidencia que la cierra |
+Estas tres tareas **no se ejecutan desde acá**. El 2026-10-01 la sesión `01a0f830`, con el mismo directorio de
+trabajo, informó por intercom que el usuario le encargó el intercambio XMI **completo —exportación e
+importación—** y propuso la frontera que se aceptó. Trabaja en el worktree `../1erParcialV2-xmi`, rama
+`feat/xmi-intercambio`, y reclama como superficies propias `backend/src/main/java/com/diagramador/xmi/**`,
+`backend/src/test/java/com/diagramador/xmi/**`, `web/src/xmi/**` y los endpoints `/xmi/**`. Verificado antes de
+aceptar: no existía ningún archivo ni endpoint de XMI, así que el handover no duplica trabajo.
+
+| # | Tarea | Estado |
 | --- | --- | --- |
-| C22 | `XmiExportService`: emitir el subárbol UML del dialecto EA desde el modelo canónico, determinista, con reporte de pérdidas | Pruebas de emisión byte a byte estable y del reporte contra el fixture |
-| C23 | Endpoint de exportación XMI con guardas (modelo válido, sin colisiones abiertas, sin lease ajeno) y documento de evidencia | Integración del endpoint y de cada guarda |
-| C24 | Web: botón **Exportar XMI** con el reporte de pérdidas visible | Prueba de componente y lint |
+| C22 | `XmiExportService`: dialecto EA, determinista, con reporte de pérdidas | Cedida |
+| C23 | Endpoints XMI con sus guardas | Cedida |
+| C24 | Web: botón **Exportar XMI** con el reporte de pérdidas visible | Cedida |
+
+**Cambio de alcance que esto implica.** §2.1 declaraba la importación (CU-16) **fuera** de este incremento. Con
+el encargo del usuario a la otra sesión, la importación **entra**, y el acta de cierre (C26) tiene que incluirla
+o el incremento quedaría mintiendo sobre su propio alcance. La autoridad del dialecto sigue siendo
+[`docs/puds/contratos/04-dialecto-xmi-ea.md`](../../docs/puds/contratos/04-dialecto-xmi-ea.md).
+
+**Guardarraíl que viaja con esa frontera:** el round-trip contra Enterprise Architect en vivo **no se puede
+verificar** en este entorno (GAP-07, declarado en el propio contrato del dialecto). Exportación e importación se
+pueden medir entre sí y contra el fixture `docs/fixtures/xmi/Prueba3.xml`, que es evidencia medida y byte-exacta;
+**contra EA en vivo, no**. Nadie puede declarar round-trip verificado.
+
+### S6b — Contrato congelado con la sesión de XMI
+
+Para que la integración sea de una línea y no de una negociación, queda congelado acá. La sesión `01a0f830`
+depende de estos nombres **sin poder escribirlos**; el dueño es esta sesión.
+
+**Migraciones:** los números están repartidos para que no choquen. Esta sesión toma **`V8`** (invitaciones) y
+**`V9`** (chat); la sesión de XMI toma **`V10`** para `xmi_exchange` y `xmi_loss_item`. Dos archivos con el mismo
+número de versión no se pueden fusionar y Flyway los rechaza.
+
+**Archivos compartidos que ambos vamos a tocar** (conflicto mecánico, no de diseño, y se resuelve tomando lo de
+los dos): `backend/src/test/java/com/diagramador/SchemaOwnershipTest.java` —sus tablas de XMI están hoy en
+`TABLES_RESERVED_FOR_LATER_TASKS`, que afirma que **no existen**, así que migrarlas exige sacarlas de ahí y
+agregarlas a `MAPPED_COLUMNS` con sus columnas exactas y sus índices— y
+`docs/puds/datos/02-esquema-fisico.sql`. También `web/src/pages/ProjectEditorPage.tsx`, que ya recibe el botón de
+la sesión de XMI además de los paneles de C14, C18 y C21.
+
+**Concesión de edición (la escribe esta sesión en `com.diagramador.collaboration`):**
+
+```java
+package com.diagramador.collaboration;
+
+import java.util.UUID;
+
+/** La concesión de edición de un modelo. Mientras otra sesión la tenga viva, exportar queda bloqueado. */
+public interface EditingLeaseService {
+
+    /**
+     * Lanza {@code ApiException(409, "EXPORT_BLOCKED_EDITING")} cuando otra sesión tiene una concesión viva
+     * sobre el modelo. El principal de operador queda exento: entrega un artefacto que un usuario ya ordenó.
+     */
+    void requireExportAllowed(UUID modelId);
+}
+```
+
+**Forma compartida del bloqueo**, para que el endpoint de XMI y los de generación devuelvan lo mismo: código
+`EXPORT_BLOCKED_EDITING`; en endpoints de archivo, HTTP **409** con el sobre `ApiErrorResource` de siempre; en
+`POST /projects/{id}/generations`, el mismo código dentro del cuerpo `outcome` con HTTP 200, que es la
+convención D7 del Incremento 2. Las claves de `details[0]` son exactamente `editorDisplayName`, `targetType`,
+`targetId`, `reclaimable` y `retryAfterSeconds`.
+
+**Pendiente declarado:** el endpoint de XMI nace **sin** la guarda de la concesión, porque C19 no está en su base.
+Queda como integración pendiente de una línea al consolidar, y **así se declara en el acta**: hasta entonces, la
+exportación XMI no está protegida contra una edición en curso.
 
 ### S7 — Cierre
 
