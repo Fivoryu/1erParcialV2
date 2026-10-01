@@ -33,7 +33,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | Etapa | Estado | Evidencia |
 | --- | --- | --- |
 | X1 — Oráculo del dialecto | **En verificación independiente** | `python -m pytest tools -q` = **46 pruebas, 0 fallos** (escritor y padre). El arnés **refutó dos afirmaciones mías** (§3.4). Falta el veredicto del verificador, incluida la prueba de mutación: hasta entonces no se marca cerrada |
-| X2 — Esquema y persistencia | En curso | Escritor en vuelo: migración `V10`, entidades, repositorios y las seis compuertas de `SchemaOwnershipTest` |
+| X2 — Esquema y persistencia | **En verificación independiente** | `mvn -o -B -f backend/pom.xml verify` = **232 pruebas, 0 fallos** (escritor y padre). Falta el veredicto del verificador, que deriva el esquema por su cuenta desde la autoridad |
 | X3 — Emisión del dialecto | Pendiente | Depende de X1 (oráculo) y X2 (dominio) |
 | X4 — Servicio y endpoint de exportación | Pendiente | Depende de X3 |
 | X5 — Lectura del dialecto | Pendiente | Depende de X1 |
@@ -403,7 +403,11 @@ Se escribe al cerrar, no al planificar. Un casillero nunca se marca sobre una af
 
 | Etapa | Autoverificación del escritor | Spot check del padre | Evaluación nativa | Verificador independiente |
 | --- | --- | --- | --- | --- |
-| **X1** | `python -m pytest tools -q` → **46 passed** | El mismo comando, re-corrido por el padre → **46 passed** | **No evaluable.** `gentle-ai review assess` falló dos veces con `untracked files require an explicit declaration`: los archivos sin commitear de X2, en vuelo, impiden producir el riesgo. Se probó declararlos fuera del candidato con `inspect --untracked-scope=exclude`, y la evaluación del rango commiteado volvió a fallar | **Sí, por la vía de riesgo alto.** El plan devuelto trata un assess no producido como **alto** y exige verificador separado: `gentle-ai-verify` en vuelo, con verificación de **mutación** —no alcanza con re-correr la suite—. Su veredicto se registra acá cuando llegue |
+| **X2** | `mvn -o -B -f backend/pom.xml verify` → **232 pruebas, 0 fallos**, con Flyway aplicando V10 contra PostgreSQL 16. El escritor además corrigió mi encargo: yo había dicho «desde la raíz del worktree», y la raíz no tiene `pom.xml` | El mismo comando, re-corrido por el padre → **232 pruebas, 0 fallos, BUILD SUCCESS** en 3:32 | **No evaluable**, y por un motivo **distinto** del de X1: ahora `schema-incompatible`, «no sanitized stderr diagnostic is available». O sea que el evaluador no falla por mi estado de trabajo: **no puede correr en este repositorio** | **Sí, por la vía de riesgo alto**, `gentle-ai-verify` sobre el esquema, con derivación **independiente** de las columnas desde la autoridad y prueba de mutación sobre la compuerta |
+
+**Consecuencia del evaluador roto, que conviene decir entera:** si `assess` no puede producir un riesgo en este repositorio, entonces **todo** candidato se trata como alto y **toda** unidad de trabajo paga un verificador independiente. No es gratis y no es lo que el flujo quería; lo que el flujo quiere es que el riesgo se mida. Queda declarado en lugar de disimulado, y las dos corridas del evaluador están registradas con su mensaje exacto.
+
+**El modo de falla que estos verificadores están cazando.** En X1, un arnés que pasa y no puede fallar. En X2, algo más profundo: la migración y la compuerta las escribió **el mismo escritor**, así que si las dos salieron de la misma mala lectura de la autoridad, la suite pasa y el esquema está mal. Re-correr `verify` no lo detecta nunca. Por eso el verificador deriva las columnas por su cuenta desde `docs/puds/datos/02-esquema-fisico.sql` y las compara, en vez de leer la prueba y darle la razón.
 
 **Lectura honesta de esa fila.** El escritor auto-verificó y el padre repitió el comando: eso prueba que el arnés
 funciona, no que mida bien. Lo que prueba que **mida bien** es la verificación de mutación en curso —que las
