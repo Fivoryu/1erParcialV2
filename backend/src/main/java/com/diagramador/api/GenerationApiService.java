@@ -22,6 +22,7 @@ import com.diagramador.generation.GenerationVerificationService;
 import com.diagramador.generation.GenerationVerificationService.VerificationSummary;
 import com.diagramador.generation.InputSnapshot;
 import com.diagramador.generation.InputSnapshotFactory;
+import com.diagramador.identity.ProjectAuthorizationService;
 import com.diagramador.persistence.GenerationProfileRepository;
 import com.diagramador.persistence.GenerationRunRepository;
 import com.diagramador.persistence.GenerationTargetRepository;
@@ -53,13 +54,15 @@ public class GenerationApiService {
     private final GenerationVerificationService verificationService;
     private final InputSnapshotFactory snapshotFactory;
     private final TransactionTemplate transactionTemplate;
+    private final ProjectAuthorizationService projectAuthorizationService;
 
     public GenerationApiService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
             GenerationTargetRepository targetRepository, ModelVersionRepository versionRepository,
             GenerationProfileRepository profileRepository, TemplateVersionRepository templateRepository,
             GenerationRunRepository runRepository, GenerationIdentityService identityService,
             GenerationArtifactService artifactService, GenerationVerificationService verificationService,
-            InputSnapshotFactory snapshotFactory, TransactionTemplate transactionTemplate) {
+            InputSnapshotFactory snapshotFactory, TransactionTemplate transactionTemplate,
+            ProjectAuthorizationService projectAuthorizationService) {
         this.projectRepository = projectRepository;
         this.modelRepository = modelRepository;
         this.targetRepository = targetRepository;
@@ -72,16 +75,17 @@ public class GenerationApiService {
         this.verificationService = verificationService;
         this.snapshotFactory = snapshotFactory;
         this.transactionTemplate = transactionTemplate;
+        this.projectAuthorizationService = projectAuthorizationService;
     }
 
     public List<GenerationTargetResource> listTargets(UUID projectId) {
-        UmlModel model = requireModel(projectId);
+        UmlModel model = requireMemberModel(projectId);
         return identityService.listTargets(model.getId()).stream()
                 .map(target -> targetResource(target, model.getId())).toList();
     }
 
     public List<GenerationProfileResource> listProfiles(UUID projectId) {
-        requireModel(projectId);
+        requireMemberModel(projectId);
         var profile = identityService.provisionV1Profile(projectId);
         var template = identityService.provisionV1Template(profile.getId());
         return List.of(new GenerationProfileResource(profile.getId(), profile.getProfileKey(), profile.getName(),
@@ -89,7 +93,7 @@ public class GenerationApiService {
     }
 
     public OperationOutcomeResource createTarget(UUID projectId, CreateGenerationTargetRequest request) {
-        UmlModel model = requireModel(projectId);
+        UmlModel model = requireEditorModel(projectId);
         TargetConfiguration configuration = new TargetConfiguration(request.name(), request.databaseEngine(),
                 request.databaseName(), request.databaseSchema(), request.connectionConfigRef());
         try {
@@ -107,6 +111,7 @@ public class GenerationApiService {
     }
 
     public OperationOutcomeResource createGeneration(UUID projectId, CreateGenerationRequest request) {
+        requireEditorProject(projectId);
         OperationOutcomeResource identityRejection = validateGenerationRequest(projectId, request);
         if (identityRejection != null) {
             return identityRejection;
@@ -142,7 +147,7 @@ public class GenerationApiService {
     }
 
     public OperationOutcomeResource getGeneration(UUID projectId, UUID runId) {
-        UUID modelId = requireModel(projectId).getId();
+        UUID modelId = requireMemberModel(projectId).getId();
         boolean belongsToProject = transactionTemplate.execute(status -> runRepository.findById(runId)
                 .map(run -> run.getModel().getId().equals(modelId)).orElse(false));
         if (!belongsToProject) {
@@ -155,7 +160,7 @@ public class GenerationApiService {
 
     @Transactional(readOnly = true)
     public Object downloadArtifacts(UUID projectId, UUID runId) {
-        UmlModel model = requireModel(projectId);
+        UmlModel model = requireMemberModel(projectId);
         GenerationRun run = runRepository.findById(runId).orElse(null);
         if (run == null || !run.getModel().getId().equals(model.getId())) {
             return runNotFound();
@@ -176,7 +181,7 @@ public class GenerationApiService {
 
     @Transactional
     public OperationOutcomeResource verifyGeneration(UUID projectId, UUID runId) {
-        UmlModel model = requireModel(projectId);
+        UmlModel model = requireEditorModel(projectId);
         GenerationRun run = runRepository.findById(runId).orElse(null);
         if (run == null || !run.getModel().getId().equals(model.getId())) {
             return runNotFound();
@@ -243,6 +248,27 @@ public class GenerationApiService {
 
     private UmlModel requireModel(UUID projectId) {
         requireProject(projectId);
+        return findModel(projectId);
+    }
+
+    private UmlModel requireMemberModel(UUID projectId) {
+        requireProject(projectId);
+        projectAuthorizationService.requireMember(projectId);
+        return findModel(projectId);
+    }
+
+    private UmlModel requireEditorModel(UUID projectId) {
+        requireProject(projectId);
+        projectAuthorizationService.requireEditor(projectId);
+        return findModel(projectId);
+    }
+
+    private void requireEditorProject(UUID projectId) {
+        requireProject(projectId);
+        projectAuthorizationService.requireEditor(projectId);
+    }
+
+    private UmlModel findModel(UUID projectId) {
         return modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> notFound("Model was not found."));
     }

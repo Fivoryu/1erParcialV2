@@ -17,6 +17,7 @@ import com.diagramador.command.CommandStatus;
 import com.diagramador.command.OperationEnvelope;
 import com.diagramador.identity.CurrentUser;
 import com.diagramador.identity.CurrentUserContext;
+import com.diagramador.identity.ProjectAuthorizationService;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ConnectorPath;
 import com.diagramador.domain.DiagramView;
@@ -65,6 +66,7 @@ public class ProjectApiService {
     private final ProjectRepository projectRepository;
     private final ProjectMemberRepository projectMemberRepository;
     private final CurrentUserContext currentUserContext;
+    private final ProjectAuthorizationService projectAuthorizationService;
     private final UmlModelRepository modelRepository;
     private final ModelVersionRepository versionRepository;
     private final ClassifierRepository classifierRepository;
@@ -87,10 +89,12 @@ public class ProjectApiService {
             RelationshipEndRepository relationshipEndRepository, DiagramViewRepository viewRepository,
             ElementGeometryRepository geometryRepository, ConnectorPathRepository connectorPathRepository,
             ProjectMemberRepository projectMemberRepository, CurrentUserContext currentUserContext,
+            ProjectAuthorizationService projectAuthorizationService,
             com.diagramador.command.CommandService commandService) {
         this.projectRepository = projectRepository;
         this.projectMemberRepository = projectMemberRepository;
         this.currentUserContext = currentUserContext;
+        this.projectAuthorizationService = projectAuthorizationService;
         this.modelRepository = modelRepository;
         this.versionRepository = versionRepository;
         this.classifierRepository = classifierRepository;
@@ -151,7 +155,7 @@ public class ProjectApiService {
     @Transactional(readOnly = true)
     public ProjectResource getProject(UUID projectId) {
         Project project = requireProject(projectId);
-        requireActiveMembership(projectId);
+        projectAuthorizationService.requireMember(projectId);
         return projectResource(project);
     }
 
@@ -166,7 +170,7 @@ public class ProjectApiService {
         }
         requireProject(pathProjectId);
         CurrentUser currentUser = currentUserContext.require();
-        requireActiveMembership(pathProjectId);
+        projectAuthorizationService.requireMember(pathProjectId);
         OperationEnvelope authenticatedEnvelope = new OperationEnvelope(envelope.operationId(), envelope.type(),
                 new Author(currentUser.userId(), currentUser.username()), envelope.projectId(), envelope.modelId(),
                 envelope.baseRevision(), envelope.targets(), envelope.preconditions(), envelope.payload(),
@@ -177,7 +181,7 @@ public class ProjectApiService {
     @Transactional(readOnly = true)
     public ModelResource getModel(UUID projectId) {
         requireProject(projectId);
-        requireActiveMembership(projectId);
+        projectAuthorizationService.requireMember(projectId);
         UmlModel model = modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> notFound("Model was not found."));
 
@@ -212,17 +216,6 @@ public class ProjectApiService {
 
     private Project requireProject(UUID projectId) {
         return projectRepository.findById(projectId).orElseThrow(() -> notFound("Project was not found."));
-    }
-
-    private void requireActiveMembership(UUID projectId) {
-        UUID userId = currentUserContext.require().userId();
-        boolean activeMember = projectMemberRepository.findByProjectIdAndUserId(projectId, userId)
-                .filter(member -> "ACTIVE".equals(member.getStatus()))
-                .isPresent();
-        if (!activeMember) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have access to this project.",
-                    List.of(), null);
-        }
     }
 
     private ViewResource viewResource(DiagramView view) {

@@ -37,10 +37,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * The deployment API: ordering a frozen run, claiming it once, reporting what happened, and stopping it.
@@ -51,6 +55,13 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest
 @AutoConfigureMockMvc
 class DeploymentApiTest extends AuthenticatedApiTest {
+
+    private static final String OPERATOR_TOKEN = UUID.randomUUID().toString();
+
+    @DynamicPropertySource
+    static void operatorProperties(DynamicPropertyRegistry registry) {
+        registry.add("diagrammer.operator.token", () -> OPERATOR_TOKEN);
+    }
 
     private final MockMvc mockMvc;
     private final ObjectMapper objectMapper;
@@ -180,7 +191,7 @@ class DeploymentApiTest extends AuthenticatedApiTest {
                 String operatorId = "host-" + index + ":1";
                 attempts.add(pool.submit(() -> {
                     start.await();
-                    return mockMvc.perform(authorized(post("/deployments/{id}/claim", id)
+                    return mockMvc.perform(withOperator(post("/deployments/{id}/claim", id)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsBytes(Map.of("operatorId", operatorId)))))
                             .andReturn().getResponse().getStatus();
@@ -434,7 +445,7 @@ class DeploymentApiTest extends AuthenticatedApiTest {
     }
 
     private JsonNode claim(String deploymentId, String operatorId, int expectedStatus) throws Exception {
-        return readJson(mockMvc.perform(authorized(post("/deployments/{id}/claim", deploymentId)
+        return readJson(mockMvc.perform(withOperator(post("/deployments/{id}/claim", deploymentId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsBytes(Map.of("operatorId", operatorId)))))
                 .andExpect(status()
@@ -447,7 +458,7 @@ class DeploymentApiTest extends AuthenticatedApiTest {
     }
 
     private JsonNode report(String deploymentId, Map<String, Object> body, int expectedStatus) throws Exception {
-        return readJson(mockMvc.perform(authorized(post("/deployments/{id}/report", deploymentId)
+        return readJson(mockMvc.perform(withOperator(post("/deployments/{id}/report", deploymentId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsBytes(body))))
                 .andExpect(status()
@@ -478,6 +489,10 @@ class DeploymentApiTest extends AuthenticatedApiTest {
         String id = deployment.path("deploymentId").asText();
         claim(id, "host-a:1", 200);
         return id;
+    }
+
+    private MockHttpServletRequestBuilder withOperator(MockHttpServletRequestBuilder builder) {
+        return builder.header(HttpHeaders.AUTHORIZATION, "Bearer " + OPERATOR_TOKEN);
     }
 
     private JsonNode readJson(MvcResult result) throws Exception {

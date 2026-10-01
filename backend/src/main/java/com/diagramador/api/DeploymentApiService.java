@@ -11,15 +11,18 @@ import com.diagramador.domain.GenerationRun;
 import com.diagramador.domain.GenerationState;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.generation.ConnectionConfigRefValidator;
+import com.diagramador.identity.ProjectAuthorizationService;
 import com.diagramador.persistence.DeploymentRepository;
 import com.diagramador.persistence.GenerationRunRepository;
 import com.diagramador.persistence.ProjectRepository;
 import com.diagramador.persistence.UmlModelRepository;
+import jakarta.persistence.EntityNotFoundException;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -62,17 +65,21 @@ public class DeploymentApiService {
     private final UmlModelRepository modelRepository;
     private final GenerationRunRepository runRepository;
     private final DeploymentRepository deploymentRepository;
+    private final ProjectAuthorizationService projectAuthorizationService;
 
     public DeploymentApiService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
-            GenerationRunRepository runRepository, DeploymentRepository deploymentRepository) {
+            GenerationRunRepository runRepository, DeploymentRepository deploymentRepository,
+            ProjectAuthorizationService projectAuthorizationService) {
         this.projectRepository = projectRepository;
         this.modelRepository = modelRepository;
         this.runRepository = runRepository;
         this.deploymentRepository = deploymentRepository;
+        this.projectAuthorizationService = projectAuthorizationService;
     }
 
     @Transactional(readOnly = true)
     public List<DeploymentResource> listDeployments(UUID projectId) {
+        projectAuthorizationService.requireMember(projectId);
         UmlModel model = requireModel(projectId);
         return deploymentRepository.findByModelIdOrderByRequestedAtDesc(model.getId()).stream()
                 .map(DeploymentResource::from).toList();
@@ -86,6 +93,7 @@ public class DeploymentApiService {
      */
     @Transactional
     public DeploymentResource requestDeployment(UUID projectId, CreateDeploymentRequest request) {
+        projectAuthorizationService.requireEditor(projectId);
         UmlModel model = requireModel(projectId);
         GenerationRun run = runRepository.findById(request.runId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "RUN_NOT_FOUND",
@@ -121,6 +129,7 @@ public class DeploymentApiService {
      */
     @Transactional
     public DeploymentResource claimDeployment(UUID deploymentId, ClaimDeploymentRequest request) {
+        projectAuthorizationService.requireOperator();
         requireDeployment(deploymentId);
         String operatorId = requireSafeOperatorId(request.operatorId());
         int claimed = deploymentRepository.claimIfPending(deploymentId, DeploymentState.PENDING,
@@ -138,6 +147,7 @@ public class DeploymentApiService {
     /** Records what the operator observed, and rejects a reason that could carry a credential. */
     @Transactional
     public DeploymentResource reportDeployment(UUID deploymentId, ReportDeploymentRequest request) {
+        projectAuthorizationService.requireOperator();
         Deployment deployment = requireDeployment(deploymentId);
         OffsetDateTime now = OffsetDateTime.now();
         try {
@@ -169,6 +179,8 @@ public class DeploymentApiService {
     @Transactional
     public DeploymentResource stopDeployment(UUID deploymentId) {
         Deployment deployment = requireDeployment(deploymentId);
+        // requireEditor permits the operator principal as well as project owners and editors.
+        projectAuthorizationService.requireEditor(owningProjectId(deployment));
         try {
             deployment.requestStop(OffsetDateTime.now());
         } catch (IllegalStateException conflict) {
@@ -249,6 +261,23 @@ public class DeploymentApiService {
         return deploymentRepository.findById(deploymentId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "DEPLOYMENT_NOT_FOUND",
                         "Deployment was not found.", List.of(), null));
+    }
+
+    private UUID owningProjectId(Deployment deployment) {
+        try {
+            return Optional.ofNullable(deployment.getRun())
+                    .map(GenerationRun::getModel)
+                    .map(UmlModel::getProject)
+                    .map(project -> project.getId())
+                    .orElseThrow(DeploymentApiService::owningProjectNotResolved);
+        } catch (EntityNotFoundException missingOwner) {
+            throw owningProjectNotResolved();
+        }
+    }
+
+    private static ApiException owningProjectNotResolved() {
+        return new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN",
+                "The owning project could not be resolved.", List.of(), null);
     }
 
     private UmlModel requireModel(UUID projectId) {
