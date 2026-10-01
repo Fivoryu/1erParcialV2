@@ -301,6 +301,59 @@ sí funcionó fue la regla de §6: la medición no vive en la prosa, vive como *
 exacto**. Estas formas entran como aserciones en las pruebas de la emisión, no como párrafos que alguien tenga que
 recordar.
 
+### 3.10 Segundo archivo de EA: corroboración independiente, la geometría, y la puerta que faltaba
+
+Apareció en los recientes de EA un segundo archivo escrito por EA, `C:\Users\HP\Downloads\ea-ref-with-diagram.xmi`
+(27.503 bytes, `encoding="windows-1252"`, `xmi:version="2.1"`, `exporter="Enterprise Architect"`). **Tiene diagrama**,
+que es justo el canal que X3.2 debe emitir. Sirve para dos cosas: corrobora lo medido sobre una sola muestra, y
+responde la geometría, que era el hueco de X3.2.
+
+**Corroboraciones**, todas contra un archivo distinto del fixture:
+
+1. Las multiplicidades repiten la regla **exacta**: `LiteralInteger` para lo finito (`0` ×5 y `1` ×7 en la cota
+   inferior, `1` ×7 en la superior) y `LiteralUnlimitedNatural` con `-1` (×5) para lo ilimitado. **Cero `*`**, otra
+   vez. La corrección de §3.9 deja de apoyarse en una muestra.
+2. `<connectors>` es hijo directo de `Extension`, hermano de `<diagrams>`.
+3. `uml:Model` **no lleva `xmi:id`**.
+4. La codificación declarada es `windows-1252`.
+
+**La geometría.** El `<diagram>` lleva `id` (no `xmi:id`) y cuelga `elements`, que mezcla **figuras y conectores en
+una sola lista**, distinguidos por las claves de `geometry`:
+
+| | `geometry` | otros atributos |
+| --- | --- | --- |
+| **Figura** | `Left=50;Top=50;Right=250;Bottom=140;` | `subject="EAID_…"`, `seqno="1"`, `style="DUID=31201C34;"` |
+| **Conector** | `SX=0;SY=0;EX=0;EY=0;Path=;` | `subject="EAID_…"`, `style=";Hidden=0;"`, **sin `seqno`** |
+
+Dos cosas que no sabía y que importan:
+
+- `geometry` es un **atributo con pares separados por `;`**, no un elemento con hijos. Confirma la corrección de
+  §3.2 y explica por qué `Mode`/`EOID`/`SOID` viven en `style`.
+- El conector **no lleva `seqno`** en este archivo, y su `Path=` sale vacío porque EA recalcula el ruteo. Es
+  evidencia a favor de X-4 por una razón mejor que la mía: EA **tampoco** escribe waypoints en su propio archivo.
+
+Y el bloque `Extension/connectors/connector`, cada uno con `idref` a la relación, con estos hijos: `source` y `target`
+(con `xmi:idref`), un bloque de rol por extremo con `model` (`ea_localid`, `type`, `name`), `role` (`name`,
+`visibility`), `type` (`multiplicity='0..*'`, `aggregation`), `modifiers` (`isOrdered`, `isNavigable`) y `style`
+(`value='Owned=0;Navigable=Unspecified;'`); después `model`, `properties` (`ea_type`, `direction`), `modifiers`
+(`isRoot`, `isLeaf`), `appearance` (`linemode`, `linecolor`, `linewidth`, `seqno`, `headStyle`, `lineStyle`),
+`labels` (`lb`, `lt`, `rb`, `rt`) y `style`. Confirmado: la multiplicidad en el canal de la extensión se escribe como
+**texto** `0..*`, y el rol lleva el prefijo `+` de visibilidad.
+
+**Y la puerta que faltaba, que es lo que cierra GAP-07.** El add-in MCP de EA responde pero es frágil —respondió una
+vez y después se colgó dos veces— y **no expone importar ni exportar XMI**. Pero `CreateObject("EA.Repository")`
+**sí** funciona desde el PowerShell de **32 bits** (EA es de 32 bits; desde 64 bits la instancia viva no aparece en
+la tabla de objetos activos), y expone `OpenFile`, `CreateModel`, `ExportPackageXMI` e **`ImportPackageXMI`**. O sea:
+puedo importar lo que emitimos dentro de una **copia** de un proyecto real y ver si EA lo acepta, sin tocar el
+original. `ExportPackageXMI` es **lentísimo** (24 exportaciones no terminaron en 10 minutos), así que se usa con
+cuentagotas; la importación es lo que faltaba.
+
+Dos cautelas que corresponden. Primero, EA es una repack «EA Trial / Cracked Edition from Brains»; eso **no**
+invalida el dialecto —el archivo lo escribe el mismo motor— pero es un dato que hay que declarar en cualquier
+afirmación de interoperabilidad. Segundo, que EA **escriba** `-1` sigue sin probar que **rechace** `*`; con
+`ImportPackageXMI` eso deja de ser una pregunta retórica, y hay que contestarla con un experimento antes de dar
+X-4 y la emisión de multiplicidades por cerradas.
+
 ## 4. Decisiones cerradas
 
 | # | Decisión | Alternativa descartada | Motivo |
