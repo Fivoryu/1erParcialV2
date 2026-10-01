@@ -183,12 +183,16 @@ número de versión no se pueden fusionar y Flyway los rechaza.
 
 **Archivos compartidos** (conflicto mecánico, no de diseño, y se resuelve tomando lo de los dos):
 
-- `backend/src/test/java/com/diagramador/SchemaOwnershipTest.java`. La lista de versiones de Flyway esperada tiene que
-  terminar en **1..10**: esta sesión suma `8` (invitaciones) y `9` (chat), la sesión de XMI suma `10`. Además, las
-  **cuatro** tablas nuevas tienen que quedar declaradas en `MAPPED_COLUMNS` con sus columnas exactas y en
-  `SUPPORT_INDEXES`: `invitation` y `diagram_message` de esta sesión, `xmi_exchange` y `xmi_loss_item` de la otra.
-  Las cuatro están hoy en `TABLES_RESERVED_FOR_LATER_TASKS`, que **afirma que no existen**, así que migrar cada una
-  exige sacarla de ahí. Si cada lado resuelve el conflicto sin ver al otro, la suite rechaza la migración ajena.
+- `backend/src/test/java/com/diagramador/SchemaOwnershipTest.java`. La lista de versiones de Flyway esperada conviene
+  que termine en **1..10**: esta sesión suma `8` (invitaciones) y `9` (chat), la sesión de XMI suma `10`. **Medido:
+  esa línea no es una compuerta** —usa `contains(...)`, que es subconjunto, así que sólo falla si *falta* una versión
+  y nunca porque sobre— así que agregarla es higiene y no coordina nada. Lo que **sí** es compuerta exacta es la lista
+  de tablas: las **cuatro** nuevas tienen que quedar en `MAPPED_COLUMNS` con sus columnas exactas y en
+  `SUPPORT_INDEXES`: `invitation` (más `diagram_message`) de esta sesión, `xmi_exchange` y `xmi_loss_item` de la otra.
+  Las cuatro están hoy en `TABLES_RESERVED_FOR_LATER_TASKS`, que **afirma que no existen**, y
+  `doesNotContainAnyElementsOf` rechaza la suite si se migran sin sacarlas de ahí. Para las dos de XMI el esquema
+  autoritativo declara **un solo** índice de soporte, `idx_exchange_model` sobre `xmi_exchange(model_id, direction)`;
+  `xmi_loss_item` no tiene ninguno y declararle uno hace fallar el test exacto.
 - `docs/puds/datos/02-esquema-fisico.sql`, por las mismas cuatro tablas.
 - `web/src/pages/ProjectEditorPage.tsx`, que ya recibe el botón de la sesión de XMI además de los paneles de C14,
   C18 y C21.
