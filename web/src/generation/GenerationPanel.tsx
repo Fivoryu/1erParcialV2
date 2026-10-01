@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ApiTransportError, createApiClient } from '../api/client';
 import type {
+  DeploymentResource,
   GenerationProfileResource,
   GenerationRunResource,
   GenerationState,
@@ -10,8 +11,17 @@ import type {
 import {
   blockingDiagnostics,
   canDownloadArchive,
+  canStopDeployment,
+  describeDeploymentFailure,
+  describeDeploymentState,
   describeRunState,
+  editorIsLocal,
+  isDeploymentActive,
+  isDeploymentTerminal,
   isTerminalState,
+  NO_AUTHENTICATION_WARNING,
+  phoneBaseUrl,
+  safeDeploymentDetail,
   suggestedTargetKey,
   targetOptionLabel,
   uniqueTargetKey,
@@ -40,6 +50,9 @@ export interface GenerationPanelViewProps {
   selectedTargetId: string | null;
   selectedProfileId: string | null;
   run: GenerationRunResource | null;
+  deployment: DeploymentResource | null;
+  phoneUrl: string | null;
+  editorOnLocalhost: boolean;
   busy: boolean;
   error: string | null;
   notice: string | null;
@@ -48,6 +61,8 @@ export interface GenerationPanelViewProps {
   onCreateTarget(name: string, databaseName: string): void;
   onGenerate(): void;
   onDownload(): void;
+  onDeploy(): void;
+  onStopDeployment(): void;
   onDismiss(): void;
 }
 
@@ -57,6 +72,9 @@ export function GenerationPanelView({
   selectedTargetId,
   selectedProfileId,
   run,
+  deployment,
+  phoneUrl,
+  editorOnLocalhost,
   busy,
   error,
   notice,
@@ -65,6 +83,8 @@ export function GenerationPanelView({
   onCreateTarget,
   onGenerate,
   onDownload,
+  onDeploy,
+  onStopDeployment,
   onDismiss,
 }: GenerationPanelViewProps) {
   const [formOpen, setFormOpen] = useState(false);
@@ -225,6 +245,67 @@ export function GenerationPanelView({
           )}
         </div>
       )}
+
+      {run && (
+        <div className="generation-deployment" aria-live="polite">
+          <h3>Deployment</h3>
+          {deployment === null ? (
+            <>
+              <p className="property-hint">
+                Deploying runs this backend on this machine with its own database, so another device on the
+                same network can call it.
+              </p>
+              <button
+                className="button button-primary"
+                type="button"
+                onClick={onDeploy}
+                disabled={busy || !ready}
+              >
+                Deploy backend
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="generation-run-state" data-state={deployment.state}>
+                {describeDeploymentState(deployment.state)}
+              </p>
+              {deployment.state === 'UP' && phoneUrl && (
+                <div className="generation-address">
+                  <p className="property-hint">From another device on the same network:</p>
+                  <code>{phoneUrl}</code>
+                  {editorOnLocalhost && (
+                    <p className="property-hint">
+                      This editor was opened through localhost, so that address only works here. Open the
+                      editor from this machine's address on the network and the same address will work from a
+                      phone.
+                    </p>
+                  )}
+                </div>
+              )}
+              {deployment.state === 'FAILED' && (
+                <ul className="generation-diagnostics">
+                  <li>
+                    <strong>{describeDeploymentFailure(deployment.failureCode)}</strong>
+                    {safeDeploymentDetail(deployment.failureMessage) !== null && (
+                      <span>{safeDeploymentDetail(deployment.failureMessage)}</span>
+                    )}
+                  </li>
+                </ul>
+              )}
+              {isDeploymentActive(deployment.state) && deployment.state !== 'UP' && (
+                <p className="property-hint">The operator on this machine picks this up on its own.</p>
+              )}
+              {canStopDeployment(deployment.state) && (
+                <button className="button button-secondary" type="button" onClick={onStopDeployment}
+                  disabled={busy}>
+                  Stop backend
+                </button>
+              )}
+            </>
+          )}
+          <p className="generation-warning">{NO_AUTHENTICATION_WARNING}</p>
+        </div>
+      )}
     </section>
   );
 }
@@ -247,6 +328,7 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [run, setRun] = useState<GenerationRunResource | null>(null);
+  const [deployments, setDeployments] = useState<DeploymentResource[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -258,12 +340,14 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
   }, []);
 
   const loadDestinations = useCallback(async () => {
-    const [loadedTargets, loadedProfiles] = await Promise.all([
+    const [loadedTargets, loadedProfiles, loadedDeployments] = await Promise.all([
       api.listGenerationTargets(projectId),
       api.listGenerationProfiles(projectId),
+      api.listDeployments(projectId),
     ]);
     setTargets(loadedTargets);
     setProfiles(loadedProfiles);
+    setDeployments(loadedDeployments);
     setSelectedTargetId((current) => (
       current && loadedTargets.some((target) => target.targetId === current)
         ? current
@@ -372,6 +456,64 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
     }
   }, [modelId, profiles, projectId, publishRun, selectedProfileId, selectedTargetId, versionId]);
 
+  const loadDeployments = useCallback(async () => {
+    setDeployments(await api.listDeployments(projectId));
+  }, [projectId]);
+
+  // The deployment of the run on screen: the active one if it has one, otherwise the most recent attempt.
+  const runDeployments = run === null ? [] : deployments.filter((item) => item.runId === run.runId);
+  const deployment = runDeployments.find((item) => isDeploymentActive(item.state)) ?? runDeployments[0] ?? null;
+  const browserHost = typeof window === 'undefined' ? 'localhost' : window.location.hostname;
+  const phoneUrl = deployment === null ? null : phoneBaseUrl(browserHost, deployment.httpHostPort);
+  const editorOnLocalhost = editorIsLocal(browserHost);
+
+  useEffect(() => {
+    if (deployment === null || isDeploymentTerminal(deployment.state)) {
+      return undefined;
+    }
+    // The operator works on its own schedule, so the panel asks again while there is something to wait for.
+    const timer = window.setTimeout(() => {
+      void loadDeployments().catch(() => undefined);
+    }, POLL_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [deployment, loadDeployments]);
+
+  const deploy = useCallback(async () => {
+    if (run === null) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const ordered = await api.requestDeployment(projectId, run.runId);
+      setDeployments((current) => [ordered, ...current.filter(
+        (item) => item.deploymentId !== ordered.deploymentId)]);
+      setNotice('The deployment was ordered. The operator on this machine picks it up on its own.');
+    } catch (cause: unknown) {
+      setError(messageFor(cause));
+    } finally {
+      setBusy(false);
+    }
+  }, [projectId, run]);
+
+  const stopDeployment = useCallback(async () => {
+    if (deployment === null) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const stopped = await api.stopDeployment(deployment.deploymentId);
+      setDeployments((current) => current.map(
+        (item) => (item.deploymentId === stopped.deploymentId ? stopped : item)));
+    } catch (cause: unknown) {
+      setError(messageFor(cause));
+    } finally {
+      setBusy(false);
+    }
+  }, [deployment]);
+
   const download = useCallback(async () => {
     const current = activeRunRef.current;
     if (!current) {
@@ -408,6 +550,9 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
       selectedTargetId={selectedTargetId}
       selectedProfileId={selectedProfileId}
       run={run}
+      deployment={deployment}
+      phoneUrl={phoneUrl}
+      editorOnLocalhost={editorOnLocalhost}
       busy={busy}
       error={error}
       notice={notice}
@@ -421,6 +566,12 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
       }}
       onDownload={() => {
         void download();
+      }}
+      onDeploy={() => {
+        void deploy();
+      }}
+      onStopDeployment={() => {
+        void stopDeployment();
       }}
       onDismiss={() => setError(null)}
     />

@@ -315,3 +315,24 @@ export interface OperationOutcomeResource<TResult> {
 export type GenerationArchiveDownload =
   | { kind: 'archive'; filename: string; blob: Blob }
   | { kind: 'rejected'; code: string; message: string };
+
+export type DeploymentState = 'PENDING' | 'RUNNING' | 'UP' | 'FAILED' | 'STOPPING' | 'STOPPED';
+
+/** One generated backend running on the user's machine. */
+export interface DeploymentResource {
+  deploymentId: Uuid;
+  state: DeploymentState;
+  targetId: Uuid;
+  targetKey: string;
+  targetName: string;
+  runId: Uuid;
+  httpHostPort: number;
+  postgresHostPort: number;
+  composeProject: string | null;
+  operatorId: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  requestedAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}

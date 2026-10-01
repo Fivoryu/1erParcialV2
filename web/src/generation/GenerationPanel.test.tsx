@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  DeploymentResource,
   GenerationProfileResource,
   GenerationRunResource,
   GenerationTargetResource,
@@ -70,6 +71,41 @@ const blockedRun: GenerationRunResource = {
   verification: null,
 };
 
+const readyRun: GenerationRunResource = {
+  ...blockedRun,
+  state: 'SUCCEEDED',
+  artifactSetHash: 'b'.repeat(64),
+  artifactZipHash: 'c'.repeat(64),
+  diagnostics: [],
+};
+
+const upDeployment: DeploymentResource = {
+  deploymentId: '99999999-9999-4999-8999-999999999999',
+  state: 'UP',
+  targetId: firstTarget.targetId,
+  targetKey: firstTarget.targetKey,
+  targetName: firstTarget.name,
+  runId: readyRun.runId,
+  httpHostPort: 19001,
+  postgresHostPort: 25433,
+  composeProject: 'generated-reporting-service-t0abcde',
+  operatorId: 'host-a:1',
+  failureCode: null,
+  failureMessage: null,
+  requestedAt: '2026-09-30T12:00:00Z',
+  startedAt: '2026-09-30T12:00:01Z',
+  finishedAt: '2026-09-30T12:00:30Z',
+};
+
+// The operator's own words can name a working directory, and that must not reach the screen.
+const failedDeployment: DeploymentResource = {
+  ...upDeployment,
+  state: 'FAILED',
+  composeProject: null,
+  failureCode: 'COMPOSE_UP_FAILED',
+  failureMessage: String.raw`docker compose up failed with exit 1: no such file C:\Users\HP\work\abc`,
+};
+
 function props(overrides: Partial<GenerationPanelViewProps> = {}): GenerationPanelViewProps {
   return {
     targets: [],
@@ -77,6 +113,9 @@ function props(overrides: Partial<GenerationPanelViewProps> = {}): GenerationPan
     selectedTargetId: null,
     selectedProfileId: profile.profileId,
     run: null,
+    deployment: null,
+    phoneUrl: null,
+    editorOnLocalhost: false,
     busy: false,
     error: null,
     notice: null,
@@ -85,6 +124,8 @@ function props(overrides: Partial<GenerationPanelViewProps> = {}): GenerationPan
     onCreateTarget: vi.fn(),
     onGenerate: vi.fn(),
     onDownload: vi.fn(),
+    onDeploy: vi.fn(),
+    onStopDeployment: vi.fn(),
     onDismiss: vi.fn(),
     ...overrides,
   };
@@ -96,6 +137,14 @@ function render(overrides: Partial<GenerationPanelViewProps> = {}): string {
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const TECHNICAL_IDENTIFIERS = [
+  'deployment_id',
+  'deploymentId',
+  'composeProject',
+  'compose_project',
+  'operatorId',
+  'operator_id',
+  'httpHostPort',
+  'postgresHostPort',
   'run_id',
   'runId',
   'target_id',
@@ -178,5 +227,108 @@ describe('generation panel, presentational surface', () => {
     expect(render({ profiles: [profile], selectedTargetId: null })).toContain('disabled');
     const enabled = render({ profiles: [profile], targets: [firstTarget], selectedTargetId: firstTarget.targetId });
     expect(enabled).toContain('Generate backend');
+  });
+
+  it('offers to deploy a finished run and warns that the backend has no authentication', () => {
+    const markup = render({ targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: readyRun });
+
+    expect(markup).toContain('Deploy backend');
+    expect(markup).not.toContain('disabled');
+    expect(markup).toContain('no authentication');
+  });
+
+  it('does not offer to deploy a run that has not finished', () => {
+    const markup = render({ targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: blockedRun });
+
+    expect(markup).toContain('Deploy backend');
+    expect(markup).toContain('disabled');
+  });
+
+  it('shows the address another device uses, built from the host the browser already used', () => {
+    const markup = render({
+      targets: [firstTarget],
+      selectedTargetId: firstTarget.targetId,
+      run: readyRun,
+      deployment: upDeployment,
+      phoneUrl: 'http://192.168.0.11:19001',
+    });
+
+    expect(markup).toContain('Running');
+    expect(markup).toContain('http://192.168.0.11:19001');
+    expect(markup).toContain('From another device on the same network');
+    expect(markup).not.toContain('only works here');
+  });
+
+  it('says the shown address only works here when the editor was opened through loopback', () => {
+    const markup = render({
+      targets: [firstTarget],
+      selectedTargetId: firstTarget.targetId,
+      run: readyRun,
+      deployment: upDeployment,
+      phoneUrl: 'http://localhost:19001',
+      editorOnLocalhost: true,
+    });
+
+    expect(markup).toContain('http://localhost:19001');
+    expect(markup).toContain('only works here');
+  });
+
+  it('states a failed deployment in product language and never shows the operator path', () => {
+    const markup = render({
+      targets: [firstTarget],
+      selectedTargetId: firstTarget.targetId,
+      run: readyRun,
+      deployment: failedDeployment,
+      phoneUrl: 'http://192.168.0.11:19001',
+    });
+
+    expect(markup).toContain('Could not start');
+    expect(markup).toContain('Docker Compose could not start the stack');
+    expect(markup).not.toContain(String.raw`C:\Users`);
+    expect(markup).not.toContain('exit 1');
+  });
+
+  it('offers to stop a deployment that holds a stack, and not one that already stopped', () => {
+    const running = render({
+      targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: readyRun,
+      deployment: upDeployment, phoneUrl: 'http://192.168.0.11:19001',
+    });
+    expect(running).toContain('Stop backend');
+
+    const stopped = render({
+      targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: readyRun,
+      deployment: { ...upDeployment, state: 'STOPPED' },
+    });
+    expect(stopped).toContain('Stopped');
+    expect(stopped).not.toContain('Stop backend');
+  });
+
+  it('waits for the operator while a deployment is on its way', () => {
+    const markup = render({
+      targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: readyRun,
+      deployment: { ...upDeployment, state: 'PENDING', composeProject: null },
+    });
+
+    expect(markup).toContain('Waiting for the operator');
+    expect(markup).toContain('picks this up on its own');
+  });
+
+  it('never puts a deployment identifier, project name or host path on the screen', () => {
+    // Both shapes matter: a running deployment is the one that carries a Compose project name, and a failed
+    // one is the one that carries the operator's message. Checking only one of them hides the other.
+    for (const deployment of [upDeployment, failedDeployment]) {
+      const markup = render({
+        targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: readyRun,
+        deployment, phoneUrl: 'http://192.168.0.11:19001',
+      });
+
+      expect(markup).not.toMatch(UUID_PATTERN);
+      for (const identifier of TECHNICAL_IDENTIFIERS) {
+        expect(markup, `${identifier} reached the screen as ${deployment.state}`).not.toContain(identifier);
+      }
+      expect(markup).not.toContain('generated-reporting-service-t0abcde');
+      expect(markup).not.toContain('host-a:1');
+      expect(markup).not.toContain(String.raw`C:\Users`);
+    }
   });
 });

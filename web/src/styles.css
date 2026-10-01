@@ -1480,6 +1480,53 @@ h3 {
   color: var(--muted);
 }
 
+.generation-deployment {
+  margin-top: 18px;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfb;
+}
+
+.generation-deployment > h3 {
+  margin-bottom: 11px;
+  font-size: 12px;
+}
+
+.generation-deployment .button {
+  margin-top: 12px;
+}
+
+.generation-address {
+  margin-top: 11px;
+}
+
+.generation-address code {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--accent-dark);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.generation-address .property-hint {
+  margin-top: 8px;
+}
+
+.generation-warning {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 @media (max-width: 980px) {
   .editor-workspace {
     grid-template-columns: minmax(0, 1fr);

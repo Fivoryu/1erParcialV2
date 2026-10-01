@@ -5,6 +5,7 @@ import type {
   CreateGenerationRequest,
   CreateGenerationTargetRequest,
   CreateProjectRequest,
+  DeploymentResource,
   GenerationArchiveDownload,
   GenerationProfileResource,
   GenerationRunResource,
@@ -95,6 +96,9 @@ export interface ApiClient {
   ): Promise<OperationOutcomeResource<GenerationRunResource>>;
   getGeneration(projectId: Uuid, runId: Uuid): Promise<OperationOutcomeResource<GenerationRunResource>>;
   downloadGenerationArchive(projectId: Uuid, runId: Uuid): Promise<GenerationArchiveDownload>;
+  listDeployments(projectId: Uuid): Promise<DeploymentResource[]>;
+  requestDeployment(projectId: Uuid, runId: Uuid): Promise<DeploymentResource>;
+  stopDeployment(deploymentId: Uuid): Promise<DeploymentResource>;
 }
 
 function archiveFilename(response: Response, fallback: string): string {
@@ -224,6 +228,23 @@ export function createApiClient(
     },
     downloadGenerationArchive(projectId, runId) {
       return requestArchive(projectId, runId);
+    },
+    listDeployments(projectId) {
+      return requestJson<DeploymentResource[]>(
+        `/projects/${encodeURIComponent(projectId)}/deployments`,
+      );
+    },
+    requestDeployment(projectId, runId) {
+      return postJson<DeploymentResource>(
+        `/projects/${encodeURIComponent(projectId)}/deployments`,
+        { runId },
+      );
+    },
+    stopDeployment(deploymentId) {
+      return requestJson<DeploymentResource>(
+        `/deployments/${encodeURIComponent(deploymentId)}/stop`,
+        { method: 'POST' },
+      );
     },
   };
 }

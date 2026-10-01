@@ -1,4 +1,5 @@
 import type {
+  DeploymentState,
   GenerationDiagnosticResource,
   GenerationRunResource,
   GenerationState,
@@ -152,3 +153,104 @@ export function uniqueTargetKey(base: string, existingKeys: readonly string[]): 
   }
   return `${base}_${suffix}`;
 }
+
+/**
+ * Product language for a deployment.
+ *
+ * The deployment is what the user actually cares about, so its state and its failures are stated in terms of
+ * what happened to their backend, never in terms of the operator's internals.
+ */
+
+const DEPLOYMENT_STATE_LABELS: Record<DeploymentState, string> = {
+  PENDING: 'Waiting for the operator',
+  RUNNING: 'Deploying…',
+  UP: 'Running',
+  FAILED: 'Could not start',
+  STOPPING: 'Stopping…',
+  STOPPED: 'Stopped',
+};
+
+const DEPLOYMENT_FAILURE_REASONS: Record<string, string> = {
+  COMPOSE_UP_FAILED:
+    'Docker Compose could not start the stack. Check that the ports are free and that Docker is running.',
+  GENERATED_BUILD_FAILED:
+    'The generated project did not compile. The local Maven cache may be missing something it needs.',
+  MISSING_LOCAL_IMAGE:
+    'An image this deployment needs is not on this machine, and the operator never downloads one. Pull it once and deploy again.',
+  HEALTH_NEVER_UP: 'The stack started but the backend never answered its health check.',
+  OPERATOR_INTERRUPTED: 'The deployment was interrupted, so its stack was taken down.',
+  UNKNOWN_DEPLOYMENT_DIRECTORY:
+    'The operator that started this deployment no longer has its working directory, so it cannot take it down.',
+  STOP_INCOMPLETE: 'The stack could not be removed completely; something may still be running.',
+  DOCKER_UNAVAILABLE: 'The operator could not use Docker on this machine.',
+  MAVEN_UNAVAILABLE: 'The operator could not use Maven on this machine.',
+  ARCHIVE_INCOMPLETE: 'The generated archive is missing a file the deployment needs.',
+  ARCHIVE_UNAVAILABLE: 'The generated archive could not be downloaded, so there was nothing to deploy.',
+  API_UNREACHABLE: 'The operator could not reach the diagrammer.',
+  TARGET_NOT_FOUND: 'The destination of this run no longer exists.',
+};
+
+/** A host path or a scheme-like location, which must not reach the screen either. */
+const LOCATION_PATTERN = /(?:[A-Za-z]:\\|\/(?:home|Users|tmp|var)\/|\bfile:\/\/)/;
+
+export function describeDeploymentState(state: DeploymentState): string {
+  return DEPLOYMENT_STATE_LABELS[state];
+}
+
+/** True while the deployment holds its destination and its host port pair. */
+export function isDeploymentActive(state: DeploymentState): boolean {
+  return state === 'PENDING' || state === 'RUNNING' || state === 'UP' || state === 'STOPPING';
+}
+
+export function isDeploymentTerminal(state: DeploymentState): boolean {
+  return state === 'FAILED' || state === 'STOPPED';
+}
+
+export function canStopDeployment(state: DeploymentState): boolean {
+  return state === 'PENDING' || state === 'RUNNING' || state === 'UP' || state === 'FAILED';
+}
+
+/** The reason a deployment failed, in product language, with the operator's code as the key. */
+export function describeDeploymentFailure(code: string | null): string {
+  if (code && DEPLOYMENT_FAILURE_REASONS[code]) {
+    return DEPLOYMENT_FAILURE_REASONS[code];
+  }
+  return 'The deployment did not finish. The operator log on this machine has the details.';
+}
+
+/**
+ * The operator's own message, shown only when it is free of anything technical.
+ *
+ * <p>Its messages can name a working directory or a container, and none of that belongs on this screen. When it
+ * is not clean the product sentence above stands alone, which is still true.
+ */
+export function safeDeploymentDetail(message: string | null): string | null {
+  if (!message) {
+    return null;
+  }
+  if (UUID_PATTERN.test(message) || LOCATION_PATTERN.test(message)) {
+    return null;
+  }
+  return message;
+}
+
+/**
+ * The address another device on the same network uses.
+ *
+ * <p>It is built from the host the browser already used, because that host is a property of whoever is looking
+ * and not of the server: a server that guessed its own address would be wrong for every client that reaches it
+ * by another name.
+ */
+export function phoneBaseUrl(hostname: string, httpHostPort: number): string {
+  const host = hostname.length > 0 ? hostname : 'localhost';
+  return `http://${host}:${httpHostPort}`;
+}
+
+/** True when the editor was opened through loopback, so the shown address cannot work from another device. */
+export function editorIsLocal(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+}
+
+export const NO_AUTHENTICATION_WARNING =
+  'The generated backend has no authentication, so anyone on this network who knows the address can read and '
+  + 'write its data. Keep it on a network you trust.';

@@ -3,10 +3,19 @@ import type { GenerationDiagnosticResource, GenerationRunResource } from '../api
 import {
   blockingDiagnostics,
   canDownloadArchive,
+  canStopDeployment,
+  describeDeploymentFailure,
+  describeDeploymentState,
   describeDiagnostic,
   describeRunState,
+  editorIsLocal,
   featureLabel,
+  isDeploymentActive,
+  isDeploymentTerminal,
   isTerminalState,
+  NO_AUTHENTICATION_WARNING,
+  phoneBaseUrl,
+  safeDeploymentDetail,
   suggestedTargetKey,
   targetOptionLabel,
   uniqueTargetKey,
@@ -150,5 +159,83 @@ describe('generation product language', () => {
       createdAt: '2026-09-30T12:00:00Z',
       updatedAt: '2026-09-30T12:00:00Z',
     })).toBe('Reporting service · reporting_db');
+  });
+});
+
+describe('deployment product language', () => {
+  it('names every deployment state in terms of what happened to the backend', () => {
+    expect(describeDeploymentState('PENDING')).toBe('Waiting for the operator');
+    expect(describeDeploymentState('RUNNING')).toBe('Deploying…');
+    expect(describeDeploymentState('UP')).toBe('Running');
+    expect(describeDeploymentState('FAILED')).toBe('Could not start');
+    expect(describeDeploymentState('STOPPING')).toBe('Stopping…');
+    expect(describeDeploymentState('STOPPED')).toBe('Stopped');
+  });
+
+  it('knows which states hold the destination and which are outcomes', () => {
+    expect(isDeploymentActive('PENDING')).toBe(true);
+    expect(isDeploymentActive('RUNNING')).toBe(true);
+    expect(isDeploymentActive('UP')).toBe(true);
+    expect(isDeploymentActive('STOPPING')).toBe(true);
+    expect(isDeploymentActive('FAILED')).toBe(false);
+    expect(isDeploymentActive('STOPPED')).toBe(false);
+
+    expect(isDeploymentTerminal('FAILED')).toBe(true);
+    expect(isDeploymentTerminal('STOPPED')).toBe(true);
+    expect(isDeploymentTerminal('UP')).toBe(false);
+
+    // Everything that holds a stack can be asked to release it, including a failed attempt that may have
+    // left containers behind, and an order nobody claimed yet, which the API stops without an operator.
+    expect(canStopDeployment('UP')).toBe(true);
+    expect(canStopDeployment('FAILED')).toBe(true);
+    expect(canStopDeployment('PENDING')).toBe(true);
+    expect(canStopDeployment('RUNNING')).toBe(true);
+    expect(canStopDeployment('STOPPING')).toBe(false);
+    expect(canStopDeployment('STOPPED')).toBe(false);
+  });
+
+  it('states a failure as a consequence for the user, not as an operator code', () => {
+    const missing = describeDeploymentFailure('MISSING_LOCAL_IMAGE');
+    expect(missing).toContain('is not on this machine');
+    expect(missing).toContain('Pull it once');
+    expect(missing).not.toContain('MISSING_LOCAL_IMAGE');
+
+    expect(describeDeploymentFailure('OPERATOR_INTERRUPTED')).toContain('interrupted');
+    expect(describeDeploymentFailure('HEALTH_NEVER_UP')).toContain('health check');
+    // An unknown code still says something true and points at where the detail is.
+    expect(describeDeploymentFailure('SOMETHING_NEW')).toContain('operator log');
+    expect(describeDeploymentFailure(null)).toContain('operator log');
+  });
+
+  it('never lets the operator message carry a path or an identifier to the screen', () => {
+    const clean = 'The image build failed before the database was ready.';
+    expect(safeDeploymentDetail(clean)).toBe(clean);
+    expect(safeDeploymentDetail(null)).toBeNull();
+    expect(safeDeploymentDetail('')).toBeNull();
+    // A working directory, in either shape, is not something the user must read. `String.raw` keeps the
+    // backslashes, which a normal literal would swallow.
+    expect(safeDeploymentDetail(String.raw`There is no Compose file in C:\Users\HP\work\abc.`)).toBeNull();
+    expect(safeDeploymentDetail('There is no Compose file in /home/hp/work/abc.')).toBeNull();
+    expect(safeDeploymentDetail('Run 77777777-7777-4777-8777-777777777777 failed.')).toBeNull();
+  });
+
+  it('builds the address another device uses from the host the browser already used', () => {
+    expect(phoneBaseUrl('192.168.0.11', 19001)).toBe('http://192.168.0.11:19001');
+    expect(phoneBaseUrl('localhost', 19001)).toBe('http://localhost:19001');
+    // An empty host is still a usable address rather than a broken one.
+    expect(phoneBaseUrl('', 19002)).toBe('http://localhost:19002');
+  });
+
+  it('knows when the shown address cannot work from another device', () => {
+    expect(editorIsLocal('localhost')).toBe(true);
+    expect(editorIsLocal('127.0.0.1')).toBe(true);
+    expect(editorIsLocal('::1')).toBe(true);
+    expect(editorIsLocal('192.168.0.11')).toBe(false);
+    expect(editorIsLocal('diagramador.local')).toBe(false);
+  });
+
+  it('warns that the generated backend has no authentication', () => {
+    expect(NO_AUTHENTICATION_WARNING).toContain('no authentication');
+    expect(NO_AUTHENTICATION_WARNING).toContain('read and write');
   });
 });
