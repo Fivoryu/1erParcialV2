@@ -34,8 +34,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
 
     private static final Map<String, Set<String>> MAPPED_COLUMNS = Map.ofEntries(
-            Map.entry("user_account", Set.of("user_id", "external_subject", "display_name", "email", "status",
-                    "revoked_at", "created_at", "updated_at")),
+            Map.entry("user_account", Set.of("user_id", "external_subject", "username", "password_hash",
+                    "display_name", "email", "status", "revoked_at", "created_at", "updated_at")),
+            Map.entry("user_session", Set.of("session_id", "user_id", "token_hash", "issued_at", "last_seen_at",
+                    "expires_at", "revoked_at")),
             Map.entry("project", Set.of("project_id", "owner_user_id", "name", "description", "archived_at",
                     "created_at", "updated_at")),
             Map.entry("project_member", Set.of("project_id", "user_id", "role", "status", "joined_at", "updated_at")),
@@ -94,6 +96,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
     /** Support indexes declared by the physical schema authority for every migrated table. */
     private static final Map<String, Set<String>> SUPPORT_INDEXES = Map.ofEntries(
             Map.entry("user_account", Set.of()),
+            Map.entry("user_session", Set.of("idx_session_user")),
             Map.entry("project", Set.of("idx_project_owner")),
             Map.entry("project_member", Set.of("idx_member_user")),
             Map.entry("uml_model", Set.of()),
@@ -138,7 +141,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2", "3", "4", "5", "6");
+                .contains("1", "2", "3", "4", "5", "6", "7");
     }
 
     @Test
@@ -289,7 +292,9 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
-    void citextAndTimestamptzKeepTheirPhysicalType() {        assertColumnType("user_account", "email", "citext");
+    void citextAndTimestamptzKeepTheirPhysicalType() {
+        assertColumnType("user_account", "email", "citext");
+        assertColumnType("user_account", "username", "citext");
 
         List<String> dataTypes = jdbcTemplate.queryForList(
                 "SELECT data_type FROM information_schema.columns WHERE table_schema = 'diagrammer' AND table_name = 'user_account' AND column_name = 'created_at'",

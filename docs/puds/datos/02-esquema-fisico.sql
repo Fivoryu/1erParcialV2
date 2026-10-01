@@ -74,6 +74,8 @@ CREATE TYPE audit_outcome AS ENUM ('SUCCESS', 'REJECTED', 'FAILED', 'AMBIGUOUS')
 CREATE TABLE user_account (
     user_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     external_subject VARCHAR(512) NOT NULL,          -- referencia opaca al sistema de identidad (no fija proveedor)
+    username       CITEXT NOT NULL,                   -- credencial local; comparable sin distinguir mayúsculas
+    password_hash  VARCHAR(100) NOT NULL,             -- hash local; puede retirarse cuando un proveedor real tome el relevo
     display_name   VARCHAR(160) NOT NULL,
     email          CITEXT,
     status         VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
@@ -81,11 +83,27 @@ CREATE TABLE user_account (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_user_external_subject UNIQUE (external_subject),
+    CONSTRAINT uq_user_username UNIQUE (username),
     CONSTRAINT uq_user_email UNIQUE (email),
     CONSTRAINT chk_user_status CHECK (status IN ('ACTIVE', 'DISABLED', 'REVOKED'))
 );
 
-COMMENT ON TABLE user_account IS 'Usuario del diagramador. La autenticación y el proveedor son decisiones D3; aquí solo se conserva identidad referencial y estado.';
+COMMENT ON TABLE user_account IS 'Usuario del diagramador. Se admiten credenciales locales mientras el proveedor de identidad siga siendo una brecha abierta; external_subject continúa siendo una referencia opaca para permitir el reemplazo por un proveedor real.';
+
+CREATE TABLE user_session (
+    session_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      UUID NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
+    token_hash   CHAR(64) NOT NULL,
+    issued_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at   TIMESTAMPTZ NOT NULL,
+    revoked_at   TIMESTAMPTZ,
+    CONSTRAINT uq_session_token_hash UNIQUE (token_hash)
+);
+
+CREATE INDEX idx_session_user ON user_session(user_id);
+
+COMMENT ON TABLE user_session IS 'Sesión autenticada: el token bearer original nunca se almacena; por contraste, la presencia y la concesión de edición son efímeras.';
 
 CREATE TABLE project (
     project_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),

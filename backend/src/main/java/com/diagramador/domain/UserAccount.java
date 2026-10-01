@@ -16,6 +16,8 @@ import java.util.UUID;
 @Table(name = "user_account", schema = "diagrammer")
 public class UserAccount {
 
+    private static final String EXTERNAL_ACCOUNT_PASSWORD_HASH = "!";
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "user_id", nullable = false, updatable = false)
@@ -23,6 +25,12 @@ public class UserAccount {
 
     @Column(name = "external_subject", nullable = false, length = 512)
     private String externalSubject;
+
+    @Column(name = "username", nullable = false, columnDefinition = "citext")
+    private String username;
+
+    @Column(name = "password_hash", nullable = false, length = 100)
+    private String passwordHash;
 
     @Column(name = "display_name", nullable = false, length = 160)
     private String displayName;
@@ -48,12 +56,21 @@ public class UserAccount {
     public static UserAccount create(String externalSubject, String displayName, String email) {
         UserAccount user = new UserAccount();
         user.externalSubject = externalSubject;
+        user.username = externalSubject;
+        user.passwordHash = EXTERNAL_ACCOUNT_PASSWORD_HASH;
         user.displayName = displayName;
         user.email = email;
         user.status = "ACTIVE";
         OffsetDateTime now = OffsetDateTime.now();
         user.createdAt = now;
         user.updatedAt = now;
+        return user;
+    }
+
+    public static UserAccount register(String username, String passwordHash, String displayName, String email) {
+        UserAccount user = create("local:" + UUID.randomUUID(), displayName, email);
+        user.username = username;
+        user.passwordHash = passwordHash;
         return user;
     }
 
@@ -67,6 +84,22 @@ public class UserAccount {
 
     public void setExternalSubject(String externalSubject) {
         this.externalSubject = externalSubject;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
     }
 
     public String getDisplayName() {
