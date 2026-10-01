@@ -18,20 +18,23 @@ sin red y se levanta con su propia base PostgreSQL.
 | Incremento 0 — contrato y pruebas de riesgo | **Cerrado** (`odd/tasks/incremento-0-contrato-y-riesgos.md`) |
 | Incremento 1 — modelo y editor visual | **Cerrado** — [acta](docs/puds/cierre/03-cierre-incremento-1.md). Los tres defectos de presentación que su §3 nombra están **corregidos** |
 | Incremento 2 — generación, exportación y despliegue | **Cerrado, con límites declarados** — [acta](docs/puds/cierre/04-cierre-incremento-2.md) |
+| Unidad de despliegue desde el editor | **Cerrada** — [documento](docs/puds/generacion/04-despliegue-desde-el-editor.md): botón, operador en la máquina y dirección para el teléfono |
 | Incrementos 3 y siguientes (colaboración, XMI, IA, móvil) | Pendientes |
 
 ### Qué está verificado hoy
 
 | Superficie | Evidencia |
 | --- | --- |
-| Backend | `mvn -o -B verify` = **179 pruebas**, 0 fallos, sin red |
+| Backend | `mvn -o -B verify` = **198 pruebas**, 0 fallos, sin red |
 | Arnés del corte visible | `python tools/acceptance/acceptance.py` = **30 pasos OK**, 0 fallos, con teardown verificado |
-| Arnés de generación y despliegue | `python tools/generation-acceptance/acceptance_generation.py` = **66 aserciones**, 0 fallos, con teardown verificado |
-| Editor web | `npm run lint` = 0 errores, `npm test` = **71 pruebas**, 0 fallos, `npm run build` en verde |
+| Arnés de generación | `python tools/generation-acceptance/acceptance_generation.py` = **66 aserciones**, 0 fallos, con teardown verificado |
+| Arnés de despliegue | `python tools/generation-acceptance/acceptance_deployment.py` = **29 aserciones**, 0 fallos: ordena por la API, deja que el operador despliegue, comprueba `health` **desde la dirección de red**, hace el CRUD contra ese backend, ordena detener y verifica que no quedó nada |
+| Editor web | `npm run lint` = 0 errores, `npm test` = **87 pruebas**, 0 fallos, `npm run build` en verde |
 | Corte visible del Incremento 1 | Crear proyecto, dos clases, atributo, operación, relación, mover, recargar y encontrar lo mismo **con la misma disposición** |
 | Corte visible del Incremento 2 | Elegir destino, generar, ver el estado y los diagnósticos, descargar el ZIP, compilarlo offline, levantarlo con su base, `health` `UP` y CRUD con la foránea resuelta; **dos destinos a la vez sin pisarse** |
 | Determinismo | Dos generaciones del mismo estado dan el mismo `artifactSetHash`; dos destinos dan dos archivos distintos |
 | Regla de presentación | El HTML renderizado no contiene ningún UUID ni identificador técnico; comprobado sobre `web/src/**` y sobre el render vivo |
+| Corte visible del despliegue | Apretar **Deploy backend** en el editor deja el backend corriendo con **su propio PostgreSQL**, y el panel muestra **la dirección que otro dispositivo de la misma red puede usar** |
 
 **Evidencia visual:** las capturas del lienzo están en `docs/capturas/incremento-1/` y las del Incremento 2 en
 `docs/capturas/incremento-2/`, junto con las transcripciones de la corrida de Postman y del arnés de generación.
@@ -96,6 +99,43 @@ curl http://localhost:19001/actuator/health
 Cada destino es su propio proyecto Compose con su propio volumen, así que **dos destinos del mismo modelo corren
 a la vez** mientras su par de puertos difiera. El par sale del convenio `1900N`/`2543N`: `19001`/`25433` para el
 primero, `19002`/`25434` para el segundo.
+
+### Desplegar desde el editor, y la dirección para el teléfono
+
+```bash
+python tools/acceptance/acceptance.py --keep-running          # URL base del diagramador
+python tools/deploy-operator/deploy_operator.py --api <esa URL>   # el operador, en esta máquina
+cd web && npm run dev                                          # el editor
+```
+
+El operador es un proceso que corre **en tu máquina** y es el que hace el trabajo: el diagramador le ordena y él
+despliega. Existe para que el diagramador **no** necesite acceso a Docker. Dejalo en su modo servicio, o corrélo
+con `--once` para que atienda lo que haya pendiente y salga.
+
+En el editor, con una corrida terminada, el botón **Deploy backend** ordena el despliegue. Cuando el operador
+termina, el panel muestra **Running** y **la dirección que otro dispositivo de la misma red puede usar**, por
+ejemplo:
+
+```text
+http://192.168.0.11:19001
+```
+
+Esa dirección sirve para el teléfono: el backend generado queda publicado en todas las interfaces y **su base de
+datos sólo en `127.0.0.1`**. Desde una terminal del teléfono se comprueba con
+`curl http://192.168.0.11:19001/actuator/health`.
+
+**Abrí el editor por la dirección de red de tu máquina y no por `localhost`:** la dirección se arma con el host
+que ya usó tu navegador, así que si abrís el editor en `localhost` el panel te va a mostrar una dirección que sólo
+funciona en esa máquina y te lo va a decir.
+
+Dos cosas que conviene saber antes de usarlo:
+
+- **El backend generado no tiene autenticación.** Cualquiera en la misma red que sepa la dirección puede leer y
+escribir en su base. El panel lo avisa.
+- **Cortar el operador baja el stack antes de salir** y reporta el despliegue como fallado. No queda nada huérfano.
+
+Si preferís desplegar sin el operador —por ejemplo en otra máquina—, el ZIP sigue levantándose a mano como en la
+sección de arriba: las dos vías son válidas y la segunda no necesita nada de esto.
 
 ### Desarrollo del editor
 

@@ -70,6 +70,10 @@ def display(value):
 
 
 def report(results, step, ok, expected, got):
+    if not isinstance(ok, bool):
+        # `a == b and c` returns `c`, so an assertion can print OK and still be counted as a failure. The
+        # deployment harness caught two of those in itself; this refuses the shape outright.
+        raise TypeError(f"the assertion for {step!r} produced {type(ok).__name__}, not a bool: {ok!r}")
     results.append(ok)
     print(f"[{'OK' if ok else 'FAIL'}] {step}", flush=True)
     print(f"  expected: {display(expected)}", flush=True)
