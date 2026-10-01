@@ -112,6 +112,16 @@ build. Un encargo que prohíbe contenedores y exige `verify`, o que no autoriza 
 `npm run build`, se contradice y detiene al escritor. Un escritor que no corre su verificación no está
 terminado: así se coló un test que no compilaba.
 
+**Regla de propiedad de la revisión para lanzar escritores** (aprendida a costo de otra vuelta perdida): el
+encargo debe decir **explícitamente** que la revisión nativa la posee el padre y que el escritor no la ejecuta,
+no la inspecciona y no declara su disposición, porque la herramienta `gentle_review` es del padre y un escritor
+no la tiene. Si falta esa frase, el recordatorio de revisión salta dentro del escritor, éste se detiene para
+preguntar por una disposición que no le corresponde y **no escribe nada**: ocurrió con C9b, que volvió con
+`files_changed: []` y `status: blocked` sin haber tocado un archivo. La frase tiene que decir que los
+recordatorios de revisión se ignoran como acción propia y que el padre ya tiene resuelta esa disposición; decir
+en su lugar que el candidato está excluido de revisión sería falso desde que el usuario eligió revisión por
+unidad.
+
 ### S1 — Identidad, sesión y autorización (login propio)
 
 | # | Tarea | Evidencia que la cierra |
