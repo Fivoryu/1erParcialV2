@@ -600,6 +600,23 @@ Estado medido en esta sesión, para que el acta no lo invente:
 | **Pero toda llamada da timeout** | `get_root_packages` y `get_packages_information` → `Failed to connect to Enterprise Architect: The operation has timed out`, reproducible |
 | Había un `MCP3.exe` huérfano | PID 26544, de una sesión anterior; se terminó. El pipe `mcp-e3b549be-…sock` sobrevive, así que pertenece a la gateway de Pi, no al add-in |
 
+### 7.1 Lo que se midió después, y que parte el gap en dos
+
+El add-in del MCP quedó **descartado como vía**: respondió una sola vez y después se colgó dos veces, y su superficie **no incluye** importar ni exportar XMI. La vía es la automatización COM de EA, y ahora está **ejecutada**, no solo enumerada.
+
+| Hecho | Evidencia |
+| --- | --- |
+| La automatización de EA es alcanzable desde el PowerShell de **32 bits** | `New-Object -ComObject EA.Repository` devuelve un objeto usable. Desde 64 bits, `GetActiveObject` falla con `MK_E_UNAVAILABLE`, porque EA es de 32 bits |
+| Su superficie incluye importar y exportar XMI | `OpenFile`, `CreateModel`, `ExportPackageXMI`, `ExportPackageXMIEx`, **`ImportPackageXMI`**, `ImportFile`, enumerados por reflexión COM |
+| **`ImportPackageXMI` funciona, y es rápido** | Sobre una **copia** de `sw1_p2.eapx`, importando `docs/fixtures/xmi/Prueba3.xml` en el paquete `Implementacion`: llamada OK en **1,5 s** |
+| **EA recuperó semántica y dibujo del fixture** | Paquetes 36→37, elementos **397→407 (+10)**, diagramas **90→91 (+1)**. Los +10 son exactamente los 10 clasificadores del fixture (8 clases + 1 interfaz + 1 enumeración), y el +1 es su diagrama |
+| Aparece el paquete del fixture en el destino | Subpaquete nuevo: `Prueba - Diagrama de Clases Completo` |
+| `ExportPackageXMI` es **lentísimo** en cambio | 24 exportaciones sobre paquetes reales no terminaron en 10 minutos; se abortó |
+
+**Entonces GAP-07 se parte en dos, y la partición es el avance.** Queda **cerrado** que el camino de importación existe, funciona y es rápido, y que EA acepta un XMI 2.1 de su propio dialecto recuperando **10 elementos y 1 diagrama** — ese es el criterio de aceptación, calibrado contra un archivo real y no conjeturado. Queda **abierto** que EA acepte **un archivo emitido por nosotros**: eso lo mide X8 con la emisión completa, y el número a mirar es si EA recupera **esos mismos 10 elementos y ese mismo diagrama**.
+
+Dos cautelas que siguen en pie: la instalación es una repack, que no invalida el dialecto medido —lo escribe el mismo motor— pero condiciona cualquier lectura de interoperabilidad; y todo esto corrió sobre una **copia**, nunca sobre el proyecto del usuario. La copia vive en `C:\Users\HP\AppData\Local\Temp\ea-scratch\`.
+
 **Decisión del usuario:** reiniciar EA y reintentar. **Pendiente de su acción**: abrir EA con un proyecto y avisar.
 
 | Desenlace | Qué se declara |
