@@ -33,7 +33,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | Etapa | Estado | Evidencia |
 | --- | --- | --- |
 | X1 — Oráculo del dialecto | **En verificación independiente** | `python -m pytest tools -q` = **46 pruebas, 0 fallos** (escritor y padre). El arnés **refutó dos afirmaciones mías** (§3.4). Falta el veredicto del verificador, incluida la prueba de mutación: hasta entonces no se marca cerrada |
-| X2 — Esquema y persistencia | **En verificación independiente** | `mvn -o -B -f backend/pom.xml verify` = **232 pruebas, 0 fallos** (escritor y padre). Falta el veredicto del verificador, que deriva el esquema por su cuenta desde la autoridad |
+| X2 — Esquema y persistencia | **Cerrada**, con un límite declarado | `mvn -o -B -f backend/pom.xml verify` = **232 pruebas, 0 fallos** (escritor y padre). Verificador independiente: **5 HOLDS**, 1 UNPROVEN que cerré inline con `git show`, y **1 FAILS que es el borde de la compuerta** —detecta deriva unilateral, no una omisión coordinada—, declarado en §5.2 |
 | X3 — Emisión del dialecto | Pendiente | Depende de X1 (oráculo) y X2 (dominio) |
 | X4 — Servicio y endpoint de exportación | Pendiente | Depende de X3 |
 | X5 — Lectura del dialecto | Pendiente | Depende de X1 |
@@ -404,6 +404,25 @@ Se escribe al cerrar, no al planificar. Un casillero nunca se marca sobre una af
 | Etapa | Autoverificación del escritor | Spot check del padre | Evaluación nativa | Verificador independiente |
 | --- | --- | --- | --- | --- |
 | **X2** | `mvn -o -B -f backend/pom.xml verify` → **232 pruebas, 0 fallos**, con Flyway aplicando V10 contra PostgreSQL 16. El escritor además corrigió mi encargo: yo había dicho «desde la raíz del worktree», y la raíz no tiene `pom.xml` | El mismo comando, re-corrido por el padre → **232 pruebas, 0 fallos, BUILD SUCCESS** en 3:32 | **No evaluable**, y por un motivo **distinto** del de X1: ahora `schema-incompatible`, «no sanitized stderr diagnostic is available». O sea que el evaluador no falla por mi estado de trabajo: **no puede correr en este repositorio** | **Sí, por la vía de riesgo alto**, `gentle-ai-verify` sobre el esquema, con derivación **independiente** de las columnas desde la autoridad y prueba de mutación sobre la compuerta |
+
+#### Veredictos de los verificadores independientes
+
+**X2 — esquema y persistencia.** Seis puntos. El verificador **derivó las columnas por su cuenta desde la autoridad** en vez de leer la prueba y darle la razón, que era el único modo de cazar el riesgo de omisión compartida:
+
+| # | Punto | Veredicto |
+| --- | --- | --- |
+| 1 | V10 refleja la autoridad física: columnas, tipos, precisión, nulabilidad, defaults, claves y `ON DELETE CASCADE` | **HOLDS** — sin diferencias. Incluye que `checksum`, `artifact_ref` y `model_revision` sean nullable: es lo que dice la autoridad |
+| 2 | `MAPPED_COLUMNS` y `SUPPORT_INDEXES` declaran lo que migró V10, y ninguna columna de la autoridad falta de **ambos** | **HOLDS** |
+| 3 | V10 reutiliza `severity_kind` y define los dos enums en el orden de los enums Java | **HOLDS** |
+| 4 | V10 es aditiva, no hay V8 ni V9, y Flyway aplicó V7→V10 | **HOLDS**, con la parte histórica **UNPROVEN** en el reporte |
+| 5 | Que la compuerta sirva de oráculo **independiente** de la autoridad | **FAILS** |
+| 6 | `XmiPersistenceTest` afirma que no quedan pérdidas tras borrar el intercambio | **HOLDS** — la aserción es `assertThat(lossItemRepository.findByExchangeId(exchangeId)).isEmpty()` sobre un estado previo de dos pérdidas, no un «no lanzó excepción» |
+
+**El UNPROVEN del punto 4 lo cerré inline**, porque es un comando y no una opinión: `git show --name-only 245f093` toca **9 archivos** y el único de migraciones es `V10__xmi_exchange.sql`, **agregado** (`--diff-filter=A`). Ninguna migración previa fue modificada. Pasa a HOLDS.
+
+**El FAILS del punto 5 no es un defecto del código: es el borde de la compuerta, y se declara.** Las cuatro pruebas comparan el esquema real contra lo declarado **en el propio archivo de prueba**. Detectan **deriva unilateral** —una columna o un índice que está en uno y no en el otro— y **no una omisión coordinada**: si la autoridad pide una columna y esa columna falta tanto en la migración como en la declaración, ninguna fuente independiente lo nota. El verificador buscó esa omisión en el esquema actual y **no la encontró**; lo que encontró es que la compuerta **no podría** encontrarla.
+
+No corresponde «arreglarlo» con una prueba que parsee `02-esquema-fisico.sql`: sería un oráculo frágil que este repositorio nunca quiso, y para dos tablas introduciría una regla que las otras 27 no siguen. **El control compensatorio es la derivación independiente desde la autoridad, que es exactamente lo que este verificador hizo**, y por eso el límite se escribe en lugar de taparse: quien agregue columnas a estas dos tablas tiene que cotejarlas a mano contra la autoridad, porque la suite no lo va a hacer por él.
 
 **Consecuencia del evaluador roto, que conviene decir entera:** si `assess` no puede producir un riesgo en este repositorio, entonces **todo** candidato se trata como alto y **toda** unidad de trabajo paga un verificador independiente. No es gratis y no es lo que el flujo quería; lo que el flujo quiere es que el riesgo se mida. Queda declarado en lugar de disimulado, y las dos corridas del evaluador están registradas con su mensaje exacto.
 
