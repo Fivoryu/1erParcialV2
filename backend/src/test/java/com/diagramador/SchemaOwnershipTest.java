@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.DeploymentState;
+import com.diagramador.domain.ExchangeDirection;
+import com.diagramador.domain.ExchangeStatus;
 import com.diagramador.domain.GenerationState;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
@@ -87,11 +89,15 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
                     "evidence_hash", "tool_name", "started_at", "finished_at", "created_at")),
             Map.entry("deployment", Set.of("deployment_id", "run_id", "target_id", "state", "http_host_port",
                     "postgres_host_port", "compose_project", "operator_id", "failure_code", "failure_message",
-                    "requested_at", "started_at", "finished_at", "updated_at")));
+                    "requested_at", "started_at", "finished_at", "updated_at")),
+            Map.entry("xmi_exchange", Set.of("exchange_id", "model_id", "direction", "profile", "model_revision",
+                    "checksum", "status", "artifact_ref", "created_at")),
+            Map.entry("xmi_loss_item", Set.of("loss_id", "exchange_id", "severity", "external_path", "message",
+                    "created_at")));
 
     private static final Set<String> TABLES_RESERVED_FOR_LATER_TASKS = Set.of(
             "invitation", "model_conflict",
-            "name_collision", "ai_proposal", "detected_element", "xmi_exchange", "xmi_loss_item", "audit_log");
+            "name_collision", "ai_proposal", "detected_element", "audit_log");
 
     /** Support indexes declared by the physical schema authority for every migrated table. */
     private static final Map<String, Set<String>> SUPPORT_INDEXES = Map.ofEntries(
@@ -123,7 +129,9 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("verification_result", Set.of("idx_verification_run")),
             Map.entry("deployment", Set.of("idx_deployment_run", "idx_deployment_state",
                     "uq_deployment_active_target", "uq_deployment_active_http_port",
-                    "uq_deployment_active_postgres_port")));
+                    "uq_deployment_active_postgres_port")),
+            Map.entry("xmi_exchange", Set.of("idx_exchange_model")),
+            Map.entry("xmi_loss_item", Set.of()));
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -141,7 +149,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2", "3", "4", "5", "6", "7");
+                .contains("1", "2", "3", "4", "5", "6", "7", "10");
     }
 
     @Test
@@ -186,6 +194,9 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertColumnType("generation_run", "state", "generation_state");
         assertColumnType("verification_result", "state", "verification_state");
         assertColumnType("deployment", "state", "deployment_state");
+        assertColumnType("xmi_exchange", "direction", "exchange_direction");
+        assertColumnType("xmi_exchange", "status", "exchange_status");
+        assertColumnType("xmi_loss_item", "severity", "severity_kind");
     }
 
     @Test
@@ -203,6 +214,8 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertEnumLabels("generation_state", GenerationState.class, 4);
         assertEnumLabels("verification_state", VerificationState.class, 3);
         assertEnumLabels("deployment_state", DeploymentState.class, 6);
+        assertEnumLabels("exchange_direction", ExchangeDirection.class, 2);
+        assertEnumLabels("exchange_status", ExchangeStatus.class, 3);
     }
 
     @Test
