@@ -1,77 +1,82 @@
-# Acceptance harness for backend generation and deployment
+# Arnés de aceptación de la generación y el despliegue
 
-This harness proves the increment's visible cut from outside the JVM, without a human hand: it creates a
-model, generates two independent backends, compiles each one offline, deploys each one with its own
-PostgreSQL, exercises the generated CRUD, and returns the machine to its initial state.
+Este arnés prueba el corte visible del incremento **desde afuera del JVM y sin manos humanas**: crea un modelo,
+genera dos backends independientes, compila cada uno sin red, despliega cada uno con su propia PostgreSQL,
+ejercita el CRUD generado y devuelve la máquina a su estado inicial.
 
-## What it needs
+## Qué necesita
 
-- **A running diagrammer.** Start one with the Increment 1 harness, which prints its base URL:
+- **Un diagramador corriendo.** Levantá uno con el arnés del Incremento 1, que imprime su URL base:
 
   ```sh
   python tools/acceptance/acceptance.py --keep-running
   ```
 
-- Python 3, Java 21, Maven, and Docker with the images `postgres:16-alpine` and
-  `eclipse-temurin:21-jre-alpine` already available locally. The harness **inspects both images and fails
-  before starting anything** if one is missing, because the run never pulls. The runtime base image needs one
-  declared download the first time (about 149 MB).
-- The Spring Boot 3.4.5 dependency set in the local Maven cache, so `mvn -o` can build the generated project.
+- Python 3, Java 21, Maven y Docker con las imágenes `postgres:16-alpine` y `eclipse-temurin:21-jre-alpine` **ya
+  disponibles localmente**. El arnés **inspecciona las dos imágenes y falla antes de arrancar nada** si falta
+  alguna, porque la corrida nunca descarga. La imagen base del runtime necesita una descarga declarada la
+  primera vez (unos 149 MB).
+- El conjunto de dependencias de Spring Boot 3.4.5 en la caché local de Maven, para que `mvn -o` pueda compilar
+  el proyecto generado.
 
-## Running it
+## Cómo se corre
 
 ```sh
 python tools/generation-acceptance/acceptance_generation.py --base-url http://127.0.0.1:PORT
 ```
 
-By default it generates and deploys **two destinations** of the same model. `--destinations N` accepts 1 to 4.
-The host ports come from the repository convention: `1900N` for HTTP and `2543N` for PostgreSQL, indexed from
-`19001`/`25433`. The harness reserves them before starting and fails clearly if one is taken.
+Por defecto genera y despliega **dos destinos** del mismo modelo. `--destinations N` acepta de 1 a 4.
 
-Each destination is generated into `tools/generation-acceptance/.work/<runId>/<targetKey>/`, which holds the
-downloaded ZIP, the extracted project, and the `.env` the deployment needs.
+Los puertos del host salen del convenio del repositorio: `1900N` para HTTP y `2543N` para PostgreSQL, indexados
+desde `19001`/`25433`. El arnés los reserva antes de empezar y falla claramente si alguno está tomado.
 
-### Leaving the destinations up
+Cada destino se genera en `tools/generation-acceptance/.work/<runId>/<targetKey>/`, que guarda el ZIP bajado, el
+proyecto descomprimido y el `.env` que el despliegue necesita.
+
+### Dejar los destinos levantados
 
 ```sh
 python tools/generation-acceptance/acceptance_generation.py --base-url http://127.0.0.1:PORT --keep-running
 ```
 
-This prints a stop command. The manifest in `.state/<runId>.json` records the Compose projects and the
-container count, so the stop path removes only what this run created and then verifies the count returned to
-the recorded value:
+Eso imprime un comando de parada. El manifiesto en `.state/<runId>.json` graba los proyectos Compose y el conteo
+de contenedores, así que la parada elimina **sólo** lo que creó esta corrida y después verifica que el conteo
+volvió al valor registrado:
 
 ```sh
 python tools/generation-acceptance/acceptance_generation.py --stop <RUN_ID>
 ```
 
-`--keep-running` exists so the Postman collection in `tools/postman/` can be executed against an already
-deployed generated backend.
+`--keep-running` existe para que la colección de Postman de `tools/postman/` pueda ejecutarse contra un backend
+generado ya desplegado.
 
-## What it asserts
+## Qué afirma
 
-| Step | Assertion |
+| Paso | Afirmación |
 | --- | --- |
-| Preflight | Docker, Maven, the local PostgreSQL image, the local runtime base image, and a diagrammer answering `health UP`. |
-| Model | Project plus two classes, three attributes, one operation and one association, each command answered `ACCEPTED` with its exact next revision. |
-| Destinations | Two targets created over HTTP with their own keys and database names. |
-| Generation | One run per destination reaching `SUCCEEDED` with no blocking diagnostic. |
-| Download | `HTTP 200`, bytes starting with `PK`, and the archive's SHA-256 **equal to the `artifactZipHash` the run persisted**. |
-| Archive | The deployment artifacts are inside: `docker-compose.yml`, `.env.example`, `Dockerfile`, `pom.xml`, `README.md`, the migration. The artifact count and the `artifactSetHash` are printed. |
-| Compile | `mvn -o -B package` exits 0 for each generated project, from the local cache, with no network. |
-| Compose | `docker compose config` resolves, and `docker compose up -d --build --pull never` starts the destination without pulling. |
-| Health | `/actuator/health` answers `HTTP 200` with `status: UP` on the destination's own host port. |
-| CRUD | `POST /api/customer` 201; `POST /api/order` 201 **with the parent reference resolved**; re-reading by id keeps it; listing works; a missing parent is **400 and never 500**; an unknown id is **404**. |
-| Independence | Different set hashes, different database names, different row identities, different volumes, and both destinations answering at the same time. |
-| Teardown | `docker compose down -v` for every Compose project, then the container count back at its initial value, no surviving Compose project, and no surviving volume. |
+| Preflight | Docker, Maven, la imagen local de PostgreSQL, la imagen base del runtime y un diagramador que responde `health UP` |
+| Modelo | Proyecto y dos clases, tres atributos, una operación y una asociación, cada comando `ACCEPTED` con su revisión siguiente exacta |
+| Destinos | Dos destinos creados por HTTP, con sus claves y sus nombres de base |
+| Generación | Una corrida por destino que llega a `SUCCEEDED` sin diagnóstico bloqueante |
+| Descarga | `HTTP 200`, bytes que empiezan con `PK`, y el SHA-256 del archivo **igual al `artifactZipHash` que la corrida persistió** |
+| Archivo | Los artefactos de despliegue están adentro: `docker-compose.yml`, `.env.example`, `Dockerfile`, `pom.xml`, `README.md`, la migración. Se imprimen el conteo de artefactos y el `artifactSetHash` |
+| Compilación | `mvn -o -B package` sale 0 para cada proyecto generado, desde la caché local, sin red |
+| Compose | `docker compose config` resuelve, y `docker compose up -d --build --pull never` levanta el destino sin descargar |
+| Salud | `/actuator/health` responde `HTTP 200` con `status: UP` en el puerto propio del destino |
+| CRUD | `POST /api/customer` 201; `POST /api/order` 201 **con la foránea resuelta**; releer por id la conserva; el listado responde; un padre inexistente es **400 y nunca 500**; un id desconocido es **404** |
+| Independencia | `artifactSetHash` distintos, nombres de base distintos, filas con identidad distinta, volúmenes distintos, y los dos contestando **a la vez** |
+| Teardown | `docker compose down -v` para cada proyecto Compose, y después el conteo de contenedores de vuelta en su valor inicial, ningún proyecto Compose sobreviviente y ningún volumen sobreviviente |
 
-## Declared limits
+## Límites declarados
 
-- The harness **deploys on this machine**, with Docker Compose. It says nothing about a cloud deployment; the
-  AWS/Floci preparation is recorded in `docs/puds/generacion/03-despliegue-propio.md`.
-- It **does not build or start the diagrammer**. It needs one, so the diagrammer's own packaging stays where it
-  is: the JAR is the operator's, and this separation is what keeps a live JVM from locking the JAR this
-  harness would otherwise replace — the failure that on Windows surfaces later as an unrelated `repackage`
-  error.
-- It proves the cut is repeatable with one command. It does not prove the generated backend is secure:
-  `spring-boot-starter-security` is not emitted for version 3.4.5.
+- El arnés **despliega en esta máquina**, con Docker Compose. No dice nada de un despliegue en la nube; la
+  preparación AWS/Floci está registrada en `docs/puds/generacion/03-despliegue-propio.md`.
+- **No compila ni levanta el diagramador.** Necesita uno, así que el empaquetado del diagramador queda donde
+  está: el JAR es del operador. Esa separación es también lo que evita que un JVM vivo bloquee el JAR que este
+  arnés reemplazaría — el fallo que en Windows aparece después como un error de `repackage` sin relación con el
+  código.
+- **No mide el alcance desde otro dispositivo.** Levanta y verifica en `127.0.0.1`. Que un teléfono de la misma
+  red llegue es otra medición, y está declarada en
+  `docs/puds/generacion/04-despliegue-desde-el-editor.md` §3.
+- Prueba que el corte se repite con un comando. **No** prueba que el backend generado sea seguro:
+  `spring-boot-starter-security` no se emite para la versión 3.4.5.
