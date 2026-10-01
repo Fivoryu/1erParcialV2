@@ -78,6 +78,26 @@ Dos huecos reales del esquema físico que el alcance toca, ambos documentados en
 
 ## 4. Plan de trabajo
 
+Cada unidad de código de este incremento sigue el orden de **S0**: se verifica, se revisa sin commitear y sólo
+entonces se commitea. Las reglas generales de encargo y la de verificación para lanzar escritores están al final de
+este apartado.
+
+### S0 — Revisión nativa por unidad
+
+**Decisión del usuario (2026-10-01): revisión nativa por unidad**, una por cada commit de código del Incremento 3.
+No se extiende la exclusión del Incremento 2, que estaba acotada a T7–T14 de aquel incremento.
+
+Orden de cada unidad, que invierte el que se usó en el Incremento 2:
+
+1. Implementar y verificar la unidad (`mvn -o -B verify`, o lint, pruebas y build en la web).
+2. **Revisar el cambio sin commitear**, siguiendo la transición que devuelva la autoridad, incluida su captura si
+   hay lentes.
+3. Confirmar la aprobación con la continuación exacta que emita el proveedor.
+4. **Solo entonces** commitear la unidad, con un mensaje que describa el comportamiento entregado.
+
+El motivo del orden: así ningún commit de código de este incremento existe sin haber pasado por revisión. Si la
+revisión pide una corrección, el cambio todavía está sin commitear y corregirlo no reescribe historia.
+
 Cada tarea cierra con **al menos un commit de unidad de trabajo**, con sus pruebas y su documentación al lado
 del comportamiento. El padre verifica el árbol y el diff de cada tarea: el escritor delegado no puede ejecutar
 `gentle_review` y en una vuelta anterior reportó «files_changed: None» habiendo escrito 580 líneas.
@@ -192,7 +212,13 @@ número de versión no se pueden fusionar y Flyway los rechaza.
   Las cuatro están hoy en `TABLES_RESERVED_FOR_LATER_TASKS`, que **afirma que no existen**, y
   `doesNotContainAnyElementsOf` rechaza la suite si se migran sin sacarlas de ahí. Para las dos de XMI el esquema
   autoritativo declara **un solo** índice de soporte, `idx_exchange_model` sobre `xmi_exchange(model_id, direction)`;
-  `xmi_loss_item` no tiene ninguno y declararle uno hace fallar el test exacto.
+  `xmi_loss_item` no tiene ninguno y declararle uno hace fallar el test exacto. Y hay **dos compuertas más** en ese archivo,
+  descubiertas por la sesión de XMI al leer el resto: `nativeEnumColumnsUseTheirPostgresType` y
+  `javaEnumsAndPostgresEnumsHaveTheSameLabels`. Toda columna enum nueva y todo tipo enum nuevo piden una línea en cada
+  una. Esta sesión ya las escribió para `invitation.role`, `invitation.status` e `invitation_status` (cuatro etiquetas);
+  la sesión de XMI sumará las suyas. `diagram_message` (V9) no añade ningún enum. Aviso para quien lea este archivo más
+  adelante: un `UNIQUE` declarado como *constraint* no aparece en el recuento de índices de soporte, pero un
+  `CREATE UNIQUE INDEX` **sí**, así que un índice único parcial tiene que estar en `SUPPORT_INDEXES`.
 - `docs/puds/datos/02-esquema-fisico.sql`, por las mismas cuatro tablas.
 - `web/src/pages/ProjectEditorPage.tsx`, que ya recibe el botón de la sesión de XMI además de los paneles de C14,
   C18 y C21.
