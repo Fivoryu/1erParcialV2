@@ -4,8 +4,14 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Application-level named check that prevents credentials from being persisted as an opaque target reference. */
-final class ConnectionConfigRefValidator {
+/**
+ * Application-level named check that prevents credentials from being persisted.
+ *
+ * <p>It is used by the generation side for the opaque target reference, and by the deployment API for the
+ * failure reason an operator reports, because both write into tables that must never hold a credential. The
+ * rule lives here once instead of being copied, so the two sides cannot drift apart.
+ */
+public final class ConnectionConfigRefValidator {
 
     static final String CHECK_NAME = "chk_generation_target_connection_config_ref";
 
@@ -32,7 +38,7 @@ final class ConnectionConfigRefValidator {
         }
     }
 
-    static boolean looksCredentialLike(String value) {
+    public static boolean looksCredentialLike(String value) {
         if (value == null || value.isBlank()) {
             return false;
         }
