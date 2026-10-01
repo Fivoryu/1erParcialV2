@@ -257,8 +257,13 @@ class DomainProjectEmitterTest {
 
         assertThat(reporting.get(".env.example")).contains(
                 "GENERATED_DB_NAME=", "GENERATED_DB_PASSWORD=replace-with-a-local-only-value",
-                "GENERATED_HTTP_HOST_PORT=19001", "GENERATED_POSTGRES_HOST_PORT=25433");
+                "GENERATED_HTTP_HOST_PORT=19001", "GENERATED_POSTGRES_HOST_PORT=25433",
+                "The database port is published on 127.0.0.1 only");
         assertThat(reporting.get(".gitignore")).contains(".env");
+        // The generated README tells the reader what is reachable from where, without over-claiming.
+        assertThat(reporting.get("README.md")).contains(
+                "## What is reachable from where",
+                "The database port is published on **`127.0.0.1` only**");
     }
 
     /**
@@ -291,6 +296,16 @@ class DomainProjectEmitterTest {
                 "wget -q --spider http://127.0.0.1:8080/actuator/health"));
         assertThat((Map<String, Object>) application.get("environment")).containsKey("SPRING_DATASOURCE_URL");
         assertThat((Map<String, Object>) parsed.get("volumes")).containsOnlyKeys("reporting-service-postgres-data");
+
+        // Port policy, asserted in both directions: the database is reachable from this machine only, and the
+        // application is reachable from the network because a client on the same network has to call it.
+        assertThat((List<Object>) database.get("ports"))
+                .isEqualTo(List.of("127.0.0.1:${GENERATED_POSTGRES_HOST_PORT:-25433}:5432"));
+        List<Object> applicationPorts = (List<Object>) application.get("ports");
+        assertThat(applicationPorts).isEqualTo(List.of("${GENERATED_HTTP_HOST_PORT:-19001}:8080"));
+        assertThat(String.valueOf(applicationPorts.getFirst()))
+                .as("the application port must not be bound to loopback")
+                .doesNotContain("127.0.0.1");
     }
 
     @Test

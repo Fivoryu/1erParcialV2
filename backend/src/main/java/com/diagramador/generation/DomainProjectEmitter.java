@@ -760,6 +760,9 @@ public final class DomainProjectEmitter {
      * volume, so two destinations of the same model are two independent stacks with two independent
      * databases. Host ports stay environment-driven because the destination's port pair belongs to the
      * destination's configuration, and the default pair is the first one of the 1900N/2543N convention.
+     *
+     * The application is published on every interface and the database only on loopback: a client on the same
+     * network needs the first, and nothing outside the machine needs the second.
      */
     private String compose(TargetNames target) {
         String slug = target.slug();
@@ -768,6 +771,11 @@ public final class DomainProjectEmitter {
                 "",
                 "# One Compose project per destination: its own application service, its own PostgreSQL, and its",
                 "# own database volume. No secret is stored in this file.",
+                "#",
+                "# Port policy: the application is published on every interface, because a client on the same network has",
+                "# to reach it. The database is published on the loopback address only -- the application reaches it over",
+                "# the Compose network, and nothing outside this machine should be able to open it. Binding it to every",
+                "# interface would put the generated database on the network.",
                 "",
                 "services:",
                 "  " + slug + "-db:",
@@ -777,7 +785,7 @@ public final class DomainProjectEmitter {
                 "      POSTGRES_USER: ${GENERATED_DB_USER}",
                 "      POSTGRES_PASSWORD: ${GENERATED_DB_PASSWORD}",
                 "    ports:",
-                "      - \"${GENERATED_POSTGRES_HOST_PORT:-25433}:5432\"",
+                "      - \"127.0.0.1:${GENERATED_POSTGRES_HOST_PORT:-25433}:5432\"",
                 "    volumes:",
                 "      - " + slug + "-postgres-data:/var/lib/postgresql/data",
                 "    healthcheck:",
@@ -826,6 +834,9 @@ public final class DomainProjectEmitter {
                 "",
                 "# Host ports for this destination, one pair per destination from the 1900N and 2543N ranges:",
                 "# 19001/25433 for the first, 19002/25434 for the second, and so on.",
+                "# The application port is published on every interface, so a client on the same network can reach it:",
+                "# http://<this-machine>:19001/api/...",
+                "# The database port is published on 127.0.0.1 only and is not reachable from the network, on purpose.",
                 "GENERATED_HTTP_HOST_PORT=19001",
                 "GENERATED_POSTGRES_HOST_PORT=25433");
     }
@@ -852,6 +863,11 @@ public final class DomainProjectEmitter {
                 "4. `curl http://localhost:19001/actuator/health` answers `{\"status\":\"UP\"}` once Flyway applied the migration.",
                 "",
                 "Each destination is its own Compose project with its own database volume, so two destinations of the same model run at the same time as long as their host port pairs differ. Take the pair from the `1900N` and `2543N` ranges: `19001`/`25433` for the first destination, `19002`/`25434` for the second, and so on.",
+                "",
+                "## What is reachable from where",
+                "",
+                "The application port is published on **every interface**, so another device on the same network reaches this backend at `http://<this-machine>:19001`. That is deliberate: it is what lets a client on the same network call this API.",
+                "The database port is published on **`127.0.0.1` only**. The application reaches its database over the Compose network, so nothing outside this machine needs the port, and binding it to every interface would put this generated database on the network.",
                 "",
                 "## Security limitation",
                 "",
