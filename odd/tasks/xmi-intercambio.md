@@ -32,7 +32,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 
 | Etapa | Estado | Evidencia |
 | --- | --- | --- |
-| X1 — Oráculo del dialecto | **Cerrada** | `python -m pytest tools -q` = **46 pruebas, 0 fallos**. El arnés **refutó dos afirmaciones mías** y eso quedó adentro como aserciones (§3.4) |
+| X1 — Oráculo del dialecto | **En verificación independiente** | `python -m pytest tools -q` = **46 pruebas, 0 fallos** (escritor y padre). El arnés **refutó dos afirmaciones mías** (§3.4). Falta el veredicto del verificador, incluida la prueba de mutación: hasta entonces no se marca cerrada |
 | X2 — Esquema y persistencia | En curso | Escritor en vuelo: migración `V10`, entidades, repositorios y las seis compuertas de `SchemaOwnershipTest` |
 | X3 — Emisión del dialecto | Pendiente | Depende de X1 (oráculo) y X2 (dominio) |
 | X4 — Servicio y endpoint de exportación | Pendiente | Depende de X3 |
@@ -199,6 +199,12 @@ Qué se sostiene y qué no, después de corregir:
 | El conector con más datos trae `Mode`, `EOID` y `SOID` — y viven en su atributo **`style`**, no en `geometry` | El anclaje se hace con `SOID`/`EOID` contra el `DUID` de cada figura. Verificado que coinciden: `SOID=4C5579B1` es `Usuario` y `EOID=C0CFAA2E` es `Cliente` |
 | Ese mismo conector trae en su `geometry` bloques `$LLB=`, `LLT=`, `LMT=`, `LRT=`, `LRB=` con `CX`/`CY`/`OX`/`OY` | Es la geometría de las **etiquetas** del conector, un canal aparte del ruteo |
 
+**Los atributos no se mezclan, y conviene decirlo junto porque me equivoqué en dos pasos distintos:** el canal de
+ruteo vive en **`geometry`** —las 8 apariciones de `Path=` están ahí, las 8—, y el de anclaje vive en **`style`**
+—`Mode`, `EOID` y `SOID` aparecen una vez cada uno, las tres en `style` y **ninguna** en `geometry`—. Son dos
+atributos con dos contenidos distintos de la misma colocación, y confundirlos es un error de lectura que este
+documento cometió y ahora deja escrito.
+
 Consecuencias, explícitas y sin adornos:
 
 1. **La disposición de las figuras es transportable** y es lo que hace que «se vean bien»: es el canal que se
@@ -219,6 +225,22 @@ Consecuencias, explícitas y sin adornos:
 Los 21 bloques `coords`, 21 `bounds` y 21 `containment` **no** son ruteo de conectores: son hijos de los
 `<attribute>` de la extensión, o sea posición de cada atributo dentro de su compartimento. El canónico no tiene
 ese concepto. Se cuentan como pérdida declarada.
+
+**Verificado exhaustivo, no por muestra.** Esta afirmación la escribí primero mirando los primeros 3 bloques —el
+mismo vicio que produjo el error de §3.4—, así que la conté otra vez sobre el árbol entero, con el padre de cada
+nodo construido por recorrido completo: las 21 apariciones de cada uno de los tres bloques tienen `<attribute>`
+de padre y `<attributes>` de abuelo, sobre los **21 objetos `<attribute>` distintos**, sin una sola excepción.
+Esta vez se sostiene.
+
+Dos datos que solo aparecen cuando se cuenta bien, y que le sirven al lector:
+
+- Entre esos 21 atributos están las cuatro constantes de la enumeración —`PENDIENTE`, `CONFIRMADA`, `CANCELADA`,
+  `COMPLETADA`—, lo que confirma **también en la extensión** que las constantes viajan como atributo y no como
+  literal UML. No es una rareza del subárbol semántico: es el dialecto.
+- `containment` trae `position` con valores `0` (9 veces), `1` (6), `2` (5) y `3` (1): es la **posición del atributo
+  dentro de su compartimento**, que se corresponde con la noción de `ordinal` que el canónico ya tiene. Este canal
+  es entonces **parcialmente representable**, a diferencia del ruteo. Se registra igual como pérdida, porque el
+  canónico no guarda la geometría del compartimento, pero queda anotado como candidato más barato que el `Path`.
 
 ### 3.6 Andamiaje vacío y el prefijo de datos propietarios
 
@@ -374,6 +396,19 @@ comandos de verificación).
 **Verificación de cada tarea.** El escritor corre en primer plano los comandos exactos que el padre autoriza bajo
 `## Verification` y reporta cada uno como `<comando>: <resultado observado>`. Después el padre vuelve a correr un
 comando reportado como spot check antes de dar la tarea por cerrada.
+
+### 5.2 Qué verificación cerró cada etapa
+
+Se escribe al cerrar, no al planificar. Un casillero nunca se marca sobre una afirmación, solo sobre una corrida.
+
+| Etapa | Autoverificación del escritor | Spot check del padre | Evaluación nativa | Verificador independiente |
+| --- | --- | --- | --- | --- |
+| **X1** | `python -m pytest tools -q` → **46 passed** | El mismo comando, re-corrido por el padre → **46 passed** | **No evaluable.** `gentle-ai review assess` falló dos veces con `untracked files require an explicit declaration`: los archivos sin commitear de X2, en vuelo, impiden producir el riesgo. Se probó declararlos fuera del candidato con `inspect --untracked-scope=exclude`, y la evaluación del rango commiteado volvió a fallar | **Sí, por la vía de riesgo alto.** El plan devuelto trata un assess no producido como **alto** y exige verificador separado: `gentle-ai-verify` en vuelo, con verificación de **mutación** —no alcanza con re-correr la suite—. Su veredicto se registra acá cuando llegue |
+
+**Lectura honesta de esa fila.** El escritor auto-verificó y el padre repitió el comando: eso prueba que el arnés
+funciona, no que mida bien. Lo que prueba que **mida bien** es la verificación de mutación en curso —que las
+aserciones fallen cuando el hecho cambia—, y por eso esa etapa no se marca cerrada hasta que llegue. Un arnés que
+pasa y no puede fallar es exactamente lo que este repositorio ya se comió una vez.
 
 ## 6. Riesgos declarados
 
