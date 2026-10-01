@@ -179,6 +179,12 @@ Medido en esta sesión, sobre la rama `feat/incremento-2-generacion-y-exportacio
 | Proyecto generado | Compila offline dentro de la suite y en el despliegue; **24 artefactos**; dos ZIP de **42.086** y **41.900** bytes, byte-deterministas |
 | Docker al terminar | **36 contenedores**, **68 volúmenes**: exactamente la línea base del inicio |
 
+**Nota de trazabilidad (agregada en el Incremento 3).** Las cifras de esta tabla son las que se observaron al
+cerrar este incremento y **no se reescriben**. Al incorporarse la autenticación, los tres arneses sumaron tres
+comprobaciones cada uno —registro, inicio de sesión y lectura del token—, así que hoy el mismo corte mide
+**33 pasos** (`tools/acceptance/`), **69 aserciones** (`acceptance_generation.py`) y **32 aserciones**
+(`acceptance_deployment.py`). Los tres se volvieron a correr completos y en verde tras ese cambio.
+
 ## 9. Decisión de entrada al Incremento 3
 
 El incremento se cierra con **el corte completo y verificado**, y con **siete puntos abiertos** con responsable

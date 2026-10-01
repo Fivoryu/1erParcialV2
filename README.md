@@ -26,9 +26,9 @@ sin red y se levanta con su propia base PostgreSQL.
 | Superficie | Evidencia |
 | --- | --- |
 | Backend | `mvn -o -B verify` = **198 pruebas**, 0 fallos, sin red |
-| Arnés del corte visible | `python tools/acceptance/acceptance.py` = **30 pasos OK**, 0 fallos, con teardown verificado |
-| Arnés de generación | `python tools/generation-acceptance/acceptance_generation.py` = **66 aserciones**, 0 fallos, con teardown verificado |
-| Arnés de despliegue | `python tools/generation-acceptance/acceptance_deployment.py` = **29 aserciones**, 0 fallos: ordena por la API, deja que el operador despliegue, comprueba `health` **desde la dirección de red**, hace el CRUD contra ese backend, ordena detener y verifica que no quedó nada |
+| Arnés del corte visible | `python tools/acceptance/acceptance.py` = **33 pasos OK**, 0 fallos, con teardown verificado |
+| Arnés de generación | `python tools/generation-acceptance/acceptance_generation.py` = **69 aserciones**, 0 fallos, con teardown verificado |
+| Arnés de despliegue | `python tools/generation-acceptance/acceptance_deployment.py` = **32 aserciones**, 0 fallos: ordena por la API, deja que el operador despliegue, comprueba `health` **desde la dirección de red**, hace el CRUD contra ese backend, ordena detener y verifica que no quedó nada |
 | Editor web | `npm run lint` = 0 errores, `npm test` = **87 pruebas**, 0 fallos, `npm run build` en verde |
 | Corte visible del Incremento 1 | Crear proyecto, dos clases, atributo, operación, relación, mover, recargar y encontrar lo mismo **con la misma disposición** |
 | Corte visible del Incremento 2 | Elegir destino, generar, ver el estado y los diagnósticos, descargar el ZIP, compilarlo offline, levantarlo con su base, `health` `UP` y CRUD con la foránea resuelta; **dos destinos a la vez sin pisarse** |
