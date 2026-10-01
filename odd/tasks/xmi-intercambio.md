@@ -261,6 +261,46 @@ el fixture canónico. Dentro de `Model` conviven `uml:Class` 8, `uml:Property` 3
 El fixture declara `encoding="windows-1252"` y el texto trae acentos reales («Prueba didáctica»). El lector
 **honra la codificación declarada**; asumir UTF-8 corrompe las notas. La emisión sale en UTF-8.
 
+### 3.9 Las formas exactas de serialización, y una tercera corrección mía
+
+Un escritor me corrigió dos veces antes de que yo midiera esto, y esta tercera corrección también es mía: le
+ordené emitir `value="*"` para las multiplicidades sin cota, y **el carácter `*` no aparece ni una vez en todo el
+documento**. Medido sobre los **66** valores, uno por uno:
+
+| Elemento | `xmi:type` | `value` | Veces |
+| --- | --- | --- | ---: |
+| `lowerValue` | `uml:LiteralInteger` | `1` | 29 |
+| `lowerValue` | `uml:LiteralInteger` | `0` | 4 |
+| `upperValue` | `uml:LiteralInteger` | `1` | 29 |
+| `upperValue` | `uml:LiteralUnlimitedNatural` | `-1` | 4 |
+
+Reglas que se derivan y que la emisión tiene que respetar:
+
+1. Una cota **finita** es `uml:LiteralInteger`, **incluida la superior**. No es `LiteralUnlimitedNatural`.
+2. Una cota **sin límite** es `uml:LiteralUnlimitedNatural` con **`value="-1"`**. Nunca `*`.
+3. `lowerValue` y `upperValue` llevan su propio `xmi:id`.
+
+Y las formas de los demás constructos, todas del mismo barrido exhaustivo:
+
+| Constructo | Forma medida |
+| --- | --- |
+| `ownedAttribute` | `xmi:type="uml:Property"`, hijos en orden **`lowerValue`, `upperValue`, `type`**; el tipo es un **elemento** `<type xmi:idref>`, no un atributo. 19 de los 23 lo llevan; los 4 restantes no llevan ninguno, que es el caso de referencia sin destino |
+| `ownedOperation` | `xmi:id`, `name`, `visibility`, `concurrency="sequential"`, y **sin `xmi:type`** |
+| `ownedParameter` | Los 11 del subárbol semántico son de retorno. **10 de 11 llevan el tipo como atributo** (`type="EAJava_Inmueble"`) y sin hijos; **1 de 11** lleva un `<type>` sin `idref`, que es el caso sin resolver. La forma conforme es el **atributo**, no el elemento |
+| `ownedEnd` | `xmi:type="uml:Property"`, con **`association` apuntando al id de la asociación**, `aggregation`, y hijos `type`, `lowerValue`, `upperValue` |
+| `generalization` | **Anidada** en el `packagedElement` de la subclase: `xmi:type="uml:Generalization"`, `xmi:id`, `general="<id del padre>"` |
+| `realization` | **De nivel superior**: `packagedElement xmi:type="uml:Realization"` con `name`, `visibility`, **`supplier`** y **`client`**. No es anidada, y las dos no se parecen entre sí |
+| `memberEnd` | Dos por asociación, y solo `xmi:idref` |
+| Tipos primitivos | `packagedElement xmi:type="uml:PrimitiveType"` agrupados en `EA_PrimitiveTypes_Package`, `EA_Java_Types_Package` y `EA_none_Types_Package`, con ids `EAJava_*` y `EAnone_*` |
+| `uml:Model` | `xmi:type="uml:Model"`, `name="EA_Model"`, `visibility="public"` y **sin `xmi:id`** |
+
+**Tercera lección, y la más incómoda.** Tres veces escribí una afirmación sobre el dialecto a partir de una muestra
+o de memoria, y tres veces la medición la refutó: el `Path` «vacío en todas», el ancla «en `geometry`», y ahora la
+multiplicidad «`*`». Las tres las encontró otro —dos veces un escritor, una vez un verificador—, nunca yo. Lo que
+sí funcionó fue la regla de §6: la medición no vive en la prosa, vive como **aserción ejecutable con recuento
+exacto**. Estas formas entran como aserciones en las pruebas de la emisión, no como párrafos que alguien tenga que
+recordar.
+
 ## 4. Decisiones cerradas
 
 | # | Decisión | Alternativa descartada | Motivo |
