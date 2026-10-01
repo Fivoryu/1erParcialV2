@@ -94,6 +94,15 @@ del comportamiento. El padre verifica el árbol y el diff de cada tarea: el escr
 | C6 | API de identidad: `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Prueba de API de los cuatro endpoints |
 | C7 | Web: registro/login, sesión persistida, `Authorization` en el cliente, lista de proyectos por membresía | `npm run lint` y `npm test` en verde con pruebas nuevas |
 
+### S1b — Acceso de máquina (bloqueadores descubiertos al verificar S1)
+
+Exigir token rompió a los dos clientes que **no** son usuarios, y la suite Java no puede verlo: sus tests recibieron token, los arneses y el operador no. Son bloqueadores, no mejoras: sin ellos queda roto el corte verificado del Incremento 2.
+
+| # | Tarea | Evidencia que la cierra |
+| --- | --- | --- |
+| C27 | Identidad de máquina para el **operador de despliegue**: token de operador configurable, resuelto por el interceptor como principal propio, con alcance enumerado a los endpoints que el operador realmente usa (`GET /projects`, `GET /projects/{id}/deployments`, `POST /deployments/{id}/claim|report`, `GET /projects/{id}/generations/{runId}/artifacts`) | Integración: el operador entra; un usuario común no obtiene el alcance de operador; el alcance no se extiende a comandos ni a miembros |
+| C28 | Los **tres arneses** (`tools/acceptance/acceptance.py`, `acceptance_generation.py`, `acceptance_deployment.py`) se registran e inician sesión como un usuario real y mandan `Authorization` | Los tres arneses corren completos contra el backend y quedan verdes; la corrida del Incremento 2 vuelve a pasar |
+
 ### S2 — Invitaciones y permisos básicos (CU-03, CU-13)
 
 | # | Tarea | Evidencia que la cierra |
@@ -153,3 +162,8 @@ del comportamiento. El padre verifica el árbol y el diff de cada tarea: el escr
 | **SLO de RNF-11 sin medir** | Se miden latencias de propagación y se registran p50/p95, como pide el requisito, pero sobre esta máquina y sin simulador de carga |
 | **Round-trip XMI sin verificar** | GAP-07 sigue abierto. La exportación se mide contra el fixture, no contra EA en vivo |
 | **Deriva del esquema físico** | Las migraciones usan `V7`, `V8` y `V9` (Flyway exige una versión única por archivo). Lo que el físico no tenía —usuario/clave, tabla de sesión, rol de invitación y chat— se escribe también en `docs/puds/datos/02-esquema-fisico.sql` para que la autoridad no quede mintiendo |
+| **Clientes que no son usuarios** | El operador de despliegue y los tres arneses no mandan credenciales. S1b (C27, C28) los cubre; hasta que esas dos tareas cierren, el corte verificado del Incremento 2 **no se puede volver a correr** |
+| **`/deployments/**` sin alcance por proyecto** | Cualquier usuario autenticado puede detener el despliegue de otro. Lo cierra C5 en las guardas de despliegue; se declara explícitamente para que no se pierda |
+| **Test inestable por puerto** | `DomainProjectEmitterTest` elige un puerto libre y de vez en cuando choca (`Port 57054 was already in use`), abortando la clase en 1 de sus 11 tests: una corrida completa da 220 y esa da 210. Es previo a este incremento y se declara; la reparación es una tarea propia |
+| **Enumeración de proyectos por código de estado** | `requireProject` corre antes de la comprobación de membresía, así que un no-miembro distingue 404 de 403. Es una fuga de existencia de severidad baja; se declara en lugar de ocultarla |
+| **Escritura por petición** | `IdentityService.resolve` actualiza `last_seen_at` en cada llamada autenticada, así que cada petición escribe. Costo aceptado y declarado para esta escala; no se finge escalado |
