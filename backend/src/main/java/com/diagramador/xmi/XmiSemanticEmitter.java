@@ -1,0 +1,669 @@
+package com.diagramador.xmi;
+
+import com.diagramador.api.ModelResource;
+import com.diagramador.api.ModelResource.AttributeResource;
+import com.diagramador.api.ModelResource.ClassifierResource;
+import com.diagramador.api.ModelResource.ConstraintResource;
+import com.diagramador.api.ModelResource.OperationResource;
+import com.diagramador.api.ModelResource.ParameterResource;
+import com.diagramador.api.ModelResource.RelationshipEndResource;
+import com.diagramador.api.ModelResource.RelationshipResource;
+import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.MultiplicityKind;
+import com.diagramador.domain.RelationshipKind;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.UUID;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+
+/** Emits the semantic UML subtree from the immutable API snapshot. */
+public final class XmiSemanticEmitter {
+
+    private static final String XMI_NAMESPACE = "http://schema.omg.org/spec/XMI/2.1";
+    private static final String UML_NAMESPACE = "http://schema.omg.org/spec/UML/2.1";
+    private static final String EXPORTER = "UML Class Diagrammer";
+    private static final String EXPORTER_VERSION = "0.1.0";
+    private static final String MODEL_NAME = "EA_Model";
+
+    public XmiEmissionResult emit(ModelResource snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        Context context = new Context(snapshot.classifiers());
+        Document document = composeDocument(snapshot, context);
+        return new XmiEmissionResult(serialize(document), context.losses());
+    }
+
+    /** The X3.2 extension is deliberately composed here, alongside the semantic model. */
+    private Document composeDocument(ModelResource snapshot, Context context) {
+        Document document = newDocument();
+        Element root = document.createElementNS(XMI_NAMESPACE, "xmi:XMI");
+        root.setAttributeNS(XMLConstants.XMLNS_ATTRIBUTE_NS_URI, "xmlns:xmi", XMI_NAMESPACE);
+        root.setAttributeNS(XMLConstants.XMLNS_ATTRIBUTE_NS_URI, "xmlns:uml", UML_NAMESPACE);
+        root.setAttributeNS(XMI_NAMESPACE, "xmi:version", "2.1");
+        document.appendChild(root);
+
+        Element documentation = document.createElementNS(XMI_NAMESPACE, "xmi:Documentation");
+        documentation.setAttribute("exporter", EXPORTER);
+        documentation.setAttribute("exporterVersion", EXPORTER_VERSION);
+        root.appendChild(documentation);
+
+        Element model = document.createElementNS(UML_NAMESPACE, "uml:Model");
+        setXmiAttribute(model, "type", "uml:Model");
+        setXmiAttribute(model, "id", context.registerId(XmiIdCodec.packageId(snapshot.id())));
+        model.setAttribute("name", MODEL_NAME);
+        model.setAttribute("visibility", "public");
+        root.appendChild(model);
+
+        for (ClassifierResource classifier : context.roots()) {
+            appendClassifier(document, model, classifier, context);
+        }
+        appendRelationships(document, model, snapshot.relationships(), context);
+        appendPrimitiveTypes(document, model, context);
+        return document;
+    }
+
+    private void appendClassifier(Document document, Element parent, ClassifierResource classifier, Context context) {
+        String xmiType = classifierType(classifier.kind());
+        Element element = document.createElementNS(UML_NAMESPACE, "packagedElement");
+        setXmiAttribute(element, "type", "uml:" + xmiType);
+        String id = classifier.kind() == ClassifierKind.PACKAGE
+                ? XmiIdCodec.packageId(classifier.id())
+                : XmiIdCodec.classifierId(classifier.id());
+        setXmiAttribute(element, "id", context.registerId(id));
+        element.setAttribute("name", Objects.requireNonNull(classifier.name(), "classifier.name"));
+        context.classifierElements.put(classifier.id(), element);
+        parent.appendChild(element);
+
+        if (classifier.kind() == ClassifierKind.CLASS || classifier.kind() == ClassifierKind.ABSTRACT_CLASS) {
+            if (classifier.isAbstract() || classifier.kind() == ClassifierKind.ABSTRACT_CLASS) {
+                element.setAttribute("isAbstract", "true");
+            }
+        } else if (classifier.kind() == ClassifierKind.INTERFACE && classifier.isAbstract()) {
+            element.setAttribute("isAbstract", "true");
+        }
+
+        for (AttributeResource attribute : orderedAttributes(classifier)) {
+            appendAttribute(document, element, attribute, classifier.kind() == ClassifierKind.ENUMERATION, context);
+        }
+        for (OperationResource operation : orderedOperations(classifier)) {
+            appendOperation(document, element, operation, context);
+        }
+        appendConstraints(document, element, classifier.constraints(), context);
+
+        for (ClassifierResource child : context.children(classifier.id())) {
+            appendClassifier(document, element, child, context);
+        }
+    }
+
+    private void appendAttribute(Document document, Element owner, AttributeResource attribute,
+            boolean enumerationConstant, Context context) {
+        if (!enumerationConstant && !"ATTRIBUTE".equals(attribute.kind())) {
+            context.loss("unsupported_attribute_kind");
+        }
+        Element element = document.createElementNS(UML_NAMESPACE, "ownedAttribute");
+        setXmiAttribute(element, "type", "uml:Property");
+        setXmiAttribute(element, "id", context.registerId(XmiIdCodec.classifierId(attribute.id())));
+        element.setAttribute("name", Objects.requireNonNull(attribute.name(), "attribute.name"));
+        String visibility = visibility(attribute.visibility(), context);
+        if (visibility != null) {
+            element.setAttribute("visibility", visibility);
+        }
+        owner.appendChild(element);
+
+        appendMultiplicity(document, element, attribute.multiplicity(), context);
+        if (!enumerationConstant) {
+            appendTypeReference(document, element, attribute.type(), context);
+        }
+        if (attribute.defaultValue() != null) {
+            Element defaultValue = document.createElementNS(UML_NAMESPACE, "defaultValue");
+            setXmiAttribute(defaultValue, "type", "uml:LiteralString");
+            defaultValue.setAttribute("value", attribute.defaultValue());
+            element.appendChild(defaultValue);
+        }
+    }
+
+    private void appendOperation(Document document, Element owner, OperationResource operation, Context context) {
+        Element element = document.createElementNS(UML_NAMESPACE, "ownedOperation");
+        setXmiAttribute(element, "id", context.registerId(XmiIdCodec.classifierId(operation.id())));
+        element.setAttribute("name", Objects.requireNonNull(operation.name(), "operation.name"));
+        String visibility = visibility(operation.visibility(), context);
+        if (visibility != null) {
+            element.setAttribute("visibility", visibility);
+        }
+        element.setAttribute("concurrency", "sequential");
+        element.setAttribute("isAbstract", Boolean.toString(operation.isAbstract()));
+        element.setAttribute("isStatic", Boolean.toString(operation.isStatic()));
+        owner.appendChild(element);
+
+        List<ParameterResource> parameters = orderedParameters(operation);
+        boolean hasReturnParameter = parameters.stream().anyMatch(parameter -> isReturn(parameter.direction()));
+        for (ParameterResource parameter : parameters) {
+            appendParameter(document, element, parameter, context);
+        }
+        if (!hasReturnParameter && (operation.returnTypeReferenceId() != null || operation.returnType() != null)) {
+            Element returnParameter = document.createElementNS(UML_NAMESPACE, "ownedParameter");
+            setXmiAttribute(returnParameter, "type", "uml:Parameter");
+            setXmiAttribute(returnParameter, "id", context.registerId(
+                    XmiIdCodec.returnParameterId(operation.id())));
+            returnParameter.setAttribute("name", "return");
+            returnParameter.setAttribute("direction", "return");
+            appendParameterType(document, returnParameter, operation.returnType(), context);
+            element.appendChild(returnParameter);
+        }
+    }
+
+    private void appendParameter(Document document, Element owner, ParameterResource parameter, Context context) {
+        Element element = document.createElementNS(UML_NAMESPACE, "ownedParameter");
+        setXmiAttribute(element, "type", "uml:Parameter");
+        String parameterId = isReturn(parameter.direction())
+                ? XmiIdCodec.returnParameterId(parameter.id())
+                : XmiIdCodec.classifierId(parameter.id());
+        setXmiAttribute(element, "id", context.registerId(parameterId));
+        element.setAttribute("name", Objects.requireNonNull(parameter.name(), "parameter.name"));
+        if (parameter.direction() != null && !parameter.direction().isBlank()) {
+            String direction = parameter.direction().toLowerCase(Locale.ROOT);
+            if (!Set.of("in", "out", "inout", "return").contains(direction)) {
+                context.loss("unsupported_parameter_direction");
+            }
+            element.setAttribute("direction", direction);
+        } else {
+            context.loss("unsupported_parameter_direction");
+        }
+        appendParameterType(document, element, parameter.type(), context);
+        owner.appendChild(element);
+    }
+
+    private void appendParameterType(Document document, Element parameter, String typeName, Context context) {
+        String typeId = context.resolveType(typeName);
+        if (typeId == null) {
+            parameter.appendChild(document.createElementNS(UML_NAMESPACE, "type"));
+            return;
+        }
+        parameter.setAttribute("type", typeId);
+    }
+
+    private void appendConstraints(Document document, Element owner, List<ConstraintResource> constraints,
+            Context context) {
+        for (ConstraintResource constraint : sortedConstraints(constraints)) {
+            Element rule = document.createElementNS(UML_NAMESPACE, "ownedRule");
+            setXmiAttribute(rule, "type", "uml:Constraint");
+            setXmiAttribute(rule, "id", context.registerId(XmiIdCodec.classifierId(constraint.id())));
+            Element specification = document.createElementNS(UML_NAMESPACE, "specification");
+            setXmiAttribute(specification, "type", "uml:OpaqueExpression");
+            if (constraint.expression() != null) {
+                Element body = document.createElementNS(UML_NAMESPACE, "body");
+                body.setTextContent(constraint.expression());
+                specification.appendChild(body);
+            } else {
+                context.loss("unresolved_constraint_expression");
+            }
+            rule.appendChild(specification);
+            owner.appendChild(rule);
+            if (constraint.severity() != null) {
+                context.loss("constraint_severity");
+            }
+        }
+    }
+
+    private void appendRelationships(Document document, Element model, List<RelationshipResource> relationships,
+            Context context) {
+        for (RelationshipResource relationship : sortedRelationships(relationships)) {
+            List<RelationshipEndResource> ends = orderedEnds(relationship);
+            if (ends.size() < 2) {
+                context.loss("relationship_missing_ends");
+                continue;
+            }
+            if (ends.size() != 2) {
+                context.loss("invalid_relationship_end_count");
+                continue;
+            }
+            if (ends.stream().anyMatch(end -> !context.emittableClassifierIds.contains(end.classifierId()))) {
+                long unresolvedEnds = ends.stream()
+                        .filter(end -> !context.emittableClassifierIds.contains(end.classifierId())).count();
+                context.loss("relationship_unresolved_end", Math.toIntExact(unresolvedEnds));
+                continue;
+            }
+
+            RelationshipKind kind = relationshipKind(relationship.kind());
+            if (kind == null) {
+                context.loss("unsupported_relationship_kind");
+                continue;
+            }
+            switch (kind) {
+                case ASSOCIATION, AGGREGATION, COMPOSITION ->
+                    appendAssociation(document, model, relationship, ends, kind, context);
+                case GENERALIZATION -> appendGeneralization(document, relationship, ends, context);
+                case INTERFACE_REALIZATION ->
+                    appendDirectedRelationship(document, model, relationship, ends, "Realization", context);
+                case DEPENDENCY ->
+                    appendDirectedRelationship(document, model, relationship, ends, "Dependency", context);
+            }
+        }
+    }
+
+    private void appendAssociation(Document document, Element model, RelationshipResource relationship,
+            List<RelationshipEndResource> ends, RelationshipKind kind, Context context) {
+        String requiredAggregation = switch (kind) {
+            case AGGREGATION -> "shared";
+            case COMPOSITION -> "composite";
+            default -> null;
+        };
+        if (requiredAggregation != null && ends.stream().noneMatch(end -> requiredAggregation
+                .equalsIgnoreCase(Objects.requireNonNullElse(end.aggregationKind(), "")))) {
+            context.loss("relationship_aggregation_kind_mismatch");
+        }
+        Element association = document.createElementNS(UML_NAMESPACE, "packagedElement");
+        setXmiAttribute(association, "type", "uml:Association");
+        String associationId = context.registerId(XmiIdCodec.classifierId(relationship.id()));
+        setXmiAttribute(association, "id", associationId);
+        setOptionalAttribute(association, "name", relationship.name());
+        model.appendChild(association);
+
+        for (RelationshipEndResource end : ends) {
+            Element memberEnd = document.createElementNS(UML_NAMESPACE, "memberEnd");
+            setXmiAttribute(memberEnd, "idref", XmiIdCodec.classifierId(end.id()));
+            association.appendChild(memberEnd);
+        }
+        for (RelationshipEndResource end : ends) {
+            Element ownedEnd = document.createElementNS(UML_NAMESPACE, "ownedEnd");
+            setXmiAttribute(ownedEnd, "type", "uml:Property");
+            setXmiAttribute(ownedEnd, "id", context.registerId(XmiIdCodec.classifierId(end.id())));
+            setOptionalAttribute(ownedEnd, "name", end.role());
+            ownedEnd.setAttribute("visibility", "public");
+            ownedEnd.setAttribute("association", associationId);
+            String aggregation = aggregation(end.aggregationKind(), context);
+            if (aggregation != null) {
+                ownedEnd.setAttribute("aggregation", aggregation);
+            }
+            Element type = document.createElementNS(UML_NAMESPACE, "type");
+            setXmiAttribute(type, "idref", classifierXmiId(context.classifierById.get(end.classifierId())));
+            ownedEnd.appendChild(type);
+            appendMultiplicity(document, ownedEnd, end.multiplicity(), context);
+            association.appendChild(ownedEnd);
+        }
+        appendConstraints(document, association, relationship.constraints(), context);
+    }
+
+    private String aggregation(String rawValue, Context context) {
+        if (rawValue == null || rawValue.isBlank()) {
+            context.loss("unsupported_aggregation_kind");
+            return null;
+        }
+        String value = rawValue.toLowerCase(Locale.ROOT);
+        if (Set.of("none", "shared", "composite").contains(value)) {
+            return value;
+        }
+        context.loss("unsupported_aggregation_kind");
+        return null;
+    }
+
+    private void appendGeneralization(Document document, RelationshipResource relationship,
+            List<RelationshipEndResource> ends, Context context) {
+        RelationshipEndResource specific = ends.get(0);
+        RelationshipEndResource general = ends.get(1);
+        Element specificClassifier = context.classifierElements.get(specific.classifierId());
+        if (specificClassifier == null) {
+            context.loss("relationship_unresolved_end");
+            return;
+        }
+        Element generalization = document.createElementNS(UML_NAMESPACE, "generalization");
+        setXmiAttribute(generalization, "type", "uml:Generalization");
+        setXmiAttribute(generalization, "id", context.registerId(XmiIdCodec.classifierId(relationship.id())));
+        generalization.setAttribute("general", XmiIdCodec.classifierId(general.classifierId()));
+        specificClassifier.appendChild(generalization);
+        appendConstraints(document, generalization, relationship.constraints(), context);
+        if (relationship.name() != null) {
+            context.loss("unsupported_relationship_name");
+        }
+    }
+
+    private void appendDirectedRelationship(Document document, Element model, RelationshipResource relationship,
+            List<RelationshipEndResource> ends, String xmiType, Context context) {
+        Element directed = document.createElementNS(UML_NAMESPACE, "packagedElement");
+        setXmiAttribute(directed, "type", "uml:" + xmiType);
+        setXmiAttribute(directed, "id", context.registerId(XmiIdCodec.classifierId(relationship.id())));
+        setOptionalAttribute(directed, "name", relationship.name());
+        directed.setAttribute("client", XmiIdCodec.classifierId(ends.get(0).classifierId()));
+        directed.setAttribute("supplier", XmiIdCodec.classifierId(ends.get(1).classifierId()));
+        if ("Realization".equals(xmiType)) {
+            directed.setAttribute("visibility", "public");
+        }
+        model.appendChild(directed);
+        appendConstraints(document, directed, relationship.constraints(), context);
+    }
+
+    private void appendMultiplicity(Document document, Element owner, MultiplicityKind multiplicity,
+            Context context) {
+        if (multiplicity == null) {
+            context.loss("unsupported_multiplicity");
+            return;
+        }
+        String lower;
+        String upper;
+        switch (multiplicity) {
+            case EXACTLY_ONE -> {
+                lower = "1";
+                upper = "1";
+            }
+            case ZERO_OR_ONE -> {
+                lower = "0";
+                upper = "1";
+            }
+            case ONE_OR_MANY -> {
+                lower = "1";
+                upper = "-1";
+            }
+            case ZERO_OR_MANY -> {
+                lower = "0";
+                upper = "-1";
+            }
+            case RANGE -> {
+                context.loss("unsupported_multiplicity_range");
+                return;
+            }
+            default -> throw new IllegalStateException("Unhandled multiplicity: " + multiplicity);
+        }
+
+        String ownerId = owner.getAttributeNS(XMI_NAMESPACE, "id");
+        Element lowerValue = document.createElementNS(UML_NAMESPACE, "lowerValue");
+        setXmiAttribute(lowerValue, "type", "uml:LiteralInteger");
+        setXmiAttribute(lowerValue, "id", context.registerId(
+                XmiIdCodec.multiplicityValueId(ownerId, "lower", false)));
+        lowerValue.setAttribute("value", lower);
+        owner.appendChild(lowerValue);
+
+        boolean unlimited = upper.equals("-1");
+        Element upperValue = document.createElementNS(UML_NAMESPACE, "upperValue");
+        setXmiAttribute(upperValue, "type", unlimited
+                ? "uml:LiteralUnlimitedNatural" : "uml:LiteralInteger");
+        setXmiAttribute(upperValue, "id", context.registerId(
+                XmiIdCodec.multiplicityValueId(ownerId, "upper", unlimited)));
+        upperValue.setAttribute("value", upper);
+        owner.appendChild(upperValue);
+    }
+
+    private void appendTypeReference(Document document, Element owner, String typeName, Context context) {
+        // A TypeReference UUID identifies the relationship row, not its target. Only the snapshot's resolved name
+        // can map it back to a classifier; its name-only primitive references are materialized deterministically.
+        String id = context.resolveType(typeName);
+        if (id == null) {
+            return;
+        }
+        Element type = document.createElementNS(UML_NAMESPACE, "type");
+        setXmiAttribute(type, "idref", id);
+        owner.appendChild(type);
+    }
+
+    private void appendPrimitiveTypes(Document document, Element model, Context context) {
+        List<Map.Entry<String, String>> primitiveTypes = new ArrayList<>(context.primitiveTypes.entrySet());
+        primitiveTypes.sort(Map.Entry.<String, String>comparingByValue().thenComparing(Map.Entry.comparingByKey()));
+        for (Map.Entry<String, String> primitive : primitiveTypes) {
+            Element element = document.createElementNS(UML_NAMESPACE, "packagedElement");
+            setXmiAttribute(element, "type", "uml:PrimitiveType");
+            setXmiAttribute(element, "id", context.registerId(primitive.getKey()));
+            element.setAttribute("name", primitive.getValue());
+            model.appendChild(element);
+        }
+    }
+
+    private String visibility(String rawValue, Context context) {
+        if (rawValue == null) {
+            context.loss("unsupported_visibility");
+            return null;
+        }
+        String normalized = rawValue.toLowerCase(Locale.ROOT);
+        if (Set.of("public", "private", "protected", "package").contains(normalized)) {
+            return normalized;
+        }
+        context.loss("unsupported_visibility");
+        return null;
+    }
+
+    private String classifierXmiId(ClassifierResource classifier) {
+        return classifier.kind() == ClassifierKind.PACKAGE
+                ? XmiIdCodec.packageId(classifier.id())
+                : XmiIdCodec.classifierId(classifier.id());
+    }
+
+    private String classifierType(ClassifierKind kind) {
+        return switch (kind) {
+            case CLASS, ABSTRACT_CLASS -> "Class";
+            case INTERFACE -> "Interface";
+            case ENUMERATION -> "Enumeration";
+            case PACKAGE -> "Package";
+        };
+    }
+
+    private RelationshipKind relationshipKind(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return RelationshipKind.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private boolean isReturn(String direction) {
+        return direction != null && direction.equalsIgnoreCase("return");
+    }
+
+    private List<AttributeResource> orderedAttributes(ClassifierResource classifier) {
+        return classifier.attributes().stream()
+                .sorted(Comparator.comparingInt(AttributeResource::ordinal)
+                        .thenComparing(AttributeResource::name, Comparator.nullsFirst(String::compareTo))
+                        .thenComparing(AttributeResource::id))
+                .toList();
+    }
+
+    private List<OperationResource> orderedOperations(ClassifierResource classifier) {
+        return classifier.operations().stream()
+                .sorted(Comparator.comparingInt(OperationResource::ordinal)
+                        .thenComparing(OperationResource::name, Comparator.nullsFirst(String::compareTo))
+                        .thenComparing(OperationResource::id))
+                .toList();
+    }
+
+    private List<ParameterResource> orderedParameters(OperationResource operation) {
+        return operation.parameters().stream()
+                .sorted(Comparator.comparingInt(ParameterResource::ordinal)
+                        .thenComparing(ParameterResource::name, Comparator.nullsFirst(String::compareTo))
+                        .thenComparing(ParameterResource::id))
+                .toList();
+    }
+
+    private List<RelationshipEndResource> orderedEnds(RelationshipResource relationship) {
+        return relationship.ends().stream()
+                .sorted(Comparator.comparingInt(RelationshipEndResource::ordinal)
+                        .thenComparing(RelationshipEndResource::id))
+                .toList();
+    }
+
+    private List<ConstraintResource> sortedConstraints(List<ConstraintResource> constraints) {
+        return constraints.stream().sorted(Comparator.comparing(ConstraintResource::id)).toList();
+    }
+
+    private List<RelationshipResource> sortedRelationships(List<RelationshipResource> relationships) {
+        return relationships.stream()
+                .sorted(Comparator.comparing(RelationshipResource::name,
+                                Comparator.nullsFirst(String::compareTo))
+                        .thenComparing(RelationshipResource::id))
+                .toList();
+    }
+
+    private void setXmiAttribute(Element element, String localName, String value) {
+        element.setAttributeNS(XMI_NAMESPACE, "xmi:" + localName, value);
+    }
+
+    private void setOptionalAttribute(Element element, String name, String value) {
+        if (value != null) {
+            element.setAttribute(name, value);
+        }
+    }
+
+    private Document newDocument() {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            return factory.newDocumentBuilder().newDocument();
+        } catch (ParserConfigurationException exception) {
+            throw new IllegalStateException("The JDK XML document builder is unavailable.", exception);
+        }
+    }
+
+    private String serialize(Document document) {
+        try {
+            TransformerFactory factory = TransformerFactory.newInstance();
+            Transformer transformer = factory.newTransformer();
+            transformer.setOutputProperty(OutputKeys.METHOD, "xml");
+            transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
+            transformer.setOutputProperty(OutputKeys.STANDALONE, "no");
+            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
+            transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+            transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
+            StringWriter writer = new StringWriter();
+            transformer.transform(new DOMSource(document), new StreamResult(writer));
+            return writer.toString();
+        } catch (TransformerException exception) {
+            throw new IllegalStateException("The XMI document could not be serialized.", exception);
+        }
+    }
+
+    private final class Context {
+
+        private final Map<UUID, ClassifierResource> classifierById = new HashMap<>();
+        private final Map<String, List<ClassifierResource>> classifiersByName = new HashMap<>();
+        private final Map<UUID, List<ClassifierResource>> childrenByNamespace = new HashMap<>();
+        private final Map<UUID, Element> classifierElements = new HashMap<>();
+        private final Set<UUID> emittableClassifierIds = new HashSet<>();
+        private final Set<String> ids = new HashSet<>();
+        private final Map<String, String> primitiveTypes = new HashMap<>();
+        private final Map<String, Integer> lossCounts = new TreeMap<>();
+        private final List<ClassifierResource> roots;
+
+        private Context(List<ClassifierResource> classifiers) {
+            List<ClassifierResource> sorted = classifiers.stream()
+                    .sorted(Comparator.comparing(ClassifierResource::name,
+                                    Comparator.nullsFirst(String::compareTo))
+                            .thenComparing(ClassifierResource::id))
+                    .toList();
+            for (ClassifierResource classifier : sorted) {
+                if (classifierById.putIfAbsent(classifier.id(), classifier) != null) {
+                    throw new IllegalArgumentException("Classifier UUIDs must be unique in a model snapshot.");
+                }
+                classifiersByName.computeIfAbsent(classifier.name(), ignored -> new ArrayList<>()).add(classifier);
+            }
+            List<ClassifierResource> rootClassifiers = new ArrayList<>();
+            for (ClassifierResource classifier : sorted) {
+                if (classifier.namespaceId() == null) {
+                    rootClassifiers.add(classifier);
+                    continue;
+                }
+                ClassifierResource namespace = classifierById.get(classifier.namespaceId());
+                if (namespace != null && namespace.kind() == ClassifierKind.PACKAGE) {
+                    childrenByNamespace.computeIfAbsent(namespace.id(), ignored -> new ArrayList<>()).add(classifier);
+                }
+            }
+            roots = List.copyOf(rootClassifiers);
+            for (ClassifierResource root : roots) {
+                markReachable(root);
+            }
+            for (ClassifierResource classifier : sorted) {
+                if (!emittableClassifierIds.contains(classifier.id())) {
+                    loss("unresolved_namespace");
+                }
+            }
+        }
+
+        private void markReachable(ClassifierResource classifier) {
+            if (!emittableClassifierIds.add(classifier.id())) {
+                return;
+            }
+            for (ClassifierResource child : children(classifier.id())) {
+                markReachable(child);
+            }
+        }
+
+        private List<ClassifierResource> roots() {
+            return roots;
+        }
+
+        private List<ClassifierResource> children(UUID namespaceId) {
+            return childrenByNamespace.getOrDefault(namespaceId, List.of());
+        }
+
+        private String resolveType(String typeName) {
+            // A name absent from the complete classifier inventory is the primitive name exposed by
+            // ProjectApiService. Duplicate classifier names cannot be disambiguated by this snapshot.
+            if (typeName == null || typeName.isBlank()) {
+                loss("unresolved_type_reference");
+                return null;
+            }
+            String normalizedName = typeName.trim();
+            List<ClassifierResource> matches = classifiersByName.getOrDefault(normalizedName, List.of());
+            if (matches.size() > 1) {
+                loss("ambiguous_type_reference");
+                return null;
+            }
+            if (matches.size() == 1) {
+                ClassifierResource classifier = matches.get(0);
+                if (!emittableClassifierIds.contains(classifier.id())) {
+                    loss("unresolved_type_reference");
+                    return null;
+                }
+                return classifier.kind() == ClassifierKind.PACKAGE
+                        ? XmiIdCodec.packageId(classifier.id())
+                        : XmiIdCodec.classifierId(classifier.id());
+            }
+
+            UUID primitiveUuid = UUID.nameUUIDFromBytes(
+                    ("uml-diagrammer:xmi-primitive:" + normalizedName).getBytes(StandardCharsets.UTF_8));
+            String primitiveId = XmiIdCodec.classifierId(primitiveUuid);
+            primitiveTypes.putIfAbsent(primitiveId, normalizedName);
+            return primitiveId;
+        }
+
+        private String registerId(String id) {
+            if (!ids.add(id)) {
+                throw new IllegalArgumentException("Duplicate XMI id generated: " + id);
+            }
+            return id;
+        }
+
+        private void loss(String name) {
+            loss(name, 1);
+        }
+
+        private void loss(String name, int count) {
+            if (count > 0) {
+                lossCounts.merge(name, count, Integer::sum);
+            }
+        }
+
+        private List<XmiEmissionResult.Loss> losses() {
+            return lossCounts.entrySet().stream()
+                    .map(entry -> new XmiEmissionResult.Loss(entry.getKey(), entry.getValue()))
+                    .toList();
+        }
+    }
+}
