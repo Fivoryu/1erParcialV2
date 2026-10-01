@@ -82,6 +82,13 @@ Cada tarea cierra con **al menos un commit de unidad de trabajo**, con sus prueb
 del comportamiento. El padre verifica el árbol y el diff de cada tarea: el escritor delegado no puede ejecutar
 `gentle_review` y en una vuelta anterior reportó «files_changed: None» habiendo escrito 580 líneas.
 
+**Regla de verificación para lanzar escritores** (aprendida a costo de dos vueltas perdidas): el encargo debe
+decir de forma explícita que `mvn -o -B compile` y `mvn -o -B verify` están **permitidos**, incluido el
+PostgreSQL que Testcontainers levanta por su cuenta. La prohibición de contenedores alcanza a los arneses de
+`tools/`, al operador de despliegue y a `docker` directo —el ciclo de vida del humano—, **no** al build. Un
+encargo que prohíbe contenedores y exige `verify` a la vez se contradice y detiene al escritor. Un escritor que
+no corre `verify` no está terminado: así se coló un test que no compilaba.
+
 ### S1 — Identidad, sesión y autorización (login propio)
 
 | # | Tarea | Evidencia que la cierra |
