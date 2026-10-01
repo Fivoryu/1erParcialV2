@@ -608,6 +608,27 @@ En cualquier desenlace, **el round-trip contra EA en vivo no se declara verifica
 | Q3 (prueba de round-trip) | Aporta el round-trip **dentro de la app**; contra EA en vivo queda como GAP-07 |
 | RNF-01, RNF-04, RNF-06 | Determinismo de la emisión, rechazo de entrada inválida, y el reporte como salida observable |
 
+### 8.1 El traspaso al acta, en dos listas
+
+Cuando cierre X8, el traspaso a la sesión de Incremento 3 son **dos listas**, y la segunda es obligatoria. El par la
+pidió textualmente, y el motivo es bueno: «si no me lo decís vos lo voy a tener que inferir yo, que es peor».
+
+1. **Lo medido**, cada número con el comando que lo produjo.
+2. **Lo no medido**, explícito.
+
+Ya se saben al menos tres elementos de la segunda lista, y hay que ampliarla con lo que vaya apareciendo:
+
+- EA **no aceptó ni una vez** un archivo emitido por nosotros. GAP-07 sigue abierto.
+- Nunca se probó empíricamente si EA **rechaza** `value="*"`. Que EA **escriba** `-1` no lo implica, y la decisión de
+  seguirlo es basada en evidencia, no una demostración.
+- El **significado** de la gramática de `Path=` en el canal de conectores sigue sin establecerse, que es por qué X-4
+  emite vacío. Una y dos muestras dicen cómo se **escribe**, no qué **acepta** el lector.
+
+Y la frase del bloque de interoperabilidad va con su límite pegado, no en nota al pie: la automatización de EA es
+alcanzable y expone importación y exportación de XMI, y queda como **vía disponible, no como round-trip verificado**;
+además, la instalación de EA de esta máquina es un repack, que no invalida el dialecto medido —lo escribe el mismo
+motor— pero condiciona cualquier lectura de interoperabilidad.
+
 ## 9. Integración con la sesión de Incremento 3
 
 La sesión hermana (`01a0f8fe`, rama `feat/incremento-3-colaboracion`, worktree principal, mismo clon) avisó al cerrar
