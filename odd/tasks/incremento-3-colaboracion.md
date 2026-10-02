@@ -210,7 +210,7 @@ leído en la fuente, **no** ejercitado por una prueba.
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
 | C11 | `ProjectEventBus` y `GET /projects/{id}/events` con `SseEmitter`, heartbeat, limpieza de emisores y autorización por rol | Integración: dos clientes reciben el evento publicado; un tercero sin rol no conecta. **Cerrada** en `cb6a2ca` (ver *S3 progreso*) |
-| C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable |
+| C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable. **Cerrada** en `c2d24a6` (ver *S3 progreso*) |
 | C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra |
 | C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado |
 | C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío |
@@ -262,6 +262,43 @@ Maven huérfano, matarlo para liberar `target/`.
 3. **En memoria y de una sola instancia** (decisión C4): la presencia y este canal no cruzan instancias.
 4. **El operador no puede suscribirse**: `AuthenticationInterceptor.isOperatorAllowed` no incluye `events`, así que se lo
    rechaza antes del controlador. Es la frontera buscada, no un descuido.
+
+### S3 progreso — C12 cerrada (2026-10-01)
+
+**Commit:** `c2d24a6` — *feat(backend): know who is in a diagram and what they touch* (3 archivos nuevos, +417).
+
+**Revisión nativa:** linaje `review-3e650cd04245491c`, tier `medium`, **una** lente (`review-reliability`), 3 caminos, 417 líneas,
+presupuesto de corrección 200. Cerró **aprobada** al primer intento, autoridad quemada, y **sin hallazgos**: el sobre no trajo `advisory_findings`
+(artefacto del revisor: prompt 31.834 bytes, resultado 687 bytes).
+
+**Medido al cerrar:** `mvn -o -B -f backend/pom.xml test -Dtest=PresenceRegistryTest` = **9 pruebas, 0 fallos** ·
+`mvn -o -B -f backend/pom.xml verify` = **264 pruebas, 0 fallos, 0 errores, 0 omitidas** (255 de base + 9 nuevas).
+
+**Defecto real que encontró la verificación independiente y se arregló ANTES del commit** (no quedó como hallazgo del revisor):
+`join` arrastraba el `targetElementId` y el `joinedAt` de la entrada previa de una `sessionId` **sin comparar el usuario**, así que una sesión
+reasignada a otro usuario —camino plausible: una pestaña cuyo id de sesión sobrevive al cierre de sesión— publicaba al nuevo usuario **tocando un
+elemento que nunca tocó**, visible para todos los demás. Ahora la herencia sólo ocurre si el `userId` coincide. La prueba que lo cubre es
+**falsable y con sensibilidad medida**: antes del arreglo la corrida acotada dio **9 pruebas con 1 fallo**, y la aserción que falló fue
+exactamente la del target heredado.
+
+**Acotación del color, declarada en el propio código:** la paleta tiene **10 colores**, así que con más de 10 usuarios simultáneos la colisión
+está **garantizada** por palomar; el mismo usuario nunca cambia de color. **Medición propia de esta sesión** (atribuida acá, hecha con la
+**clase real compilada** y no con una réplica): 200.000 UUID v4 por `colorFor` → aparecen los 10 colores con desvío máximo **−0,87 % / +0,73 %**
+sobre los 20.000 esperados por color. La distribución es uniforme.
+
+**Límites declarados de esta unidad:**
+
+1. **No se midió si la prueba de concurrencia fallaría contra un `HashMap` sin sincronizar.** Probarlo exige compilar una copia mutada del
+   registro y correr la clase de prueba contra ella con el andamiaje de JUnit armado a mano; ni el verificador (read-only) ni el padre lo hicieron.
+   Queda declarado como **no medido**, con el motivo. Lo que sí se verificó: ocho hilos liberados por una barrera hacen `join`/`touch`/`refresh`/
+   `leave`/`snapshot` concurrentes de verdad (no serializados), y `join` es un único `compute` anidado, sin ventana de leer-y-escribir.
+2. **El registro no borra fantasmas por sí solo.** Quien llama a `join` y a `leave` es el ciclo de vida del canal, y ese cableado es de **C14**;
+   está declarado en el comentario de la clase. Hasta que C14 cierre, la presencia no tiene alta/baja automática.
+3. **Caveat del verificador, registrado como oportunidad y no como defecto:** la prueba del rebind no afirma el target en el snapshot *antes* de
+   rebindear (se apoya en `touch(...).isTrue()`), y no fija `joinedAt`, nombre, color ni última actividad tras el rebind. La sensibilidad de la
+   aserción principal sí está medida por el fallo previo al arreglo, que es más fuerte que una precondición.
+4. **Comparación contra la línea base anterior no reproducible por el verificador:** la corrió el padre (255 → 264) y el verificador confirmó 264,
+   pero no pudo correr la revisión previa al candidato para comparar test por test.
 
 ### S4 — Chat persistente del diagrama
 
