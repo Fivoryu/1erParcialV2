@@ -19,6 +19,17 @@ export interface MemberResource {
   status: MemberStatus;
 }
 
+export interface PresencePerson {
+  userId: Uuid;
+  displayName: string;
+  color: string;
+  targetElementId: Uuid | null;
+}
+
+export interface PresenceUpdatedPayload {
+  presence: PresencePerson[];
+}
+
 export interface InvitationResource {
   projectId: Uuid;
   projectName: string;

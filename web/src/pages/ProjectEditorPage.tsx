@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ApiTransportError, createApiClient } from '../api/client';
-import type { ModelResource, OperationEnvelope, ProjectResource } from '../api/types';
+import { loadSession } from '../api/session';
+import type {
+  ModelResource,
+  OperationEnvelope,
+  PresencePerson,
+  PresenceUpdatedPayload,
+  ProjectResource,
+} from '../api/types';
+import PresencePanel from '../collaboration/PresencePanel';
+import { subscribeProjectEvents } from '../collaboration/projectEvents';
 import UmlCanvas from '../diagram/UmlCanvas';
 import PropertiesPanel from '../diagram/PropertiesPanel';
 import GenerationPanel from '../generation/GenerationPanel';
@@ -36,6 +45,30 @@ function messageForOutcome(outcome: { kind: string; diagnostics?: Array<{ messag
   return 'The change could not be applied.';
 }
 
+function selectedTargetElementId(selection: CanvasSelection | null): string | null {
+  if (selection === null) {
+    return null;
+  }
+
+  // CanvasSelection uses kind-specific identifiers instead of a shared `id` field.
+  switch (selection.kind) {
+    case 'classifier':
+      return selection.classifierId;
+    case 'relationship':
+      return selection.relationshipId;
+    default:
+      return selection.elementId;
+  }
+}
+
+function presenceSnapshot(data: unknown): PresencePerson[] | null {
+  if (typeof data !== 'object' || data === null) {
+    return null;
+  }
+  const payload = (data as { payload?: PresenceUpdatedPayload }).payload;
+  return Array.isArray(payload?.presence) ? payload.presence : null;
+}
+
 interface PendingCommand {
   sequence: number;
   envelope: OperationEnvelope;
@@ -43,9 +76,13 @@ interface PendingCommand {
 
 export default function ProjectEditorPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  // No asynchronous completion may write per-project state for a project that is no longer open.
+  const currentProjectIdRef = useRef(projectId);
+
   const [project, setProject] = useState<ProjectResource | null>(null);
   const [model, setModel] = useState<ModelResource | null>(null);
   const [selection, setSelection] = useState<CanvasSelection | null>(null);
+  const [presence, setPresence] = useState<PresencePerson[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +90,16 @@ export default function ProjectEditorPage() {
   const canonicalModelRef = useRef<ModelResource | null>(null);
   const revisionRef = useRef<number | null>(null);
   const pendingCommandsRef = useRef<PendingCommand[]>([]);
+  useLayoutEffect(() => {
+    currentProjectIdRef.current = projectId;
+    // These caches are per-project; cross-project comparisons are meaningless and can reject the right model.
+    canonicalModelRef.current = null;
+    revisionRef.current = null;
+    pendingCommandsRef.current = [];
+  }, [projectId]);
   const sequenceRef = useRef(0);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const currentUserId = loadSession()?.userId ?? null;
 
   const publishModel = useCallback((next: ModelResource) => {
     modelRef.current = next;
@@ -73,6 +118,9 @@ export default function ProjectEditorPage() {
 
     void Promise.all([api.getProject(projectId), api.getModel(projectId)])
       .then(([projectResource, modelResource]) => {
+        if (currentProjectIdRef.current !== projectId) {
+          return;
+        }
         if (active) {
           setProject(projectResource);
           canonicalModelRef.current = modelResource;
@@ -107,6 +155,9 @@ export default function ProjectEditorPage() {
       }
       canonical = await api.getModel(projectId);
     } catch (cause: unknown) {
+      if (currentProjectIdRef.current !== projectId) {
+        return;
+      }
       if (resultRevision !== undefined && resultRevision !== null && canonical) {
         canonical = applyOptimisticCommand(canonical, envelope);
         canonical = { ...canonical, revision: resultRevision };
@@ -116,6 +167,9 @@ export default function ProjectEditorPage() {
       }
     }
 
+    if (currentProjectIdRef.current !== projectId) {
+      return;
+    }
     if (!canonical) {
       return;
     }
@@ -128,6 +182,55 @@ export default function ProjectEditorPage() {
       .reduce((current, pending) => applyOptimisticCommand(current, pending.envelope), canonical);
     publishModel(projected);
   }, [projectId, publishModel]);
+
+  const refreshModelFromEvent = useCallback(async (): Promise<void> => {
+    if (!projectId) {
+      return;
+    }
+
+    try {
+      const canonical = await api.getModel(projectId);
+      if (currentProjectIdRef.current !== projectId) {
+        return;
+      }
+      if (canonicalModelRef.current && canonical.revision < canonicalModelRef.current.revision) {
+        return;
+      }
+      canonicalModelRef.current = canonical;
+      revisionRef.current = canonical.revision;
+      const projected = pendingCommandsRef.current
+        .slice()
+        .sort((left, right) => left.sequence - right.sequence)
+        .reduce((current, pending) => applyOptimisticCommand(current, pending.envelope), canonical);
+      publishModel(projected);
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId) {
+        setError(messageFor(cause));
+      }
+    }
+  }, [projectId, publishModel]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setPresence([]);
+      return;
+    }
+
+    setPresence([]);
+    return subscribeProjectEvents({
+      projectId,
+      onEvent(event) {
+        if (event.type === 'presence.updated') {
+          const snapshot = presenceSnapshot(event.data);
+          if (snapshot) {
+            setPresence(snapshot);
+          }
+        } else if (event.type === 'operation.applied') {
+          void refreshModelFromEvent();
+        }
+      },
+    });
+  }, [projectId, refreshModelFromEvent]);
 
   const dispatchEnvelope = useCallback((envelope: OperationEnvelope): void => {
     if (!projectId || !modelRef.current) {
@@ -200,6 +303,17 @@ export default function ProjectEditorPage() {
     }
     dispatchEnvelope(envelope);
   }, [dispatchEnvelope]);
+
+  const targetElementId = selectedTargetElementId(selection);
+
+  useEffect(() => {
+    if (!projectId) {
+      return;
+    }
+    void api.reportProjectPresenceTouch(projectId, targetElementId).catch(() => {
+      // Presence is ephemeral and must never break editing.
+    });
+  }, [projectId, targetElementId]);
 
   const deleteSelection = useCallback((selected: CanvasSelection) => {
     const current = modelRef.current;
@@ -302,6 +416,7 @@ export default function ProjectEditorPage() {
               />
             </div>
 
+            <PresencePanel entries={presence} userId={currentUserId} />
             <MembersPanel key={project.id} projectId={project.id} />
 
             <GenerationPanel

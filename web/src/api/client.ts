@@ -108,6 +108,7 @@ export interface ApiClient {
   removeProjectMember(projectId: Uuid, userId: Uuid): Promise<MemberResource>;
   listMyInvitations(): Promise<InvitationResource[]>;
   getModel(projectId: Uuid): Promise<ModelResource>;
+  reportProjectPresenceTouch(projectId: Uuid, targetElementId: Uuid | null): Promise<void>;
   executeCommand(projectId: Uuid, envelope: OperationEnvelope): Promise<CommandOutcome>;
   listGenerationTargets(projectId: Uuid): Promise<GenerationTargetResource[]>;
   createGenerationTarget(
@@ -180,6 +181,24 @@ export function createApiClient(
     }
 
     return body as T;
+  }
+
+  async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetcher(`${base}${path}`, authorizedInit(path, init));
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
+      throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
+    }
+
+    clearSessionOnUnauthorized(path, response);
+    if (response.status === 204) {
+      return;
+    }
+
+    const body = await response.json().catch(() => null) as unknown;
+    throw transportErrorFromBody(body, response.status);
   }
 
   function postJson<T>(path: string, payload: unknown): Promise<T> {
@@ -291,6 +310,16 @@ export function createApiClient(
     },
     getModel(projectId) {
       return requestJson<ModelResource>(`/projects/${encodeURIComponent(projectId)}/model`);
+    },
+    reportProjectPresenceTouch(projectId, targetElementId) {
+      return requestNoContent(
+        `/projects/${encodeURIComponent(projectId)}/presence`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetElementId }),
+        },
+      );
     },
     async executeCommand(projectId, envelope) {
       const result = await postJson<CommandResult>(
