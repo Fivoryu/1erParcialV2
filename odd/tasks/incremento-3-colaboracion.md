@@ -211,9 +211,31 @@ leído en la fuente, **no** ejercitado por una prueba.
 | --- | --- | --- |
 | C11 | `ProjectEventBus` y `GET /projects/{id}/events` con `SseEmitter`, heartbeat, limpieza de emisores y autorización por rol | Integración: dos clientes reciben el evento publicado; un tercero sin rol no conecta. **Cerrada** en `cb6a2ca` (ver *S3 progreso*) |
 | C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable. **Cerrada** en `c2d24a6` (ver *S3 progreso*) |
+| C12b | **Cablear la presencia al canal** (hueco descubierto al derivar C14): alta en el `subscribe`, baja en las tres terminaciones del emisor, `presence.updated` publicado con el snapshot, y `POST /projects/{id}/presence` para el elemento tocado | Integración: dos suscriptores del mismo proyecto se ven entre sí con su color; el que se desconecta desaparece del snapshot siguiente; un toque de uno llega al otro como `presence.updated`; un tercero sin rol no puede reportar |
 | C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra. **Cerrada** en `c973dd5` (ver *S3 progreso*) |
 | C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado |
 | C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío |
+
+### S3 — hueco descubierto al derivar C14 (tarea C12b)
+
+Al derivar las superficies de C14 («web: hook SSE, panel de presencia y resaltado del elemento tocado») apareció un hueco **real** del plan,
+y se declara acá como se hizo con S1b:
+
+**El plan tenía el canal (C11), el registro (C12) y la web (C14), pero ninguna tarea cubría el cableado entre ellos.** Medido antes de añadir
+nada: `PresenceRegistry.join/leave/touch` **no los llamaba nadie** y ningún evento `presence.updated` se publicaba. Sin esa pieza, C14 no puede
+funcionar: un panel de presencia sobre un canal que nunca anuncia presencia es una pantalla muerta, y el «elemento que el otro toca» no tendría de
+dónde venir. Por eso C14 **no** se lanzó primero: se declara **C12b** (backend) y C14 la consume después.
+
+**Hecho medido que fija el diseño y evita romper C11:** en Spring Framework `ResponseBodyEmitter` **acumula** callbacks —`DefaultCallback` y
+`ErrorCallback` guardan cada uno una `List` de delegados y los suman con `addDelegate(...)`— así que registrar `onCompletion`/`onTimeout`/`onError`
+en el controlador **no pisa** la limpieza que `ProjectEventBus` ya registra. Comprobado con `javap -p` sobre `spring-webmvc-6.2.7.jar`. Consecuencia:
+`ProjectEventBus` **no se toca** (queda intacto el archivo verificado en C11) y el cableado vive en los controladores y en un publicador chico.
+
+**Corrección menor al plan:** la decisión C1 dice que `SseEmitter` sale de `spring-web`; en realidad vive en **`spring-webmvc`**
+(`org.springframework.web.servlet.mvc.method.annotation`). No cambia la decisión —`spring-boot-starter-web` ya lo trae, que era el punto— pero el
+nombre del artefacto estaba mal.
+
+
 
 ### S3 progreso — C11 cerrada (2026-10-01)
 
