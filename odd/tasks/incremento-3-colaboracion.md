@@ -213,7 +213,8 @@ leído en la fuente, **no** ejercitado por una prueba.
 | C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable. **Cerrada** en `c2d24a6` (ver *S3 progreso*) |
 | C12b | **Cablear la presencia al canal** (hueco descubierto al derivar C14): alta en el `subscribe`, baja en las tres terminaciones del emisor, `presence.updated` publicado con el snapshot, y `POST /projects/{id}/presence` para el elemento tocado | Integración: dos suscriptores del mismo proyecto se ven entre sí con su color; el que se desconecta desaparece del snapshot siguiente; un toque de uno llega al otro como `presence.updated`; un tercero sin rol no puede reportar. **Cerrada CON DESVIACIÓN DECLARADA** en `84e16f1` — sin revisión nativa por fallo de transporte, autorizado por el usuario (ver *S3 progreso — C12b*) |
 | C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra. **Cerrada** en `c973dd5` (ver *S3 progreso*) |
-| C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado |
+| C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado. **Partida en C14 y C14b por tamaño de revisión** (ver *S3 — C14 partida*) |
+| C14b | Web: **resaltado del elemento que cada uno toca** en el lienzo, con el color de quien lo toca y su nombre | Prueba de componente del resaltado: el nodo tocado se marca con el color y el nombre de quien lo toca, y deja de marcarse cuando el otro suelta |
 | C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío |
 
 ### S3 — hueco descubierto al derivar C14 (tarea C12b)
@@ -234,6 +235,24 @@ en el controlador **no pisa** la limpieza que `ProjectEventBus` ya registra. Com
 **Corrección menor al plan:** la decisión C1 dice que `SseEmitter` sale de `spring-web`; en realidad vive en **`spring-webmvc`**
 (`org.springframework.web.servlet.mvc.method.annotation`). No cambia la decisión —`spring-boot-starter-web` ya lo trae, que era el punto— pero el
 nombre del artefacto estaba mal.
+
+
+
+### S3 — C14 partida, y la restricción medida que fija su diseño
+
+C14 (“web: hook SSE, panel de presencia y resaltado del elemento tocado”) entra en **una sola tarea del plan** pero toca nueve archivos entre transporte,
+panel y lienzo. Se parte por carga de revisión, no por comodidad: **C14** entrega *ver quién está* (transporte + reporte del toque propio + panel con color
+y nombre) y **C14b** entrega *ver qué toca el otro* (el resaltado en el lienzo). Cada una tiene su corte visible y su propia prueba de componente.
+
+**Restricción medida antes de lanzar al escritor, y es la que Fija el diseño:** el entorno de pruebas web **no tiene DOM** —`jsdom` y `happy-dom`
+no están instalados, `vitest` corre sin `environment` (o sea, `node`) y las dependencias son las que la línea offline ya tiene—. Consecuencias
+congeladas:
+
+1. **No hay pruebas de hooks.** Un `renderHook` necesitaría un DOM y por lo tanto una dependencia nueva, que rompería la línea offline. Por eso el
+transporte es un **módulo puro** (`web/src/collaboration/projectEvents.ts`) con el `fetch` **inyectado** —como el cliente de C10— y sin archivo de hook:
+la página lo usa dentro de un `useEffect` con limpieza.
+2. **Los componentes se prueban con `renderToStaticMarkup`**, que es el patrón que C10 ya usa y no necesita DOM.
+3. El parseo de las tramas SSE se prueba con un `Response` con cuerpo en streaming, usando los globales de Node: sin navegador y sin red real.
 
 
 
