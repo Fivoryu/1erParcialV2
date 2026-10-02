@@ -512,6 +512,26 @@ Se escribe al cerrar, no al planificar. Un casillero nunca se marca sobre una af
 | **X3.1 + X3.1b** | `mvn -o -B -f backend/pom.xml verify` → **237 pruebas, 0 fallos**. El escritor además **corrigió mi encargo en cuatro lugares**, siguiendo al fixture en vez de a mi prosa: la `realization` es de nivel superior con `client`/`supplier` y no anidada, el `uml:Model` no lleva `xmi:id`, las cotas finitas no son `LiteralUnlimitedNatural`, y las operaciones no llevan `xmi:type` | Confirmado en la corrida de X3.2a: **239 pruebas, 0 fallos** | No evaluable, sin cambio: el evaluador **no puede correr en este repositorio** | **INCOMPLETO, y por culpa mía.** Le pedí verificar y a la vez lo declaré «read-only», y `mvn verify` escribe en `backend/target/`. Eligió la lectura estricta y **no ejecutó ni un comando**: todo su veredicto es análisis estático. Aun así encontró **dos defectos reales**, los dos confirmados y corregidos |
 | **X3.2a** | **No hubo reporte.** El escritor terminó su trabajo pero devolvió un mensaje sobre un objetivo de revisión ajeno a la tarea, así que nadie supo qué hizo ni qué midió | El padre, en su lugar: `mvn -o -B -f backend/pom.xml verify` → **239 pruebas, 0 fallos, 0 errores, BUILD SUCCESS**, más comprobación estructural de los cinco bloques, las claves del registro por elemento y los **26** tipos de pérdida | — | Diferida, junto con X3.2b y X3.3, a **una sola verificación de la emisión completa** |
 | **X5** | `mvn -o -B -f backend/pom.xml verify` → **244 pruebas, 0 fallos**. El escritor reportó con conteos medidos, declaró sus límites —que la ida y vuelta prueba el acuerdo lector/escritor y **no** la aceptación en EA— y de paso **refutó un número mío** (§3.9) | El padre, el mismo comando → **244 pruebas, 0 fallos, 0 errores, BUILD SUCCESS**; `XmiReaderTest` 4 pruebas y `XmiSemanticEmitterTest` 8, incluida la ida y vuelta `emittedCanonicalModelReadsBackWithSemanticsAndDiagramAnchors`. Las cuatro pruebas del lector cubren el fixture ajeno, la discrepancia de multiplicidad entre mitades, **el segundo archivo de EA sin asumir nuestro dialecto de UUID**, y XML malformado | — | Pendiente, y es el candidato natural: verificar lector y emisión **juntos**, que es la costura real |
+| **X6a** | `mvn -o -B -f backend/pom.xml verify` → **249 pruebas, 0 fallos**, con cinco escenarios de integración contra PostgreSQL: reemplazo con cada borrado reportado, agregar, colisión de nombres diagnosticada **sin aplicación parcial**, checksum rechazado **antes** de escribir nada, y las filas de intercambio y pérdidas leídas de vuelta | El padre, el mismo comando → **249 pruebas, 0 fallos, 0 errores, BUILD SUCCESS**; `XmiImportServiceTest` 5 pruebas. Y una corrección del padre: el escritor había dejado un `verify.log` de **93 KB dentro de `src/test/java`** —un archivo de build en el árbol de fuentes— y se sacó antes de commitear | — | Pendiente: verificar la costura completa lector + importación |
+
+#### Dos huecos que X6a declaró en vez de esconder
+
+Corresponden al acta porque afectan lo que el usuario **ve**:
+
+- **Las notas de los clasificadores se pierden.** El lector las toma del atributo `documentation`, y el modelo de la
+  aplicación **no tiene dónde guardarlas**. Va como pérdida declarada, no como descarte silencioso, pero significa que
+  un diagrama traído de EA **no muestra sus notas**.
+- **`external_path` queda nulo** en las pérdidas, porque el lector entrega categorías agregadas y no rutas por
+  elemento. La columna existe y admite el dato; hoy no hay quién lo produzca.
+
+Los dos son la conducta correcta: declarar en vez de callar. Pero ninguno es «resuelto», y así se registran.
+
+#### Una lección técnica que vale conservar
+
+Al aplicar la importación aparecieron **colisiones de identificadores entre proyectos**: los UUID canónicos viajan en
+el archivo, pero las claves de la base son **globales**, así que importar el mismo clasificador en dos proyectos
+choca. La solución fue **acotar los identificadores al modelo destino**. Es un hallazgo que no estaba en ninguna
+medición previa y que solo aparece cuando se aplica de verdad en vez de describirse.
 
 #### Un verificador bloqueado igual sirvió
 
