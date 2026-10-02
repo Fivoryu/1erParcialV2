@@ -48,6 +48,7 @@ public final class XmiSemanticEmitter {
     private static final String EXPORTER = "UML Class Diagrammer";
     private static final String EXPORTER_VERSION = "0.1.0";
     private static final String MODEL_NAME = "EA_Model";
+    private static final String EA_CLASS_DIAGRAM_TYPE = "Logical";
     private static final String EA_PRIMITIVES_PACKAGE_ID = "EAPrimitiveTypesPackage";
     private static final String EA_JAVA_TYPES_PACKAGE_ID = "EAJavaTypesPackage";
 
@@ -664,18 +665,28 @@ public final class XmiSemanticEmitter {
         setXmiAttribute(diagram, "id", context.registerId(XmiIdCodec.classifierId(view.id())));
         diagrams.appendChild(diagram);
 
+        String packageId = XmiIdCodec.packageId(snapshot.id());
         Element model = document.createElement("model");
-        model.setAttribute("package", XmiIdCodec.packageId(snapshot.id()));
+        model.setAttribute("package", packageId);
+        model.setAttribute("localID", diagramLocalId(view.id()));
+        model.setAttribute("owner", packageId);
+        // The single emitted diagram is attached directly to its model package.
+        model.setAttribute("tpos", "0");
         diagram.appendChild(model);
-        context.loss("extension_diagram_model_metadata");
 
         Element properties = document.createElement("properties");
         setOptionalAttribute(properties, "name", view.name());
+        // ModelResource has no diagram-kind field; this UML class diagram uses EA's measured Logical kind.
+        properties.setAttribute("type", EA_CLASS_DIAGRAM_TYPE);
         diagram.appendChild(properties);
+        // ViewResource carries the name, but no documentation.
         context.loss("extension_diagram_properties_metadata");
 
-        diagram.appendChild(document.createElement("project"));
-        context.loss("extension_diagram_project_metadata");
+        Element project = document.createElement("project");
+        project.setAttribute("version", Long.toString(snapshot.revision()));
+        diagram.appendChild(project);
+        // Author and timestamps are absent from ModelResource; never synthesize them from ambient state.
+        context.loss("extension_diagram_project_metadata", 3);
         diagram.appendChild(document.createElement("style1"));
         context.loss("extension_diagram_style1_metadata");
         diagram.appendChild(document.createElement("style2"));
@@ -691,6 +702,11 @@ public final class XmiSemanticEmitter {
         Map<UUID, String> duidByClassifier = appendExtensionFigurePlacements(document, placements, view, context);
         appendExtensionConnectorPlacements(document, placements, snapshot, duidByClassifier, context);
         context.loss("extension_connector_waypoints", view.connectorPath().size());
+    }
+
+    private String diagramLocalId(UUID viewId) {
+        // EA expects a numeric local identifier; derive a stable positive surrogate from the canonical view UUID.
+        return Integer.toString(Math.floorMod(viewId.hashCode(), Integer.MAX_VALUE) + 1);
     }
 
     private Map<UUID, String> appendExtensionFigurePlacements(Document document, Element placements,

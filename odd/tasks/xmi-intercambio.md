@@ -666,6 +666,40 @@ La receta es reproducible —copiar el `.eapx`, `OpenFile`, `ImportPackageXMI(gu
 StripGUID=0)`, contar antes y después por delta, y cerrar con `Exit()`—, pero **la identificación del campo exacto
 queda pendiente de una corrida con EA en estado limpio y NO se declara como conocida**.
 
+### 7.3 Tres hipótesis refutadas, una puerta cerrada, y el defecto declarado
+
+Se probaron hipótesis de a una, cada una con **una sola invocación** de importación sobre una copia:
+
+| Hipótesis | Cómo se probó | Resultado |
+| --- | --- | --- |
+| **Faltaban los campos de la cabecera**: `type="Logical"` en `<properties>`, `localID`/`owner`/`tpos` en `<model>`, `version` en `<project>` | Se implementaron en la emisión y se volvió a importar | **REFUTADA.** Sigue `DIAGRAMAS=0`, con los mismos +3 paquetes y +8 elementos |
+| **El dueño del diagrama apunta al `uml:Model`**, que en el dialecto medido no lleva `xmi:id` ni es un paquete | Variante de **un solo** cambio: `package` y `owner` del diagrama apuntando al paquete real `Outer` | **REFUTADA.** Sigue `DIAGRAMAS=0` |
+| **El orden de los hijos** de `Extension` o de `<diagram>` difiere del de EA | Comparación directa de los dos archivos | **REFUTADA de antemano.** El orden es **idéntico** en ambos: `elements`, `connectors`, `primitivetypes`, `profiles`, `diagrams`, y dentro del diagrama `model`, `properties`, `project`, `style1`, `style2`, `swimlanes`, `matrixitems`, `extendedProperties`, `elements` |
+
+Y una puerta que se cerró: **hacer que EA escriba la respuesta no es posible en esta build.** La idea era importar el
+fixture —que sí crea su diagrama— y pedirle a EA que **exporte** ese mismo paquete de 10 elementos, para leer el
+dialecto exacto que EA produce. `ExportPackageXMI` **no terminó en 900 segundos** sobre ese paquete chico, igual que
+antes no había terminado en 600 segundos sobre paquetes grandes. El camino de exportación de EA no sirve como oráculo
+en esta máquina.
+
+La cáscara de cabecera que se implementó **se conserva**, porque cada campo está medido contra el fixture y no cuesta
+nada, pero **no arregla el diagrama**, y así queda declarado, no como «arreglado».
+
+**Lo que queda como candidato, sin probar**, y corresponde decirlo con esa palabra:
+
+- Los bloques `<style1>`, `<style2>`, `<swimlanes>` y `<matrixitems>` vacíos: el fixture trae `value` extensos.
+- `<project>` sin `author`, `created` ni `modified`.
+- **El más plausible de los que quedan**: en el fixture, las diez figuras del diagrama son miembros del **paquete que
+  posee el diagrama**. En el nuestro, las figuras referencian clases que están en la raíz del modelo y dentro de
+  paquetes anidados. Si EA exige que los sujetos de las figuras pertenezcan al paquete dueño, **ningún cambio de
+  cabecera lo iba a arreglar** — y eso encaja con que las dos hipótesis refutadas lo fueran.
+
+**El estado de GAP-07, que es lo que va al acta.** La importación existe, es rápida y está ejecutada. EA acepta
+**nuestra semántica** con los tipos resueltos: +8 elementos sobre una copia de un proyecto real. EA **no crea nuestro
+diagrama**: +0, contra +1 del archivo de EA. La causa **no está identificada**, con tres hipótesis refutadas por
+experimentos de una sola variable. **El requisito «que se vean bien las figuras en EA» NO está cumplido** y no se
+declara cumplido.
+
 **Decisión del usuario:** reiniciar EA y reintentar. **Pendiente de su acción**: abrir EA con un proyecto y avisar.
 
 | Desenlace | Qué se declara |

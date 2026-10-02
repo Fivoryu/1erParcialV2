@@ -254,12 +254,26 @@ class XmiSemanticEmitterTest {
         Element emittedDiagram = diagrams.get(0);
         assertThat(childNames(emittedDiagram)).containsExactly("model", "properties", "project", "style1", "style2",
                 "swimlanes", "matrixitems", "extendedProperties", "elements");
-        assertThat(findDirectNoNamespace(emittedDiagram, "model").getAttribute("package"))
-                .isEqualTo(XmiIdCodec.packageId(model.id()));
+        String packageId = XmiIdCodec.packageId(model.id());
+        Element diagramModel = findDirectNoNamespace(emittedDiagram, "model");
+        assertThat(diagramModel.getAttribute("package")).isEqualTo(packageId);
+        assertThat(diagramModel.getAttribute("localID")).isEqualTo("301");
+        assertThat(diagramModel.getAttribute("owner")).isEqualTo(packageId);
+        assertThat(diagramModel.getAttribute("tpos")).isEqualTo("0");
         Element diagramProperties = findDirectNoNamespace(emittedDiagram, "properties");
         assertThat(diagramProperties.getAttribute("name")).isEqualTo("Default");
-        assertThat(diagramProperties.hasAttribute("type")).isFalse();
+        assertThat(diagramProperties.getAttribute("type")).isEqualTo("Logical");
         assertThat(diagramProperties.hasAttribute("documentation")).isFalse();
+        Element diagramProject = findDirectNoNamespace(emittedDiagram, "project");
+        assertThat(diagramProject.getAttribute("version")).isEqualTo("3");
+        assertThat(diagramProject.hasAttribute("author")).isFalse();
+        assertThat(diagramProject.hasAttribute("created")).isFalse();
+        assertThat(diagramProject.hasAttribute("modified")).isFalse();
+        for (String styleBlock : List.of("style1", "style2", "swimlanes", "matrixitems")) {
+            Element style = findDirectNoNamespace(emittedDiagram, styleBlock);
+            assertThat(style.getAttributes().getLength()).as("%s has no invented vendor settings", styleBlock)
+                    .isZero();
+        }
 
         Element diagramElements = findDirectNoNamespace(emittedDiagram, "elements");
         List<Element> placements = directChildrenNoNamespace(diagramElements, "element");
@@ -376,8 +390,7 @@ class XmiSemanticEmitterTest {
                 new XmiEmissionResult.Loss("extension_connector_vendor_metadata", 6),
                 new XmiEmissionResult.Loss("extension_connector_waypoints", 2),
                 new XmiEmissionResult.Loss("extension_diagram_matrixitems_metadata", 1),
-                new XmiEmissionResult.Loss("extension_diagram_model_metadata", 1),
-                new XmiEmissionResult.Loss("extension_diagram_project_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_project_metadata", 3),
                 new XmiEmissionResult.Loss("extension_diagram_properties_metadata", 1),
                 new XmiEmissionResult.Loss("extension_diagram_style1_metadata", 1),
                 new XmiEmissionResult.Loss("extension_diagram_style2_metadata", 1),
@@ -752,7 +765,7 @@ class XmiSemanticEmitterTest {
             if (!subject.isEmpty()) {
                 assertThat(ids).as("resolved diagram subject %s", subject).contains(subject);
             }
-            for (String attribute : List.of("general", "client", "supplier", "association", "package")) {
+            for (String attribute : List.of("general", "client", "supplier", "association", "package", "owner")) {
                 String reference = element.getAttribute(attribute);
                 if (!reference.isEmpty()) {
                     assertThat(ids).as("resolved %s reference %s", attribute, reference).contains(reference);
