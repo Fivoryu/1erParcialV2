@@ -617,6 +617,55 @@ El add-in del MCP quedó **descartado como vía**: respondió una sola vez y des
 
 Dos cautelas que siguen en pie: la instalación es una repack, que no invalida el dialecto medido —lo escribe el mismo motor— pero condiciona cualquier lectura de interoperabilidad; y todo esto corrió sobre una **copia**, nunca sobre el proyecto del usuario. La copia vive en `C:\Users\HP\AppData\Local\Temp\ea-scratch\`.
 
+### 7.2 La aceptación medida de nuestro propio archivo
+
+Con `ImportPackageXMI` funcionando, se importó **nuestro** documento emitido —el que la prueba de emisión vuelca en
+`backend/target/xmi-sample.xml`, 19.196 bytes— sobre una copia de `sw1_p2.eapx`. Resultado medido:
+
+| Archivo importado | Paquetes | Elementos | **Diagramas** |
+| --- | ---: | ---: | ---: |
+| El fixture de EA (`Prueba3.xml`) | +1 | **+10** | **+1** |
+| El nuestro (`xmi-sample.xml`) | +3 | **+8** | **+0** |
+
+Reproducido dos veces, con los mismos números las dos veces. Y lo que aterrizó del nuestro es correcto:
+`AbstractBase [Class]`, `Base [Class]`, `Feature [Class]`, `Status [Enumeration]`, `Contract [Interface]`,
+`Boolean` y `String [PrimitiveType]`. **EA acepta nuestra semántica, con los tipos bien resueltos, y descarta
+nuestro diagrama.**
+
+Entonces el requisito «que se vean bien las figuras en EA» queda **mitad verificado y mitad localizado**, que es
+mejor que «no se sabe»: hay una diferencia concreta entre el bloque que EA sí importa y el nuestro.
+
+**Una hipótesis que había que descartar, y que descarté mal.** Vi que nuestro archivo sale con **CRLF** y que mis
+variantes de prueba salían con **LF**, y con LF EA no importaba nada. Concluí que EA exigía CRLF. **Era falso**: al
+reproducir la línea base, un archivo **byte-idéntico** al original importaba las mismas +3/+8. Las variantes daban
+cero porque **el paso de la ruta por parámetro desde Git Bash no llegaba al script** —el mismo problema de
+conversión de rutas que ya me había mordido con `reg query`—. No cambiaba el archivo: cambiaba mi forma de
+invocarlo. Queda registrado porque es la **cuarta** vez en esta sesión que una medición mía resultó ser un
+artefacto del instrumento y no del objeto.
+
+**Dónde está la diferencia.** Los bloques de diagrama, comparados:
+
+| Hijo de `<diagram>` | El fixture (EA lo importa) | El nuestro (EA lo descarta) |
+| --- | --- | --- |
+| `<model>` | `package`, `localID`, `owner`, `tpos` | solo `package` |
+| `<properties>` | `name`, **`type="Logical"`**, `documentation` | solo `name`, **sin `type`** |
+| `<project>` | `author`, `version`, `created`, `modified` | **vacío** |
+| `<style1>`, `<style2>` | `value` extenso | **vacíos** |
+| `<swimlanes>`, `<matrixitems>` | `value` | **vacíos** |
+| `<extendedProperties>` | vacío | vacío |
+| `<elements>` | 18 colocaciones (10 figuras + 8 conectores) | 5 (2 figuras + 3 conectores) |
+
+El sospechoso principal es **`<properties>` sin `type`**: es el único campo que en el fixture declara **qué clase de
+diagrama es**, y sin él EA no tiene con qué crear la vista. Los demás son metadatos de presentación.
+
+**Y una cautela sobre el instrumento, que ahora es parte del resultado.** Las variantes que había preparado para
+aislar el campo culpable —agregar `type="Logical"`, luego `<project>`, luego los atributos de `<model>`— **no se
+pudieron medir**: EA se colgó más de 25 minutos en una y, tras terminarlo, volvió a colgarse en la siguiente.
+Lanzar `EA.Repository` por COM repetidamente sobre copias del mismo proyecto lo deja en un estado del que no sale.
+La receta es reproducible —copiar el `.eapx`, `OpenFile`, `ImportPackageXMI(guid, archivo, ImportDiagrams=1,
+StripGUID=0)`, contar antes y después por delta, y cerrar con `Exit()`—, pero **la identificación del campo exacto
+queda pendiente de una corrida con EA en estado limpio y NO se declara como conocida**.
+
 **Decisión del usuario:** reiniciar EA y reintentar. **Pendiente de su acción**: abrir EA con un proyecto y avisar.
 
 | Desenlace | Qué se declara |

@@ -234,6 +234,11 @@ class XmiSemanticEmitterTest {
                 List.of(defaultView), model.classifiers(), model.relationships());
 
         XmiEmissionResult result = emitter.emit(placedModel);
+        // Build output only. Writing the sample lets a real Enterprise Architect import be run against
+        // exactly the document this suite asserts, without the repository carrying a generated file.
+        java.nio.file.Files.createDirectories(java.nio.file.Path.of("target"));
+        java.nio.file.Files.writeString(java.nio.file.Path.of("target", "xmi-sample.xml"),
+                result.document(), java.nio.charset.StandardCharsets.UTF_8);
         Document document = parse(result.document());
         Element extension = find(document, XMI_NAMESPACE, "Extension");
         Element elements = directChildrenNoNamespace(extension, "elements").get(0);
