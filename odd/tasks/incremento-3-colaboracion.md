@@ -213,7 +213,7 @@ leído en la fuente, **no** ejercitado por una prueba.
 | C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable. **Cerrada** en `c2d24a6` (ver *S3 progreso*) |
 | C12b | **Cablear la presencia al canal** (hueco descubierto al derivar C14): alta en el `subscribe`, baja en las tres terminaciones del emisor, `presence.updated` publicado con el snapshot, y `POST /projects/{id}/presence` para el elemento tocado | Integración: dos suscriptores del mismo proyecto se ven entre sí con su color; el que se desconecta desaparece del snapshot siguiente; un toque de uno llega al otro como `presence.updated`; un tercero sin rol no puede reportar. **Cerrada CON DESVIACIÓN DECLARADA** en `84e16f1` — sin revisión nativa por fallo de transporte, autorizado por el usuario (ver *S3 progreso — C12b*) |
 | C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra. **Cerrada** en `c973dd5` (ver *S3 progreso*) |
-| C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado. **Partida en C14 y C14b por tamaño de revisión** (ver *S3 — C14 partida*) |
+| C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado. **Partida en C14 y C14b por tamaño de revisión** (ver *S3 — C14 partida*). **C14 cerrada** en `a59e67a` (ver *S3 progreso — C14*) |
 | C14b | Web: **resaltado del elemento que cada uno toca** en el lienzo, con el color de quien lo toca y su nombre | Prueba de componente del resaltado: el nodo tocado se marca con el color y el nombre de quien lo toca, y deja de marcarse cuando el otro suelta |
 | C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío |
 
@@ -456,6 +456,58 @@ está caído de forma sostenida, no es un fallo de esta unidad. **C12b queda com
 5. El endpoint de toque exige cuerpo (`@RequestBody` requerido): `{}` limpia el target; **sin cuerpo** responde 400 y no limpia nada (no está probado
    por integración, leído en la fuente).
 6. Los **targets por pestaña** no se modelan: `touchUser` actualiza todas las sesiones vivas de esa persona y el último toque gana para ella.
+
+### S3 progreso — C14 cerrada (2026-10-01)
+
+**Commit:** `a59e67a` — *feat(web): show who is in the diagram, with their colour* (10 archivos, +756/−13).
+
+**Revisión nativa:** linaje `review-7370c6ae0dd1ad3b`, tier `medium`, **una** lente (`review-reliability`), 10 caminos, 769 líneas, presupuesto
+de corrección 200. Cerró **aprobada al primer intento** —el relay se recuperó despuÉs de los dos fallos de transporte de C12b, que siguen con su
+remediación abierta— con autoridad quemada (artefacto del revisor: prompt 48.810 bytes, resultado 2.032 bytes).
+
+**Dos hallazgos informativos** (ninguno abre corrección, ninguno reabre la revisión): `R3-malformed-presence` en
+`collaboration/PresencePanel.tsx:23-29` y `R3-presence-touch-order` en `pages/ProjectEditorPage.tsx:313`, ambos `WARNING` con disposición
+`informational`. Lecturas propias, **atribuidas a esta sesión y no al revisor**: en el primero, el panel dibuja los campos de cada entrada sin
+validar la entrada misma (la página sí valida que `payload.presence` sea un arreglo), así que una entrada malformada renderizaría nombre o color
+vacíos; en el segundo, el toque se reporta al cambiar la selección y un reporte que llegue antes de que la sesión se haya dado de alta devuelve
+`false` por diseño, así que el elemento inicial de un lector puede no llegar a los demás hasta que cambie la selección — es el mismo límite ya
+declarado en C12b («un reporte sin sesión viva no crea nada»).
+
+**Medido al cerrar:** `npm run lint` 0 errores · `npm test` **120 pasadas, 4 omitidas** (117 de base + 3) · `npm run build` 0 errores (221 módulos).
+
+**Historia de esta unidad, y por qué ocupó cuatro rondas de verificación** (se registra porque explica el tamaño y porque cada ronda encontró algo
+real, no ruido):
+
+1. **Ronda 1**: una respuesta tardía de `getModel` podía pisar el modelo del proyecto abierto (el refresco por evento no tenía guarda, y la ruta
+   reusa el mismo elemento de página).
+2. **Ronda 2**, sobre la corrección: las cachés por proyecto (`canonicalModelRef`, `revisionRef`, `pendingCommandsRef`) sobrevivían al cambio de
+   proyecto, así que un modelo del proyecto nuevo podía rechazarse como «más viejo» contra la revisión del anterior; y la condición del reintento
+   encolado no tenía ninguna prueba que pudiera fallar si se revertía.
+3. **Ronda 3**: la clase no estaba cerrada: `reconcileAfterCommand`, el `.catch`/`.finally` de la carga inicial, el camino del comando encolado y el
+   callback de presencia seguían escribiendo estado por proyecto tras el cambio. El padre **cortó la carrera guarda-por-guarda** y aplicó el arreglo
+   sistémico: **remontar el editor con `key={projectId}`** (`web/src/App.tsx`), de modo que la instancia anterior se descarta entera y su stream se
+   aborta; las guardas por camino quedan como cinturón y tirantes.
+4. **Ronda 4** (cierre): confirmó que la clave aísla la instancia y que ninguna escritura de una instancia descartada afecta la pantalla actual; los
+dos caminos que quedaron —el comando encolado que sigue aplicándose al proyecto donde se pidió, y una carrera preexistente del 401 con la sesión
+global— se declaran abajo.
+
+**Desviación de ruteo declarada:** de los cinco escritores delegados de esta unidad, **dos fallaron** (un error de proveedor y una **cuarentena de
+capacidad** del arnés), y el padre escribió **dos cosas en línea**: la clave por proyecto en `App.tsx` (el arreglo sistémico, ~10 líneas) y la
+corrección de su **propio** comentario exagerado —el texto decía que el cleanup aborta las peticiones en vuelo, y sólo aborta el stream de presencia—.
+El resto de la unidad la escribieron escritores delegados, validados por el padre y por cuatro verificaciones independientes.
+
+**Límites declarados de esta unidad:**
+
+1. **Sin prueba automatizada para las guardas ni para la navegación**: la página no se puede renderizar sin DOM, así que la guarda por proyecto, el
+   reseteo de cachés y la clave se verificaron **por lectura** más los tres comandos. No hay prueba de navegación A→B ni de navegador.
+2. **Política de la cola de comandos, deliberada**: un comando que el usuario ya emitió **sigue aplicándose al proyecto donde lo emitió** aunque
+   navegue. Cancelarlo en silencio sería perder trabajo suyo; la clave remonta la página pero no vacía la cola del servidor.
+3. **Carrera preexistente y ajena**: en `api/client.ts` un 401 de una petición superada (token viejo, tras cerrar y volver a iniciar sesión) limpia la
+   **sesión global**, y eso puede afectar la pantalla de la sesión nueva. Es preexistente (no la introdujo esta unidad) y queda como trabajo posterior.
+4. **Fetch redundante**: el cliente refresca el modelo al recibir su **propio** `operation.applied`, y la reconciliación posterior a su comando ya lo
+   había hecho. No corrompe nada (el servidor es la autoridad y es un GET), y queda declarado.
+5. **StrictMode, sólo en desarrollo**: el ciclo montar/desmontar/remontar abre una conexión de más y puede duplicar el POST inicial del toque. El
+   cleanup cierra la primera, así que no queda suscripción duplicada y en producción no ocurre.
 
 ### S4 — Chat persistente del diagrama
 
