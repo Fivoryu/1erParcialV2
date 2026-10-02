@@ -396,6 +396,20 @@ el árbol, así que su target congelado ya no coincide: se considera **quemado p
 (`baseRef` + `committedOnly: true`), que es una forma soportada por la autoridad. Queda pendiente para cuando el transporte del relay funcione, y así
 consta para el acta.
 
+**La remediación se intentó de inmediato, y también falló (2026-10-01):** se abrió un linaje nuevo sobre el rango commiteado
+(`review-2cbe18d88f816489`, `baseRef=155e93c`, `committedOnly: true`, 6 caminos, 495 líneas) y su corrida del revisor murió con el **mismo**
+`pi-host-relay-transport-failure` (*WebSocket error*, 224 s de 2.400.000 ms, `prepared_reviewers: 0`, sin mutación). O sea: el transporte del relay
+está caído de forma sostenida, no es un fallo de esta unidad. **C12b queda commiteada sin revisión nativa**, con dos intentos registrados
+(uno sobre el candidato sin commitear, uno sobre el rango commiteado) y la remediación abierta para cuando el relay vuelva.
+
+**Dos detalles del procedimiento, medidos, que valen para el próximo intento:**
+
+1. Un START sobre un rango commiteado **exige `idempotencyKey`** (es la operación graph-v1) y **exige `mode`** dentro del `input`; sin mode responde
+   *«START supports only "ordinary" or "judgment-day" mode»* y no crea linaje.
+2. El propio `inspect` emite el `--base-ref` con el **sha del árbol** de la base, y el START lo rechaza con `base-ref-unresolvable`: hay que pasar el
+   **sha del commit** (`155e93cf62e8cafaddacd82b2a507ec27c845423`), no el del árbol. Es un defecto del proveedor que se registra acá como tal, no como
+   algo que el operador deba adivinar.
+
 **Lo que SÍ se hizo antes del commit:**
 
 1. **Verificación independiente, sin fallos.** Resolvió los seis ejes: el orden de suscripción (emisor antes del `join`, así el recién llegado recibe el
