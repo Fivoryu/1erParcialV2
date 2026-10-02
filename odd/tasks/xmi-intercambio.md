@@ -763,6 +763,40 @@ Y una nota de método que esta decisión obliga a sostener: el lector se mide co
 el segundo archivo de EA) además de contra nuestra propia emisión, porque un lector que solo entiende lo que nosotros
 escribimos no prueba interoperabilidad, prueba simetría con nuestros propios errores.
 
+### 7.5 El control positivo encontró tres defectos en nuestra propia emisión
+
+El arnés de X8 (`tools/xmi-acceptance/`) corre sus comprobaciones **reusando el oráculo de `tools/xmi-inventory/`** contra
+dos documentos, y los dos son obligatorios: el fixture que **escribió EA** —control positivo— y el que produce nuestro
+emisor. El control positivo pasa las nueve comprobaciones. **El nuestro falla tres.**
+
+Ese es exactamente el resultado que justifica el diseño: un conjunto de aserciones que solo corriera contra nuestra
+salida no podría distinguir «nuestra salida está bien» de «las aserciones codifican nuestras manías». El escrito del
+control positivo es lo que convierte al arnés en oráculo en vez de espejo.
+
+```
+extensión:  6 registros de conector   vs   5 relaciones contadas en el modelo
+            unmatchedRelationIds: ["EAID_00000000_0000_0000_0000_000000000050"]
+            connectorsWithMissingOrUnresolvedEndpoints: 1
+            etiquetas mt: 5 para 6 conectores
+            vocabulario no declarado: defaultValue, specification
+```
+
+| # | Defecto | Medición | Interpretación |
+| --- | --- | --- | --- |
+| 1 | **Vocabulario no declarado**: `defaultValue` (1) y `specification` (2) | **El fixture tiene CERO de los dos.** Los emitimos porque el modelo canónico los tiene, con la grafía **estándar de UML 2.1** que EA simplemente no ejercita en su muestra | No es un error de código: es vocabulario **no medido**. Corresponde declararlo como desvío explícito y razonado; ni borrar la funcionalidad ni ablandar la comprobación |
+| 2 | **Un conector de extensión sin relación que le corresponda**: 6 registros contra 5 relaciones contadas, y `EAID_…050` —que es la dependencia `uses`— sin emparejar | El id sin emparejar es el de la **dependencia** | Falta determinar cuál de las dos cosas es: que emitamos un registro de más, o que el oráculo no cuente las dependencias como relaciones. **No se supone; se mide** |
+| 3 | **Etiquetas `mt` incompletas**: 5 para 6 conectores | Coincide con el defecto 2 | Probablemente el mismo origen: el conector sin relación emparejada tampoco recibe etiquetas |
+
+**Y un hallazgo colateral de los mismos datos:** el fixture trae un bloque `<links>` **dentro de cada `<element>` de la
+extensión** —con `<Generalization>` y `<Realisation>` adentro, con `start` y `end`— y **nosotros no emitimos ninguno**.
+Es un canal entero del dialecto que no estábamos cubriendo, y aparece en las diez figuras del fixture.
+
+**Lo que NO corresponde hacer con esto.** El escritor tenía prohibido ablandar las aserciones para que pasara lo
+nuestro, y **no lo hizo**: dejó las tres fallas visibles y el arnés saliendo con código 1. Eso es lo correcto. La
+resolución no es relajar la comprobación sino **distinguir un desvío declarado de una falla**, con una lista de desvíos
+explícita, corta y razonada, de modo que cualquier vocabulario **nuevo** que nadie midió siga fallando. Un arnés que
+siempre falla no sirve de compuerta; uno que pasa por ablandarse no sirve de nada.
+
 **Decisión del usuario:** reiniciar EA y reintentar. **Pendiente de su acción**: abrir EA con un proyecto y avisar.
 
 | Desenlace | Qué se declara |
