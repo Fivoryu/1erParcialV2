@@ -1,5 +1,7 @@
 package com.diagramador.command;
 
+import com.diagramador.collaboration.ProjectEvent;
+import com.diagramador.collaboration.ProjectEventBus;
 import com.diagramador.domain.CascadeGroup;
 import com.diagramador.domain.ModelCommand;
 import com.diagramador.domain.ModelVersion;
@@ -20,6 +22,7 @@ import com.diagramador.persistence.UmlModelRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -27,12 +30,16 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Applies canonical operation envelopes without exposing persistence exceptions to callers. */
 @Service
 public class CommandService {
+
+    private static final Logger logger = LoggerFactory.getLogger(CommandService.class);
 
     private final ProjectRepository projectRepository;
     private final UmlModelRepository modelRepository;
@@ -46,6 +53,7 @@ public class CommandService {
     private final ObjectMapper objectMapper;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
+    private final ProjectEventBus eventBus;
     private final Map<String, CommandHandler> handlers;
 
     public CommandService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
@@ -53,7 +61,8 @@ public class CommandService {
             ProjectMemberRepository projectMemberRepository, ModelCommandRepository commandRepository,
             CascadeGroupRepository cascadeGroupRepository, TombstoneRepository tombstoneRepository,
             ModelVersionRepository versionRepository, ModelStateHasher stateHasher, ObjectMapper objectMapper,
-            EntityManager entityManager, TransactionTemplate transactionTemplate, List<CommandHandler> handlers) {
+            EntityManager entityManager, TransactionTemplate transactionTemplate, ProjectEventBus eventBus,
+            List<CommandHandler> handlers) {
         this.projectRepository = projectRepository;
         this.modelRepository = modelRepository;
         this.userAccountRepository = userAccountRepository;
@@ -66,6 +75,7 @@ public class CommandService {
         this.objectMapper = objectMapper;
         this.entityManager = entityManager;
         this.transactionTemplate = transactionTemplate;
+        this.eventBus = eventBus;
         this.handlers = handlers.stream().collect(Collectors.toUnmodifiableMap(CommandHandler::type, Function.identity()));
     }
 
@@ -74,8 +84,9 @@ public class CommandService {
         if (shapeError != null) {
             return rejected(envelope, shapeError);
         }
+        CommandResult result;
         try {
-            return transactionTemplate.execute(status -> executeInTransaction(envelope));
+            result = transactionTemplate.execute(status -> executeInTransaction(envelope));
         } catch (RevisionConflictException exception) {
             return rejected(envelope, new Diagnostic(ErrorCode.REVISION_MISMATCH, exception.getMessage()));
         } catch (CommandValidationException exception) {
@@ -84,6 +95,34 @@ public class CommandService {
             return rejected(envelope, new Diagnostic(ErrorCode.MODEL_INVALID,
                     "Command could not be applied: " + exception.getMessage()));
         }
+
+        if (result != null && result.status() == CommandStatus.ACCEPTED) {
+            // For today's non-transactional callers, publishing follows this method's TransactionTemplate commit;
+            // an ambient caller would need an after-commit hook; no such caller exists today.
+            try {
+                List<Map<String, Object>> targets = envelope.targets().stream()
+                        .filter(target -> target != null)
+                        .map(target -> {
+                            Map<String, Object> targetPayload = new LinkedHashMap<>();
+                            targetPayload.put("scope", target.scope());
+                            targetPayload.put("id", target.id() == null ? null : target.id().toString());
+                            return targetPayload;
+                        })
+                        .toList();
+                // Presence snapshots are keyed by userId, so clients need this key rather than a display name.
+                Map<String, Object> payload = Map.of(
+                        "operationId", envelope.operationId().toString(),
+                        "resultRevision", result.resultRevision(),
+                        "targets", targets,
+                        "author", envelope.author().userId().toString());
+                eventBus.publish(ProjectEvent.of("operation.applied", envelope.projectId(), payload));
+            } catch (RuntimeException exception) {
+                logger.warn("Failed to publish operation.applied for accepted operation {}", envelope.operationId(),
+                        exception);
+                // Failure is logged and deliberately not propagated: delivery cannot undo a durable acceptance.
+            }
+        }
+        return result;
     }
 
     public CommandResult submit(OperationEnvelope envelope) {
@@ -143,6 +182,7 @@ public class CommandService {
                     .findByModelIdAndIdempotencyKey(model.getId(), envelope.idempotencyKey());
             if (original.isPresent()) {
                 ModelCommand command = original.get();
+                // Accepted idempotent replays are re-announced after the transaction; clients deduplicate by operationId.
                 return new CommandResult(command.getCommandId(), CommandStatus.ACCEPTED, command.getResultRevision(),
                         List.of(), command.getAuthorizationClassification());
             }
