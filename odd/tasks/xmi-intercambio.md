@@ -294,6 +294,13 @@ Y las formas de los demás constructos, todas del mismo barrido exhaustivo:
 | Tipos primitivos | `packagedElement xmi:type="uml:PrimitiveType"` agrupados en `EA_PrimitiveTypes_Package`, `EA_Java_Types_Package` y `EA_none_Types_Package`, con ids `EAJava_*` y `EAnone_*` |
 | `uml:Model` | `xmi:type="uml:Model"`, `name="EA_Model"`, `visibility="public"` y **sin `xmi:id`** |
 
+Dos números que parecen contradecirse y no lo hacen, porque conviene dejarlo escrito: el documento trae **25**
+`ownedAttribute` y el subárbol semántico **23**, porque 2 viven en la extensión. Y los **33** `uml:Property` se
+descomponen en esos 23 `ownedAttribute` más **10** `ownedEnd`. Mi consigna al escritor de X5 decía «33
+`ownedAttribute`»; **él lo midió, lo refutó y reportó la descomposición correcta**. Es la **cuarta** vez en esta
+sesión que alguien más corrige un número mío, y las cuatro veces el error estuvo en una medición que yo había
+tratado como firme.
+
 **Tercera lección, y la más incómoda.** Tres veces escribí una afirmación sobre el dialecto a partir de una muestra
 o de memoria, y tres veces la medición la refutó: el `Path` «vacío en todas», el ancla «en `geometry`», y ahora la
 multiplicidad «`*`». Las tres las encontró otro —dos veces un escritor, una vez un verificador—, nunca yo. Lo que
@@ -504,6 +511,7 @@ Se escribe al cerrar, no al planificar. Un casillero nunca se marca sobre una af
 | **X2** | `mvn -o -B -f backend/pom.xml verify` → **232 pruebas, 0 fallos**, con Flyway aplicando V10 contra PostgreSQL 16. El escritor además corrigió mi encargo: yo había dicho «desde la raíz del worktree», y la raíz no tiene `pom.xml` | El mismo comando, re-corrido por el padre → **232 pruebas, 0 fallos, BUILD SUCCESS** en 3:32 | **No evaluable**, y por un motivo **distinto** del de X1: ahora `schema-incompatible`, «no sanitized stderr diagnostic is available». O sea que el evaluador no falla por mi estado de trabajo: **no puede correr en este repositorio** | **Sí, por la vía de riesgo alto**, `gentle-ai-verify` sobre el esquema, con derivación **independiente** de las columnas desde la autoridad y prueba de mutación sobre la compuerta |
 | **X3.1 + X3.1b** | `mvn -o -B -f backend/pom.xml verify` → **237 pruebas, 0 fallos**. El escritor además **corrigió mi encargo en cuatro lugares**, siguiendo al fixture en vez de a mi prosa: la `realization` es de nivel superior con `client`/`supplier` y no anidada, el `uml:Model` no lleva `xmi:id`, las cotas finitas no son `LiteralUnlimitedNatural`, y las operaciones no llevan `xmi:type` | Confirmado en la corrida de X3.2a: **239 pruebas, 0 fallos** | No evaluable, sin cambio: el evaluador **no puede correr en este repositorio** | **INCOMPLETO, y por culpa mía.** Le pedí verificar y a la vez lo declaré «read-only», y `mvn verify` escribe en `backend/target/`. Eligió la lectura estricta y **no ejecutó ni un comando**: todo su veredicto es análisis estático. Aun así encontró **dos defectos reales**, los dos confirmados y corregidos |
 | **X3.2a** | **No hubo reporte.** El escritor terminó su trabajo pero devolvió un mensaje sobre un objetivo de revisión ajeno a la tarea, así que nadie supo qué hizo ni qué midió | El padre, en su lugar: `mvn -o -B -f backend/pom.xml verify` → **239 pruebas, 0 fallos, 0 errores, BUILD SUCCESS**, más comprobación estructural de los cinco bloques, las claves del registro por elemento y los **26** tipos de pérdida | — | Diferida, junto con X3.2b y X3.3, a **una sola verificación de la emisión completa** |
+| **X5** | `mvn -o -B -f backend/pom.xml verify` → **244 pruebas, 0 fallos**. El escritor reportó con conteos medidos, declaró sus límites —que la ida y vuelta prueba el acuerdo lector/escritor y **no** la aceptación en EA— y de paso **refutó un número mío** (§3.9) | El padre, el mismo comando → **244 pruebas, 0 fallos, 0 errores, BUILD SUCCESS**; `XmiReaderTest` 4 pruebas y `XmiSemanticEmitterTest` 8, incluida la ida y vuelta `emittedCanonicalModelReadsBackWithSemanticsAndDiagramAnchors`. Las cuatro pruebas del lector cubren el fixture ajeno, la discrepancia de multiplicidad entre mitades, **el segundo archivo de EA sin asumir nuestro dialecto de UUID**, y XML malformado | — | Pendiente, y es el candidato natural: verificar lector y emisión **juntos**, que es la costura real |
 
 #### Un verificador bloqueado igual sirvió
 
