@@ -211,7 +211,7 @@ leído en la fuente, **no** ejercitado por una prueba.
 | --- | --- | --- |
 | C11 | `ProjectEventBus` y `GET /projects/{id}/events` con `SseEmitter`, heartbeat, limpieza de emisores y autorización por rol | Integración: dos clientes reciben el evento publicado; un tercero sin rol no conecta. **Cerrada** en `cb6a2ca` (ver *S3 progreso*) |
 | C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable. **Cerrada** en `c2d24a6` (ver *S3 progreso*) |
-| C12b | **Cablear la presencia al canal** (hueco descubierto al derivar C14): alta en el `subscribe`, baja en las tres terminaciones del emisor, `presence.updated` publicado con el snapshot, y `POST /projects/{id}/presence` para el elemento tocado | Integración: dos suscriptores del mismo proyecto se ven entre sí con su color; el que se desconecta desaparece del snapshot siguiente; un toque de uno llega al otro como `presence.updated`; un tercero sin rol no puede reportar |
+| C12b | **Cablear la presencia al canal** (hueco descubierto al derivar C14): alta en el `subscribe`, baja en las tres terminaciones del emisor, `presence.updated` publicado con el snapshot, y `POST /projects/{id}/presence` para el elemento tocado | Integración: dos suscriptores del mismo proyecto se ven entre sí con su color; el que se desconecta desaparece del snapshot siguiente; un toque de uno llega al otro como `presence.updated`; un tercero sin rol no puede reportar. **Cerrada CON DESVIACIÓN DECLARADA** en `84e16f1` — sin revisión nativa por fallo de transporte, autorizado por el usuario (ver *S3 progreso — C12b*) |
 | C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra. **Cerrada** en `c973dd5` (ver *S3 progreso*) |
 | C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado |
 | C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío |
@@ -374,6 +374,55 @@ frontera declarada. El comentario en el código nombra la frontera.
 defecto (no hay requisito de tragarse `Error`s de la JVM) y esta sesión coincide: atrapar `Error` sería peor.
 3. **El replay vuelve a anunciar** el mismo `operationId` y `resultRevision` (hallazgo `R3-replay-event-identity` del revisor). Está declarado en el código
 y queda como trabajo posterior si el cliente necesita distinguir identidad de recencia.
+
+### S3 progreso — C12b cerrada CON DESVIACIÓN DECLARADA (2026-10-01)
+
+**Commit:** `84e16f1` — *feat(backend): publish presence on the project channel* (2 modificados + 3 nuevos, +442/−2).
+
+> ⚠️ **Esta unidad se commiteó SIN revisión nativa, por autorización explícita del usuario (2026-10-01).** La regla de S0 —verificar,
+> revisar sin commitear y sólo entonces commitear— **sigue vigente** para todas las unidades siguientes; esta es la excepción, no un cambio de regla.
+
+**Por qué no hubo revisión — causa medida, no supuesta:** el relay del revisor falló **tres intentos consecutivos** con
+`pi-host-relay-transport-failure` (*"Reviewer completion failed for review-reliability: WebSocket error"*), a los **173 s, 151 s y 151 s** de un
+presupuesto de 2.400.000 ms — o sea **no** fue timeout, fue transporte— y cada vez con `prepared_reviewers: 0`, `submitted_reviewers: 0` y
+`mutation_performed: false`. Se aplicó la recuperación que indica el proveedor (*«Call fresh STATUS and submit only an exact reoffered one-slot
+binding; never replay this capture from transcript inference»*) **dos veces**: STATUS fresco, estado y revisión sin cambios, binding exacto reofrecido.
+A diferencia de C13 —donde el tercer intento admitió el artefacto— acá el tercero también falló, y **los fallos fueron más rápidos**, no más lentos.
+
+**Estado del linaje `review-9a428806517d6f8a`:** quedó abierto en `reviewing` con su slot de lente sin satisfacer y **no se reusó**. El commit mueve
+el árbol, así que su target congelado ya no coincide: se considera **quemado por deriva**. No se inventó ningún resultado de revisor para esta unidad.
+
+**Remediación declarada (la desviación es temporal, no un agujero):** la revisión puede tomarse más adelante **sobre este rango ya commiteado**
+(`baseRef` + `committedOnly: true`), que es una forma soportada por la autoridad. Queda pendiente para cuando el transporte del relay funcione, y así
+consta para el acta.
+
+**Lo que SÍ se hizo antes del commit:**
+
+1. **Verificación independiente, sin fallos.** Resolvió los seis ejes: el orden de suscripción (emisor antes del `join`, así el recién llegado recibe el
+   snapshot que produce su propia llegada), la fidelidad del cable (tipo `presence.updated`, claves `userId`/`displayName`/`color`/`targetElementId`,
+   **sin** `sessionId`, color desde `colorFor`), la autorización del endpoint de toque (usuario del principal y no del cuerpo; 401 sin bearer, 403 sin
+   rol, y en ambos casos el registro **sin cambios**), la semántica de `touchUser`, y las seis pruebas. `mvn -o -B -f backend/pom.xml verify` =
+   **273 pruebas, 0 fallos** (267 de base + 6).
+2. **Un defecto real, encontrado por esa verificación y corregido antes del commit:** las tres terminaciones del emisor no compartían guarda, así que
+   timeout/error seguido de completion llamaba dos veces a `endSession` y **publicaba un segundo snapshot**. Ahora hay un `AtomicBoolean` compartido con
+   `compareAndSet(false, true)`: la baja y la publicación ocurren **exactamente una vez** por suscripción, en cualquier orden de terminaciones.
+3. **Dos pruebas que no probaban lo que decían, reforzadas:** la de completion afirmaba el stream **después** de un toque separado (que publica solo),
+   así que no probaba que el `leave` publicara; ahora afirma el stream **inmediatamente** después del completion y con un conteo **exacto**
+   (A entra → 1, B entra → 2, B se va → **exactamente 3**), de modo que una publicación duplicada lo lleva a 4 y falla. Y la de dos sesiones no podía
+   falsificar una actualización parcial: ahora cierra la sesión **que el colapso elegiría** (A2) y afirma que **A1** conserva el target.
+
+**Límites declarados de esta unidad:**
+
+1. **El orden «timeout/error y después completion» no es alcanzable desde MockMvc**, así que la guarda no se ejercita en ese orden exacto; lo que sí se
+   ejercita es el **conteo exacto**, que falla si aparece una publicación de más desde cualquier camino.
+2. **El contador de eventos usa `split` sobre substring**, no un parseo de tramas SSE: una carga útil que contuviera ese texto lo confundiría. Es
+   robustez de la prueba, **no** un defecto de la implementación, y está declarado.
+3. **Las pruebas no fijan el conjunto EXACTO de claves del payload**, sólo las requeridas y la ausencia de `sessionId`; una clave de más pasaría. Se
+   declara en lugar de dar por cerrado lo que no se midió.
+4. Un snapshot **vacío** (cuando se va el último miembro) se publica pero no puede llegar a nadie si no quedan suscriptores: inherente al canal.
+5. El endpoint de toque exige cuerpo (`@RequestBody` requerido): `{}` limpia el target; **sin cuerpo** responde 400 y no limpia nada (no está probado
+   por integración, leído en la fuente).
+6. Los **targets por pestaña** no se modelan: `touchUser` actualiza todas las sesiones vivas de esa persona y el último toque gana para ella.
 
 ### S4 — Chat persistente del diagrama
 
