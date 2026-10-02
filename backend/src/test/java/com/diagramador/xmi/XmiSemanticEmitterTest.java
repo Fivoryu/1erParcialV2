@@ -22,6 +22,7 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -458,6 +459,110 @@ class XmiSemanticEmitterTest {
 
         assertThat(second).isEqualTo(first);
         assertThat(emitter.emit(reordered(model)).document()).isEqualTo(first);
+    }
+
+    @Test
+    void emittedCanonicalModelReadsBackWithSemanticsAndDiagramAnchors() {
+        ModelResource source = sampleModel();
+        List<GeometryResource> geometry = new ArrayList<>();
+        List<ClassifierResource> orderedClassifiers = source.classifiers().stream()
+                .sorted(java.util.Comparator.comparing(ClassifierResource::name)).toList();
+        for (int index = 0; index < orderedClassifiers.size(); index++) {
+            ClassifierResource classifier = orderedClassifiers.get(index);
+            geometry.add(new GeometryResource(id(500 + index), TargetType.CLASSIFIER, classifier.id(),
+                    50 + index * 250, 60, 200, 100, index));
+        }
+        ViewResource view = new ViewResource(id(300), "Round trip", true, geometry, List.of());
+        ModelResource expected = new ModelResource(source.id(), source.projectId(), source.revision(),
+                source.versionId(), List.of(view), source.classifiers(), source.relationships());
+        byte[] bytes = emitter.emit(expected).document().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        XmiReadingResult actual = new XmiReader().read(bytes);
+        Map<UUID, ClassifierResource> actualClassifiers = actual.model().classifiers().stream()
+                .collect(java.util.stream.Collectors.toMap(ClassifierResource::id, classifier -> classifier));
+        assertThat(actualClassifiers).hasSize(expected.classifiers().size());
+        for (ClassifierResource classifier : expected.classifiers()) {
+            ClassifierResource read = actualClassifiers.get(classifier.id());
+            assertThat(read.name()).isEqualTo(classifier.name());
+            assertThat(read.kind()).isEqualTo(classifier.kind());
+            assertThat(read.isAbstract()).isEqualTo(classifier.isAbstract());
+            assertThat(read.namespaceId()).isEqualTo(classifier.namespaceId());
+            assertThat(read.attributes()).hasSize(classifier.attributes().size());
+            for (AttributeResource attribute : classifier.attributes()) {
+                AttributeResource readAttribute = read.attributes().stream()
+                        .filter(candidate -> candidate.id().equals(attribute.id())).findFirst().orElseThrow();
+                assertThat(readAttribute.name()).isEqualTo(attribute.name());
+                assertThat(readAttribute.kind()).isEqualTo(attribute.kind());
+                assertThat(readAttribute.visibility()).isEqualTo(attribute.visibility());
+                assertThat(readAttribute.multiplicity()).isEqualTo(attribute.multiplicity());
+                assertThat(readAttribute.defaultValue()).isEqualTo(attribute.defaultValue());
+                assertThat(readAttribute.type()).isEqualTo(attribute.type());
+                assertThat(readAttribute.ordinal()).isEqualTo(attribute.ordinal());
+            }
+            assertThat(read.operations()).hasSize(classifier.operations().size());
+            for (OperationResource operation : classifier.operations()) {
+                OperationResource readOperation = read.operations().stream()
+                        .filter(candidate -> candidate.id().equals(operation.id())).findFirst().orElseThrow();
+                assertThat(readOperation.name()).isEqualTo(operation.name());
+                assertThat(readOperation.visibility()).isEqualTo(operation.visibility());
+                assertThat(readOperation.isAbstract()).isEqualTo(operation.isAbstract());
+                assertThat(readOperation.isStatic()).isEqualTo(operation.isStatic());
+                assertThat(readOperation.returnType()).isEqualTo(operation.returnType());
+                assertThat(readOperation.parameters()).hasSize(operation.parameters().size());
+                for (ParameterResource parameter : operation.parameters()) {
+                    ParameterResource readParameter = readOperation.parameters().stream()
+                            .filter(candidate -> candidate.id().equals(parameter.id())).findFirst().orElseThrow();
+                    assertThat(readParameter.name()).isEqualTo(parameter.name());
+                    assertThat(readParameter.direction()).isEqualTo(parameter.direction());
+                    assertThat(readParameter.type()).isEqualTo(parameter.type());
+                    assertThat(readParameter.ordinal()).isEqualTo(parameter.ordinal());
+                }
+            }
+            assertThat(read.constraints()).extracting(ConstraintResource::expression)
+                    .containsExactlyElementsOf(classifier.constraints().stream()
+                            .map(ConstraintResource::expression).toList());
+        }
+
+        Map<UUID, RelationshipResource> actualRelationships = actual.model().relationships().stream()
+                .collect(java.util.stream.Collectors.toMap(RelationshipResource::id, relationship -> relationship));
+        assertThat(actualRelationships).hasSize(expected.relationships().size());
+        for (RelationshipResource relationship : expected.relationships()) {
+            RelationshipResource read = actualRelationships.get(relationship.id());
+            assertThat(read.kind()).isEqualTo(relationship.kind());
+            assertThat(read.name()).isEqualTo(relationship.name());
+            assertThat(read.ends()).hasSize(relationship.ends().size());
+            for (RelationshipEndResource end : relationship.ends()) {
+                RelationshipEndResource readEnd = read.ends().stream()
+                        .filter(candidate -> candidate.ordinal() == end.ordinal()).findFirst().orElseThrow();
+                assertThat(readEnd.classifierId()).isEqualTo(end.classifierId());
+                assertThat(readEnd.role()).isEqualTo(end.role());
+                assertThat(readEnd.multiplicity()).isEqualTo(end.multiplicity());
+                assertThat(readEnd.aggregationKind()).isEqualTo(end.aggregationKind());
+            }
+        }
+
+        assertThat(actual.model().views()).hasSize(1);
+        assertThat(actual.model().views().get(0).elementGeometry()).hasSize(geometry.size());
+        for (GeometryResource expectedGeometry : geometry) {
+            GeometryResource read = actual.model().views().get(0).elementGeometry().stream()
+                    .filter(candidate -> candidate.targetId().equals(expectedGeometry.targetId()))
+                    .findFirst().orElseThrow();
+            assertThat(read.x()).isEqualTo(expectedGeometry.x());
+            assertThat(read.y()).isEqualTo(expectedGeometry.y());
+            assertThat(read.w()).isEqualTo(expectedGeometry.w());
+            assertThat(read.h()).isEqualTo(expectedGeometry.h());
+            assertThat(read.zOrder()).isEqualTo(expectedGeometry.zOrder());
+        }
+        assertThat(actual.diagrams()).hasSize(1);
+        assertThat(actual.diagrams().get(0).figures()).hasSize(geometry.size());
+        assertThat(actual.diagrams().get(0).connectors()).hasSize(expected.relationships().size());
+        Set<String> duids = actual.diagrams().get(0).figures().stream()
+                .map(XmiReadingResult.FigurePlacement::duid).collect(java.util.stream.Collectors.toSet());
+        assertThat(actual.diagrams().get(0).connectors()).allSatisfy(connector -> {
+            assertThat(connector.sourceDuid()).isIn(duids);
+            assertThat(connector.targetDuid()).isIn(duids);
+            assertThat(connector.path()).isEmpty();
+        });
     }
 
     @Test
