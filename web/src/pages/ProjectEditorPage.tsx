@@ -5,6 +5,7 @@ import type { ModelResource, OperationEnvelope, ProjectResource } from '../api/t
 import UmlCanvas from '../diagram/UmlCanvas';
 import PropertiesPanel from '../diagram/PropertiesPanel';
 import GenerationPanel from '../generation/GenerationPanel';
+import XmiImportPanel from '../xmi/XmiImportPanel';
 import {
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
@@ -300,6 +301,8 @@ export default function ProjectEditorPage() {
                 onSelect={setSelection}
               />
             </div>
+
+            <XmiImportPanel projectId={project.id} />
 
             <GenerationPanel
               projectId={project.id}

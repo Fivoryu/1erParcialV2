@@ -15,6 +15,10 @@ import type {
   OperationOutcomeResource,
   ProjectResource,
   Uuid,
+  XmiImportRequest,
+  XmiImportResource,
+  XmiPreviewRequest,
+  XmiPreviewResource,
 } from './types';
 
 export class ApiTransportError extends Error {
@@ -83,6 +87,8 @@ export interface ApiClient {
   listProjects(): Promise<ProjectResource[]>;
   getProject(projectId: Uuid): Promise<ProjectResource>;
   getModel(projectId: Uuid): Promise<ModelResource>;
+  previewXmi(projectId: Uuid, request: XmiPreviewRequest): Promise<XmiPreviewResource>;
+  importXmi(projectId: Uuid, request: XmiImportRequest): Promise<XmiImportResource>;
   executeCommand(projectId: Uuid, envelope: OperationEnvelope): Promise<CommandOutcome>;
   listGenerationTargets(projectId: Uuid): Promise<GenerationTargetResource[]>;
   createGenerationTarget(
@@ -191,6 +197,18 @@ export function createApiClient(
     },
     getModel(projectId) {
       return requestJson<ModelResource>(`/projects/${encodeURIComponent(projectId)}/model`);
+    },
+    previewXmi(projectId, request) {
+      return postJson<XmiPreviewResource>(
+        `/projects/${encodeURIComponent(projectId)}/xmi/preview`,
+        request,
+      );
+    },
+    importXmi(projectId, request) {
+      return postJson<XmiImportResource>(
+        `/projects/${encodeURIComponent(projectId)}/xmi/import`,
+        request,
+      );
     },
     async executeCommand(projectId, envelope) {
       const result = await postJson<CommandResult>(

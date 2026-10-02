@@ -28,6 +28,54 @@ export interface ModelResource {
   relationships: RelationshipResource[];
 }
 
+export type XmiImportMode = 'REEMPLAZAR' | 'AGREGAR';
+
+export interface XmiCountsResource {
+  classifiers: number;
+  relationships: number;
+  views: number;
+  figurePlacements: number;
+  connectorPlacements: number;
+}
+
+export interface XmiLossResource {
+  name: string;
+  count: number;
+}
+
+export interface XmiDisagreementResource {
+  kind: string;
+  subjectId: string;
+  semanticValue: string;
+  extensionValue: string;
+}
+
+export interface XmiPreviewRequest {
+  fileBase64: string;
+}
+
+export interface XmiImportRequest {
+  fileBase64: string;
+  checksum: string;
+  mode: XmiImportMode;
+  idempotencyKey: string;
+}
+
+export interface XmiPreviewResource {
+  counts: XmiCountsResource;
+  losses: XmiLossResource[];
+  disagreements: XmiDisagreementResource[];
+  checksum: string;
+}
+
+export interface XmiImportResource {
+  outcome: CommandStatus;
+  command: CommandResult;
+  exchangeId: Uuid | null;
+  losses: XmiLossResource[];
+  disagreements: XmiDisagreementResource[];
+}
+
 export interface ViewResource {
   id: Uuid;
   name: string;
