@@ -700,6 +700,26 @@ diagrama**: +0, contra +1 del archivo de EA. La causa **no está identificada**,
 experimentos de una sola variable. **El requisito «que se vean bien las figuras en EA» NO está cumplido** y no se
 declara cumplido.
 
+### 7.4 Decisión de alcance del usuario, y sus consecuencias
+
+Ante el estado de §7.3 —EA acepta la semántica, **no** crea el diagrama, la causa no está identificada, y la mitad de
+importación del pedido está entera sin construir— se le presentó la disyuntiva y **eligió completar la importación y
+dejar el diagrama como defecto declarado**, en lugar de seguir cazándolo sin techo de tiempo conocido.
+
+Consecuencias, escritas para que no se lean como un olvido:
+
+- **X5, X6 y X7 se ejecutan**: el lector del dialecto, el servicio de vista previa y confirmación con su comando de
+  lote y sus endpoints, y el panel web.
+- **El diagrama NO se declara resuelto.** Queda abierto con las tres hipótesis refutadas y con el candidato más fuerte
+  **sin probar**: que los sujetos de las figuras deban pertenecer al paquete dueño del diagrama. Ese candidato queda
+  escrito acá para que la próxima sesión no vuelva a empezar de cero.
+- **El requisito «que se vean bien las figuras en EA» queda parcialmente cumplido y se declara así**: el **modelo**
+  se ve en EA —+8 elementos con los tipos resueltos—, el **dibujo** no.
+
+Y una nota de método que esta decisión obliga a sostener: el lector se mide contra un archivo **ajeno** (el fixture, y
+el segundo archivo de EA) además de contra nuestra propia emisión, porque un lector que solo entiende lo que nosotros
+escribimos no prueba interoperabilidad, prueba simetría con nuestros propios errores.
+
 **Decisión del usuario:** reiniciar EA y reintentar. **Pendiente de su acción**: abrir EA con un proyecto y avisar.
 
 | Desenlace | Qué se declara |
