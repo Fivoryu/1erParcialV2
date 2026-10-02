@@ -4,10 +4,12 @@ import com.diagramador.api.ModelResource;
 import com.diagramador.api.ModelResource.AttributeResource;
 import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
+import com.diagramador.api.ModelResource.GeometryResource;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
+import com.diagramador.api.ModelResource.ViewResource;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
@@ -38,7 +40,7 @@ import javax.xml.transform.stream.StreamResult;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
-/** Emits the semantic UML subtree from the immutable API snapshot. */
+/** Emits the semantic UML model and measured EA extension from the immutable API snapshot. */
 public final class XmiSemanticEmitter {
 
     private static final String XMI_NAMESPACE = "http://schema.omg.org/spec/XMI/2.1";
@@ -442,35 +444,44 @@ public final class XmiSemanticEmitter {
         extension.setAttribute("extender", "Enterprise Architect");
         root.appendChild(extension);
 
-        appendExtensionElements(document, extension, snapshot, context);
-        extension.appendChild(document.createElement("connectors"));
+        ViewResource defaultView = defaultView(snapshot, context);
+        appendExtensionElements(document, extension, snapshot, defaultView, context);
+        Element connectors = document.createElement("connectors");
+        extension.appendChild(connectors);
+        appendExtensionConnectors(document, connectors, snapshot, context);
         appendExtensionPrimitiveTypes(document, extension, context);
         extension.appendChild(document.createElement("profiles"));
-        extension.appendChild(document.createElement("diagrams"));
-    }
-
-    private void appendExtensionElements(Document document, Element extension, ModelResource snapshot,
-            Context context) {
-        Element elements = document.createElement("elements");
-        extension.appendChild(elements);
-        for (ClassifierResource classifier : extensionClassifiers(snapshot, context)) {
-            appendExtensionElement(document, elements, classifier, context);
+        Element diagrams = document.createElement("diagrams");
+        extension.appendChild(diagrams);
+        if (defaultView != null) {
+            appendExtensionDiagram(document, diagrams, snapshot, defaultView, context);
         }
     }
 
-    private List<ClassifierResource> extensionClassifiers(ModelResource snapshot, Context context) {
-        List<ModelResource.ViewResource> defaults = snapshot.views().stream()
-                .filter(ModelResource.ViewResource::isDefault)
-                .sorted(Comparator.comparing(ModelResource.ViewResource::id,
-                        Comparator.nullsFirst(Comparator.naturalOrder())))
+    private ViewResource defaultView(ModelResource snapshot, Context context) {
+        List<ViewResource> defaults = snapshot.views().stream()
+                .filter(ViewResource::isDefault)
+                .sorted(Comparator.comparing(ViewResource::id, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .toList();
         if (defaults.size() > 1) {
             context.loss("multiple_default_views", defaults.size() - 1);
         }
+        return defaults.isEmpty() ? null : defaults.get(0);
+    }
 
+    private void appendExtensionElements(Document document, Element extension, ModelResource snapshot,
+            ViewResource defaultView, Context context) {
+        Element elements = document.createElement("elements");
+        extension.appendChild(elements);
+        for (ClassifierResource classifier : extensionClassifiers(defaultView, context)) {
+            appendExtensionElement(document, elements, classifier, context);
+        }
+    }
+
+    private List<ClassifierResource> extensionClassifiers(ViewResource defaultView, Context context) {
         Set<UUID> selectedIds = new HashSet<>();
-        if (!defaults.isEmpty()) {
-            for (ModelResource.GeometryResource geometry : defaults.get(0).elementGeometry()) {
+        if (defaultView != null) {
+            for (GeometryResource geometry : defaultView.elementGeometry()) {
                 if (geometry.targetType() != TargetType.CLASSIFIER) {
                     continue;
                 }
@@ -498,6 +509,249 @@ public final class XmiSemanticEmitter {
                         .thenComparing(ClassifierResource::name, Comparator.nullsFirst(String::compareTo))
                         .thenComparing(ClassifierResource::id))
                 .toList();
+    }
+
+    private void appendExtensionConnectors(Document document, Element connectors, ModelResource snapshot,
+            Context context) {
+        int emitted = 0;
+        for (RelationshipResource relationship : sortedRelationships(snapshot.relationships())) {
+            List<RelationshipEndResource> ends = orderedEnds(relationship);
+            if (ends.size() != 2 || relationshipKind(relationship.kind()) == null
+                    || ends.stream().anyMatch(end -> !context.emittableClassifierIds.contains(end.classifierId()))) {
+                continue;
+            }
+            appendExtensionConnector(document, connectors, relationship, ends, context);
+            emitted++;
+        }
+        context.loss("extension_connector_vendor_metadata", emitted);
+    }
+
+    private void appendExtensionConnector(Document document, Element connectors,
+            RelationshipResource relationship, List<RelationshipEndResource> ends, Context context) {
+        Element connector = document.createElement("connector");
+        setXmiAttribute(connector, "idref", XmiIdCodec.classifierId(relationship.id()));
+        setOptionalAttribute(connector, "name", relationship.name());
+        appendExtensionConnectorEnd(document, connector, "source", ends.get(0), context);
+        appendExtensionConnectorEnd(document, connector, "target", ends.get(1), context);
+
+        connector.appendChild(document.createElement("model"));
+
+        Element properties = document.createElement("properties");
+        properties.setAttribute("ea_type", extensionRelationshipType(relationship.kind()));
+        properties.setAttribute("direction", extensionRelationshipDirection(ends));
+        connector.appendChild(properties);
+
+        Element modifiers = document.createElement("modifiers");
+        modifiers.setAttribute("isRoot", "false");
+        modifiers.setAttribute("isLeaf", "false");
+        connector.appendChild(modifiers);
+
+        Element appearance = document.createElement("appearance");
+        appearance.setAttribute("linemode", "3");
+        appearance.setAttribute("linecolor", "-1");
+        appearance.setAttribute("linewidth", "0");
+        appearance.setAttribute("seqno", "0");
+        appearance.setAttribute("headStyle", "0");
+        appearance.setAttribute("lineStyle", "0");
+        connector.appendChild(appearance);
+
+        Element labels = document.createElement("labels");
+        appendOptionalLabel(labels, "lb", extensionMultiplicity(ends.get(0).multiplicity()));
+        appendOptionalLabel(labels, "lt", extensionRoleLabel(ends.get(0).role()));
+        appendOptionalLabel(labels, "rb", extensionMultiplicity(ends.get(1).multiplicity()));
+        appendOptionalLabel(labels, "rt", extensionRoleLabel(ends.get(1).role()));
+        appendOptionalLabel(labels, "mt", relationship.name());
+        connector.appendChild(labels);
+        connector.appendChild(document.createElement("style"));
+        connectors.appendChild(connector);
+    }
+
+    private void appendExtensionConnectorEnd(Document document, Element connector, String endName,
+            RelationshipEndResource end, Context context) {
+        ClassifierResource classifier = context.classifierById.get(end.classifierId());
+        Element endpoint = document.createElement(endName);
+        setXmiAttribute(endpoint, "idref", classifierXmiId(classifier));
+
+        Element model = document.createElement("model");
+        model.setAttribute("type", classifierType(classifier.kind()));
+        model.setAttribute("name", Objects.requireNonNull(classifier.name(), "classifier.name"));
+        endpoint.appendChild(model);
+
+        Element role = document.createElement("role");
+        setOptionalAttribute(role, "name", end.role());
+        role.setAttribute("visibility", "Public");
+        endpoint.appendChild(role);
+
+        Element type = document.createElement("type");
+        String multiplicity = extensionMultiplicity(end.multiplicity());
+        if (multiplicity == null) {
+            context.loss("extension_connector_multiplicity");
+        } else {
+            type.setAttribute("multiplicity", multiplicity);
+        }
+        String aggregation = extensionAggregation(end.aggregationKind());
+        if (aggregation == null) {
+            context.loss("extension_connector_aggregation");
+        } else {
+            type.setAttribute("aggregation", aggregation);
+        }
+        endpoint.appendChild(type);
+
+        Element modifiers = document.createElement("modifiers");
+        modifiers.setAttribute("isOrdered", "false");
+        modifiers.setAttribute("isNavigable", Boolean.toString(end.navigability() == NavigationKind.NAVIGABLE));
+        endpoint.appendChild(modifiers);
+
+        Element style = document.createElement("style");
+        String styleValue = end.navigability() == NavigationKind.NAVIGABLE
+                ? "Navigable=Navigable;Owned=0;" : "Owned=0;Navigable=Unspecified;";
+        style.setAttribute("value", styleValue);
+        endpoint.appendChild(style);
+        connector.appendChild(endpoint);
+    }
+
+    private String extensionRelationshipType(String rawKind) {
+        RelationshipKind kind = relationshipKind(rawKind);
+        return switch (kind) {
+            case ASSOCIATION -> "Association";
+            case AGGREGATION, COMPOSITION -> "Aggregation";
+            case GENERALIZATION -> "Generalization";
+            case INTERFACE_REALIZATION -> "Realisation";
+            case DEPENDENCY -> "Dependency";
+        };
+    }
+
+    private String extensionRelationshipDirection(List<RelationshipEndResource> ends) {
+        boolean aggregation = ends.stream().anyMatch(end -> Set.of("shared", "composite")
+                .contains(Objects.requireNonNullElse(end.aggregationKind(), "").toLowerCase(Locale.ROOT)));
+        return aggregation ? "Destination -> Source" : "Unspecified";
+    }
+
+    private String extensionMultiplicity(MultiplicityKind multiplicity) {
+        if (multiplicity == null) {
+            return null;
+        }
+        return switch (multiplicity) {
+            case EXACTLY_ONE -> "1";
+            case ZERO_OR_ONE -> "0..1";
+            case ONE_OR_MANY -> "1..*";
+            case ZERO_OR_MANY -> "0..*";
+            case RANGE -> null;
+        };
+    }
+
+    private String extensionAggregation(String aggregation) {
+        if (aggregation == null) {
+            return null;
+        }
+        String normalized = aggregation.toLowerCase(Locale.ROOT);
+        return Set.of("none", "shared", "composite").contains(normalized) ? normalized : null;
+    }
+
+    private String extensionRoleLabel(String role) {
+        return role == null || role.isBlank() ? null : "+" + role;
+    }
+
+    private void appendOptionalLabel(Element labels, String name, String value) {
+        if (value != null && !value.isBlank()) {
+            labels.setAttribute(name, value);
+        }
+    }
+
+    private void appendExtensionDiagram(Document document, Element diagrams, ModelResource snapshot,
+            ViewResource view, Context context) {
+        Element diagram = document.createElement("diagram");
+        setXmiAttribute(diagram, "id", context.registerId(XmiIdCodec.classifierId(view.id())));
+        diagrams.appendChild(diagram);
+
+        Element model = document.createElement("model");
+        model.setAttribute("package", XmiIdCodec.packageId(snapshot.id()));
+        diagram.appendChild(model);
+        context.loss("extension_diagram_model_metadata");
+
+        Element properties = document.createElement("properties");
+        setOptionalAttribute(properties, "name", view.name());
+        diagram.appendChild(properties);
+        context.loss("extension_diagram_properties_metadata");
+
+        diagram.appendChild(document.createElement("project"));
+        context.loss("extension_diagram_project_metadata");
+        diagram.appendChild(document.createElement("style1"));
+        context.loss("extension_diagram_style1_metadata");
+        diagram.appendChild(document.createElement("style2"));
+        context.loss("extension_diagram_style2_metadata");
+        diagram.appendChild(document.createElement("swimlanes"));
+        context.loss("extension_diagram_swimlanes_metadata");
+        diagram.appendChild(document.createElement("matrixitems"));
+        context.loss("extension_diagram_matrixitems_metadata");
+        diagram.appendChild(document.createElement("extendedProperties"));
+
+        Element placements = document.createElement("elements");
+        diagram.appendChild(placements);
+        Map<UUID, String> duidByClassifier = appendExtensionFigurePlacements(document, placements, view, context);
+        appendExtensionConnectorPlacements(document, placements, snapshot, duidByClassifier, context);
+        context.loss("extension_connector_waypoints", view.connectorPath().size());
+    }
+
+    private Map<UUID, String> appendExtensionFigurePlacements(Document document, Element placements,
+            ViewResource view, Context context) {
+        Map<UUID, String> duidByClassifier = new HashMap<>();
+        for (GeometryResource geometry : orderedGeometry(view)) {
+            if (geometry.targetType() != TargetType.CLASSIFIER) {
+                continue;
+            }
+            ClassifierResource classifier = context.classifierById.get(geometry.targetId());
+            if (classifier == null || !context.emittableClassifierIds.contains(classifier.id())
+                    || duidByClassifier.containsKey(classifier.id())) {
+                if (classifier != null && duidByClassifier.containsKey(classifier.id())) {
+                    context.loss("extension_duplicate_shape_placement");
+                }
+                continue;
+            }
+            String subject = classifierXmiId(classifier);
+            String duid = context.diagramDuid(view.id(), subject);
+            duidByClassifier.put(classifier.id(), duid);
+
+            Element placement = document.createElement("element");
+            placement.setAttribute("geometry", "Left=" + geometry.x() + ";Top=" + geometry.y()
+                    + ";Right=" + (geometry.x() + geometry.w()) + ";Bottom=" + (geometry.y() + geometry.h()) + ";");
+            placement.setAttribute("subject", subject);
+            placement.setAttribute("seqno", Integer.toString(geometry.zOrder()));
+            placement.setAttribute("style", "DUID=" + duid + ";");
+            placements.appendChild(placement);
+        }
+        return duidByClassifier;
+    }
+
+    private List<GeometryResource> orderedGeometry(ViewResource view) {
+        return view.elementGeometry().stream()
+                .sorted(Comparator.comparingInt(GeometryResource::zOrder)
+                        .thenComparing(GeometryResource::targetId, Comparator.nullsFirst(Comparator.naturalOrder()))
+                        .thenComparing(GeometryResource::id, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .toList();
+    }
+
+    private void appendExtensionConnectorPlacements(Document document, Element placements, ModelResource snapshot,
+            Map<UUID, String> duidByClassifier, Context context) {
+        for (RelationshipResource relationship : sortedRelationships(snapshot.relationships())) {
+            List<RelationshipEndResource> ends = orderedEnds(relationship);
+            if (ends.size() != 2 || relationshipKind(relationship.kind()) == null) {
+                continue;
+            }
+            String sourceDuid = duidByClassifier.get(ends.get(0).classifierId());
+            String targetDuid = duidByClassifier.get(ends.get(1).classifierId());
+            if (sourceDuid == null || targetDuid == null
+                    || !context.emittableClassifierIds.contains(ends.get(0).classifierId())
+                    || !context.emittableClassifierIds.contains(ends.get(1).classifierId())) {
+                continue;
+            }
+            Element placement = document.createElement("element");
+            placement.setAttribute("geometry", "SX=0;SY=0;EX=0;EY=0;Path=;");
+            placement.setAttribute("subject", XmiIdCodec.classifierId(relationship.id()));
+            placement.setAttribute("style", "Mode=3;EOID=" + targetDuid + ";SOID=" + sourceDuid
+                    + ";Color=-1;LWidth=0;Hidden=0;");
+            placements.appendChild(placement);
+        }
     }
 
     private int classifierDepth(ClassifierResource classifier, Context context) {
@@ -749,6 +1003,7 @@ public final class XmiSemanticEmitter {
         private final Map<UUID, Element> classifierElements = new HashMap<>();
         private final Set<UUID> emittableClassifierIds = new HashSet<>();
         private final Set<String> ids = new HashSet<>();
+        private final Set<String> diagramDuids = new HashSet<>();
         private final Map<String, String> primitiveTypes = new HashMap<>();
         private final Map<String, Integer> lossCounts = new TreeMap<>();
         private final List<ClassifierResource> roots;
@@ -833,6 +1088,19 @@ public final class XmiSemanticEmitter {
             String primitiveId = XmiIdCodec.classifierId(primitiveUuid);
             primitiveTypes.putIfAbsent(primitiveId, normalizedName);
             return primitiveId;
+        }
+
+        private String diagramDuid(UUID diagramId, String subjectId) {
+            String identity = "uml-diagrammer:xmi-duid:" + XmiIdCodec.classifierId(diagramId) + ":" + subjectId;
+            for (int collision = 0; collision < 1_000_000; collision++) {
+                String seed = collision == 0 ? identity : identity + ":" + collision;
+                String token = UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString()
+                        .replace("-", "").substring(0, 8).toUpperCase(Locale.ROOT);
+                if (diagramDuids.add(token)) {
+                    return token;
+                }
+            }
+            throw new IllegalStateException("Unable to allocate a unique diagram DUID.");
         }
 
         private String registerId(String id) {

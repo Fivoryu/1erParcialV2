@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.diagramador.api.ModelResource;
 import com.diagramador.api.ModelResource.AttributeResource;
 import com.diagramador.api.ModelResource.ClassifierResource;
+import com.diagramador.api.ModelResource.ConnectorPathResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
 import com.diagramador.api.ModelResource.GeometryResource;
 import com.diagramador.api.ModelResource.OperationResource;
@@ -58,7 +59,18 @@ class XmiSemanticEmitterTest {
         assertThat(directChildrenNoNamespace(extension, "elements")).hasSize(1);
         assertThat(directChildrenNoNamespace(extension, "elements").get(0).getChildNodes().getLength()).isZero();
         assertThat(directChildrenNoNamespace(extension, "connectors")).hasSize(1);
-        assertThat(directChildrenNoNamespace(extension, "connectors").get(0).getChildNodes().getLength()).isZero();
+        List<Element> connectorRecords = directChildrenNoNamespace(
+                directChildrenNoNamespace(extension, "connectors").get(0), "connector");
+        assertThat(connectorRecords).hasSize(6);
+        assertThat(connectorRecords).extracting(record -> record.getAttributeNS(XMI_NAMESPACE, "idref"))
+                .contains(XmiIdCodec.classifierId(id(50)), XmiIdCodec.classifierId(id(60)),
+                        XmiIdCodec.classifierId(id(70)), XmiIdCodec.classifierId(id(80)),
+                        XmiIdCodec.classifierId(id(90)), XmiIdCodec.classifierId(id(100)));
+        assertThat(connectorRecords).allSatisfy(record -> {
+            assertThat(childNames(record).subList(0, 2)).containsExactly("source", "target");
+            assertThat(directChildrenNoNamespace(record, "source")).hasSize(1);
+            assertThat(directChildrenNoNamespace(record, "target")).hasSize(1);
+        });
         Element primitiveTypes = directChildrenNoNamespace(extension, "primitivetypes").get(0);
         Element primitivePackage = directChildrenNoNamespace(primitiveTypes, "packagedElement").get(0);
         assertThat(primitivePackage.getAttributeNS(XMI_NAMESPACE, "id")).isEqualTo("EAPrimitiveTypesPackage");
@@ -205,6 +217,7 @@ class XmiSemanticEmitterTest {
                 .getTextContent()).isEqualTo("label <> ''");
         assertThat(result.losses()).containsExactly(
                 new XmiEmissionResult.Loss("constraint_severity", 1),
+                new XmiEmissionResult.Loss("extension_connector_vendor_metadata", 6),
                 new XmiEmissionResult.Loss("extension_primitive_type_catalog", 2));
         assertAllReferencesResolve(document);
     }
@@ -213,9 +226,10 @@ class XmiSemanticEmitterTest {
     void emitsMeasuredExtensionElementAndAttributeLayoutWithoutInventingGeometry() throws Exception {
         ModelResource model = sampleModel();
         ViewResource defaultView = new ViewResource(id(300), "Default", true,
-                List.of(new GeometryResource(id(301), TargetType.CLASSIFIER, id(13), 20, 30, 100, 80, 1),
-                        new GeometryResource(id(302), TargetType.CLASSIFIER, id(14), 140, 30, 120, 90, 2)),
-                List.of());
+                List.of(new GeometryResource(id(301), TargetType.CLASSIFIER, id(13), 50, 50, 200, 90, 1),
+                        new GeometryResource(id(302), TargetType.CLASSIFIER, id(14), 350, 50, 200, 90, 2)),
+                List.of(new ConnectorPathResource(id(303), id(50), 0, 10, 20),
+                        new ConnectorPathResource(id(304), id(50), 1, 30, 40)));
         ModelResource placedModel = new ModelResource(model.id(), model.projectId(), model.revision(), model.versionId(),
                 List.of(defaultView), model.classifiers(), model.relationships());
 
@@ -228,6 +242,83 @@ class XmiSemanticEmitterTest {
         assertThat(records).hasSize(4);
         assertThat(records).extracting(record -> record.getAttribute("name"))
                 .containsExactly("Outer", "Feature", "Inner", "Nested");
+
+        Element diagram = directChildrenNoNamespace(extension, "diagrams").get(0);
+        List<Element> diagrams = directChildrenNoNamespace(diagram, "diagram");
+        assertThat(diagrams).hasSize(1);
+        Element emittedDiagram = diagrams.get(0);
+        assertThat(childNames(emittedDiagram)).containsExactly("model", "properties", "project", "style1", "style2",
+                "swimlanes", "matrixitems", "extendedProperties", "elements");
+        assertThat(findDirectNoNamespace(emittedDiagram, "model").getAttribute("package"))
+                .isEqualTo(XmiIdCodec.packageId(model.id()));
+        Element diagramProperties = findDirectNoNamespace(emittedDiagram, "properties");
+        assertThat(diagramProperties.getAttribute("name")).isEqualTo("Default");
+        assertThat(diagramProperties.hasAttribute("type")).isFalse();
+        assertThat(diagramProperties.hasAttribute("documentation")).isFalse();
+
+        Element diagramElements = findDirectNoNamespace(emittedDiagram, "elements");
+        List<Element> placements = directChildrenNoNamespace(diagramElements, "element");
+        List<Element> figurePlacements = placements.stream()
+                .filter(placement -> placement.getAttribute("geometry").startsWith("Left="))
+                .toList();
+        List<Element> connectorPlacements = placements.stream()
+                .filter(placement -> placement.getAttribute("geometry").startsWith("SX="))
+                .toList();
+        assertThat(figurePlacements).hasSize(2);
+        assertThat(figurePlacements).extracting(placement -> placement.getAttribute("geometry"))
+                .containsExactly("Left=50;Top=50;Right=250;Bottom=140;",
+                        "Left=350;Top=50;Right=550;Bottom=140;");
+        assertThat(connectorPlacements).hasSize(3);
+        Element nestedFigure = figurePlacements.stream()
+                .filter(placement -> placement.getAttribute("subject").equals(XmiIdCodec.classifierId(id(13))))
+                .findFirst().orElseThrow();
+        assertThat(nestedFigure.getAttribute("geometry"))
+                .isEqualTo("Left=50;Top=50;Right=250;Bottom=140;");
+        assertThat(nestedFigure.getAttribute("seqno")).isEqualTo("1");
+        assertThat(nestedFigure.getAttribute("style")).matches("DUID=[0-9A-F]{8};");
+        assertThat(XmiIdCodec.classifierUuid(nestedFigure.getAttribute("subject"))).isEqualTo(id(13));
+        assertThat(figurePlacements).allSatisfy(placement ->
+                assertThat(placement.getAttribute("geometry"))
+                        .matches("Left=-?\\d+;Top=-?\\d+;Right=-?\\d+;Bottom=-?\\d+;"));
+
+        java.util.Map<String, String> duidsBySubject = new java.util.HashMap<>();
+        for (Element figure : figurePlacements) {
+            String duid = styleValue(figure, "DUID");
+            assertThat(duidsBySubject.put(figure.getAttribute("subject"), duid)).isNull();
+        }
+        assertThat(duidsBySubject.values()).doesNotHaveDuplicates();
+
+        assertThat(connectorPlacements).allSatisfy(placement -> {
+            assertThat(placement.getAttribute("geometry")).isEqualTo("SX=0;SY=0;EX=0;EY=0;Path=;");
+            assertThat(placement.hasAttribute("seqno")).isFalse();
+            assertThat(placement.getAttribute("style"))
+                    .matches("Mode=3;EOID=[0-9A-F]{8};SOID=[0-9A-F]{8};Color=-1;LWidth=0;Hidden=0;");
+        });
+        Element associationPlacement = connectorPlacements.stream()
+                .filter(placement -> placement.getAttribute("subject").equals(XmiIdCodec.classifierId(id(50))))
+                .findFirst().orElseThrow();
+        assertThat(styleValue(associationPlacement, "SOID"))
+                .isEqualTo(duidsBySubject.get(XmiIdCodec.classifierId(id(14))));
+        assertThat(styleValue(associationPlacement, "EOID"))
+                .isEqualTo(duidsBySubject.get(XmiIdCodec.classifierId(id(13))));
+
+        Element connectorRecords = directChildrenNoNamespace(extension, "connectors").get(0);
+        Element associationRecord = extensionConnectorByIdref(connectorRecords, XmiIdCodec.classifierId(id(50)));
+        assertThat(childNames(associationRecord)).containsExactly("source", "target", "model", "properties",
+                "modifiers", "appearance", "labels", "style");
+        assertThat(findDirectNoNamespace(associationRecord, "source").getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(XmiIdCodec.classifierId(id(14)));
+        assertThat(findDirectNoNamespace(associationRecord, "target").getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(XmiIdCodec.classifierId(id(13)));
+        Element associationLabels = findDirectNoNamespace(associationRecord, "labels");
+        assertThat(associationLabels.getAttribute("lb")).isEqualTo("1");
+        assertThat(associationLabels.getAttribute("lt")).isEqualTo("+owner");
+        assertThat(associationLabels.getAttribute("rb")).isEqualTo("0..*");
+        assertThat(associationLabels.getAttribute("rt")).isEqualTo("+items");
+        assertThat(associationLabels.getAttribute("mt")).isEqualTo("contains");
+        assertThat(findDirectNoNamespace(associationRecord, "properties").getAttribute("ea_type"))
+                .isEqualTo("Association");
+        assertAllReferencesResolve(document);
         Element outerPackage = extensionElementByIdref(elements, XmiIdCodec.packageId(id(10)));
         Element innerPackage = extensionElementByIdref(elements, XmiIdCodec.packageId(id(11)));
         Element nested = extensionElementByIdref(elements, XmiIdCodec.classifierId(id(13)));
@@ -277,6 +368,15 @@ class XmiSemanticEmitterTest {
                 new XmiEmissionResult.Loss("attribute_layout_coordinates", 2),
                 new XmiEmissionResult.Loss("attribute_layout_position_approximation", 2),
                 new XmiEmissionResult.Loss("constraint_severity", 1),
+                new XmiEmissionResult.Loss("extension_connector_vendor_metadata", 6),
+                new XmiEmissionResult.Loss("extension_connector_waypoints", 2),
+                new XmiEmissionResult.Loss("extension_diagram_matrixitems_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_model_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_project_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_properties_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_style1_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_style2_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_swimlanes_metadata", 1),
                 new XmiEmissionResult.Loss("extension_element_vendor_metadata", 4),
                 new XmiEmissionResult.Loss("extension_primitive_type_catalog", 2));
         assertAllReferencesResolve(document);
@@ -326,6 +426,7 @@ class XmiSemanticEmitterTest {
                 UML_NAMESPACE, "defaultValue");
         assertThat(wildcardDefault.getAttribute("value")).isEqualTo("*");
         assertThat(result.losses()).containsExactly(
+                new XmiEmissionResult.Loss("extension_connector_vendor_metadata", 3),
                 new XmiEmissionResult.Loss("extension_primitive_type_catalog", 1),
                 new XmiEmissionResult.Loss("unsupported_relationship_navigability", 2));
         assertAllReferencesResolve(document);
@@ -570,6 +671,22 @@ class XmiSemanticEmitterTest {
                 .findFirst().orElseThrow(() -> new AssertionError("Missing extension element " + idref));
     }
 
+    private static Element extensionConnectorByIdref(Element connectors, String idref) {
+        return directChildrenNoNamespace(connectors, "connector").stream()
+                .filter(element -> element.getAttributeNS(XMI_NAMESPACE, "idref").equals(idref))
+                .findFirst().orElseThrow(() -> new AssertionError("Missing extension connector " + idref));
+    }
+
+    private static String styleValue(Element placement, String key) {
+        for (String part : placement.getAttribute("style").split(";")) {
+            int separator = part.indexOf('=');
+            if (separator > 0 && part.substring(0, separator).equals(key)) {
+                return part.substring(separator + 1);
+            }
+        }
+        return "";
+    }
+
     private static List<String> childNames(Element parent) {
         List<String> names = new ArrayList<>();
         for (int index = 0; index < parent.getChildNodes().getLength(); index++) {
@@ -626,6 +743,10 @@ class XmiSemanticEmitterTest {
             if (!idref.isEmpty()) {
                 assertThat(ids).as("resolved xmi:idref %s", idref).contains(idref);
             }
+            String subject = element.getAttribute("subject");
+            if (!subject.isEmpty()) {
+                assertThat(ids).as("resolved diagram subject %s", subject).contains(subject);
+            }
             for (String attribute : List.of("general", "client", "supplier", "association", "package")) {
                 String reference = element.getAttribute(attribute);
                 if (!reference.isEmpty()) {
@@ -635,6 +756,36 @@ class XmiSemanticEmitterTest {
             if ("ownedParameter".equals(element.getLocalName()) && element.hasAttribute("type")) {
                 assertThat(ids).as("resolved ownedParameter type %s", element.getAttribute("type"))
                         .contains(element.getAttribute("type"));
+            }
+        }
+        assertDiagramAnchorsResolve(document, ids);
+    }
+
+    private static void assertDiagramAnchorsResolve(Document document, Set<String> ids) {
+        for (Element diagram : allElements(document).stream()
+                .filter(element -> "diagram".equals(element.getLocalName())).toList()) {
+            Element elements = directChildrenNoNamespace(diagram, "elements").stream()
+                    .findFirst().orElseThrow(() -> new AssertionError("Missing diagram elements"));
+            java.util.Map<String, String> subjectsByDuid = new java.util.HashMap<>();
+            List<Element> placements = directChildrenNoNamespace(elements, "element");
+            for (Element placement : placements) {
+                if (!placement.getAttribute("geometry").startsWith("Left=")) {
+                    continue;
+                }
+                String duid = styleValue(placement, "DUID");
+                String subject = placement.getAttribute("subject");
+                assertThat(duid).as("figure DUID").matches("[0-9A-F]{8}");
+                assertThat(ids).as("resolved figure subject %s", subject).contains(subject);
+                assertThat(subjectsByDuid.put(duid, subject)).as("unique DUID %s", duid).isNull();
+            }
+            for (Element placement : placements) {
+                if (!placement.getAttribute("geometry").startsWith("SX=")) {
+                    continue;
+                }
+                assertThat(subjectsByDuid).as("source anchor in this diagram")
+                        .containsKey(styleValue(placement, "SOID"));
+                assertThat(subjectsByDuid).as("target anchor in this diagram")
+                        .containsKey(styleValue(placement, "EOID"));
             }
         }
     }
