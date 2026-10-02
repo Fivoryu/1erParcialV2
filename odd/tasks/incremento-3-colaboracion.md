@@ -209,11 +209,59 @@ leído en la fuente, **no** ejercitado por una prueba.
 
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
-| C11 | `ProjectEventBus` y `GET /projects/{id}/events` con `SseEmitter`, heartbeat, limpieza de emisores y autorización por rol | Integración: dos clientes reciben el evento publicado; un tercero sin rol no conecta |
+| C11 | `ProjectEventBus` y `GET /projects/{id}/events` con `SseEmitter`, heartbeat, limpieza de emisores y autorización por rol | Integración: dos clientes reciben el evento publicado; un tercero sin rol no conecta. **Cerrada** en `cb6a2ca` (ver *S3 progreso*) |
 | C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable |
 | C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra |
 | C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado |
 | C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío |
+
+### S3 progreso — C11 cerrada (2026-10-01)
+
+**Commit:** `cb6a2ca` — *feat(backend): stream project events over sse* (5 archivos nuevos, +507).
+
+**Revisión nativa:** linaje `review-280103838dd3da8e`, tier `medium`, **una** lente (`review-reliability`, orden 0), 5 caminos,
+507 líneas, presupuesto de corrección 200. Cerró **aprobada** al primer intento y su autoridad quedó quemada
+(`gentle-ai.review-acknowledged/v1`). Artefacto del revisor: prompt 35.719 bytes, resultado 1.420 bytes.
+
+**Hallazgo informativo que dejó la revisión — `R3-silent-stream-after-send-failure`**: lente `reliability`, ubicación
+`collaboration/ProjectEventBus.java:86-87` (el `catch` que elimina el emisor muerto), severidad `WARNING`, disposición
+`informational`. El proveedor fue explícito: **ninguno abre corrección, ninguno reabre la revisión y no se ofrece transición
+de corrección para este candidato**, así que no se re-revisa. Lectura propia de esa región, **atribuida a esta sesión y no al
+revisor**: un suscriptor cuyo envío falla se descarta **sin ningún diagnóstico** —no hay log ni métrica— así que un cliente
+caído desaparece del canal en silencio. Es de la misma familia que `R3-001` de C8+C9 y queda como trabajo posterior candidato
+(observabilidad al descartar un emisor), no como defecto de esta unidad.
+
+**Medido al cerrar:** `mvn -o -B -f backend/pom.xml verify` = **255 pruebas, 0 fallos, 0 errores, 0 omitidas**, `BUILD SUCCESS`
+(248 de base + 7 nuevas: 4 de `ProjectEventBusTest`, 3 de `ProjectEventApiTest`). La corrida del padre fue **desacoplada**
+(`nohup` con log fuera del repo) y la repitió un verificador independiente, que obtuvo los mismos totales en ~3½ minutos.
+La evidencia del plan —**dos clientes reciben el evento publicado; un tercero sin rol no conecta**— quedó probada por el
+**endpoint autorizado** (`GET /projects/{id}/events`), no sólo a nivel del bus.
+
+**Desviación de ruteo declarada:** los tres escritores delegados de esta unidad fallaron (dos desaparecieron y uno se colgó 30
+minutos), y el padre terminó escribiendo **un archivo de prueba** en línea, `collaboration/ProjectEventBusTest.java`. El motivo
+no fue impaciencia sino que la prueba del camino de error **afirmaba algo falso**: medía `expected: 1 but was: 2`, es decir
+`SseEmitter.completeWithError` **no** dispara el callback `onError` del bus. Se reemplazó por la garantía que sí se sostiene
+—un suscriptor muerto lo elimina el siguiente envío— y el límite quedó declarado en el propio archivo.
+
+**Causa raíz de esos tres fallos, medida** (importa para las unidades que quedan): el escritor corre la suite completa como
+**una sola llamada `bash` bloqueante**; bajo contención con la sesión hermana de XMI —que corre su propio Maven con
+Testcontainers contra el mismo demonio Docker— esa corrida pasó de ~13 minutos a **más de 70**. El arnés mata al subagente
+cuando una llamada lleva ~30 minutos corriendo, **muere el fork de Surefire y el lanzador de Maven queda esperando un hijo que
+ya no existe, para siempre**: un JVM huérfano (591 MB) sosteniendo `backend/target/`, que es lo que hacía parecer colgada
+cualquier corrida posterior. **Mitigación**: lanzar la suite desacoplada, con el log **fuera del repo** (un archivo nuevo dentro
+del árbol entra al candidato de revisión y mueve el target congelado) y monitorear en ventanas acotadas; si aparece un JVM de
+Maven huérfano, matarlo para liberar `target/`.
+
+**Límites declarados de esta unidad** (los midió el verificador independiente y se registran, no se esconden):
+
+1. **La suite no aísla las entradas de `onTimeout` ni de `onError`.** Si se borrara cualquiera de las dos del bus, la suite
+   **igual pasaría**: sólo la de `onCompletion` está anclada a una aserción. La de `onError` no se puede ejercitar de forma
+   fiel con MockMvc (un error de nivel contenedor no se puede producir ahí).
+2. **La limpieza es diferida y acotada, no inmediata.** Un emisor muerto lo elimina el siguiente envío fallido, a más tardar el
+   heartbeat (15 s por defecto). El verificador juzgó esto **aceptable para este canal** y descartó que sea una fuga sin límite.
+3. **En memoria y de una sola instancia** (decisión C4): la presencia y este canal no cruzan instancias.
+4. **El operador no puede suscribirse**: `AuthenticationInterceptor.isOperatorAllowed` no incluye `events`, así que se lo
+   rechaza antes del controlador. Es la frontera buscada, no un descuido.
 
 ### S4 — Chat persistente del diagrama
 
