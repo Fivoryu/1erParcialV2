@@ -211,7 +211,7 @@ leído en la fuente, **no** ejercitado por una prueba.
 | --- | --- | --- |
 | C11 | `ProjectEventBus` y `GET /projects/{id}/events` con `SseEmitter`, heartbeat, limpieza de emisores y autorización por rol | Integración: dos clientes reciben el evento publicado; un tercero sin rol no conecta. **Cerrada** en `cb6a2ca` (ver *S3 progreso*) |
 | C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable. **Cerrada** en `c2d24a6` (ver *S3 progreso*) |
-| C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra |
+| C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra. **Cerrada** en `c973dd5` (ver *S3 progreso*) |
 | C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado |
 | C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío |
 
@@ -299,6 +299,59 @@ sobre los 20.000 esperados por color. La distribución es uniforme.
    aserción principal sí está medida por el fallo previo al arreglo, que es más fuerte que una precondición.
 4. **Comparación contra la línea base anterior no reproducible por el verificador:** la corrió el padre (255 → 264) y el verificador confirmó 264,
    pero no pudo correr la revisión previa al candidato para comparar test por test.
+
+### S3 progreso — C13 cerrada (2026-10-01)
+
+**Commit:** `c973dd5` — *feat(backend): announce an accepted command to the other sessions* (2 archivos, +245/−2).
+
+**Revisión nativa:** linaje `review-81f65013fef6aef5`, tier `medium`, **una** lente (`review-reliability`), 2 caminos, 247 líneas,
+presupuesto de corrección 124. Cerró **aprobada**, autoridad quemada (artefacto del revisor: prompt 27.756 bytes, resultado 1.571 bytes).
+
+**Hallazgo informativo que dejó la revisión — `R3-replay-event-identity`**: lente `reliability`, ubicación `command/CommandService.java:112`
+(la zona del replay idempotente), severidad `WARNING`, disposición `informational`. El proveedor fue explícito: **ninguno abre corrección y no se
+ofrece transición de corrección para este candidato**. Es una **confirmación independiente del riesgo que esta sesión congeló y declaró** al
+implementar: un replay con la misma `idempotencyKey` vuelve a anunciar la misma operación, así que el cliente no puede distinguir "aplicada ahora" de
+"ya aplicada" salvo por deduplicar con `operationId`. Queda como trabajo posterior candidato, en la familia de observabilidad/identidad de eventos.
+
+**Fallo de transporte del relay del revisor, recuperado (nuevo modo de falla, dos veces):**
+
+- `pi-host-relay-transport-failure` — *"Reviewer completion failed for review-reliability: WebSocket error"*, con `prepared_reviewers: 0`,
+  `submitted_reviewers: 0` y `mutation_performed: false`. La primera vez a los ~357 s y la segunda a los ~401 s, **muy por debajo** del
+  `timeout_ms` de 2.400.000: no fue timeout, fue el transporte.
+- El proveedor indica la recuperación exacta en cada intento: *«Call fresh STATUS and submit only an exact reoffered one-slot binding; never replay
+  this capture from transcript inference»*. Se hizo eso: STATUS fresco (estado y revisión **sin cambios**, mismo slot reofrecido) y envío del binding
+  exacto. **El tercer intento admitió el artefacto.** No se infirió ningún binding de la transcripción.
+
+**Medido al cerrar:** `mvn -o -B -f backend/pom.xml test -Dtest=CommandEventDeliveryTest` = **3 pruebas, 0 fallos** ·
+`mvn -o -B -f backend/pom.xml verify` = **267 pruebas, 0 fallos, 0 errores, 0 omitidas** (264 de base + 3 nuevas).
+
+**Defecto propio encontrado y corregido ANTES de la revisión:** el payload se construía con `Map.of(...)` y `target.id().toString()`, así que un target
+con `scope`/`id` **nulos** lanzaba `NPE`; el `catch` deliberado lo tragaba y **el evento se perdía en silencio** para un comando que igual quedaba
+aceptado y durable. La construcción ahora es defensiva y hay una prueba que falla si se revierte (**medida**: antes del arreglo, 3 pruebas con 1 fallo
+—el comando se aceptaba y no llegaba ningún evento).
+
+**Corrección de mi propio análisis, declarada:** describí el disparador como «un elemento `null` en el array `targets`» y eso es **inalcanzable** por
+HTTP, porque `OperationEnvelope` aplica `List.copyOf(targets)` en su constructor compacto y rechaza elementos nulos. El disparador real son `scope` e `id`
+nulos **como campos**, que `List.copyOf` sí acepta. El defecto era real; mi explicación del camino, no.
+
+**Dos hallazgos del verificador independiente, corregidos en el mismo candidato:**
+
+1. **El fallo tragado era invisible y mi comentario decía algo falso**: escribí que el proyecto no tiene framework de logging, y `spring-boot-starter-web`
+trae slf4j/logback. Ahora `CommandService` tiene un logger y registra el fallo a `warn` con la excepción, así que el hueco deja de ser invisible; el
+comentario dice la verdad (se registra y a propósito no se propaga, porque la entrega no puede deshacer una aceptación durable).
+2. **La garantía «después del commit» estaba afirmada de forma incondicional.** `TransactionTemplate` con `PROPAGATION_REQUIRED` se une a una transacción
+ambiente, así que un llamador futuro podría publicar antes de que esa transacción externa confirme. Hoy **ningún** llamador lo hace (los del
+`ProjectApiService` no son transaccionales, verificado por el verificador).
+
+**Limites declarados de esta unidad:**
+
+1. **La garantía de orden es condicional, y se declara en lugar de implementarse.** Un llamador con transacción ambiente necesitaría un hook de
+after-commit. **No se implementó a propósito**: agregaría un camino de código que ninguna prueba ejercita, y un camino sin ejercitar es peor que una
+frontera declarada. El comentario en el código nombra la frontera.
+2. **Un `Error` de la publicación no se atrapa** y puede hacer fallar la invocación aunque el comando ya sea durable. El verificador no lo clasificó como
+defecto (no hay requisito de tragarse `Error`s de la JVM) y esta sesión coincide: atrapar `Error` sería peor.
+3. **El replay vuelve a anunciar** el mismo `operationId` y `resultRevision` (hallazgo `R3-replay-event-identity` del revisor). Está declarado en el código
+y queda como trabajo posterior si el cliente necesita distinguir identidad de recencia.
 
 ### S4 — Chat persistente del diagrama
 
