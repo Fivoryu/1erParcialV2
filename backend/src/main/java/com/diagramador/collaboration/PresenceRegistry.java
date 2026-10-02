@@ -99,6 +99,30 @@ public class PresenceRegistry {
         return updated.get();
     }
 
+    /**
+     * Updates every live session for a user on this project; returns false and changes nothing if
+     * that user has no live session. Per-tab targets are not modeled in this increment: the panel and
+     * snapshot are per person, so the last touch wins for that user across tabs.
+     */
+    public boolean touchUser(UUID projectId, UUID userId, UUID targetElementId) {
+        Objects.requireNonNull(projectId, "projectId");
+        Objects.requireNonNull(userId, "userId");
+
+        AtomicBoolean updated = new AtomicBoolean();
+        projects.computeIfPresent(projectId, (id, sessions) -> {
+            sessions.replaceAll((sessionId, existing) -> {
+                if (!existing.userId().equals(userId)) {
+                    return existing;
+                }
+                updated.set(true);
+                return new PresenceEntry(existing.sessionId(), existing.userId(), existing.displayName(),
+                        existing.color(), targetElementId, existing.joinedAt(), nextTimestamp());
+            });
+            return sessions;
+        });
+        return updated.get();
+    }
+
     /** Refreshes the last-seen time of a live session; absent sessions are ignored. */
     public void refresh(UUID projectId, UUID sessionId) {
         Objects.requireNonNull(projectId, "projectId");
