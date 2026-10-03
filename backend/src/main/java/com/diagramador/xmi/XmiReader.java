@@ -60,7 +60,7 @@ public final class XmiReader {
         }
         Element modelElement = first(document, UML, "Model");
         if (modelElement == null) {
-            throw new IllegalArgumentException("The XMI document must contain uml:Model.");
+            throw new IllegalArgumentException(unsupportedDialect(root));
         }
         Element extension = first(document, XMI, "Extension");
         Context context = new Context(modelElement, extension);
@@ -78,6 +78,33 @@ public final class XmiReader {
         ModelResource model = new ModelResource(modelId, projectId, revision, versionId, views,
                 classifiers, relationships);
         return context.result(model, diagrams);
+    }
+
+    /**
+     * Names the dialect that was actually found, because the missing element is a symptom and the dialect is the
+     * finding. Measured against three real Enterprise Architect exports: the UML 2.1 namespace is read, while the XMI
+     * 1.1 dialect -which is what EA exports by default- and the UML 2.2 namespace are not. Reporting only a missing
+     * {@code uml:Model} sends the reader looking for an element when the answer is a different export option.
+     * Evidence: {@code odd/tasks/xmi-intercambio.md} section 11.
+     */
+    private static String unsupportedDialect(Element root) {
+        String namespace = root.getAttributeNS(XMLConstants.XMLNS_ATTRIBUTE_NS_URI, "uml");
+        if (namespace.isEmpty()) {
+            namespace = root.getAttributeNS(XMLConstants.XMLNS_ATTRIBUTE_NS_URI, "UML");
+        }
+        String version = root.getAttributeNS(XMI, "version");
+        if (version.isEmpty()) {
+            version = root.getAttribute("xmi.version");
+        }
+        if ("1.1".equals(version)) {
+            return "Unsupported XMI dialect: the document is XMI 1.1, which this reader cannot represent. XMI 1.1 is"
+                    + " what Enterprise Architect exports by default; export as XMI 2.1 and import again.";
+        }
+        if (!namespace.isEmpty() && !UML.equals(namespace)) {
+            return "Unsupported XMI dialect: the document declares the UML namespace " + namespace + ", and this"
+                    + " reader implements " + UML + " (UML 2.1). Export as XMI 2.1 and import again.";
+        }
+        return "The XMI document must contain uml:Model in the " + UML + " namespace.";
     }
 
     private static Document parse(byte[] bytes) {
