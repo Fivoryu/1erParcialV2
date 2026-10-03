@@ -41,7 +41,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | X7 — Web | Pendiente | Depende de X4 y X6 |
 | X8 — Arnés y cierre | Pendiente | Depende de todo lo anterior |
 | Verificación en EA (§7) | **Cerrada en §10 y §11** | Sentido app → EA: GAP-07 con causa raíz medida, el arquero de dialecto en `xmi:Documentation`. `t_diagram` 90 → 91, ids preservados y 2 figuras ancladas sobre una copia de `sw1_p2.eapx`. Sentido EA → app: medido en §11 con exportaciones reales de EA |
-| E — El sentido EA → app | **Cerrada en §11** | 5 artefactos de EA pinchados por sha256 y byte-exactos; el lector medido sobre la matriz de exportación; `mvn verify` = **260 pruebas, 0 fallos, 0 salteadas**; `python -m pytest tools -q` = **46 pruebas, 0 fallos** |
+| E — El sentido EA → app | **Cerrada en §11** | 5 artefactos de EA pinchados por sha256 y byte-exactos; el lector medido sobre la matriz de exportación; `mvn verify` = **260 pruebas, 0 fallos, 0 salteadas**; `python -m pytest tools -q` = **46 pruebas, 0 fallos**; revisión nativa `review-79d56d80554b3cd0` = **approved**, autoridad quemada |
 
 ## 1. Corte visible que define la unidad
 
@@ -1235,9 +1235,11 @@ recurso. Las dos ramas se prueban con los fixtures reales, no con cadenas invent
 | La opción por defecto de EA es XMI 1.1; la 2.2 escribe el namespace UML 2.2 | `head -c 260` sobre cada archivo de `backend/target/xmi-lab/matrix/` (§11.2) |
 | La matriz, declarada en el contrato | `docs/puds/contratos/04-dialecto-xmi-ea.md` §6.1; encabezado corregido |
 | Toda la batería | `mvn -o -B -f backend/pom.xml verify` = **260 pruebas, 0 fallos, 0 salteadas**; `python -m pytest tools -q` = **46 pruebas, 0 fallos** |
+| La revisión nativa del cambio de conducta | Linaje `review-79d56d80554b3cd0`, base `044d035b`, candidato `615e84ae2f`: riesgo **medio**, 1 lente, 4 archivos y 317 líneas, **0 correcciones**, veredicto **`approved`**; autoridad quemada (`gentle-ai.review-acknowledged/v1`). Los 4 archivos son el lector, sus pruebas y los dos documentos: los fixtures quedaron en la base, para que la revisión no gaste su presupuesto en miles de líneas de XML de EA |
 
 | **No medido**, y así se declara | Por qué |
 | --- | --- |
 | Que `<links>` sea redundante en general, y que EA preserve nuestros `xmi:id` en todas las opciones | Se midió en un archivo cada cosa (§11.3, §11.4) |
 | El dialecto XMI 1.1 o 2.2 como **capacidad** | Solo se mide su rechazo: soportarlos es una decisión de producto, no un defecto |
 | La importación de un XMI de EA con notas, o con los 9 constructos de §3 sin evidencia | Ningún artefacto de esta unidad los ejerce |
+| El texto del hallazgo no bloqueante `R3-001` (SUGGESTION, `XmiReader.java:91`, lente de fiabilidad) | El cierre de la revisión trae su ubicación y su severidad, no su texto. Queda como trabajo posterior; **no** habilita repetir la revisión de este candidato |
