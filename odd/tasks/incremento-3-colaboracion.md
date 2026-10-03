@@ -1270,6 +1270,26 @@ volver a correrla antes de declarar cerrada una fusión.
 
 ### S7 — Cierre
 
+**Diseño congelado del arnés de aceptación (antes de C25), con el dato que lo fija:** el arnés XMI existente (`tools/xmi-acceptance/`) es **sólo de
+archivos**, pero la evidencia de C25 pide dos sesiones concurrentes en vivo con teardown verificado, así que este arnés **levanta la pila real** con
+`docker compose -p collaboration-acceptance up -d --build --wait` (la imagen se construye del `backend/Dockerfile` que ya existe) y corre contra el
+puerto `18091` (Postgres `25433`), ambos sobreescribibles. Se mide contra la **API**, no contra navegadores: las dos "sesiones" son dos clientes HTTP
+con tokens propios (el corte visible §1 de dos navegadores lo cubre la web con sus pruebas de integración, y **se declara** que este arnés no abre
+browser ni lee SSE — la entrega en vivo del canal quedó probada en C14/C15).
+
+**Reglas congeladas:**
+
+1. **Un solo archivo Python, stdlib nada más** (`urllib`), estilo del arnés XMI: checks que nunca se omiten en silencio, salida **What was measured** /
+   **What was NOT measured**, y estado de salida distinto de cero ante cualquier fallo.
+2. **El conteo de contenedores es por etiqueta de proyecto de Compose** (`com.docker.compose.project=collaboration-acceptance`), **nunca global**: el
+   daemon es compartido con otras sesiones y hay Testcontainers ajenos corriendo. Teardown = `compose down -v` + conteo del proyecto en **0**.
+3. **El recorrido, en orden:** registro y login de A y B → A crea el proyecto e invita a B como EDITOR → B acepta → **A toma la concesión** → B intenta
+   `POST /generations` (200 con `outcome=REJECTED`, `EXPORT_BLOCKED_EDITING`, cinco claves en `result`), la descarga de artefactos (**409** con
+   `details[0]`) y la **exportación XMI** (**409** nombrando a A) → chat: A publica, B lee el historial persistido → presencia: ambos se reportan y leen
+   la lista → B lee el `GET` de la concesión y ve el nombre de A → A suelta, **B toma** → teardown verificado.
+4. **Cada check afirma el código HTTP y al menos un dato del cuerpo** — nunca sólo el código—, con las cinco claves del conflicto verificadas por nombre.
+5. Si falta Docker o el build falla, el arnés **informa y termina distinto de cero**: no convierte un entorno ausente en un check omitido.
+
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
 | C25 | `tools/collaboration-acceptance/`: arnés de dos sesiones concurrentes que prueba login, invitación, presencia, chat, bloqueo y XMI, con teardown verificado | Corrida completa sin fallos y con conteo de contenedores restaurado |
