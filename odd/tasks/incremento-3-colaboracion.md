@@ -509,6 +509,38 @@ El resto de la unidad la escribieron escritores delegados, validados por el padr
 5. **StrictMode, sólo en desarrollo**: el ciclo montar/desmontar/remontar abre una conexión de más y puede duplicar el POST inicial del toque. El
    cleanup cierra la primera, así que no queda suscripción duplicada y en producción no ocurre.
 
+### S3 progreso — C14b implementada y verificada, SIN COMMITEAR (revisión bloqueada por el relay) — 2026-10-01
+
+**Estado:** el código está escrito, verificado y **sin commitear** (7 archivos: 5 modificados y 2 nuevos). **No se commiteó a propósito**: la regla acordada
+con el usuario es no commitear sin revisión nativa cuando el relay está caído.
+
+**Medido:** `npm run lint` 0 · `npm test` **128 pasadas, 4 omitidas** · `npm run build` 0 (222 módulos).
+
+**Verificación independiente (dos rondas, ambas con hallazgos reales):**
+
+1. **Ronda 1**: la función pura de agrupación **no deduplicaba**, así que dos entradas con el mismo `userId` sobrevivían, el orden podía depender de la entrada y la chip
+   habría llevado **claves de React repetidas**. Bajo la invariante del servidor (el snapshot colapsa por usuario) no puede pasar, pero la función promete determinismo
+   incondicional — y es la misma familia del hallazgo `R3-malformed-presence` del revisor de C14. Corregido con una regla canónica: gana el par `(displayName, color)`
+   lexicográficamente menor, de modo que el resultado es independiente del orden **para cualquier entrada**.
+2. **Ronda 2**: la aserción de «sin identificadores técnicos» cubría `markup` pero **no** `interfaceMarkup`, así que un id filtrado en la interfaz pasaba escondido.
+   Corregido por el padre **en línea** (cambio de prueba, tres líneas) y declarado como tal.
+
+**Lo que la revisión nativa no pudo hacer, medido:** tres intentos consecutivos de la corrida del revisor, los tres con `pi-host-relay-transport-failure`
+(*WebSocket error*) a los **134 s, 172 s y 174 s** de un presupuesto de 2.400.000 ms, con `prepared_reviewers: 0` y `mutation_performed: false`. Se aplicó dos veces la
+recuperación que indica el proveedor (STATUS fresco + binding exacto reofrecido). El linaje `review-1db88022feaea7dd` queda abierto en `reviewing` con su slot sin
+satisfacer y **no se reusa**: el árbol sin commitear sigue siendo el mismo, así que puede reintentarse cuando el relay responda, o revisarse después sobre el rango
+commiteado si se autoriza commitear con desviación declarada.
+
+**Límites declarados de esta unidad:**
+
+1. Sólo un toque cuyo objetivo sea un **clasificador** (clase, abstracta, interfaz, paquete) resalta una tarjeta; un toque sobre una **relación** o un **miembro**
+   (atributo, operación) no resalta nada, porque viven en otros componentes que esta unidad no toca. Está escrito en el código, sobre el emparejamiento en `UmlCanvas`.
+2. **Sin prueba de navegador**: el entorno de pruebas no tiene DOM, así que el resaltado se verifica por markup estático de la tarjeta y por pruebas puras del agrupamiento.
+3. **Comparación contra la línea base no reproducible por el verificador**: la observó el padre (120 → 127 → 128) y el verificador confirmó los totales actuales, pero no
+   pudo correr la revisión previa para comparar test por test.
+4. Los tests de nombre-sólo y color-sólo en la deduplicación **no** están afirmados por separado: el que existe cambia nombre **y** color a la vez, así que esa rama
+   queda cubierta por lectura, no por prueba.
+
 ### S4 — Chat persistente del diagrama
 
 | # | Tarea | Evidencia que la cierra |
