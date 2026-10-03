@@ -43,6 +43,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | Verificación en EA (§7) | **Cerrada en §10 y §11** | Sentido app → EA: GAP-07 con causa raíz medida, el arquero de dialecto en `xmi:Documentation`. `t_diagram` 90 → 91, ids preservados y 2 figuras ancladas sobre una copia de `sw1_p2.eapx`. Sentido EA → app: medido en §11 con exportaciones reales de EA |
 | E — El sentido EA → app | **Cerrada en §11** | 5 artefactos de EA pinchados por sha256 y byte-exactos; el lector medido sobre la matriz de exportación; `mvn verify` = **260 pruebas, 0 fallos, 0 salteadas**; `python -m pytest tools -q` = **46 pruebas, 0 fallos**; revisión nativa `review-79d56d80554b3cd0` = **approved**, autoridad quemada |
 | Consolidación y publicación | **Cerrada en §12** | Fusión de `feat/incremento-3-colaboracion` (`61bf2d2`) en `feat/xmi-intercambio` como unión de los dos lados, commit `f3f8e33` de dos padres; `mvn verify` = **307 pruebas, 0 fallos, 0 salteadas**; `pytest` = **46**; `npm run lint` y `npm run build` limpios; remoto privado creado y `main` movida a la punta por decisión del usuario |
+| F — Lo que el oráculo no medía | **Cerrada en §13** | Las seis filas X3–X8 reconciliadas contra §5.2; el control positivo con el artefacto de EA en los dos casilleros **refutó dos de los tres «defectos» de §7.5**; el diagnóstico del dialecto mira las declaraciones de namespace, no el prefijo; arnés **18/0** en los dos corpus y las suites verdes (`mvn verify` **308 pruebas, 0 fallos**; `pytest` **54**); revisión nativa `review-5fceca1cdf2aad8c` = **approved**, autoridad quemada, tres avisos no bloqueantes en §13.6 |
 
 ## 1. Corte visible que define la unidad
 
@@ -1448,7 +1449,7 @@ en esa ubicación, no uno citado.
 | F4 | Lista de **desvíos declarados** de vocabulario, derivada de los artefactos de EA medidos, con `defaultValue`/`specification` nombrados y su razón | Cualquier vocabulario nuevo y no medido **sigue fallando**, y una prueba lo demuestra |
 | F5 | `unsupportedDialect` mira las declaraciones de namespace en vez del prefijo literal | Prueba con un documento que declare UML 2.2 bajo otro prefijo |
 | F6 | Corrida final: arnés, `pytest`, `mvn verify` | Arnés sin fallas; suites verdes con sus totales |
-| F7 | Registro y revisión nativa del candidato | Esta sección y el cierre |
+| F7 | Registro y revisión nativa del candidato | §13.6: cuatro lentes, **aprobada**, autoridad quemada |
 
 ### 13.5 Resultado
 
@@ -1482,4 +1483,41 @@ citan su corrida, y X8 se cierra acá. Las seis filas se escribieron mirando la 
 | Que Enterprise Architect acepte el documento emitido en una importación viva | El arnés valida estructura de archivo y **no corre EA**; eso lo cubren §10 y §11 con el instrumento de EA |
 | La gramática de `Path=` | Sin cambios desde §3: una muestra no dice si las coordenadas son absolutas o relativas, y por eso el emisor escribe vacío |
 | El texto original del hallazgo `R3-001` | Irrecuperable del estado durable, y así se declara en §13.3 |
-| La revisión nativa de este candidato | Va como tarea F7, al cerrar la unidad |
+
+### 13.6 La revisión nativa de la unidad F
+
+Corrida sobre el rango comprometido `0766066..efc67b2` —seis archivos, 525 líneas cambiadas, riesgo **alto**— y
+quemada con el proveedor. La razón del riesgo viene medida: `process_boundary`, «code that starts other processes in
+`tools/xmi-acceptance/xmi_acceptance.py`».
+
+| Dato | Valor medido |
+| --- | --- |
+| Linaje | `review-5fceca1cdf2aad8c` |
+| Lentes | Cuatro: riesgo, resiliencia, legibilidad, confiabilidad |
+| Veredicto | `approved`, con **4 revisores preparados y 4 sometidos** |
+| Correcciones | Ninguna: la tienda no abrió transición de corrección |
+| Autoridad | `burned`, `burn_evidence: gentle-ai.review-acknowledged/v1` |
+
+**Tres avisos, ninguno bloqueante**, y el proveedor lo dice con todas las letras: «ninguno abrió una corrección,
+ninguno reabre esta revisión, y no se ofrece ninguna transición de corrección para este candidato. Tratalos como
+trabajo posterior separado, nunca como razón para volver a correr la revisión sobre este candidato.»
+
+| Hallazgo | Lente | Ubicación | Severidad | Disposición |
+| --- | --- | --- | --- | --- |
+| `R2-001` | legibilidad | `tools/xmi-acceptance/xmi_acceptance.py:275` | SUGGESTION | informativo |
+| `R3-001` | confiabilidad | `backend/src/main/java/com/diagramador/xmi/XmiReader.java:91-99` | WARNING | informativo |
+| `R4-001` | resiliencia | `backend/src/main/java/com/diagramador/xmi/XmiReader.java:94` | WARNING | informativo |
+
+**Lo que este cierre no expone: la prosa de los hallazgos.** El cierre devuelve identificador, lente, ubicación,
+severidad y disposición, no el texto. Las dos advertencias caen sobre el bloque que **esta** unidad escribió
+(`unsupportedDialect`, líneas 91–99). Su texto **no se reconstruye**: reconstruir un hallazgo fue el error que §13.3
+declaró, y no se repite acá. Quedan como trabajo posterior declarado, con su ubicación medida.
+
+**Y una nota de entorno, medida, porque bloqueó una compuerta — y no el código.** La captura del grupo falló una vez
+con `Windows DACL validation failed: ace-type`: la DACL de `.git` traía dos ACEs de **denegar** para un SID
+**inexistente en esta máquina** (`S-1-5-21-542072663-2363636745-3304252722-4107386395`; `Translate` falla), y el
+validador del host admite **solo** ACEs de permitir. Medición: esos ACEs estaban **solo** en `.git` —no en `D:\`,
+ni en `sw1`, ni en la raíz del repo, ni en el worktree, ni en `backend`— y el SID propio conservaba `FA`. El comando
+que el usuario autorizó (`icacls …\.git /remove:d <SID>`) **procesó cero archivos**: entre la medición y el comando
+los ACEs ya habían desaparecido solos, así que el estado sano **no es atribuible a ese comando**. La causa de la
+aparición y de la desaparición **no está medida**, y el bloqueo **puede repetirse**.
