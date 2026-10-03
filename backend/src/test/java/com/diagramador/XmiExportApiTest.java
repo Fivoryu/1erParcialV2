@@ -10,6 +10,7 @@ import com.diagramador.api.ModelResource.AttributeResource;
 import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.api.ModelResource.ViewResource;
+import com.diagramador.collaboration.EditingLeaseService;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.ExchangeDirection;
@@ -51,6 +52,7 @@ class XmiExportApiTest extends AuthenticatedApiTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private UmlModelRepository modelRepository;
     @Autowired private ClassifierRepository classifierRepository;
+    @Autowired private EditingLeaseService editingLeaseService;
     @Autowired private XmiExchangeRepository exchangeRepository;
     @Autowired private XmiLossItemRepository lossItemRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -126,6 +128,35 @@ class XmiExportApiTest extends AuthenticatedApiTest {
                     Classifier.create(model, null, ClassifierKind.CLASS, "Duplicate", false)));
         });
         assertExportRejected(collidingProject, "NAME_COLLISION_BLOCKS");
+    }
+
+    @Test
+    void rejectsAnExportWhileAnotherUserHoldsALiveEditingLease() throws Exception {
+        UUID projectId = createProject();
+        UUID model = modelId(projectId);
+        editingLeaseService.acquire(model, UUID.randomUUID(), "Bea", null, null);
+
+        MvcResult result = mockMvc.perform(authorized(post("/projects/{projectId}/xmi/export", projectId)))
+                .andExpect(status().isConflict()).andReturn();
+        JsonNode error = objectMapper.readTree(result.getResponse().getContentAsByteArray());
+        assertThat(error.path("code").asText()).isEqualTo("EXPORT_BLOCKED_EDITING");
+        assertThat(error.path("details").get(0).path("editorDisplayName").asText()).isEqualTo("Bea");
+        assertThat(error.path("details").get(0).path("reclaimable").asBoolean()).isFalse();
+    }
+
+    @Test
+    void exportsWhenTheRequesterHoldsTheEditingLease() throws Exception {
+        String username = "xmi-holder-" + UUID.randomUUID();
+        MvcResult created = mockMvc.perform(authorizedAs(username, post("/projects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("name", "XMI lease " + UUID.randomUUID())))))
+                .andExpect(status().isCreated()).andReturn();
+        UUID projectId = UUID.fromString(objectMapper.readTree(created.getResponse().getContentAsByteArray())
+                .path("id").asText());
+        editingLeaseService.acquire(modelIdAs(username, projectId), userIdFor(username), "Ana", null, null);
+
+        mockMvc.perform(authorizedAs(username, post("/projects/{projectId}/xmi/export", projectId)))
+                .andExpect(status().isOk());
     }
 
     private void assertReadBack(ModelResource expected, XmiReadingResult reading) {
@@ -221,6 +252,14 @@ class XmiExportApiTest extends AuthenticatedApiTest {
 
     private UUID modelId(UUID projectId) throws Exception {
         return UUID.fromString(getJson("/projects/{projectId}/model", projectId).path("id").asText());
+    }
+
+    /** Reads the model as the supplied user: the model endpoint is not readable by an unrelated account. */
+    private UUID modelIdAs(String username, UUID projectId) throws Exception {
+        MvcResult result = mockMvc.perform(authorizedAs(username, get("/projects/{projectId}/model", projectId)
+                .accept(MediaType.APPLICATION_JSON))).andExpect(status().isOk()).andReturn();
+        return UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsByteArray())
+                .path("id").asText());
     }
 
     private String sha256(byte[] bytes) throws Exception {

@@ -35,7 +35,7 @@ public class XmiExportController {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Project was not found.",
                         List.of(), null));
         authorizationService.requireEditor(projectId);
-        // TODO(consolidation): wire the declared export editing guard when its sibling increment is present.
+        // The declared export editing guard lives in XmiExportService, next to the model id it guards.
         XmiExportService.XmiExportResult result = exportService.exportProject(projectId);
         return new XmiExportResource(Base64.getEncoder().encodeToString(result.document()), result.checksum(),
                 result.exchangeId(), result.losses());

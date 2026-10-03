@@ -3,6 +3,7 @@ package com.diagramador.xmi;
 import com.diagramador.api.ApiException;
 import com.diagramador.api.ModelResource;
 import com.diagramador.api.ProjectApiService;
+import com.diagramador.collaboration.EditingLeaseService;
 import com.diagramador.command.ValidationState;
 import com.diagramador.domain.ExchangeDirection;
 import com.diagramador.domain.ExchangeStatus;
@@ -35,16 +36,18 @@ public class XmiExportService {
     public static final String PROFILE = XmiImportService.PROFILE;
 
     private final ProjectApiService projectApiService;
+    private final EditingLeaseService editingLeaseService;
     private final ModelVersionRepository versionRepository;
     private final UmlModelRepository modelRepository;
     private final XmiExchangeRepository exchangeRepository;
     private final XmiLossItemRepository lossItemRepository;
     private final XmiSemanticEmitter emitter = new XmiSemanticEmitter();
 
-    public XmiExportService(ProjectApiService projectApiService, ModelVersionRepository versionRepository,
-            UmlModelRepository modelRepository, XmiExchangeRepository exchangeRepository,
-            XmiLossItemRepository lossItemRepository) {
+    public XmiExportService(ProjectApiService projectApiService, EditingLeaseService editingLeaseService,
+            ModelVersionRepository versionRepository, UmlModelRepository modelRepository,
+            XmiExchangeRepository exchangeRepository, XmiLossItemRepository lossItemRepository) {
         this.projectApiService = projectApiService;
+        this.editingLeaseService = editingLeaseService;
         this.versionRepository = versionRepository;
         this.modelRepository = modelRepository;
         this.exchangeRepository = exchangeRepository;
@@ -54,6 +57,8 @@ public class XmiExportService {
     @Transactional
     public XmiExportResult exportProject(UUID projectId) {
         ModelResource snapshot = projectApiService.getModel(projectId);
+        // The declared export guard closes here, against the very model id this export reads.
+        editingLeaseService.requireExportAllowed(snapshot.id());
         ModelVersion version = versionRepository.findById(snapshot.versionId())
                 .orElseThrow(() -> invalidModel("The current model version was not found."));
         if (version.getValidationState() != ValidationState.VALID) {
