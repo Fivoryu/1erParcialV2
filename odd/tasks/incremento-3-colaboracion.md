@@ -736,6 +736,40 @@ formatea la hora salen del entorno, mientras la **prueba** del formateador usa l
 | C20 | Guarda en `POST /generations`, en la descarga de artefactos y en la exportación XMI; respuesta con el editor, el motivo y la posibilidad de reclamar | Integración: bloqueado con lease ajeno, permitido con lease propio y tras vencer |
 | C21 | Web: botones de exportación con motivo y editor nombrado, y botón **Reclamar control** | Pruebas de componente de los tres estados |
 
+### S5 — diseño congelado de la concesión de edición (antes de C19)
+
+La tabla de S5 nombra las cuatro operaciones y §S6b congela **sólo** el nombre del tipo y `requireExportAllowed(UUID modelId)`, así que la
+semántica de adquisición, vencimiento y reclamo queda decidida acá antes de que exista el primer archivo. Sin esto, C19, C20 y C21 se
+diseñarían entre tres y el reclamo terminaría siendo un alias silencioso de la adquisición.
+
+**Lo que el plan ya resolvía, y de dónde sale:** §1 pide «un botón para reclamar el control **cuando su lease vence**»; C6 se decide contra el
+bloqueo indefinido porque «con TTL corto renovado por latido, el bloqueo es real mientras se edita y **se libera solo** cuando el editor
+desaparece»; y la evidencia de C20 dice **«permitido con lease propio y tras vencer»**. Las tres frases juntas fijan: una concesión **viva**
+es la única que bloquea, el TTL la mata sola, y reclamar es el acto explícito de un usuario, disponible recién cuando la anterior ya no está viva.
+
+**Reglas congeladas de C19:**
+
+1. Se guarda **una concesión por modelo**, efímera y en memoria (C4): `editorUserId`, `editorDisplayName`, `targetType`, `targetId`,
+   `acquiredAt` y `expiresAt`. `targetType` es el enum que ya existe, `com.diagramador.domain.TargetType` — no se inventa vocabulario.
+2. `viva(now)` es `now < expiresAt`. Sólo una concesión viva de **otro** usuario bloquea.
+3. `acquire`: sin concesión, la toma; del **mismo** usuario, la refresca (es el latido); viva de otro usuario, `409 EXPORT_BLOCKED_EDITING`;
+   **no viva de otro usuario, también `409`, pero con `reclaimable: true` y `retryAfterSeconds: 0`** — quitarle el control a otro es un acto
+   explícito y no un efecto colateral de empezar a editar.
+4. `renew`: sólo el titular vivo; extiende `expiresAt`. Una concesión vencida **no revive** por renovación.
+5. `release`: sólo el titular; idempotente; sin titular no hace nada.
+6. `reclaim`: es lo único que toma el control de otro usuario, y **sólo si esa concesión ya no está viva**; viva devuelve el mismo `409`.
+7. `current(modelId)`: la concesión registrada (viva o no) o vacío; es la lectura del endpoint de estado de C20.
+8. `requireExportAllowed(modelId)`: lanza `ApiException(409, "EXPORT_BLOCKED_EDITING")` **sólo** con una concesión viva ajena; el titular
+   puede exportar su propio modelo y **el principal de operador queda exento**, como congela §S6b.
+9. `details[0]` lleva exactamente `editorDisplayName`, `targetType`, `targetId`, `reclaimable` y `retryAfterSeconds`, en ese orden;
+   `targetType` viaja como `TargetType.name()` y `retryAfterSeconds` es el techo de los segundos que faltan, nunca negativo.
+10. C19 **no publica ningún evento**: el catálogo del contrato §4.1 no tiene un nombre para esto y no se le inventa uno.
+
+**Límites declarados de esta decisión:** el TTL por defecto es **30 s** (dos latidos del canal, que late cada 15 s) y es configurable para que
+C20 pueda vencerlo sin esperar; sigue siendo de **una sola instancia** (C4), así que con dos instancias la concesión no cruza; y **un editor cuyo
+latido siga fluyendo no puede ser despojado** — la salida es que el TTL venza, y si el canal sigue vivo la concesión sigue viva. Eso último se
+declara y no se finge resuelto.
+
 ### S6 — Intercambio XMI (RF-09, CU-16, CU-17) — **cedida a otra sesión**
 
 Estas tres tareas **no se ejecutan desde acá**. El 2026-10-01 la sesión `01a0f830`, con el mismo directorio de
