@@ -34,12 +34,12 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | --- | --- | --- |
 | X1 — Oráculo del dialecto | **Cerrada** | `python -m pytest tools -q` = **46 pruebas, 0 fallos** (escritor y padre). Verificador independiente: **6 HOLDS**, con **cuatro mutaciones** probando que las aserciones rechazan datos falsos. El arnés además **refutó dos afirmaciones mías** (§3.4) |
 | X2 — Esquema y persistencia | **Cerrada**, con un límite declarado | `mvn -o -B -f backend/pom.xml verify` = **232 pruebas, 0 fallos** (escritor y padre). Verificador independiente: **5 HOLDS**, 1 UNPROVEN que cerré inline con `git show`, y **1 FAILS que es el borde de la compuerta** —detecta deriva unilateral, no una omisión coordinada—, declarado en §5.2 |
-| X3 — Emisión del dialecto | Pendiente | Depende de X1 (oráculo) y X2 (dominio) |
-| X4 — Servicio y endpoint de exportación | Pendiente | Depende de X3 |
-| X5 — Lectura del dialecto | Pendiente | Depende de X1 |
-| X6 — Importación: comando de lote y endpoints | Pendiente | Depende de X2 y X5 |
-| X7 — Web | Pendiente | Depende de X4 y X6 |
-| X8 — Arnés y cierre | Pendiente | Depende de todo lo anterior |
+| X3 — Emisión del dialecto | **Cerrada**, reconciliada en §13.1 | §5.2: X3.1+X3.1b → `mvn verify` = **237 pruebas, 0 fallos**, y un verificador que no ejecutó nada encontró **dos defectos reales**, corregidos en `bc9a825`; X3.2a → **239 pruebas, 0 fallos, BUILD SUCCESS**, con los cinco bloques, las claves del registro por elemento y los **26** tipos de pérdida. Determinismo (X3.3): `XmiSemanticEmitterTest.outputIsByteDeterministicAcrossEquivalentCollectionOrders` |
+| X4 — Servicio y endpoint de exportación | **Cerrada**, reconciliada en §13.1 | §5.2: **257 pruebas, 0 fallos** (escritor y padre) y `XmiExportApiTest` 3 pruebas; el padre además movió dos pruebas de API que vivían en `xmi/` declarando `package com.diagramador` |
+| X5 — Lectura del dialecto | **Cerrada**, reconciliada en §13.1 | §5.2: **244 pruebas, 0 fallos** (escritor y padre), `XmiReaderTest` 4 pruebas y `XmiSemanticEmitterTest` 8, incluida la ida y vuelta `emittedCanonicalModelReadsBackWithSemanticsAndDiagramAnchors` |
+| X6 — Importación: comando de lote y endpoints | **Cerrada**, reconciliada en §13.1 | §5.2: X6a → **249 pruebas, 0 fallos** con cinco escenarios contra PostgreSQL; X6b → **254 pruebas, 0 fallos**, más una causa probable nueva para la flake: cuatro contenedores ajenos compitiéndole memoria a Testcontainers |
+| X7 — Web | **Cerrada**, reconciliada en §13.1 | §5.2: el escritor declaró `partial` porque el worktree no tenía `node_modules`; el padre corrió las tres compuertas: `npm test` = **93 pasan, 4 omitidas (97)**, lint limpio y build ok. Y una aserción **imposible de satisfacer** —React escapa los apóstrofes— se normalizó sin ablandar la redacción |
+| X8 — Arnés y cierre | **En curso; se cierra en §13** | El arnés existe, corre **sin Docker** sobre dos archivos y hoy da **15 pasadas y 3 fallas** (`2026-10-03`). Las tres están **medidas como defectos del oráculo**, no del emisor (§13.2) |
 | Verificación en EA (§7) | **Cerrada en §10 y §11** | Sentido app → EA: GAP-07 con causa raíz medida, el arquero de dialecto en `xmi:Documentation`. `t_diagram` 90 → 91, ids preservados y 2 figuras ancladas sobre una copia de `sw1_p2.eapx`. Sentido EA → app: medido en §11 con exportaciones reales de EA |
 | E — El sentido EA → app | **Cerrada en §11** | 5 artefactos de EA pinchados por sha256 y byte-exactos; el lector medido sobre la matriz de exportación; `mvn verify` = **260 pruebas, 0 fallos, 0 salteadas**; `python -m pytest tools -q` = **46 pruebas, 0 fallos**; revisión nativa `review-79d56d80554b3cd0` = **approved**, autoridad quemada |
 | Consolidación y publicación | **Cerrada en §12** | Fusión de `feat/incremento-3-colaboracion` (`61bf2d2`) en `feat/xmi-intercambio` como unión de los dos lados, commit `f3f8e33` de dos padres; `mvn verify` = **307 pruebas, 0 fallos, 0 salteadas**; `pytest` = **46**; `npm run lint` y `npm run build` limpios; remoto privado creado y `main` movida a la punta por decisión del usuario |
@@ -1370,3 +1370,116 @@ Queda declarado como **no revisado nativamente** y como decisión pendiente del 
 | La reconciliación de las filas X3–X8 del cuadro de estado | Declarada en §12.5 |
 | Que la fusión resuelta a mano tenga revisión nativa propia | Declarado en §12.6, con los dos alcances medidos y su costo |
 | Lo que la otra sesión cierre después de `61bf2d2` | Depende de su trabajo y exigirá otra unión |
+
+## 13. Unidad F — lo que el oráculo no medía, y el diagnóstico que no miraba el prefijo
+
+Cierra los dos pendientes que §12 dejó abiertos: la reconciliación del cuadro de estado (§12.5) y los tres defectos
+de emisión de §7.5 más el hallazgo no bloqueante `R3-001` de la revisión nativa.
+
+### 13.1 La reconciliación del cuadro de estado
+
+El cuadro decía «Pendiente» en X3–X8 mientras §5.2 registraba la verificación de esas etapas. Se reconcilió contra
+§5.2 y contra los tests que existen hoy, **sin escribir una sola fila nueva**: cada fila cita ahora su corrida. La
+regla que se aplicó es la de este repositorio —una fila no se marca cerrada por lo que la unidad hizo, sino por la
+corrida que la cierra— y la única fila que **estaba y sigue abierta** es X8, porque su arnés es exactamente lo que
+esta unidad arregla.
+
+### 13.2 El control positivo refutó las tres aserciones: el defecto era del oráculo
+
+§7.5 dejó tres fallas declaradas y una instrucción explícita: no suponer, medir. Medido, el resultado **invierte el
+diagnóstico**. La corrida de hoy sobre nuestro documento reproduce exactamente las tres fallas:
+
+```
+=== XMI acceptance summary: 15 passed, 3 failed ===
+[FAIL] Declared dialect vocabulary: backend/target/xmi-sample.xml
+[FAIL] Measured connector references resolve to model relations and classifiers: backend/target/xmi-sample.xml
+      observed: {"connectorsWithMissingOrUnresolvedEndpoints": 1, "extensionConnectors": 6,
+                 "modelRelations": 5, "unmatchedRelationIds": ["EAID_00000000_0000_0000_0000_000000000050"]}
+[FAIL] Measured connector labels include the complete observed form: backend/target/xmi-sample.xml
+      observed: {"completeLabelSets": 3, "labelKeyCounts": {"lb": 6, "lt": 3, "mt": 5, "rb": 6, "rt": 3}}
+```
+
+Y la prueba que decide es poner **el archivo de Enterprise Architect** en los dos casilleros del arnés, que es
+exactamente el control que el arnés existe para hacer:
+
+| Corrida | Casillero «control positivo» | Casillero «emitido» | Resultado |
+| --- | --- | --- | --- |
+| A | `Prueba3.xml`, escrito por EA | `backend/target/xmi-sample.xml`, nuestro | **15 pasadas, 3 fallas** — las tres, del lado nuestro |
+| B | `ea-export-uml-2.2.xml`, escrito por EA | el mismo archivo, escrito por EA | **12 pasadas, 6 fallas** — **las mismas tres fallas, dos veces** |
+
+**Si el artefacto de EA falla las mismas tres aserciones, el defecto está en las aserciones.** La causa de cada una
+está medida:
+
+| Falla | Causa medida |
+| --- | --- |
+| Referencias de conector sin relación emparejada | El oráculo reconoce `uml:Association`, `uml:Generalization` y `uml:Realization`, **y no `uml:Dependency`**: la dependencia `EAID_…050` viaja en la extensión como registro de conector y no aparece del lado del modelo. Pero EA **también** emite un registro de conector con `ea_type="Dependency"` para una dependencia en su propio archivo. Nuestra emisión copia la forma medida; el oráculo es el que no la cuenta |
+| Etiquetas `mt` incompletas | El emisor omite `mt` cuando la relación **no tiene nombre**, y el archivo de EA hace lo mismo: su generalización lleva `<labels/>`. «Un `mt` por conector» no es la forma del dialecto cuando la relación es anónima |
+| Vocabulario no declarado | `defaultValue` y `specification` los emite nuestro emisor con la grafía **estándar de UML 2.1**; el fixture de EA tiene **cero** de los dos, y su archivo 2.2 **también falla esa aserción**. Es vocabulario no medido, y le corresponde una **lista de desvíos declarados**, no una aserción que lo trate como falla |
+
+**Lo que esto significa para §7.5, sin adornos.** Dos de los tres «defectos» nunca fueron defectos de nuestra
+emisión: eran el oráculo midiendo un dialecto más pobre que el que EA escribe. El tercero no es un error de código
+sino vocabulario no medido, y su lugar es una lista de desvíos explícita. La resolución sigue siendo la que §7.5
+prescribió —**distinguir un desvío declarado de una falla**, sin ablandar ninguna aserción— pero apunta al oráculo y
+al arnés, no al emisor.
+
+### 13.3 El hallazgo `R3-001`: reconstruido, y así se declara
+
+El cierre de la revisión nativa trae **ubicación** (`XmiReader.java:91`), **severidad** (`SUGGESTION`) y **lente**
+(`review-reliability`), y **no su texto**. El texto no está en ninguna parte del estado durable: el registro de
+consumo del linaje `review-79d56d80554b3cd0` pesa **259 bytes** y solo lleva el linaje, y no queda ninguna
+transacción `v2` de ese linaje. Se buscó antes de afirmarlo.
+
+En el árbol de hoy la línea 91 es la lectura de `xmlns:uml` dentro de `unsupportedDialect`, el método que la unidad E
+agregó para nombrar el dialecto. El defecto que hay ahí, y que esta unidad arregla, es de la familia que la lente
+de fiabilidad mira: **el diagnóstico lee el prefijo literal `uml` en vez de mirar las declaraciones de namespace**,
+así que un documento que declare el namespace de UML 2.2 bajo otro prefijo —`xmlns:u="…/spec/UML/2.2"`— cae en el
+mensaje genérico y vuelve a esconder la causa, que es justo lo que la unidad E vino a reparar.
+
+Queda declarado como **reconstrucción**: se conocen ubicación, severidad y lente, y se arregla el defecto que existe
+en esa ubicación, no uno citado.
+
+### 13.4 Plan de la unidad
+
+| # | Tarea | Evidencia de cierre |
+| --- | --- | --- |
+| F1 | Reconciliar las filas X3–X8 del cuadro de estado contra §5.2 | Las seis filas citan su corrida; X8 queda abierta hasta F6 |
+| F2 | El oráculo cuenta `uml:Dependency` como relación del modelo | Prueba nueva, primero en rojo; la aserción de referencias pasa con nuestro documento **y** con el de EA |
+| F3 | La aserción de etiquetas codifica la regla medida: relación sin nombre ⇒ sin `mt`, y sigue exigiendo `mt` cuando la relación tiene nombre | Prueba que falla si se le quita el `mt` a una relación nombrada |
+| F4 | Lista de **desvíos declarados** de vocabulario, derivada de los artefactos de EA medidos, con `defaultValue`/`specification` nombrados y su razón | Cualquier vocabulario nuevo y no medido **sigue fallando**, y una prueba lo demuestra |
+| F5 | `unsupportedDialect` mira las declaraciones de namespace en vez del prefijo literal | Prueba con un documento que declare UML 2.2 bajo otro prefijo |
+| F6 | Corrida final: arnés, `pytest`, `mvn verify` | Arnés sin fallas; suites verdes con sus totales |
+| F7 | Registro y revisión nativa del candidato | Esta sección y el cierre |
+
+### 13.5 Resultado
+
+Medido al cerrar, el `2026-10-03`. La columna «antes» es la corrida que abrió la unidad, no una estimación.
+
+| Comprobación | Comando | Antes | Después |
+| --- | --- | --- | --- |
+| Arnés, corpus propio | `python tools/xmi-acceptance/xmi_acceptance.py --ea-fixture docs/fixtures/xmi/Prueba3.xml --emitted-sample backend/target/xmi-sample.xml` | **15 pasadas, 3 fallas** | **18 pasadas, 0 fallas** |
+| Arnés, artefacto de EA en los dos casilleros | el mismo arnés con `ea-export-uml-2.2.xml` en ambos | **12 pasadas, 6 fallas** | **18 pasadas, 0 fallas** |
+| Oráculo, pruebas propias | `python -m pytest tools/xmi-inventory/test_xmi_inventory.py -q` | 5 fallas, 32 pasadas | **39 pasadas** |
+| Arnés de Python, completo | `python -m pytest tools -q` | 46 pasadas | **54 pasadas** |
+| Backend | `mvn -o -B -f backend/pom.xml verify` | 307 pruebas, 0 fallos | **308 pruebas, 0 fallos, 0 errores, 0 salteadas, BUILD SUCCESS** |
+| Diagnóstico del lector | `mvn -o -B -f backend/pom.xml -Dtest=XmiReaderTest test` | 8 pruebas, 1 falla | **8 pruebas, 0 fallas** |
+
+**Y la parte que importa de una compuerta: que pueda fallar.** Cuatro mutaciones sobre **copias fuera del
+repositorio** —quitarle el `mt` a una relación con nombre, inyectar una etiqueta no medida, borrar el registro de
+conector de la dependencia y romper un anclaje— hicieron fallar **cada una su aserción** (`17 pasadas, 1 falla` en
+las cuatro). Sin eso, el `18/0` sería un arnés que pasa, no un oráculo.
+
+**Lo que cambió de diagnóstico.** Dos de los tres defectos que §7.5 declaró como nuestros nunca lo fueron: el oráculo
+medía un dialecto **más pobre** que el que EA escribe. El tercero no era un error de código sino vocabulario no
+medido, y ahora vive donde corresponde: una lista de **dos desvíos declarados** con su razón, que deja fallando a
+cualquier vocabulario nuevo que nadie midió. La instrucción de §7.5 se cumplió al pie: **ninguna aserción se ablandó**,
+y la prueba son las cuatro mutaciones.
+
+**El cuadro de estado quedó reconciliado** en §13.1 contra §5.2 y contra los tests que existen: X3, X4, X5, X6 y X7
+citan su corrida, y X8 se cierra acá. Las seis filas se escribieron mirando la evidencia, no el plan.
+
+| **No medido**, y así se declara | Por qué |
+| --- | --- |
+| Que Enterprise Architect acepte el documento emitido en una importación viva | El arnés valida estructura de archivo y **no corre EA**; eso lo cubren §10 y §11 con el instrumento de EA |
+| La gramática de `Path=` | Sin cambios desde §3: una muestra no dice si las coordenadas son absolutas o relativas, y por eso el emisor escribe vacío |
+| El texto original del hallazgo `R3-001` | Irrecuperable del estado durable, y así se declara en §13.3 |
+| La revisión nativa de este candidato | Va como tarea F7, al cerrar la unidad |
