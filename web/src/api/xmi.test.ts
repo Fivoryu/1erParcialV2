@@ -48,10 +48,11 @@ describe('XMI API client', () => {
       `https://diagram.test/projects/${projectId}/xmi/preview`,
       expect.objectContaining({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fileBase64 }),
       }),
     );
+    // The shared request helper hands fetch a Headers instance, so the content type is read through it.
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Content-Type')).toBe('application/json');
   });
 
   it('confirms the same base64 payload with the preview checksum and chosen mode', async () => {
@@ -70,9 +71,9 @@ describe('XMI API client', () => {
       `https://diagram.test/projects/${projectId}/xmi/import`,
       expect.objectContaining({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       }),
     );
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Content-Type')).toBe('application/json');
   });
 });
