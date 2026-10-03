@@ -1099,6 +1099,62 @@ la evidencia dependiente de que este refactor de `requireExportAllowed` —firma
 **Sin desviación de ruteo:** un escritor por vez con superficies exactas, una ronda de corrección acotada después de verificar, la verificación
 independiente en dos rondas, y la suite completa, la revisión nativa y los commits, en el padre.
 
+### S5 progreso — C21 cerrada (2026-10-03)
+
+**Commit:** `d2d5199` — *feat(web): hold the editing lease while editing and let the notice reclaim it* (11 archivos: 5 nuevos y 6 modificados, +658/−6).
+El diseño se congeló antes de escribir (`5d3ed83`) y la decisión de alcance —que C21 cubre también **tomar y renovar** la concesión, no sólo mostrarla—
+la tomó el usuario, porque ninguna unidad del plan era dueña de ese lado y sin él las guardas de C20 quedaban inertes en producción.
+
+**Lo implementado:** `editingLease.ts` (107 líneas) con el mapeador canónico de los dos portadores —`details[0]` del 409 y `result` del outcome 200, con
+validación por tipo de cada campo y `null` para cualquier otro código—, la derivación de los cinco estados y el latido como decisión pura con reloj
+inyectado; `EditingLeaseNotice.tsx` (35) puramente presentacional —sin API, sin reloj, botón gobernado sólo por `reclaimable`—; `useEditingLease.ts`
+(196) como adaptador fino: `GET` al montar, `acquire` en el primer despacho que modifica el modelo (`dispatchEnvelope`, `ProjectEditorPage.tsx:398`),
+latido de 15 s que **sólo** renueva mientras la concesión es nuestra, `release` al desmontar, y un `GET` de refresco programado con el
+`retryAfterSeconds` del servidor para que el botón de reclamo se habilite solo. **Coordinado con la sesión de XMI**: el componente quedó reutilizable
+(export público del mapeador, props `conflict/onReclaim/busy`) para que su panel de export lo monte cuando el usuario lo ordene; su decisión del
+2026-10-03 fue declararlo **pendiente, sin trabajarlo**, y así queda en su §14.10.
+
+**Verificación independiente, en dos rondas, y corrigió una cosa de su propia ronda 1.** La primera cerró **HOLDS en siete ejes** con una tabla de
+mutaciones 3 de 5 tumbadas y el veredicto «**no** es seguro commitear tal cual»: el adaptador no tenía guarda de desmontaje en cuatro caminos asíncronos
+(sólo el `GET` de montaje estaba guardado), y sobrevivían tres mutaciones. **El defecto se arregló en vez de ablandar la promesa**: `mountedRef` global
+del hook, +24 líneas, con el camino feliz intacto. La segunda ronda: **las tres mutaciones murieron** (mapeador aceptando cualquier código, intercambio
+semántico de los cuerpos de `acquire`/`renew` —que además detecta un cambio de verbo—, y la validación de `retryAfterSeconds` negativo), la prueba del
+panel **no es vacua** (falla con `expected … to contain 'Alex Rivera'` al quitar el montaje), y los **13 escritores de estado** del adaptador quedaron
+enumerados uno por uno con su guarda: **ninguno sin guardar**. El verificador además **corrigió su propio registro**: su mutación (e) original era un
+no-op semántico —reordenaba definiciones sin cambiar comportamiento—, así que su primera "supervivencia" probaba menos de lo reportado.
+
+**Medido:** lint 0, `npm test` **169 pasan / 4 omiten** (base 158/4, +11 de esta unidad), build con `tsc` y Vite (231 módulos, ~1.9 s) sin avisos. Las
+regiones XMI de los dos archivos compartidos **byte-idénticas a HEAD**, verificado dos veces por diff independiente contra `git show HEAD:<path>`.
+
+**Revisión nativa:** linaje `review-0451a261a69d4f06`, tier `medium`, **una** lente (`review-reliability`, orden 0), 11 caminos, **664 líneas**,
+presupuesto de corrección 200. **Aprobada al primer intento**, autoridad quemada (`gentle-ai.review-acknowledged/v1`); pronóstico previo
+(`pi_host_relay`, 1 corrida, sin mutación) autorizado como esa corrida exacta.
+
+**Dos hallazgos informativos**, ambos WARNING, ambos `informational`, ninguno abre corrección y el sobre no expuso el texto:
+
+1. `R3-001` · `useEditingLease.ts:72-75`. Lectura propia, atribuida a esta sesión y no al revisor: es el `GET` de montaje, que **se dispara igual** aunque
+   el usuario no tenga la página a la que responde —el `active` del efecto y el `mountedRef` lo protegen del estado, no del pedido—. Con una concesión
+   ajena viva, entrar a la página consulta y no reclama: correcto por diseño, y el costo es un pedido por montaje.
+2. `R3-002` · `useEditingLease.ts:140-145`. Es `acquireForEdit`: un `acquire` **por cada acto de edición** del usuario —cada despacho que modifica el
+   modelo—, no un latido. El servidor lo trata como refresco (regla 3 de C19: mismo usuario ⇒ refresca), así que no es un error, pero con un usuario
+   tecleando rápido significa varios pedidos por segundo contra `POST /editing-lease`. Se declara como patrón deliberado del congelamiento (regla 1:
+   «la actividad misma es latido») y no se cambia sin rediseñar esa regla.
+
+**Límites declarados de esta unidad:**
+
+1. **La guarda de desmontaje no tiene prueba que la capture:** la mutación «nunca activar `mountedRef`» sobrevive (169 pasan) porque el proyecto no
+   puede renderizar hooks. Se mide y se declara; la protección es de lectura, no de suite.
+2. **El comportamiento del adaptador bajo temporizadores reales y orden asíncrono no está probado**, por el mismo límite estructural: toda su evidencia
+   es de lectura de código, `tsc` y la suite de los módulos puros.
+3. **El release al desmontar es incondicional**: se emite aunque el usuario nunca adquiriera (no-op según la regla 5 de C19, pero es un `DELETE` igual).
+4. **El cierre de pestaña no garantiza el release** (`beforeunload` no espera la red); lo cubre el TTL, como declara el congelamiento.
+5. **El desfase de reloj del cliente** al decidir sobre el `GET`; el servidor sigue siendo la autoridad.
+6. **El cuerpo del pedido de `acquire`/`reclaim` no está asertado** (las pruebas fijan verbo y camino, no el cuerpo); lo cubre el backend con 400
+   `INVALID_PAYLOAD` y la validación del mapeador del lado cliente.
+
+**Sin desviación de ruteo:** escritor con superficies exactas, dos rondas de verificación, la corrección del defecto real antes de la revisión nativa, y
+la suite, la revisión y los commits en el padre.
+
 ### S6 — Intercambio XMI (RF-09, CU-16, CU-17) — **cedida a otra sesión**
 
 Estas tres tareas **no se ejecutan desde acá**. El 2026-10-01 la sesión `01a0f830`, con el mismo directorio de
