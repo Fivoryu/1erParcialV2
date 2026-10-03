@@ -109,6 +109,17 @@ textarea:focus-visible {
   transition: color 140ms ease;
 }
 
+.topbar-account {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.topbar-account strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .topbar-link:hover,
 .text-button:hover {
   color: var(--accent-dark);
@@ -118,6 +129,43 @@ textarea:focus-visible {
   width: min(1120px, calc(100% - 48px));
   margin: 0 auto;
   padding: 64px 0 32px;
+}
+
+.auth-content {
+  width: min(480px, calc(100% - 48px));
+  padding-top: clamp(48px, 10vh, 96px);
+}
+
+.auth-panel {
+  padding: 32px;
+}
+
+.auth-panel h1 {
+  margin-bottom: 8px;
+  font-size: clamp(30px, 5vw, 38px);
+}
+
+.auth-form {
+  margin-top: 26px;
+}
+
+.auth-field-hint {
+  margin: -12px 0 17px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.auth-error {
+  margin-top: 18px;
+  margin-bottom: -8px;
+}
+
+.auth-mode-switch {
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
 }
 
 .page-heading {
@@ -646,6 +694,26 @@ h3 {
     font-size: 10px;
   }
 
+  .topbar-account {
+    gap: 10px;
+  }
+
+  .topbar-account .topbar-note {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .auth-content {
+    width: calc(100% - 36px);
+    padding-top: 42px;
+  }
+
+  .auth-panel {
+    padding: 22px;
+  }
+
   .content-wrap,
   .editor-wrap {
     width: calc(100% - 36px);
@@ -757,6 +825,47 @@ h3 {
   box-shadow: inset 0 0 0 3px rgb(33 107 97 / 18%);
 }
 
+.remote-cursors {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.remote-cursor {
+  position: absolute;
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  color: var(--remote-cursor-color);
+  pointer-events: none;
+}
+
+.remote-cursor-pointer {
+  width: 16px;
+  height: 21px;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 1px 1px rgb(25 42 37 / 35%));
+}
+
+.remote-cursor-name {
+  max-width: 180px;
+  margin: 13px 0 0 1px;
+  padding: 3px 6px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--remote-cursor-color);
+  box-shadow: 0 1px 3px rgb(25 42 37 / 22%);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .react-flow__attribution {
   padding: 2px 5px !important;
   border-radius: 4px;
@@ -823,6 +932,48 @@ h3 {
   font-weight: 700;
   line-height: 1.4;
   text-align: center;
+}
+
+.uml-touch-highlights {
+  max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+.uml-class-heading .uml-touch-highlights {
+  margin-top: 3px;
+}
+
+.uml-touch-chip {
+  max-width: 100%;
+  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8faf9;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.uml-touch-chip-swatch {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(25 42 37 / 14%);
+}
+
+.uml-touch-chip-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .uml-class-heading {
@@ -1525,6 +1676,186 @@ h3 {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.invitations-panel,
+.members-panel {
+  padding: 26px;
+}
+
+.invitations-panel {
+  margin-bottom: 22px;
+}
+
+.members-panel {
+  margin-top: 22px;
+}
+
+.presence-panel {
+  margin-top: 18px;
+  padding: 26px;
+}
+
+.invitations-list,
+.members-list,
+.presence-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.invitation-row,
+.member-row,
+.presence-row {
+  min-height: 66px;
+  padding: 14px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.invitation-copy,
+.member-copy,
+.presence-copy {
+  min-width: 0;
+}
+
+.presence-row {
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.presence-swatch {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgb(25 42 37 / 12%);
+}
+
+.presence-copy {
+  flex: 1;
+}
+
+.presence-row--reader .presence-copy h3 {
+  color: var(--accent-dark);
+}
+
+.invitation-copy h3,
+.member-copy h3,
+.presence-copy h3 {
+  margin-bottom: 4px;
+}
+
+.invitation-copy p,
+.member-copy p,
+.presence-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.invitation-copy strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.invitations-empty,
+.members-empty,
+.presence-empty {
+  min-height: 74px;
+}
+
+.member-admin-grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.member-admin-section {
+  min-width: 0;
+  padding-top: 19px;
+  border-top: 1px solid var(--line);
+}
+
+.member-admin-section > h3 {
+  margin-bottom: 7px;
+}
+
+.member-admin-section .section-copy {
+  margin-bottom: 18px;
+}
+
+.member-invite-form {
+  gap: 2px;
+}
+
+.member-invite-form .field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.member-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.member-controls select,
+.member-invite-form select {
+  min-height: 36px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.member-controls select:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.member-remove-button {
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .member-admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .invitations-panel,
+  .members-panel,
+  .presence-panel {
+    padding: 20px;
+  }
+
+  .invitation-row,
+  .member-row,
+  .presence-row {
+    align-items: flex-start;
+  }
+
+  .invitation-row {
+    flex-direction: column;
+  }
+
+  .member-controls {
+    flex-direction: column;
+    align-items: flex-end;
+  }
 }
 
 @media (max-width: 980px) {

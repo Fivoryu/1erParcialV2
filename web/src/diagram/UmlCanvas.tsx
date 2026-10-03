@@ -8,6 +8,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useViewport,
   type Connection,
   type EdgeTypes,
   type NodeTypes,
@@ -23,6 +24,9 @@ import { createGeometryCoalescer } from './geometry-coalescer';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
 import UmlRelationshipEdge, { type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
+import RemoteCursors from '../collaboration/RemoteCursors.tsx';
+import type { RemoteCursorMarker } from '../collaboration/remoteCursors';
+import type { TouchedElement } from './touch-highlight';
 
 const DEFAULT_NODE_WIDTH = 260;
 const GRID_SIZE = 24;
@@ -45,6 +49,9 @@ interface UmlCanvasProps {
   onCommand: (request: ModelCommandRequest) => void;
   onAddClassifier: (kind: ClassifierKind) => void;
   onDelete: (selection: CanvasSelection) => void;
+  touchedElements?: TouchedElement[];
+  remoteCursors?: readonly RemoteCursorMarker[];
+  onCursorMove?: (position: { x: number; y: number }) => void;
 }
 
 interface NodeRectangle {
@@ -97,13 +104,23 @@ export function buildFlowNodes(
   onCommand: UmlCanvasProps['onCommand'],
   onSelect: UmlCanvasProps['onSelect'],
   onResizeGeometry?: (classifierId: string, rectangle: NodeRectangle, zOrder: number) => void,
+  touchedElements: TouchedElement[] = [],
 ): ClassFlowNode[] {
   const existingById = new Map(existing.map((node) => [node.id, node]));
+  const touchedByElementId = new Map<string, TouchedElement['touchedBy']>();
+  for (const touchedElement of touchedElements) {
+    touchedByElementId.set(touchedElement.elementId, touchedElement.touchedBy);
+  }
   return model.classifiers.map((classifier, index) => {
     const previous = existingById.get(classifier.id);
     const geometry = geometryFor(model, classifier.id);
+    // Only a touch whose target is a classifier (class, abstract class, interface, package) highlights a card.
+    // A touch on a relationship or on a member element (attribute, operation) highlights nothing on the canvas,
+    // because those live in other components and this unit does not touch them.
+    const touchedBy = touchedByElementId.get(classifier.id);
     const data: ClassNodeData = {
       classifier,
+      ...(touchedBy?.length ? { touchedBy } : {}),
       onSelectElement: onSelect,
       onRenameClassifier: (classifierId, name) => onCommand({
         type: 'classifier.rename',
@@ -217,7 +234,14 @@ export function buildFlowEdges(
 }
 
 function CanvasFrame(props: UmlCanvasProps) {
-  const { fitView } = useReactFlow<ClassFlowNode>();
+  const { fitView, screenToFlowPosition } = useReactFlow<ClassFlowNode>();
+  const viewport = useViewport();
+  const screenCursors = useMemo(() => (props.remoteCursors ?? []).map((marker) => ({
+    ...marker,
+    // Local = flow * zoom + viewport offset; subtracting the transformed origin cancelled the pan.
+    x: marker.x * viewport.zoom + viewport.x,
+    y: marker.y * viewport.zoom + viewport.y,
+  })), [props.remoteCursors, viewport]);
   const viewId = defaultView(props.model)?.id;
   const coalescer = useMemo(() => createGeometryCoalescer<GeometryUpdate>((_elementId, payload) => {
     props.onCommand(buildGeometrySetRequest(payload));
@@ -225,7 +249,7 @@ function CanvasFrame(props: UmlCanvasProps) {
   const [connectionDraft, setConnectionDraft] = useState<{ sourceId: string; targetId: string } | null>(null);
   const [connectionKind, setConnectionKind] = useState<RelationshipKind>('ASSOCIATION');
   const initialNodes = useMemo(
-    () => buildFlowNodes(props.model, [], props.onCommand, props.onSelect),
+    () => buildFlowNodes(props.model, [], props.onCommand, props.onSelect, undefined, props.touchedElements),
     [],
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<ClassFlowNode>(initialNodes);
@@ -256,9 +280,16 @@ function CanvasFrame(props: UmlCanvasProps) {
   }, [coalescer, setEdges, viewId]);
 
   useEffect(() => {
-    setNodes((current) => buildFlowNodes(props.model, current, props.onCommand, props.onSelect, persistResize));
+    setNodes((current) => buildFlowNodes(
+      props.model,
+      current,
+      props.onCommand,
+      props.onSelect,
+      persistResize,
+      props.touchedElements,
+    ));
     setEdges(buildFlowEdges(props.model, updateWaypoints));
-  }, [props.model, props.onCommand, props.onSelect, persistResize, updateWaypoints, setNodes, setEdges]);
+  }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, updateWaypoints, setNodes, setEdges]);
 
   useEffect(() => () => coalescer.cancelAll(), [coalescer]);
 
@@ -373,7 +404,18 @@ function CanvasFrame(props: UmlCanvasProps) {
           <button className="text-button" onClick={() => setConnectionDraft(null)} type="button">Cancel</button>
         </form>
       )}
-      <div className="diagram-canvas" onKeyDown={handleKeyDown} tabIndex={0}>
+      <div
+        className="diagram-canvas"
+        onKeyDown={handleKeyDown}
+        onPointerMove={(event) => {
+          // Presence coordinates belong to the diagram, not the window, whose size, scroll, and panel widths differ by client.
+          props.onCursorMove?.(screenToFlowPosition(
+            { x: event.clientX, y: event.clientY },
+            { snapToGrid: false },
+          ));
+        }}
+        tabIndex={0}
+      >
         <ReactFlow<ClassFlowNode, RelationshipFlowEdge>
           nodes={nodes}
           edges={edges}
@@ -402,6 +444,7 @@ function CanvasFrame(props: UmlCanvasProps) {
         >
           <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1.2} color="#cbd8d3" />
           <Controls position="bottom-left" showInteractive={false} />
+          <RemoteCursors markers={screenCursors} />
         </ReactFlow>
       </div>
     </section>

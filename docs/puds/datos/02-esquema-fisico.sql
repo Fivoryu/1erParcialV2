@@ -133,10 +133,13 @@ CREATE TABLE invitation (
     project_id     UUID NOT NULL REFERENCES project(project_id) ON DELETE CASCADE,
     invited_by_user_id UUID NOT NULL REFERENCES user_account(user_id) ON DELETE RESTRICT,
     invitee_user_id    UUID REFERENCES user_account(user_id) ON DELETE SET NULL, -- puede todavía no existir
+    role           project_member_role NOT NULL DEFAULT 'VIEWER',
     status         invitation_status NOT NULL DEFAULT 'PENDING',
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+COMMENT ON TABLE invitation IS 'Invitation carries the proposed role; revoking it never erases operation history.';
 
 -- ---------------------------------------------------------------------------
 -- 2. Modelo semántico UML
@@ -310,6 +313,16 @@ CREATE TABLE model_command (
 );
 
 COMMENT ON TABLE model_command IS 'Registro append-only lógico. Las correcciones se expresan como comandos nuevos; el SQL recomienda rechazar mutaciones retroactivas en la capa de servicio.';
+
+CREATE TABLE diagram_message (
+    message_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    model_id UUID NOT NULL REFERENCES uml_model(model_id) ON DELETE CASCADE,
+    author_user_id UUID NOT NULL REFERENCES user_account(user_id) ON DELETE RESTRICT,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE diagram_message IS 'Revoking a user''s access never erases messages they posted while they had it.';
 
 CREATE TABLE cascade_group (
     cascade_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -550,6 +563,9 @@ CREATE INDEX idx_audit_actor_time    ON audit_log(actor_user_id, occurred_at);
 -- ---------------------------------------------------------------------------
 CREATE INDEX idx_project_owner        ON project(owner_user_id);
 CREATE INDEX idx_member_user          ON project_member(user_id);
+CREATE INDEX idx_invitation_project   ON invitation(project_id, created_at, invitation_id);
+CREATE UNIQUE INDEX uq_invitation_pending_project_invitee
+    ON invitation(project_id, invitee_user_id) WHERE status = 'PENDING';
 CREATE INDEX idx_classifier_namespace ON classifier(namespace_id);
 CREATE INDEX idx_attribute_classifier ON uml_attribute(classifier_id);
 CREATE INDEX idx_operation_classifier ON uml_operation(classifier_id);
@@ -560,6 +576,7 @@ CREATE INDEX idx_relationship_end_cls ON relationship_end(classifier_id);
 CREATE INDEX idx_constraint_model     ON uml_constraint(model_id);
 CREATE INDEX idx_command_model_rev    ON model_command(model_id, base_revision);
 CREATE INDEX idx_command_author       ON model_command(author_user_id);
+CREATE INDEX idx_diagram_message_model ON diagram_message(model_id, created_at, message_id);
 CREATE INDEX idx_version_model_rev    ON model_version(model_id, revision DESC);
 CREATE INDEX idx_tombstone_model      ON tombstone(model_id);
 CREATE INDEX idx_conflict_model_state ON model_conflict(model_id, state);

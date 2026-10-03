@@ -6,6 +6,86 @@ export interface ProjectResource {
   description: string | null;
 }
 
+export type MemberRole = 'OWNER' | 'EDITOR' | 'VIEWER';
+export type AssignableRole = Exclude<MemberRole, 'OWNER'>;
+export type MemberStatus = 'ACTIVE' | 'REMOVED';
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+
+export interface MemberResource {
+  userId: Uuid;
+  username: string;
+  displayName: string;
+  role: MemberRole;
+  status: MemberStatus;
+}
+
+export interface PresencePerson {
+  userId: Uuid;
+  displayName: string;
+  color: string;
+  targetElementId: Uuid | null;
+  cursorX: number | null;
+  cursorY: number | null;
+}
+
+export interface PresenceUpdatedPayload {
+  presence: PresencePerson[];
+}
+
+export interface PresenceCursorUpdatePayload {
+  cursor: {
+    userId: Uuid;
+    x: number;
+    y: number;
+  };
+}
+
+export interface InvitationResource {
+  projectId: Uuid;
+  projectName: string;
+  id: Uuid;
+  inviteeUsername: string | null;
+  inviteeDisplayName: string | null;
+  role: MemberRole;
+  status: InvitationStatus;
+  invitedByUsername: string;
+  createdAt: string;
+}
+
+export interface CreateInvitationRequest {
+  username: string;
+  role: AssignableRole;
+}
+
+export interface UpdateMemberRoleRequest {
+  role: AssignableRole;
+}
+
+export interface UserResource {
+  id: Uuid;
+  username: string;
+  displayName: string;
+  email: string | null;
+}
+
+export interface RegisterRequest {
+  username: string;
+  password: string;
+  displayName: string;
+  email?: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  expiresAt: string;
+  user: UserResource;
+}
+
 export interface CreateProjectRequest {
   name: string;
   description: string | null;

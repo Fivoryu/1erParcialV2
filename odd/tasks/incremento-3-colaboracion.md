@@ -78,16 +78,71 @@ Dos huecos reales del esquema físico que el alcance toca, ambos documentados en
 
 ## 4. Plan de trabajo
 
+Cada unidad de código de este incremento sigue el orden de **S0**: se verifica, se revisa sin commitear y sólo
+entonces se commitea. Las reglas generales de encargo y la de verificación para lanzar escritores están al final de
+este apartado.
+
+### S0 — Revisión nativa por unidad
+
+**Decisión del usuario (2026-10-01): revisión nativa por unidad**, una por cada commit de código del Incremento 3.
+No se extiende la exclusión del Incremento 2, que estaba acotada a T7–T14 de aquel incremento.
+
+Orden de cada unidad, que invierte el que se usó en el Incremento 2:
+
+1. Implementar y verificar la unidad (`mvn -o -B verify`, o lint, pruebas y build en la web).
+2. **Revisar el cambio sin commitear**, siguiendo la transición que devuelva la autoridad, incluida su captura si
+   hay lentes.
+3. Confirmar la aprobación con la continuación exacta que emita el proveedor.
+4. **Solo entonces** commitear la unidad, con un mensaje que describa el comportamiento entregado.
+
+El motivo del orden: así ningún commit de código de este incremento existe sin haber pasado por revisión. Si la
+revisión pide una corrección, el cambio todavía está sin commitear y corregirlo no reescribe historia.
+
 Cada tarea cierra con **al menos un commit de unidad de trabajo**, con sus pruebas y su documentación al lado
 del comportamiento. El padre verifica el árbol y el diff de cada tarea: el escritor delegado no puede ejecutar
 `gentle_review` y en una vuelta anterior reportó «files_changed: None» habiendo escrito 580 líneas.
 
-**Regla de verificación para lanzar escritores** (aprendida a costo de dos vueltas perdidas): el encargo debe
-decir de forma explícita que `mvn -o -B compile` y `mvn -o -B verify` están **permitidos**, incluido el
-PostgreSQL que Testcontainers levanta por su cuenta. La prohibición de contenedores alcanza a los arneses de
-`tools/`, al operador de despliegue y a `docker` directo —el ciclo de vida del humano—, **no** al build. Un
-encargo que prohíbe contenedores y exige `verify` a la vez se contradice y detiene al escritor. Un escritor que
-no corre `verify` no está terminado: así se coló un test que no compilaba.
+**Regla de verificación para lanzar escritores** (aprendida a costo de tres vueltas perdidas): el encargo debe
+decir de forma explícita que `mvn -o -B compile`, `mvn -o -B verify`, `npm run lint`, `npm test` y `npm run build`
+están **permitidos**, incluido el PostgreSQL que Testcontainers levanta por su cuenta y las rutas de salida
+generadas e ignoradas por git (`web/dist/**`, `target/**`, `node_modules/**`). La prohibición de contenedores
+alcanza a los arneses de `tools/`, al operador de despliegue y a `docker` directo —el ciclo de vida del
+humano—, **no** al build; y lo prohibido al escribir es **fuente** fuera de las superficies, no la salida del
+build. Un encargo que prohíbe contenedores y exige `verify`, o que no autoriza la salida del build y exige
+`npm run build`, se contradice y detiene al escritor. Un escritor que no corre su verificación no está
+terminado: así se coló un test que no compilaba.
+
+**Regla de propiedad de la revisión para lanzar escritores** (aprendida a costo de otra vuelta perdida): el
+encargo debe decir **explícitamente** que la revisión nativa la posee el padre y que el escritor no la ejecuta,
+no la inspecciona y no declara su disposición, porque la herramienta `gentle_review` es del padre y un escritor
+no la tiene. Si falta esa frase, el recordatorio de revisión salta dentro del escritor, éste se detiene para
+preguntar por una disposición que no le corresponde y **no escribe nada**: ocurrió con C9b, que volvió con
+`files_changed: []` y `status: blocked` sin haber tocado un archivo. La frase tiene que decir que los
+recordatorios de revisión se ignoran como acción propia y que el padre ya tiene resuelta esa disposición; decir
+en su lugar que el candidato está excluido de revisión sería falso desde que el usuario eligió revisión por
+unidad.
+
+**Regla de superficies completas para lanzar escritores** (aprendida a costo de tres vueltas más, todas por el mismo motivo):
+antes de lanzar, el padre tiene que **derivar** las superficies de los archivos cuyo comportamiento o forma cambia,
+no de los archivos que se le ocurren. En concreto: si cambia la forma de un tipo, de un recurso o de un objeto
+que se serializa, entra también **el test que fija esa forma**, aunque nadie lo edite a propósito; si cambia la
+configuración, entra el archivo de configuración; si cambia un documento de autoridad, entra el documento. Los
+casos que ya costaron una vuelta: `ProjectApiService` (C27), el `application.yml` y la salida del build (C27 y C7),
+`DeploymentApiTest` (C5) y `LoginPage.test.tsx` (C10). Cada uno era **predecible** desde el cambio pedido, y en
+los cinco el escritor se detuvo en lugar de inventar alcance, que es lo correcto: el costo lo pagó el padre por no
+derivar la lista.
+
+**Regla de la concesión y del presupuesto de tiempo** (aprendida en C10, y aplica a las 15 unidades que quedan):
+
+- El sobre de concesión que emite el START **vence a los 10 minutos sin respuesta**. Si vence, el START **no crea linaje**
+  (`lineage_created: false`, `mutation_performed: false`) y su diagnóstico dice exactamente qué hacer: volver a correr START
+  para obtener un sobre fresco. Nunca se reenvía el binding vencido, y no hay que presentarle nada al usuario en ese caso:
+  no hubo concesión que contestar.
+- La corrida del revisor puede morir por **presupuesto agregado de tiempo** (`native-status-failed`,
+  *"The negotiated review operation exceeded its aggregate time budget"*, `mutation_performed: false`). No se repite a
+  ciegas: se consulta **STATUS fresco**, y si el estado y la revisión no cambiaron y el slot sigue abierto con el mismo
+  binding y sin artefacto admitido, corresponde un **intento nuevo** sobre ese slot —que no es reenviar un resultado
+  preparado, porque no hubo ninguno—. En C10 el primer intento murió así y el segundo admitió el artefacto.
 
 ### S1 — Identidad, sesión y autorización (login propio)
 
@@ -116,25 +171,497 @@ Exigir token rompió a los dos clientes que **no** son usuarios, y la suite Java
 | --- | --- | --- |
 | C8 | Migración `V8__invitations.sql`: tabla `invitation` del físico **más la columna `role`** que falta | Migración y prueba de esquema |
 | C9 | `InvitationService` y endpoints: invitar, listar, aceptar, revocar, cambiar rol; duplicado informado; revocar no borra historial | Integración de los cinco caminos y del duplicado |
-| C10 | Web: panel de integrantes con roles, invitar, aceptar y revocar | Pruebas de componente y lint |
+| C10 | Web: panel de integrantes con roles, invitar, aceptar y revocar | Pruebas de componente y lint; **cerrada** en `c4b5581` (ver *S2 progreso*) |
+
+### S2 progreso — C10 cerrada (2026-10-01)
+
+**Commit:** `c4b5581` — *feat(web): manage project members and answer invitations* (17 archivos, +1133/−4).
+
+**Revisión nativa:** linaje `review-b2e13cc0aa5260e6`, tier `medium`, **una** lente (`review-reliability`, orden 0), 17 caminos,
+1137 líneas cambiadas, presupuesto de corrección 200. Cerró **aprobada** y su autoridad quedó **quemada**
+(`burn_evidence: gentle-ai.review-acknowledged/v1`). El artefacto admitido del revisor: prompt 66.805 bytes, resultado 975 bytes.
+El sobre cerró `approved` **sin abrir corrección**, así que no hay hallazgo que citar: el texto del hallazgo de la lente no se
+expuso y no se inventa.
+
+**Medido al cerrar** (por el padre, y repetido por un verificador independiente que corrió los comandos él mismo):
+`npm run lint` 0 errores · `npm test` **111 pasadas, 4 omitidas**, 13 archivos · `npm run build` exit 0 ·
+`mvn -o -B -f backend/pom.xml verify` **248 pruebas, 0 fallos, 0 errores, 0 omitidas** (la línea base de C9 era 232).
+
+**Dos defectos propios, encontrados por la verificación independiente ANTES de la revisión** y corregidos dentro del mismo candidato
+(por eso **no** quedaron como hallazgos del revisor; se registran acá atribuidos a esta sesión):
+
+1. El selector de rol de un integrante ofrecía **Owner**, y `InvitationApiService.assignableRole` lo rechaza **siempre** con
+   `400 INVALID_PAYLOAD`. Ahora el selector sólo ofrece Editor/Viewer y el tipo compartido
+   `AssignableRole = Exclude<MemberRole,'OWNER'>` hace imposible producir ese valor. Es falsable: restaurar la opción
+   `<option value="Owner">` rompe `MembersPanel.test.tsx`.
+2. `EditorCorsConfig` sólo permitía `GET`, `POST` y `OPTIONS`, y C10 es el **primer** código del cliente que usa `PATCH` y `DELETE`
+   (`updateProjectMemberRole`, `removeProjectMember`): en el modo de API directa (`VITE_API_BASE_URL`) el preflight del navegador
+   rechazaba los dos verbos. Se sumaron y se fijaron con `EditorCorsPreflightTest` (preflight real por MockMvc; quitar `PATCH` de la
+   configuración hace fallar la suite; control negativo: `PUT` no está permitido).
+
+   En el mismo paso, `InvitationResource.inviteeUsername` e `inviteeDisplayName` pasaron a `string | null`, que es lo que el mapeador
+   del servidor devuelve cuando la invitación no tiene invitado.
+
+**Límite declarado:** cuando los dos campos del invitado vienen nulos, el encabezado de la fila queda vacío en lugar de fallar; está
+leído en la fuente, **no** ejercitado por una prueba.
 
 ### S3 — Tiempo real: SSE, presencia y sincronización
 
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
-| C11 | `ProjectEventBus` y `GET /projects/{id}/events` con `SseEmitter`, heartbeat, limpieza de emisores y autorización por rol | Integración: dos clientes reciben el evento publicado; un tercero sin rol no conecta |
-| C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable |
-| C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra |
-| C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado |
-| C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío |
+| C11 | `ProjectEventBus` y `GET /projects/{id}/events` con `SseEmitter`, heartbeat, limpieza de emisores y autorización por rol | Integración: dos clientes reciben el evento publicado; un tercero sin rol no conecta. **Cerrada** en `cb6a2ca` (ver *S3 progreso*) |
+| C12 | `PresenceRegistry` efímero: alta/baja por sesión, color determinista por `userId`, elemento tocado | Pruebas unitarias del registro y del color estable. **Cerrada** en `c2d24a6` (ver *S3 progreso*) |
+| C12b | **Cablear la presencia al canal** (hueco descubierto al derivar C14): alta en el `subscribe`, baja en las tres terminaciones del emisor, `presence.updated` publicado con el snapshot, y `POST /projects/{id}/presence` para el elemento tocado | Integración: dos suscriptores del mismo proyecto se ven entre sí con su color; el que se desconecta desaparece del snapshot siguiente; un toque de uno llega al otro como `presence.updated`; un tercero sin rol no puede reportar. **Cerrada CON DESVIACIÓN DECLARADA** en `84e16f1` — sin revisión nativa por fallo de transporte, autorizado por el usuario (ver *S3 progreso — C12b*) |
+| C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra. **Cerrada** en `c973dd5` (ver *S3 progreso*) |
+| C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado. **Partida en C14 y C14b por tamaño de revisión** (ver *S3 — C14 partida*). **C14 cerrada** en `a59e67a` (ver *S3 progreso — C14*) |
+| C14b | Web: **resaltado del elemento que cada uno toca** en el lienzo, con el color de quien lo toca y su nombre | Prueba de componente del resaltado: el nodo tocado se marca con el color y el nombre de quien lo toca, y deja de marcarse cuando el otro suelta. **Cerrada CON DESVIACIÓN DECLARADA** en `da3c2d6` (ver *S3 progreso — C14b*) |
+| C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío (21 emisiones para 100 actualizaciones sobre 1 s: **20/s**, dentro de la banda 10–30). **Cerrada CON DESVIACIÓN DECLARADA** en `c80b1f1` (ver *S3 progreso — C15*) |
+| C15b | Web: **dibujo de los cursores remotos** en el lienzo, con color y nombre, paneando y zoomeando con la vista | Prueba de componente del overlay y del join puro. **Cerrada CON DESVIACIÓN DECLARADA** en `805aa57` (ver *S3 progreso — C15b*) |
+
+### S3 — hueco descubierto al derivar C14 (tarea C12b)
+
+Al derivar las superficies de C14 («web: hook SSE, panel de presencia y resaltado del elemento tocado») apareció un hueco **real** del plan,
+y se declara acá como se hizo con S1b:
+
+**El plan tenía el canal (C11), el registro (C12) y la web (C14), pero ninguna tarea cubría el cableado entre ellos.** Medido antes de añadir
+nada: `PresenceRegistry.join/leave/touch` **no los llamaba nadie** y ningún evento `presence.updated` se publicaba. Sin esa pieza, C14 no puede
+funcionar: un panel de presencia sobre un canal que nunca anuncia presencia es una pantalla muerta, y el «elemento que el otro toca» no tendría de
+dónde venir. Por eso C14 **no** se lanzó primero: se declara **C12b** (backend) y C14 la consume después.
+
+**Hecho medido que fija el diseño y evita romper C11:** en Spring Framework `ResponseBodyEmitter` **acumula** callbacks —`DefaultCallback` y
+`ErrorCallback` guardan cada uno una `List` de delegados y los suman con `addDelegate(...)`— así que registrar `onCompletion`/`onTimeout`/`onError`
+en el controlador **no pisa** la limpieza que `ProjectEventBus` ya registra. Comprobado con `javap -p` sobre `spring-webmvc-6.2.7.jar`. Consecuencia:
+`ProjectEventBus` **no se toca** (queda intacto el archivo verificado en C11) y el cableado vive en los controladores y en un publicador chico.
+
+**Corrección menor al plan:** la decisión C1 dice que `SseEmitter` sale de `spring-web`; en realidad vive en **`spring-webmvc`**
+(`org.springframework.web.servlet.mvc.method.annotation`). No cambia la decisión —`spring-boot-starter-web` ya lo trae, que era el punto— pero el
+nombre del artefacto estaba mal.
+
+
+
+### S3 — C14 partida, y la restricción medida que fija su diseño
+
+C14 (“web: hook SSE, panel de presencia y resaltado del elemento tocado”) entra en **una sola tarea del plan** pero toca nueve archivos entre transporte,
+panel y lienzo. Se parte por carga de revisión, no por comodidad: **C14** entrega *ver quién está* (transporte + reporte del toque propio + panel con color
+y nombre) y **C14b** entrega *ver qué toca el otro* (el resaltado en el lienzo). Cada una tiene su corte visible y su propia prueba de componente.
+
+**Restricción medida antes de lanzar al escritor, y es la que Fija el diseño:** el entorno de pruebas web **no tiene DOM** —`jsdom` y `happy-dom`
+no están instalados, `vitest` corre sin `environment` (o sea, `node`) y las dependencias son las que la línea offline ya tiene—. Consecuencias
+congeladas:
+
+1. **No hay pruebas de hooks.** Un `renderHook` necesitaría un DOM y por lo tanto una dependencia nueva, que rompería la línea offline. Por eso el
+transporte es un **módulo puro** (`web/src/collaboration/projectEvents.ts`) con el `fetch` **inyectado** —como el cliente de C10— y sin archivo de hook:
+la página lo usa dentro de un `useEffect` con limpieza.
+2. **Los componentes se prueban con `renderToStaticMarkup`**, que es el patrón que C10 ya usa y no necesita DOM.
+3. El parseo de las tramas SSE se prueba con un `Response` con cuerpo en streaming, usando los globales de Node: sin navegador y sin red real.
+
+
+
+### S3 progreso — C11 cerrada (2026-10-01)
+
+**Commit:** `cb6a2ca` — *feat(backend): stream project events over sse* (5 archivos nuevos, +507).
+
+**Revisión nativa:** linaje `review-280103838dd3da8e`, tier `medium`, **una** lente (`review-reliability`, orden 0), 5 caminos,
+507 líneas, presupuesto de corrección 200. Cerró **aprobada** al primer intento y su autoridad quedó quemada
+(`gentle-ai.review-acknowledged/v1`). Artefacto del revisor: prompt 35.719 bytes, resultado 1.420 bytes.
+
+**Hallazgo informativo que dejó la revisión — `R3-silent-stream-after-send-failure`**: lente `reliability`, ubicación
+`collaboration/ProjectEventBus.java:86-87` (el `catch` que elimina el emisor muerto), severidad `WARNING`, disposición
+`informational`. El proveedor fue explícito: **ninguno abre corrección, ninguno reabre la revisión y no se ofrece transición
+de corrección para este candidato**, así que no se re-revisa. Lectura propia de esa región, **atribuida a esta sesión y no al
+revisor**: un suscriptor cuyo envío falla se descarta **sin ningún diagnóstico** —no hay log ni métrica— así que un cliente
+caído desaparece del canal en silencio. Es de la misma familia que `R3-001` de C8+C9 y queda como trabajo posterior candidato
+(observabilidad al descartar un emisor), no como defecto de esta unidad.
+
+**Medido al cerrar:** `mvn -o -B -f backend/pom.xml verify` = **255 pruebas, 0 fallos, 0 errores, 0 omitidas**, `BUILD SUCCESS`
+(248 de base + 7 nuevas: 4 de `ProjectEventBusTest`, 3 de `ProjectEventApiTest`). La corrida del padre fue **desacoplada**
+(`nohup` con log fuera del repo) y la repitió un verificador independiente, que obtuvo los mismos totales en ~3½ minutos.
+La evidencia del plan —**dos clientes reciben el evento publicado; un tercero sin rol no conecta**— quedó probada por el
+**endpoint autorizado** (`GET /projects/{id}/events`), no sólo a nivel del bus.
+
+**Desviación de ruteo declarada:** los tres escritores delegados de esta unidad fallaron (dos desaparecieron y uno se colgó 30
+minutos), y el padre terminó escribiendo **un archivo de prueba** en línea, `collaboration/ProjectEventBusTest.java`. El motivo
+no fue impaciencia sino que la prueba del camino de error **afirmaba algo falso**: medía `expected: 1 but was: 2`, es decir
+`SseEmitter.completeWithError` **no** dispara el callback `onError` del bus. Se reemplazó por la garantía que sí se sostiene
+—un suscriptor muerto lo elimina el siguiente envío— y el límite quedó declarado en el propio archivo.
+
+**Causa raíz de esos tres fallos, medida** (importa para las unidades que quedan): el escritor corre la suite completa como
+**una sola llamada `bash` bloqueante**; bajo contención con la sesión hermana de XMI —que corre su propio Maven con
+Testcontainers contra el mismo demonio Docker— esa corrida pasó de ~13 minutos a **más de 70**. El arnés mata al subagente
+cuando una llamada lleva ~30 minutos corriendo, **muere el fork de Surefire y el lanzador de Maven queda esperando un hijo que
+ya no existe, para siempre**: un JVM huérfano (591 MB) sosteniendo `backend/target/`, que es lo que hacía parecer colgada
+cualquier corrida posterior. **Mitigación**: lanzar la suite desacoplada, con el log **fuera del repo** (un archivo nuevo dentro
+del árbol entra al candidato de revisión y mueve el target congelado) y monitorear en ventanas acotadas; si aparece un JVM de
+Maven huérfano, matarlo para liberar `target/`.
+
+**Límites declarados de esta unidad** (los midió el verificador independiente y se registran, no se esconden):
+
+1. **La suite no aísla las entradas de `onTimeout` ni de `onError`.** Si se borrara cualquiera de las dos del bus, la suite
+   **igual pasaría**: sólo la de `onCompletion` está anclada a una aserción. La de `onError` no se puede ejercitar de forma
+   fiel con MockMvc (un error de nivel contenedor no se puede producir ahí).
+2. **La limpieza es diferida y acotada, no inmediata.** Un emisor muerto lo elimina el siguiente envío fallido, a más tardar el
+   heartbeat (15 s por defecto). El verificador juzgó esto **aceptable para este canal** y descartó que sea una fuga sin límite.
+3. **En memoria y de una sola instancia** (decisión C4): la presencia y este canal no cruzan instancias.
+4. **El operador no puede suscribirse**: `AuthenticationInterceptor.isOperatorAllowed` no incluye `events`, así que se lo
+   rechaza antes del controlador. Es la frontera buscada, no un descuido.
+
+### S3 progreso — C12 cerrada (2026-10-01)
+
+**Commit:** `c2d24a6` — *feat(backend): know who is in a diagram and what they touch* (3 archivos nuevos, +417).
+
+**Revisión nativa:** linaje `review-3e650cd04245491c`, tier `medium`, **una** lente (`review-reliability`), 3 caminos, 417 líneas,
+presupuesto de corrección 200. Cerró **aprobada** al primer intento, autoridad quemada, y **sin hallazgos**: el sobre no trajo `advisory_findings`
+(artefacto del revisor: prompt 31.834 bytes, resultado 687 bytes).
+
+**Medido al cerrar:** `mvn -o -B -f backend/pom.xml test -Dtest=PresenceRegistryTest` = **9 pruebas, 0 fallos** ·
+`mvn -o -B -f backend/pom.xml verify` = **264 pruebas, 0 fallos, 0 errores, 0 omitidas** (255 de base + 9 nuevas).
+
+**Defecto real que encontró la verificación independiente y se arregló ANTES del commit** (no quedó como hallazgo del revisor):
+`join` arrastraba el `targetElementId` y el `joinedAt` de la entrada previa de una `sessionId` **sin comparar el usuario**, así que una sesión
+reasignada a otro usuario —camino plausible: una pestaña cuyo id de sesión sobrevive al cierre de sesión— publicaba al nuevo usuario **tocando un
+elemento que nunca tocó**, visible para todos los demás. Ahora la herencia sólo ocurre si el `userId` coincide. La prueba que lo cubre es
+**falsable y con sensibilidad medida**: antes del arreglo la corrida acotada dio **9 pruebas con 1 fallo**, y la aserción que falló fue
+exactamente la del target heredado.
+
+**Acotación del color, declarada en el propio código:** la paleta tiene **10 colores**, así que con más de 10 usuarios simultáneos la colisión
+está **garantizada** por palomar; el mismo usuario nunca cambia de color. **Medición propia de esta sesión** (atribuida acá, hecha con la
+**clase real compilada** y no con una réplica): 200.000 UUID v4 por `colorFor` → aparecen los 10 colores con desvío máximo **−0,87 % / +0,73 %**
+sobre los 20.000 esperados por color. La distribución es uniforme.
+
+**Límites declarados de esta unidad:**
+
+1. **No se midió si la prueba de concurrencia fallaría contra un `HashMap` sin sincronizar.** Probarlo exige compilar una copia mutada del
+   registro y correr la clase de prueba contra ella con el andamiaje de JUnit armado a mano; ni el verificador (read-only) ni el padre lo hicieron.
+   Queda declarado como **no medido**, con el motivo. Lo que sí se verificó: ocho hilos liberados por una barrera hacen `join`/`touch`/`refresh`/
+   `leave`/`snapshot` concurrentes de verdad (no serializados), y `join` es un único `compute` anidado, sin ventana de leer-y-escribir.
+2. **El registro no borra fantasmas por sí solo.** Quien llama a `join` y a `leave` es el ciclo de vida del canal, y ese cableado es de **C14**;
+   está declarado en el comentario de la clase. Hasta que C14 cierre, la presencia no tiene alta/baja automática.
+3. **Caveat del verificador, registrado como oportunidad y no como defecto:** la prueba del rebind no afirma el target en el snapshot *antes* de
+   rebindear (se apoya en `touch(...).isTrue()`), y no fija `joinedAt`, nombre, color ni última actividad tras el rebind. La sensibilidad de la
+   aserción principal sí está medida por el fallo previo al arreglo, que es más fuerte que una precondición.
+4. **Comparación contra la línea base anterior no reproducible por el verificador:** la corrió el padre (255 → 264) y el verificador confirmó 264,
+   pero no pudo correr la revisión previa al candidato para comparar test por test.
+
+### S3 progreso — C13 cerrada (2026-10-01)
+
+**Commit:** `c973dd5` — *feat(backend): announce an accepted command to the other sessions* (2 archivos, +245/−2).
+
+**Revisión nativa:** linaje `review-81f65013fef6aef5`, tier `medium`, **una** lente (`review-reliability`), 2 caminos, 247 líneas,
+presupuesto de corrección 124. Cerró **aprobada**, autoridad quemada (artefacto del revisor: prompt 27.756 bytes, resultado 1.571 bytes).
+
+**Hallazgo informativo que dejó la revisión — `R3-replay-event-identity`**: lente `reliability`, ubicación `command/CommandService.java:112`
+(la zona del replay idempotente), severidad `WARNING`, disposición `informational`. El proveedor fue explícito: **ninguno abre corrección y no se
+ofrece transición de corrección para este candidato**. Es una **confirmación independiente del riesgo que esta sesión congeló y declaró** al
+implementar: un replay con la misma `idempotencyKey` vuelve a anunciar la misma operación, así que el cliente no puede distinguir "aplicada ahora" de
+"ya aplicada" salvo por deduplicar con `operationId`. Queda como trabajo posterior candidato, en la familia de observabilidad/identidad de eventos.
+
+**Fallo de transporte del relay del revisor, recuperado (nuevo modo de falla, dos veces):**
+
+- `pi-host-relay-transport-failure` — *"Reviewer completion failed for review-reliability: WebSocket error"*, con `prepared_reviewers: 0`,
+  `submitted_reviewers: 0` y `mutation_performed: false`. La primera vez a los ~357 s y la segunda a los ~401 s, **muy por debajo** del
+  `timeout_ms` de 2.400.000: no fue timeout, fue el transporte.
+- El proveedor indica la recuperación exacta en cada intento: *«Call fresh STATUS and submit only an exact reoffered one-slot binding; never replay
+  this capture from transcript inference»*. Se hizo eso: STATUS fresco (estado y revisión **sin cambios**, mismo slot reofrecido) y envío del binding
+  exacto. **El tercer intento admitió el artefacto.** No se infirió ningún binding de la transcripción.
+
+**Medido al cerrar:** `mvn -o -B -f backend/pom.xml test -Dtest=CommandEventDeliveryTest` = **3 pruebas, 0 fallos** ·
+`mvn -o -B -f backend/pom.xml verify` = **267 pruebas, 0 fallos, 0 errores, 0 omitidas** (264 de base + 3 nuevas).
+
+**Defecto propio encontrado y corregido ANTES de la revisión:** el payload se construía con `Map.of(...)` y `target.id().toString()`, así que un target
+con `scope`/`id` **nulos** lanzaba `NPE`; el `catch` deliberado lo tragaba y **el evento se perdía en silencio** para un comando que igual quedaba
+aceptado y durable. La construcción ahora es defensiva y hay una prueba que falla si se revierte (**medida**: antes del arreglo, 3 pruebas con 1 fallo
+—el comando se aceptaba y no llegaba ningún evento).
+
+**Corrección de mi propio análisis, declarada:** describí el disparador como «un elemento `null` en el array `targets`» y eso es **inalcanzable** por
+HTTP, porque `OperationEnvelope` aplica `List.copyOf(targets)` en su constructor compacto y rechaza elementos nulos. El disparador real son `scope` e `id`
+nulos **como campos**, que `List.copyOf` sí acepta. El defecto era real; mi explicación del camino, no.
+
+**Dos hallazgos del verificador independiente, corregidos en el mismo candidato:**
+
+1. **El fallo tragado era invisible y mi comentario decía algo falso**: escribí que el proyecto no tiene framework de logging, y `spring-boot-starter-web`
+trae slf4j/logback. Ahora `CommandService` tiene un logger y registra el fallo a `warn` con la excepción, así que el hueco deja de ser invisible; el
+comentario dice la verdad (se registra y a propósito no se propaga, porque la entrega no puede deshacer una aceptación durable).
+2. **La garantía «después del commit» estaba afirmada de forma incondicional.** `TransactionTemplate` con `PROPAGATION_REQUIRED` se une a una transacción
+ambiente, así que un llamador futuro podría publicar antes de que esa transacción externa confirme. Hoy **ningún** llamador lo hace (los del
+`ProjectApiService` no son transaccionales, verificado por el verificador).
+
+**Limites declarados de esta unidad:**
+
+1. **La garantía de orden es condicional, y se declara en lugar de implementarse.** Un llamador con transacción ambiente necesitaría un hook de
+after-commit. **No se implementó a propósito**: agregaría un camino de código que ninguna prueba ejercita, y un camino sin ejercitar es peor que una
+frontera declarada. El comentario en el código nombra la frontera.
+2. **Un `Error` de la publicación no se atrapa** y puede hacer fallar la invocación aunque el comando ya sea durable. El verificador no lo clasificó como
+defecto (no hay requisito de tragarse `Error`s de la JVM) y esta sesión coincide: atrapar `Error` sería peor.
+3. **El replay vuelve a anunciar** el mismo `operationId` y `resultRevision` (hallazgo `R3-replay-event-identity` del revisor). Está declarado en el código
+y queda como trabajo posterior si el cliente necesita distinguir identidad de recencia.
+
+### S3 progreso — C12b cerrada CON DESVIACIÓN DECLARADA (2026-10-01)
+
+**Commit:** `84e16f1` — *feat(backend): publish presence on the project channel* (2 modificados + 3 nuevos, +442/−2).
+
+> ⚠️ **Esta unidad se commiteó SIN revisión nativa, por autorización explícita del usuario (2026-10-01).** La regla de S0 —verificar,
+> revisar sin commitear y sólo entonces commitear— **sigue vigente** para todas las unidades siguientes; esta es la excepción, no un cambio de regla.
+
+**Por qué no hubo revisión — causa medida, no supuesta:** el relay del revisor falló **tres intentos consecutivos** con
+`pi-host-relay-transport-failure` (*"Reviewer completion failed for review-reliability: WebSocket error"*), a los **173 s, 151 s y 151 s** de un
+presupuesto de 2.400.000 ms — o sea **no** fue timeout, fue transporte— y cada vez con `prepared_reviewers: 0`, `submitted_reviewers: 0` y
+`mutation_performed: false`. Se aplicó la recuperación que indica el proveedor (*«Call fresh STATUS and submit only an exact reoffered one-slot
+binding; never replay this capture from transcript inference»*) **dos veces**: STATUS fresco, estado y revisión sin cambios, binding exacto reofrecido.
+A diferencia de C13 —donde el tercer intento admitió el artefacto— acá el tercero también falló, y **los fallos fueron más rápidos**, no más lentos.
+
+**Estado del linaje `review-9a428806517d6f8a`:** quedó abierto en `reviewing` con su slot de lente sin satisfacer y **no se reusó**. El commit mueve
+el árbol, así que su target congelado ya no coincide: se considera **quemado por deriva**. No se inventó ningún resultado de revisor para esta unidad.
+
+**Remediación declarada (la desviación es temporal, no un agujero):** la revisión puede tomarse más adelante **sobre este rango ya commiteado**
+(`baseRef` + `committedOnly: true`), que es una forma soportada por la autoridad. Queda pendiente para cuando el transporte del relay funcione, y así
+consta para el acta.
+
+**La remediación se intentó de inmediato, y también falló (2026-10-01):** se abrió un linaje nuevo sobre el rango commiteado
+(`review-2cbe18d88f816489`, `baseRef=155e93c`, `committedOnly: true`, 6 caminos, 495 líneas) y su corrida del revisor murió con el **mismo**
+`pi-host-relay-transport-failure` (*WebSocket error*, 224 s de 2.400.000 ms, `prepared_reviewers: 0`, sin mutación). O sea: el transporte del relay
+está caído de forma sostenida, no es un fallo de esta unidad. **C12b queda commiteada sin revisión nativa**, con dos intentos registrados
+(uno sobre el candidato sin commitear, uno sobre el rango commiteado) y la remediación abierta para cuando el relay vuelva.
+
+**Dos detalles del procedimiento, medidos, que valen para el próximo intento:**
+
+1. Un START sobre un rango commiteado **exige `idempotencyKey`** (es la operación graph-v1) y **exige `mode`** dentro del `input`; sin mode responde
+   *«START supports only "ordinary" or "judgment-day" mode»* y no crea linaje.
+2. El propio `inspect` emite el `--base-ref` con el **sha del árbol** de la base, y el START lo rechaza con `base-ref-unresolvable`: hay que pasar el
+   **sha del commit** (`155e93cf62e8cafaddacd82b2a507ec27c845423`), no el del árbol. Es un defecto del proveedor que se registra acá como tal, no como
+   algo que el operador deba adivinar.
+
+**Lo que SÍ se hizo antes del commit:**
+
+1. **Verificación independiente, sin fallos.** Resolvió los seis ejes: el orden de suscripción (emisor antes del `join`, así el recién llegado recibe el
+   snapshot que produce su propia llegada), la fidelidad del cable (tipo `presence.updated`, claves `userId`/`displayName`/`color`/`targetElementId`,
+   **sin** `sessionId`, color desde `colorFor`), la autorización del endpoint de toque (usuario del principal y no del cuerpo; 401 sin bearer, 403 sin
+   rol, y en ambos casos el registro **sin cambios**), la semántica de `touchUser`, y las seis pruebas. `mvn -o -B -f backend/pom.xml verify` =
+   **273 pruebas, 0 fallos** (267 de base + 6).
+2. **Un defecto real, encontrado por esa verificación y corregido antes del commit:** las tres terminaciones del emisor no compartían guarda, así que
+   timeout/error seguido de completion llamaba dos veces a `endSession` y **publicaba un segundo snapshot**. Ahora hay un `AtomicBoolean` compartido con
+   `compareAndSet(false, true)`: la baja y la publicación ocurren **exactamente una vez** por suscripción, en cualquier orden de terminaciones.
+3. **Dos pruebas que no probaban lo que decían, reforzadas:** la de completion afirmaba el stream **después** de un toque separado (que publica solo),
+   así que no probaba que el `leave` publicara; ahora afirma el stream **inmediatamente** después del completion y con un conteo **exacto**
+   (A entra → 1, B entra → 2, B se va → **exactamente 3**), de modo que una publicación duplicada lo lleva a 4 y falla. Y la de dos sesiones no podía
+   falsificar una actualización parcial: ahora cierra la sesión **que el colapso elegiría** (A2) y afirma que **A1** conserva el target.
+
+**Límites declarados de esta unidad:**
+
+1. **El orden «timeout/error y después completion» no es alcanzable desde MockMvc**, así que la guarda no se ejercita en ese orden exacto; lo que sí se
+   ejercita es el **conteo exacto**, que falla si aparece una publicación de más desde cualquier camino.
+2. **El contador de eventos usa `split` sobre substring**, no un parseo de tramas SSE: una carga útil que contuviera ese texto lo confundiría. Es
+   robustez de la prueba, **no** un defecto de la implementación, y está declarado.
+3. **Las pruebas no fijan el conjunto EXACTO de claves del payload**, sólo las requeridas y la ausencia de `sessionId`; una clave de más pasaría. Se
+   declara en lugar de dar por cerrado lo que no se midió.
+4. Un snapshot **vacío** (cuando se va el último miembro) se publica pero no puede llegar a nadie si no quedan suscriptores: inherente al canal.
+5. El endpoint de toque exige cuerpo (`@RequestBody` requerido): `{}` limpia el target; **sin cuerpo** responde 400 y no limpia nada (no está probado
+   por integración, leído en la fuente).
+6. Los **targets por pestaña** no se modelan: `touchUser` actualiza todas las sesiones vivas de esa persona y el último toque gana para ella.
+
+### S3 progreso — C14 cerrada (2026-10-01)
+
+**Commit:** `a59e67a` — *feat(web): show who is in the diagram, with their colour* (10 archivos, +756/−13).
+
+**Revisión nativa:** linaje `review-7370c6ae0dd1ad3b`, tier `medium`, **una** lente (`review-reliability`), 10 caminos, 769 líneas, presupuesto
+de corrección 200. Cerró **aprobada al primer intento** —el relay se recuperó despuÉs de los dos fallos de transporte de C12b, que siguen con su
+remediación abierta— con autoridad quemada (artefacto del revisor: prompt 48.810 bytes, resultado 2.032 bytes).
+
+**Dos hallazgos informativos** (ninguno abre corrección, ninguno reabre la revisión): `R3-malformed-presence` en
+`collaboration/PresencePanel.tsx:23-29` y `R3-presence-touch-order` en `pages/ProjectEditorPage.tsx:313`, ambos `WARNING` con disposición
+`informational`. Lecturas propias, **atribuidas a esta sesión y no al revisor**: en el primero, el panel dibuja los campos de cada entrada sin
+validar la entrada misma (la página sí valida que `payload.presence` sea un arreglo), así que una entrada malformada renderizaría nombre o color
+vacíos; en el segundo, el toque se reporta al cambiar la selección y un reporte que llegue antes de que la sesión se haya dado de alta devuelve
+`false` por diseño, así que el elemento inicial de un lector puede no llegar a los demás hasta que cambie la selección — es el mismo límite ya
+declarado en C12b («un reporte sin sesión viva no crea nada»).
+
+**Medido al cerrar:** `npm run lint` 0 errores · `npm test` **120 pasadas, 4 omitidas** (117 de base + 3) · `npm run build` 0 errores (221 módulos).
+
+**Historia de esta unidad, y por qué ocupó cuatro rondas de verificación** (se registra porque explica el tamaño y porque cada ronda encontró algo
+real, no ruido):
+
+1. **Ronda 1**: una respuesta tardía de `getModel` podía pisar el modelo del proyecto abierto (el refresco por evento no tenía guarda, y la ruta
+   reusa el mismo elemento de página).
+2. **Ronda 2**, sobre la corrección: las cachés por proyecto (`canonicalModelRef`, `revisionRef`, `pendingCommandsRef`) sobrevivían al cambio de
+   proyecto, así que un modelo del proyecto nuevo podía rechazarse como «más viejo» contra la revisión del anterior; y la condición del reintento
+   encolado no tenía ninguna prueba que pudiera fallar si se revertía.
+3. **Ronda 3**: la clase no estaba cerrada: `reconcileAfterCommand`, el `.catch`/`.finally` de la carga inicial, el camino del comando encolado y el
+   callback de presencia seguían escribiendo estado por proyecto tras el cambio. El padre **cortó la carrera guarda-por-guarda** y aplicó el arreglo
+   sistémico: **remontar el editor con `key={projectId}`** (`web/src/App.tsx`), de modo que la instancia anterior se descarta entera y su stream se
+   aborta; las guardas por camino quedan como cinturón y tirantes.
+4. **Ronda 4** (cierre): confirmó que la clave aísla la instancia y que ninguna escritura de una instancia descartada afecta la pantalla actual; los
+dos caminos que quedaron —el comando encolado que sigue aplicándose al proyecto donde se pidió, y una carrera preexistente del 401 con la sesión
+global— se declaran abajo.
+
+**Desviación de ruteo declarada:** de los cinco escritores delegados de esta unidad, **dos fallaron** (un error de proveedor y una **cuarentena de
+capacidad** del arnés), y el padre escribió **dos cosas en línea**: la clave por proyecto en `App.tsx` (el arreglo sistémico, ~10 líneas) y la
+corrección de su **propio** comentario exagerado —el texto decía que el cleanup aborta las peticiones en vuelo, y sólo aborta el stream de presencia—.
+El resto de la unidad la escribieron escritores delegados, validados por el padre y por cuatro verificaciones independientes.
+
+**Límites declarados de esta unidad:**
+
+1. **Sin prueba automatizada para las guardas ni para la navegación**: la página no se puede renderizar sin DOM, así que la guarda por proyecto, el
+   reseteo de cachés y la clave se verificaron **por lectura** más los tres comandos. No hay prueba de navegación A→B ni de navegador.
+2. **Política de la cola de comandos, deliberada**: un comando que el usuario ya emitió **sigue aplicándose al proyecto donde lo emitió** aunque
+   navegue. Cancelarlo en silencio sería perder trabajo suyo; la clave remonta la página pero no vacía la cola del servidor.
+3. **Carrera preexistente y ajena**: en `api/client.ts` un 401 de una petición superada (token viejo, tras cerrar y volver a iniciar sesión) limpia la
+   **sesión global**, y eso puede afectar la pantalla de la sesión nueva. Es preexistente (no la introdujo esta unidad) y queda como trabajo posterior.
+4. **Fetch redundante**: el cliente refresca el modelo al recibir su **propio** `operation.applied`, y la reconciliación posterior a su comando ya lo
+   había hecho. No corrompe nada (el servidor es la autoridad y es un GET), y queda declarado.
+5. **StrictMode, sólo en desarrollo**: el ciclo montar/desmontar/remontar abre una conexión de más y puede duplicar el POST inicial del toque. El
+   cleanup cierra la primera, así que no queda suscripción duplicada y en producción no ocurre.
+
+### S3 progreso — C14b implementada y verificada, SIN COMMITEAR (revisión bloqueada por el relay) — 2026-10-01
+
+> **Actualización (2026-10-02): commiteada con DESVIACIÓN DECLARADA, autorizada por el usuario.** Commit `da3c2d6`. El árbol ya no la contiene sin commitear.
+> La remediación sigue abierta: revisar el **rango commiteado** cuando el relay responda. La regla de revisar antes de commitear **sigue vigente** para lo que venga.
+
+**Estado:** el código está escrito, verificado y **sin commitear** (7 archivos: 5 modificados y 2 nuevos). **No se commiteó a propósito**: la regla acordada
+con el usuario es no commitear sin revisión nativa cuando el relay está caído.
+
+**Medido:** `npm run lint` 0 · `npm test` **128 pasadas, 4 omitidas** · `npm run build` 0 (222 módulos).
+
+**Verificación independiente (dos rondas, ambas con hallazgos reales):**
+
+1. **Ronda 1**: la función pura de agrupación **no deduplicaba**, así que dos entradas con el mismo `userId` sobrevivían, el orden podía depender de la entrada y la chip
+   habría llevado **claves de React repetidas**. Bajo la invariante del servidor (el snapshot colapsa por usuario) no puede pasar, pero la función promete determinismo
+   incondicional — y es la misma familia del hallazgo `R3-malformed-presence` del revisor de C14. Corregido con una regla canónica: gana el par `(displayName, color)`
+   lexicográficamente menor, de modo que el resultado es independiente del orden **para cualquier entrada**.
+2. **Ronda 2**: la aserción de «sin identificadores técnicos» cubría `markup` pero **no** `interfaceMarkup`, así que un id filtrado en la interfaz pasaba escondido.
+   Corregido por el padre **en línea** (cambio de prueba, tres líneas) y declarado como tal.
+
+**Lo que la revisión nativa no pudo hacer, medido:** tres intentos consecutivos de la corrida del revisor, los tres con `pi-host-relay-transport-failure`
+(*WebSocket error*) a los **134 s, 172 s y 174 s** de un presupuesto de 2.400.000 ms, con `prepared_reviewers: 0` y `mutation_performed: false`. Se aplicó dos veces la
+recuperación que indica el proveedor (STATUS fresco + binding exacto reofrecido). El linaje `review-1db88022feaea7dd` queda abierto en `reviewing` con su slot sin
+satisfacer y **no se reusa**: el árbol sin commitear sigue siendo el mismo, así que puede reintentarse cuando el relay responda, o revisarse después sobre el rango
+commiteado si se autoriza commitear con desviación declarada.
+
+**Límites declarados de esta unidad:**
+
+1. Sólo un toque cuyo objetivo sea un **clasificador** (clase, abstracta, interfaz, paquete) resalta una tarjeta; un toque sobre una **relación** o un **miembro**
+   (atributo, operación) no resalta nada, porque viven en otros componentes que esta unidad no toca. Está escrito en el código, sobre el emparejamiento en `UmlCanvas`.
+2. **Sin prueba de navegador**: el entorno de pruebas no tiene DOM, así que el resaltado se verifica por markup estático de la tarjeta y por pruebas puras del agrupamiento.
+3. **Comparación contra la línea base no reproducible por el verificador**: la observó el padre (120 → 127 → 128) y el verificador confirmó los totales actuales, pero no
+   pudo correr la revisión previa para comparar test por test.
+4. Los tests de nombre-sólo y color-sólo en la deduplicación **no** están afirmados por separado: el que existe cambia nombre **y** color a la vez, así que esa rama
+   queda cubierta por lectura, no por prueba.
+
+### S3 progreso — C15 implementada y verificada, SIN COMMITEAR (revisión bloqueada por el relay) — 2026-10-02
+
+> **Actualización (2026-10-02): commiteada con DESVIACIÓN DECLARADA, autorizada por el usuario.** Commit `c80b1f1`, que además incluyó
+> `ProjectEditorPage.tsx` porque ese archivo lleva cambios de las dos unidades y no se pueden separar por hunks sin riesgo de romper el
+> estado intermedio (los imports mezclan ambas). C14b quedó en `da3c2d6` sin ese archivo, y es coherente por sí solo porque el prop del
+> resaltado es opcional. **Dos remediaciones abiertas**: revisar los rangos commiteados de C14b y de C15 cuando el relay responda.
+
+**Estado:** código escrito, verificado y **sin commitear** (10 archivos propios, más 3 fixtures y la página compartida). **No se commiteó a propósito**: la regla
+acordada es no commitear sin revisión nativa mientras el relay esté caído. Queda **junto a C14b**, que está en el mismo estado: **dos unidades sin commitear**.
+
+**Medido, y reproducido por el verificador con sus propias corridas:**
+`mvn -o -B -f backend/pom.xml verify` = **278 pruebas, 0 fallos, `BUILD SUCCESS`** (275 de base + 3) · `PresenceChannelTest` = **11 pruebas** ·
+web `npm run lint` 0 · `npm test` **132 pasadas, 4 omitidas** · `npm run build` 0 (223 módulos).
+
+**Qué entrega:** el cursor viaja como parte de `presence.updated` (el catálogo del contrato no tiene otro nombre de evento), con **dos formas de payload deliberadas**:
+cambio de integrantes o de elemento → **snapshot completo**; movimiento de cursor → **sólo el cursor** (`userId`, `x`, `y`), para que hasta 30 actualizaciones por segundo por
+usuario no rebroadcasteen la lista entera. Del lado del cliente, un **limitador de tasa** (intervalo de 50 ms = **20/s**, dentro de la banda que pide RNF-11) con reloj
+inyectable: primera emisión inmediata, como máximo una por intervalo, y **siempre la última posición pendiente**. La medición que el plan pedía está hecha: 100
+actualizaciones sobre 1 s de tiempo inyectado producen **21 emisiones**.
+
+**Cuatro defectos que encontró la verificación independiente, los cuatro corregidos antes de esta foto:**
+
+1. **Un reporte con una sola coordenada borraba el elemento tocado**: `hasCursor` exigía ambas, así que una coordenada suelta caía al camino del target y llamaba
+   `touchUser(..., null)`. Ahora un par incompleto es un reporte inválido: **400 `INVALID_PAYLOAD`** con el sobre de siempre, y no cambia nada. Se prefirió rechazar
+   el reporte malformado antes que adivinar. (El escritor lo había descrito como «sigue el camino legacy», que describía la rama pero **ocultaba el efecto**.)
+2. **Abrir una segunda pestaña podía borrar el cursor visible**: `join` sólo heredaba campos de la misma sesión, así que la sesión nueva nacía con cursor nulo — y el
+   snapshot elige la sesión **más reciente**. Ahora una sesión nueva del mismo usuario se **siembra** desde el estado vivo de ese usuario (cursor y elemento tocado),
+   mientras que una sesión reutilizada por **otro** usuario sigue arrancando limpia: la regla que se arregló con medición en C12 no se toca.
+3. **El cursor estaba tipado como opcional además de nulable** — una concesión del escritor para no tocar fixtures ajenas. El servidor **siempre** manda la clave, así
+   que ahora es **requerido y nulable**, con las fixtures actualizadas y una aserción de tipos que falla si vuelve a ser opcional.
+4. **El transporte era código muerto**: el coalescedor no tenía llamador y la página ignoraba los eventos de cursor. **Eso fue culpa del encargo**, que dejó el cableado
+   para después; ahora la página consume los eventos de cursor de forma incremental, alimenta el coalescedor desde el movimiento del puntero, reporta y cancela al
+   desmontar o cambiar de proyecto.
+
+**Límites declarados de esta unidad:**
+
+1. **El dibujo del cursor remoto no entra acá**: la página guarda el mapa de cursores pero **nadie lo lee todavía** hasta que se dibuje. Es un puente declarado entre
+   dos unidades, no una función a medias.
+2. **Sin prueba de integración de la página**: no hay DOM en el entorno de pruebas, así que el ciclo evento+puntero se verifica por lectura y por tipos, no por prueba.
+3. **El registro no tiene barrido propio de sesiones obsoletas**: la limpieza depende del ciclo de vida del canal (C11/C12b), y sólo puede sembrar desde entradas
+   todavía registradas.
+4. Inherente a la revisión read-only: la comparación del delta de pruebas contra una foto anterior no es reproducible por el verificador; los totales actuales sí
+   (278 backend, 132 web), y los observó él mismo.
+
+**Incidentes de entorno de esta etapa, diagnosticados (importan para retomar):** los montajes del shell pasaron de `/c` a **`/mnt/c`** y de `/d` a **`/mnt/d`** (parecía
+que el proyecto había desaparecido); el `PATH` perdió Java y Docker, así que el JDK y Maven existen pero **no se encontraban** (Maven hay que invocarlo por `cmd.exe` con
+`JAVA_HOME` en formato Windows; Testcontainers sí llega a Docker por *named pipe*); y git perdió la identidad de autor, que se restauró a nivel de repositorio con la
+**misma** que ya usaba la rama. Además, una corrida lanzada con `nohup` **no sobrevive** al fin de la llamada: la suite completa hay que correrla **en primer plano**.
+
+### S3 progreso — C15b cerrada CON DESVIACIÓN DECLARADA (2026-10-02)
+
+**Commit:** `805aa57` — *feat(web): draw the remote cursors on the diagram* (7 archivos, +280/−13).
+
+> **Sin revisión nativa.** El relay del revisor falló **tres intentos consecutivos** (`pi-host-relay-transport-failure`, WebSocket error, 202 s / 152 s / 195 s
+de 2.400.000, `prepared_reviewers: 0`, sin mutación) y se aplicó dos veces la recuperación que indica el proveedor. Se commiteó con **desviación declarada**
+> asumiendo el mismo criterio que el usuario autorizó dos veces antes para esta misma situación; queda señalado para que pueda objetarlo.
+
+**Qué entrega:** cada cursor remoto aparece **donde está en el diagrama**, con el color y el nombre de quien lo mueve, y **panea y hace zoom** con la vista. El
+join de presencia a marcadores es un módulo puro (probado sin navegador) y el overlay tiene `pointer-events: none`, así que **no intercepta clics ni arrastres**:
+un clic sobre una clase tapada por un cursor sigue seleccionándola.
+
+**Dos defectos de coordenadas corregidos acá, y uno era introducido por C15 (ya commiteada):**
+
+1. **El espacio de coordenadas era el de la ventana**, no el del diagrama. Dos clientes difieren en tamaño de ventana, scroll y ancho de panel, así que el cursor del
+otro habría caído en el lugar equivocado. Ahora se captura dentro del lienzo con la transformación de React Flow.
+2. **`screenToFlowPosition` respetaba el `snapToGrid` de 24 unidades del lienzo**, así que la posición reportada saltaba en escalones. La grilla se queda (existe para
+   arrastrar nodos) y la conversión del cursor se saltea el ajuste.
+3. **La colocación restaba el origen *transformado***, y eso cancelaba justo la traslación de la vista: al panear, el cursor remoto se quedaba pegado al panel en vez
+de seguir su lugar. La posición local respecto del overlay es `punto * zoom + (viewport.x, viewport.y)`, que es la fórmula que quedó y la que el verificador confirmó
+contra el código de la librería (`screenToFlowPosition` resta el origen del root; la inversa multiplica por el zoom y suma la traslación).
+
+**Límite declarado:** **ninguna de las dos correcciones de coordenadas se puede cubrir con una prueba automatizada en este entorno** —necesitan geometría real de
+layout y no hay DOM—, así que se verificaron por lectura, por los tres comandos y por la verificación independiente contra la fuente de React Flow. El caso manual
+que las mostraría funcionando es **panear y después mover el cursor remoto**. Tampoco hay prueba de navegador para el overlay.
 
 ### S4 — Chat persistente del diagrama
 
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
-| C16 | Migración `V9__diagram_messages.sql`: tabla `diagram_message` (nueva, no está en el físico) con índices por modelo y tiempo | Migración y prueba de esquema |
+| C16 | Migración `V9__diagram_messages.sql`: tabla `diagram_message` (nueva, no está en el físico) con índices por modelo y tiempo | Migración aplicada contra PostgreSQL real (Flyway 1–9, PostgreSQL 16.15) y prueba de esquema en verde (9 pruebas). **Cerrada CON DESVIACIÓN DECLARADA** en `3c777e5` (ver *S4 progreso — C16*) |
 | C17 | `ChatService` y `GET/POST /projects/{id}/messages`, con autorización, saneado y evento `message.posted` | Integración: publicar, listar ordenado, y rechazo sin rol |
 | C18 | Web: panel de chat con historial, autor y hora, y recepción en vivo | Pruebas de componente y lint |
+
+### S4 progreso — C16 cerrada CON DESVIACIÓN DECLARADA (2026-10-03)
+
+**Commit:** `3c777e5` — *feat(backend): persist the diagram chat* (3 archivos, +27/−1).
+
+> **Sin revisión nativa.** Tres fallos consecutivos de transporte del relay (`pi-host-relay-transport-failure`, WebSocket error, 110 s / 134 s / 167 s de
+> 2.400.000, sin mutación) con la recuperación indicada aplicada dos veces. Se commiteó con **desviación declarada**, mismo criterio que el usuario ya
+> autorizó para esta situación; queda señalado para que pueda objetarlo.
+
+**Qué entrega:** la tabla `diagram_message` ligada al **modelo** (la API será por proyecto porque hoy un proyecto tiene un modelo y `uml_project` no existe:
+`uml_model.project_id` es `UNIQUE`), con autor **restringido** al borrar y cascada por modelo, y un índice `(model_id, created_at, message_id)` — el tiempo es
+lo que lee el historial y el id desempata dos mensajes del mismo instante. El comentario de la tabla declara el invariante: **revocar el acceso no borra lo que
+se escribió mientras se tenía**. Sin enums, que importa porque dos de las compuertas del test son sobre columnas y etiquetas de enum.
+
+**Y arregla una mentira del documento de autoridad:** `docs/puds/datos/02-esquema-fisico.sql` no declaraba esta tabla, así que la migración estaba creando algo
+que el físico nunca mencionaba. Ahora está declarada ahí, con su índice, en la misma forma que las tablas vecinas y **sin tocar nada más** — ese archivo es punto
+de fusión con la sesión de XMI, que le agrega dos tablas propias.
+
+**Medido, y reproducido por el verificador con sus propias corridas:** `mvn -o -B -f backend/pom.xml test -Dtest=SchemaOwnershipTest` = **9 pruebas, 0 fallos**
+(la corrida prueba que Flyway aplica 1–9 contra PostgreSQL **16.15** real) · `mvn -o -B -f backend/pom.xml verify` = **278 pruebas, 0 fallos**.
+
+**Corrección de documentación aparte (`c7e17fc`):** el contrato congelado §S6b afirmaba que `diagram_message` estaba en `TABLES_RESERVED_FOR_LATER_TASKS` y que
+había que sacarla. **Medido dos veces —esta sesión y un verificador independiente— no está ahí** (la lista tiene `model_conflict`, `name_collision`, `ai_proposal`,
+`detected_element`, `xmi_exchange`, `xmi_loss_item`, `audit_log`); `invitation` salió al migrarse en C8 y `diagram_message` nunca estuvo. Cumplir en falso esa
+instrucción habría significado «sacar» algo que no existía. Las que sí están y deben salir son las dos de la sesión de XMI.
+
+**Límites declarados de esta unidad:**
+
+1. **No hay prueba nueva**: la tabla queda forzada por las compuertas **exactas** que ya existían (`MAPPED_COLUMNS`, `SUPPORT_INDEXES`, la lista de versiones), así
+   que el total de la suite no cambia. Es el diseño, no un descuido — pero conviene saberlo: **el verificador confirmó que no hay ningún método nuevo**.
+2. Las compuertas comparan **conjuntos de nombres**, no el tipo físico de las columnas ni el **orden** de las columnas del índice: eso lo declara la migración y lo
+   verificó la lectura del verificador, no una aserción.
+3. **La fusión con la sesión de XMI no está probada**: este candidato no crea `V10` ni toca `xmi_exchange`/`xmi_loss_item`, y **medido: no existe ningún `V10`** en
+   fuentes ni en `target` (la rareza «validated 10 migrations» que vio el verificador no corresponde a ningún archivo), pero la unión real contra los cambios de la
+   otra sesión no se pudo verificar acá.
 
 ### S5 — Bloqueo de exportación con aviso y reclamo
 
@@ -178,12 +705,35 @@ depende de estos nombres **sin poder escribirlos**; el dueño es esta sesión.
 **`V9`** (chat); la sesión de XMI toma **`V10`** para `xmi_exchange` y `xmi_loss_item`. Dos archivos con el mismo
 número de versión no se pueden fusionar y Flyway los rechaza.
 
-**Archivos compartidos que ambos vamos a tocar** (conflicto mecánico, no de diseño, y se resuelve tomando lo de
-los dos): `backend/src/test/java/com/diagramador/SchemaOwnershipTest.java` —sus tablas de XMI están hoy en
-`TABLES_RESERVED_FOR_LATER_TASKS`, que afirma que **no existen**, así que migrarlas exige sacarlas de ahí y
-agregarlas a `MAPPED_COLUMNS` con sus columnas exactas y sus índices— y
-`docs/puds/datos/02-esquema-fisico.sql`. También `web/src/pages/ProjectEditorPage.tsx`, que ya recibe el botón de
-la sesión de XMI además de los paneles de C14, C18 y C21.
+**Archivos compartidos** (conflicto mecánico, no de diseño, y se resuelve tomando lo de los dos):
+
+- `backend/src/test/java/com/diagramador/SchemaOwnershipTest.java`. La lista de versiones de Flyway esperada conviene
+  que termine en **1..10**: esta sesión suma `8` (invitaciones) y `9` (chat), la sesión de XMI suma `10`. **Medido:
+  esa línea no es una compuerta** —usa `contains(...)`, que es subconjunto, así que sólo falla si *falta* una versión
+  y nunca porque sobre— así que agregarla es higiene y no coordina nada. Lo que **sí** es compuerta exacta es la lista
+  de tablas: las **cuatro** nuevas tienen que quedar en `MAPPED_COLUMNS` con sus columnas exactas y en
+  `SUPPORT_INDEXES`: `invitation` (más `diagram_message`) de esta sesión, `xmi_exchange` y `xmi_loss_item` de la otra.
+  **Medido dos veces —por esta sesión y por un verificador independiente— ese conjunto NO contiene `invitation` ni
+  `diagram_message`**: hoy lista `model_conflict`, `name_collision`, `ai_proposal`, `detected_element`, `xmi_exchange`,
+  `xmi_loss_item` y `audit_log`. Así que sacarlas de ahí no era trabajo pendiente de esta sesión: `invitation` salió al
+  migrarse en C8 y `diagram_message` **nunca estuvo** (C16 lo verificó y no tocó la lista). Las que **sí** están, y tienen
+  que salir al migrarse, son las dos de la sesión de XMI: para `xmi_exchange` y `xmi_loss_item` sí
+  `doesNotContainAnyElementsOf` rechaza la suite si se migran sin sacarlas. Para las dos de XMI el esquema
+  autoritativo declara **un solo** índice de soporte, `idx_exchange_model` sobre `xmi_exchange(model_id, direction)`;
+  `xmi_loss_item` no tiene ninguno y declararle uno hace fallar el test exacto. Y hay **dos compuertas más** en ese archivo,
+  descubiertas por la sesión de XMI al leer el resto: `nativeEnumColumnsUseTheirPostgresType` y
+  `javaEnumsAndPostgresEnumsHaveTheSameLabels`. Toda columna enum nueva y todo tipo enum nuevo piden una línea en cada
+  una. Esta sesión ya las escribió para `invitation.role`, `invitation.status` e `invitation_status` (cuatro etiquetas);
+  la sesión de XMI sumará las suyas. `diagram_message` (V9) no añade ningún enum. Aviso para quien lea este archivo más
+  adelante: un `UNIQUE` declarado como *constraint* no aparece en el recuento de índices de soporte, pero un
+  `CREATE UNIQUE INDEX` **sí**, así que un índice único parcial tiene que estar en `SUPPORT_INDEXES`.
+- `docs/puds/datos/02-esquema-fisico.sql`, por las mismas cuatro tablas.
+- `web/src/pages/ProjectEditorPage.tsx`, que ya recibe el botón de la sesión de XMI además de los paneles de C14,
+  C18 y C21.
+- `backend/src/main/java/com/diagramador/command/CommandService.java` — **sólo esta sesión lo toca**, en C13, para
+  publicar `operation.applied`. La sesión de XMI **no** necesita tocarlo: `CommandService` construye su mapa de
+  handlers desde una `List<CommandHandler>` inyectada por Spring, así que un `@Component` nuevo que implemente
+  `CommandHandler` con su `type()` se auto-registra. Se lo dije para que no reservara un conflicto que no tiene.
 
 **Concesión de edición (la escribe esta sesión en `com.diagramador.collaboration`):**
 
@@ -230,6 +780,8 @@ exportación XMI no está protegida contra una edición en curso.
 | **SLO de RNF-11 sin medir** | Se miden latencias de propagación y se registran p50/p95, como pide el requisito, pero sobre esta máquina y sin simulador de carga |
 | **Round-trip XMI sin verificar** | GAP-07 sigue abierto. La exportación se mide contra el fixture, no contra EA en vivo |
 | **Deriva del esquema físico** | Las migraciones usan `V7`, `V8` y `V9` (Flyway exige una versión única por archivo). Lo que el físico no tenía —usuario/clave, tabla de sesión, rol de invitación y chat— se escribe también en `docs/puds/datos/02-esquema-fisico.sql` para que la autoridad no quede mintiendo |
+| **Cifras ajenas que el acta va a citar** | El intercambio XMI lo mide otra sesión, y su escritor ya se equivocó una vez generalizando desde una muestra truncada (afirmó que el `Path` de los conectores estaba vacío en todas; son 8, 7 vacías y una con `622:-260$`). El acta cita esas cifras **atribuyéndolas a quien las midió**, y marca aparte las que esta sesión comprobó por su cuenta. No se adopta ninguna medición ajena sin repetirla. Verificadas por esta sesión: las 8 apariciones de `Path=` viven en el atributo `geometry` de la colocación (7 vacías, una con `622:-260$`) y `Mode`, `EOID` y `SOID` viven en `style`, con cero apariciones en `geometry` |
+| **Trabajo diferido que dejó la revisión de C8+C9** | La revisión nativa de la unidad de invitaciones (`review-c61b0185ecca2bea`) cerró **aprobada** y dejó un hallazgo **no bloqueante**: `R3-001`, lente de fiabilidad, en `api/InvitationApiService.java:105-134` —el método `acceptInvitation`—, severidad `WARNING`, disposición informativa. El proveedor fue explícito: ninguno abre corrección, ninguna reabre la revisión y no se ofrece transición de corrección para este candidato, así que **no se re-revisa**. El sobre expuso la ubicación pero **no el texto del hallazgo**, y no se puede recuperar: la autoridad quedó quemada. No se inventa su contenido. Lectura propia de esa región, **atribuida a esta sesión y no al revisor**: `acceptInvitation` decide con `status == PENDING` y después escribe, sin bloquear la fila, así que dos aceptaciones simultáneas de la misma invitación pueden pasar las dos la comprobación y chocar contra la clave primaria de `project_member`, devolviendo un 500 en lugar del `409` que el contrato promete. Queda como candidato para trabajo posterior, con el texto del revisor pendiente de recuperar |
 | **Clientes que no son usuarios** | El operador de despliegue y los tres arneses no mandan credenciales. S1b (C27, C28) los cubre; hasta que esas dos tareas cierren, el corte verificado del Incremento 2 **no se puede volver a correr** |
 | **`/deployments/**` sin alcance por proyecto** | Cualquier usuario autenticado puede detener el despliegue de otro. Lo cierra C5 en las guardas de despliegue; se declara explícitamente para que no se pierda |
 | **Test inestable por puerto** | `DomainProjectEmitterTest` elige un puerto libre y de vez en cuando choca (`Port 57054 was already in use`), abortando la clase en 1 de sus 11 tests: una corrida completa da 220 y esa da 210. Es previo a este incremento y se declara; la reparación es una tarea propia |

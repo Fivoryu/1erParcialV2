@@ -7,6 +7,7 @@ import com.diagramador.domain.DeploymentState;
 import com.diagramador.domain.ExchangeDirection;
 import com.diagramador.domain.ExchangeStatus;
 import com.diagramador.domain.GenerationState;
+import com.diagramador.domain.InvitationStatus;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.ProjectMemberRole;
@@ -43,7 +44,10 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("project", Set.of("project_id", "owner_user_id", "name", "description", "archived_at",
                     "created_at", "updated_at")),
             Map.entry("project_member", Set.of("project_id", "user_id", "role", "status", "joined_at", "updated_at")),
+            Map.entry("invitation", Set.of("invitation_id", "project_id", "invited_by_user_id", "invitee_user_id",
+                    "role", "status", "created_at", "updated_at")),
             Map.entry("uml_model", Set.of("model_id", "project_id", "name", "current_revision", "created_at")),
+            Map.entry("diagram_message", Set.of("message_id", "model_id", "author_user_id", "body", "created_at")),
             Map.entry("model_version", Set.of("version_id", "model_id", "revision", "parent_revision", "state_hash",
                     "validation_state", "created_by_user_id", "created_at")),
             Map.entry("model_command", Set.of("command_id", "model_id", "author_user_id", "base_revision",
@@ -96,7 +100,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
                     "created_at")));
 
     private static final Set<String> TABLES_RESERVED_FOR_LATER_TASKS = Set.of(
-            "invitation", "model_conflict",
+            "model_conflict",
             "name_collision", "ai_proposal", "detected_element", "audit_log");
 
     /** Support indexes declared by the physical schema authority for every migrated table. */
@@ -105,7 +109,9 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("user_session", Set.of("idx_session_user")),
             Map.entry("project", Set.of("idx_project_owner")),
             Map.entry("project_member", Set.of("idx_member_user")),
+            Map.entry("invitation", Set.of("idx_invitation_project", "uq_invitation_pending_project_invitee")),
             Map.entry("uml_model", Set.of()),
+            Map.entry("diagram_message", Set.of("idx_diagram_message_model")),
             Map.entry("model_version", Set.of("idx_version_model_rev")),
             Map.entry("model_command", Set.of("idx_command_model_rev", "idx_command_author")),
             Map.entry("cascade_group", Set.of()),
@@ -149,7 +155,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2", "3", "4", "5", "6", "7", "10");
+                .contains("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
     }
 
     @Test
@@ -184,6 +190,8 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertColumnType("relationship_end", "multiplicity", "multiplicity_kind");
         assertColumnType("relationship_end", "navigability", "navigation_kind");
         assertColumnType("project_member", "role", "project_member_role");
+        assertColumnType("invitation", "role", "project_member_role");
+        assertColumnType("invitation", "status", "invitation_status");
         assertColumnType("uml_relationship", "kind", "relationship_kind");
         assertColumnType("uml_constraint", "owner_type", "target_type");
         assertColumnType("uml_constraint", "severity", "severity_kind");
@@ -205,6 +213,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertEnumLabels("multiplicity_kind", MultiplicityKind.class, 5);
         assertEnumLabels("navigation_kind", NavigationKind.class, 3);
         assertEnumLabels("project_member_role", ProjectMemberRole.class, 3);
+        assertEnumLabels("invitation_status", InvitationStatus.class, 4);
         assertEnumLabels("relationship_kind", RelationshipKind.class, 6);
         assertEnumLabels("severity_kind", SeverityKind.class, 3);
         assertEnumLabels("target_type", TargetType.class, 8);

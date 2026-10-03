@@ -3,12 +3,14 @@ import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflo
 import type { ClassifierResource } from '../api/types';
 import { formatAttribute, formatOperation, operationIsStatic, operationNameIsAbstract, orderedAttributes, orderedOperations } from './uml-format';
 import type { CanvasSelection } from './selection';
+import type { TouchedBy } from './touch-highlight';
 
 export interface ClassNodeData extends Record<string, unknown> {
   classifier: ClassifierResource;
   onSelectElement?: (selection: CanvasSelection) => void;
   onRenameClassifier?: (classifierId: string, name: string) => void;
   onRenameMember?: (kind: 'attribute' | 'operation', classifierId: string, elementId: string, name: string) => void;
+  touchedBy?: TouchedBy[];
   onResizeGeometry?: (
     classifierId: string,
     rectangle: { x: number; y: number; width: number; height: number },
@@ -119,9 +121,31 @@ export interface UmlClassCardProps {
   onSelectElement?: (selection: CanvasSelection) => void;
   onRenameClassifier?: (classifierId: string, name: string) => void;
   onRenameMember?: (kind: 'attribute' | 'operation', classifierId: string, elementId: string, name: string) => void;
+  touchedBy?: TouchedBy[];
 }
 
-export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, onRenameMember }: UmlClassCardProps) {
+function TouchHighlights({ touchedBy }: { touchedBy?: TouchedBy[] | undefined }) {
+  if (!touchedBy?.length) {
+    return null;
+  }
+
+  return (
+    <div className="uml-touch-highlights" aria-label="People touching this element">
+      {touchedBy.map((toucher) => (
+        <span className="uml-touch-chip" key={toucher.userId}>
+          <span
+            aria-hidden="true"
+            className="uml-touch-chip-swatch"
+            style={{ backgroundColor: toucher.color }}
+          />
+          <span className="uml-touch-chip-name">{toucher.displayName}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, onRenameMember, touchedBy }: UmlClassCardProps) {
   const attributes = orderedAttributes(classifier);
   const operations = orderedOperations(classifier);
 
@@ -131,6 +155,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
         {/* Namespace is semantic only: members keep independent canvas positions; geometric containment and grouped dragging are not implemented. */}
         <div className="uml-package-tab" aria-hidden="true" />
         <div className="uml-package-name">
+          <TouchHighlights touchedBy={touchedBy} />
           <EditableText
             ariaLabel="Edit package name"
             className="uml-editable-label"
@@ -168,6 +193,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
             />
           )}
         </div>
+        <TouchHighlights touchedBy={touchedBy} />
       </div>
 
       {attributes.length > 0 && (
@@ -289,6 +315,7 @@ export function UmlClassNode({ data, selected }: NodeProps<ClassFlowNode>) {
         {...(data.onRenameClassifier ? { onRenameClassifier: data.onRenameClassifier } : {})}
         {...(data.onRenameMember ? { onRenameMember: data.onRenameMember } : {})}
         {...(data.onSelectElement ? { onSelectElement: data.onSelectElement } : {})}
+        {...(data.touchedBy ? { touchedBy: data.touchedBy } : {})}
       />
     </div>
   );

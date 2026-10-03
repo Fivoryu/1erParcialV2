@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildOperationEnvelope, type UuidFactory } from './envelope';
 import { ApiTransportError, createApiClient } from './client';
-import type { ModelResource, OperationEnvelope } from './types';
+import { clearSession, loadSession, saveSession, SESSION_STORAGE_KEY } from './session';
+import type { ModelResource, OperationEnvelope, UserResource } from './types';
 import recordedModelFixture from './fixtures/model-response.json';
 
 // Captured from GET /projects/{id}/model during the Increment 1 acceptance run. The `versionId`
@@ -10,6 +11,42 @@ import recordedModelFixture from './fixtures/model-response.json';
 const recordedModel: ModelResource = recordedModelFixture;
 const projectId = '22222222-2222-4222-8222-222222222222';
 const modelId = '33333333-3333-4333-8333-333333333333';
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>();
+
+  get length(): number {
+    return this.values.size;
+  }
+
+  clear(): void {
+    this.values.clear();
+  }
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+
+  key(index: number): string | null {
+    return [...this.values.keys()][index] ?? null;
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
+  }
+}
+
+beforeEach(() => {
+  vi.stubGlobal('localStorage', new MemoryStorage());
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function sequenceUuidFactory(...values: string[]): UuidFactory {
   let index = 0;
@@ -166,6 +203,96 @@ describe('typed API client', () => {
   });
 });
 
+describe('project member and invitation API client', () => {
+  it('calls all member and invitation routes with contract methods, bodies, and the session bearer', async () => {
+    const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const invitationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => (
+      String(input).endsWith('/presence')
+        ? new Response(null, { status: 204 })
+        : new Response('[]', { status: 200 })
+    ));
+    const client = createApiClient('https://diagram.test', fetcher);
+    saveSession({
+      token: 'opaque-session-token',
+      userId,
+      username: 'diagram.user',
+      displayName: 'Diagram User',
+      expiresAt: '2026-10-01T12:00:00Z',
+    });
+
+    await client.listProjectMembers(projectId);
+    await client.listProjectInvitations(projectId);
+    await client.createProjectInvitation(projectId, { username: 'new.member', role: 'EDITOR' });
+    await client.acceptProjectInvitation(projectId, invitationId);
+    await client.revokeProjectInvitation(projectId, invitationId);
+    await client.updateProjectMemberRole(projectId, userId, { role: 'VIEWER' });
+    await client.removeProjectMember(projectId, userId);
+    await client.listMyInvitations();
+    const touchResult = await client.reportProjectPresenceTouch(projectId, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+    await client.reportProjectPresenceTouch(projectId, null);
+    const cursorResult = await client.reportProjectCursorPosition(projectId, 123.5, 456.25);
+
+    expect(touchResult).toBeUndefined();
+    expect(cursorResult).toBeUndefined();
+    const calls = fetcher.mock.calls;
+    expect(calls.map(([input]) => String(input))).toEqual([
+      `https://diagram.test/projects/${projectId}/members`,
+      `https://diagram.test/projects/${projectId}/invitations`,
+      `https://diagram.test/projects/${projectId}/invitations`,
+      `https://diagram.test/projects/${projectId}/invitations/${invitationId}/accept`,
+      `https://diagram.test/projects/${projectId}/invitations/${invitationId}/revoke`,
+      `https://diagram.test/projects/${projectId}/members/${userId}`,
+      `https://diagram.test/projects/${projectId}/members/${userId}`,
+      'https://diagram.test/invitations',
+      `https://diagram.test/projects/${projectId}/presence`,
+      `https://diagram.test/projects/${projectId}/presence`,
+      `https://diagram.test/projects/${projectId}/presence`,
+    ]);
+    expect(calls.map(([, init]) => init?.method)).toEqual([
+      undefined,
+      undefined,
+      'POST',
+      'POST',
+      'POST',
+      'PATCH',
+      'DELETE',
+      undefined,
+      'POST',
+      'POST',
+      'POST',
+    ]);
+    expect(JSON.parse(String(calls[2]?.[1]?.body))).toEqual({ username: 'new.member', role: 'EDITOR' });
+    expect(calls[3]?.[1]?.body).toBeUndefined();
+    expect(calls[4]?.[1]?.body).toBeUndefined();
+    expect(JSON.parse(String(calls[5]?.[1]?.body))).toEqual({ role: 'VIEWER' });
+    expect(calls[6]?.[1]?.body).toBeUndefined();
+    expect(JSON.parse(String(calls[8]?.[1]?.body))).toEqual({
+      targetElementId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    });
+    expect(JSON.parse(String(calls[9]?.[1]?.body))).toEqual({ targetElementId: null });
+    expect(JSON.parse(String(calls[10]?.[1]?.body))).toEqual({ cursorX: 123.5, cursorY: 456.25 });
+    expect(new Headers(calls[8]?.[1]?.headers).get('Content-Type')).toBe('application/json');
+    expect(new Headers(calls[9]?.[1]?.headers).get('Content-Type')).toBe('application/json');
+    expect(new Headers(calls[10]?.[1]?.headers).get('Content-Type')).toBe('application/json');
+    for (const [, init] of calls) {
+      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
+    }
+  });
+
+  it('requires the presence endpoint to return 204 No Content', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }));
+    const client = createApiClient('https://diagram.test', fetcher);
+
+    await expect(client.reportProjectPresenceTouch(projectId, null)).rejects.toMatchObject({
+      kind: 'transport',
+      code: 'HTTP_ERROR',
+      status: 200,
+    });
+  });
+});
+
 const liveBaseUrl = import.meta.env.VITE_API_BASE_URL;
 describe.skipIf(!liveBaseUrl)('live backend client contract', () => {
   it('creates, reads, and commands a project through the typed client', async () => {
@@ -221,5 +348,145 @@ describe.skipIf(!liveBaseUrl)('live backend client contract', () => {
     }
     expect(duplicate.diagnostics[0]?.code).toBe('PRECONDITION_FAILED');
     expect(commandStatuses).toEqual([200, 200]);
+  });
+});
+
+describe('session-aware API client', () => {
+  const user: UserResource = {
+    id: '88888888-8888-4888-8888-888888888888',
+    username: 'diagram.user',
+    displayName: 'Diagram User',
+    email: 'diagram@example.test',
+  };
+  const loginResponse = {
+    token: 'opaque-session-token',
+    expiresAt: '2026-10-01T12:00:00Z',
+    user,
+  };
+
+  it('attaches the bearer when a session exists and omits it otherwise', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => new Response('[]', { status: 200 }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    saveSession({
+      token: loginResponse.token,
+      userId: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      expiresAt: loginResponse.expiresAt,
+    });
+
+    await client.listProjects();
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
+
+    clearSession();
+    await client.listProjects();
+    expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).get('Authorization')).toBeNull();
+  });
+
+  it('returns a login token without storing a session itself', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(loginResponse), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const client = createApiClient('https://diagram.test', fetcher);
+
+    const result = await client.login({ username: user.username, password: 'correct-horse' });
+
+    expect(result).toEqual(loginResponse);
+    expect(globalThis.localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
+    expect(fetcher).toHaveBeenCalledWith('https://diagram.test/auth/login', expect.any(Object));
+  });
+
+  it('clears the session after a 401 from a protected endpoint', async () => {
+    saveSession({
+      token: loginResponse.token,
+      userId: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      expiresAt: loginResponse.expiresAt,
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: 'UNAUTHENTICATED',
+      message: 'A valid session is required.',
+      details: [],
+      operationId: null,
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } }));
+    const client = createApiClient('https://diagram.test', fetcher);
+
+    await expect(client.me()).rejects.toMatchObject({ code: 'UNAUTHENTICATED', status: 401 });
+
+    expect(loadSession()).toBeNull();
+  });
+
+  it('calls each auth endpoint with its contract path and request body', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(user), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(loginResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(user), { status: 200 }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    saveSession({
+      token: loginResponse.token,
+      userId: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      expiresAt: loginResponse.expiresAt,
+    });
+    const registerRequest = {
+      username: user.username,
+      password: 'correct-horse',
+      displayName: user.displayName,
+      email: 'diagram@example.test',
+    };
+    const loginRequest = { username: user.username, password: 'correct-horse' };
+
+    await client.register(registerRequest);
+    await client.login(loginRequest);
+    await client.logout();
+    await client.me();
+
+    expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+      'https://diagram.test/auth/register',
+      'https://diagram.test/auth/login',
+      'https://diagram.test/auth/logout',
+      'https://diagram.test/auth/me',
+    ]);
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual(registerRequest);
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual(loginRequest);
+    expect(fetcher.mock.calls[2]?.[1]?.method).toBe('POST');
+    expect(fetcher.mock.calls[2]?.[1]?.body).toBeUndefined();
+    expect(fetcher.mock.calls[3]?.[1]?.body).toBeUndefined();
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Authorization')).toBeNull();
+    expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).get('Authorization')).toBeNull();
+    expect(new Headers(fetcher.mock.calls[2]?.[1]?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
+    expect(new Headers(fetcher.mock.calls[3]?.[1]?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
+  });
+
+  it('does not clear an existing session for login or registration 401 responses', async () => {
+    saveSession({
+      token: loginResponse.token,
+      userId: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      expiresAt: loginResponse.expiresAt,
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: 'INVALID_CREDENTIALS',
+      message: 'The username or password is incorrect.',
+      details: [],
+      operationId: null,
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } }));
+    const client = createApiClient('https://diagram.test', fetcher);
+
+    await expect(client.login({ username: user.username, password: 'wrong-password' })).rejects.toBeInstanceOf(ApiTransportError);
+    await expect(client.register({
+      username: user.username,
+      password: 'correct-horse',
+      displayName: user.displayName,
+    })).rejects.toBeInstanceOf(ApiTransportError);
+
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Authorization')).toBeNull();
+    expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).get('Authorization')).toBeNull();
+    expect(loadSession()).not.toBeNull();
   });
 });

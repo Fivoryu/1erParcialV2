@@ -4,22 +4,31 @@ import type {
   CommandResult,
   CreateGenerationRequest,
   CreateGenerationTargetRequest,
+  CreateInvitationRequest,
   CreateProjectRequest,
   DeploymentResource,
   GenerationArchiveDownload,
   GenerationProfileResource,
   GenerationRunResource,
   GenerationTargetResource,
+  InvitationResource,
+  MemberResource,
   ModelResource,
   OperationEnvelope,
   OperationOutcomeResource,
   ProjectResource,
+  RegisterRequest,
+  LoginRequest,
+  LoginResponse,
+  UpdateMemberRoleRequest,
+  UserResource,
   Uuid,
   XmiImportRequest,
   XmiImportResource,
   XmiPreviewRequest,
   XmiPreviewResource,
 } from './types';
+import { clearSession, getAuthorizationHeaderValue } from './session';
 
 export class ApiTransportError extends Error {
   readonly kind = 'transport';
@@ -83,12 +92,30 @@ function classifyCommandResult(result: CommandResult): CommandOutcome {
 }
 
 export interface ApiClient {
+  register(request: RegisterRequest): Promise<UserResource>;
+  login(request: LoginRequest): Promise<LoginResponse>;
+  logout(): Promise<void>;
+  me(): Promise<UserResource>;
   createProject(request: CreateProjectRequest): Promise<ProjectResource>;
   listProjects(): Promise<ProjectResource[]>;
   getProject(projectId: Uuid): Promise<ProjectResource>;
+  listProjectMembers(projectId: Uuid): Promise<MemberResource[]>;
+  listProjectInvitations(projectId: Uuid): Promise<InvitationResource[]>;
+  createProjectInvitation(projectId: Uuid, request: CreateInvitationRequest): Promise<InvitationResource>;
+  acceptProjectInvitation(projectId: Uuid, invitationId: Uuid): Promise<MemberResource>;
+  revokeProjectInvitation(projectId: Uuid, invitationId: Uuid): Promise<InvitationResource>;
+  updateProjectMemberRole(
+    projectId: Uuid,
+    userId: Uuid,
+    request: UpdateMemberRoleRequest,
+  ): Promise<MemberResource>;
+  removeProjectMember(projectId: Uuid, userId: Uuid): Promise<MemberResource>;
+  listMyInvitations(): Promise<InvitationResource[]>;
   getModel(projectId: Uuid): Promise<ModelResource>;
   previewXmi(projectId: Uuid, request: XmiPreviewRequest): Promise<XmiPreviewResource>;
   importXmi(projectId: Uuid, request: XmiImportRequest): Promise<XmiImportResource>;
+  reportProjectPresenceTouch(projectId: Uuid, targetElementId: Uuid | null): Promise<void>;
+  reportProjectCursorPosition(projectId: Uuid, x: number, y: number): Promise<void>;
   executeCommand(projectId: Uuid, envelope: OperationEnvelope): Promise<CommandOutcome>;
   listGenerationTargets(projectId: Uuid): Promise<GenerationTargetResource[]>;
   createGenerationTarget(
@@ -119,14 +146,35 @@ export function createApiClient(
 ): ApiClient {
   const base = baseUrl.replace(/\/+$/, '');
 
+  function authorizedInit(path: string, init?: RequestInit): RequestInit {
+    const headers = new Headers(init?.headers);
+    if (path === '/auth/login' || path === '/auth/register') {
+      headers.delete('Authorization');
+    } else {
+      const authorization = getAuthorizationHeaderValue();
+      if (authorization) {
+        headers.set('Authorization', authorization);
+      }
+    }
+    return { ...init, headers };
+  }
+
+  function clearSessionOnUnauthorized(path: string, response: Response): void {
+    if (response.status === 401 && path !== '/auth/login' && path !== '/auth/register') {
+      clearSession();
+    }
+  }
+
   async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     let response: Response;
     try {
-      response = await fetcher(`${base}${path}`, init);
+      response = await fetcher(`${base}${path}`, authorizedInit(path, init));
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
       throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
     }
+
+    clearSessionOnUnauthorized(path, response);
 
     let body: unknown = null;
     try {
@@ -142,6 +190,24 @@ export function createApiClient(
     return body as T;
   }
 
+  async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetcher(`${base}${path}`, authorizedInit(path, init));
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
+      throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
+    }
+
+    clearSessionOnUnauthorized(path, response);
+    if (response.status === 204) {
+      return;
+    }
+
+    const body = await response.json().catch(() => null) as unknown;
+    throw transportErrorFromBody(body, response.status);
+  }
+
   function postJson<T>(path: string, payload: unknown): Promise<T> {
     return requestJson<T>(path, {
       method: 'POST',
@@ -154,12 +220,13 @@ export function createApiClient(
     const path = `/projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(runId)}/artifacts`;
     let response: Response;
     try {
-      response = await fetcher(`${base}${path}`, { method: 'GET' });
+      response = await fetcher(`${base}${path}`, authorizedInit(path, { method: 'GET' }));
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
       throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
     }
 
+    clearSessionOnUnauthorized(path, response);
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       throw transportErrorFromBody(body, response.status);
@@ -186,6 +253,18 @@ export function createApiClient(
   }
 
   return {
+    register(request) {
+      return postJson<UserResource>('/auth/register', request);
+    },
+    login(request) {
+      return postJson<LoginResponse>('/auth/login', request);
+    },
+    async logout() {
+      await requestJson<unknown>('/auth/logout', { method: 'POST' });
+    },
+    me() {
+      return requestJson<UserResource>('/auth/me');
+    },
     createProject(request) {
       return postJson<ProjectResource>('/projects', request);
     },
@@ -194,6 +273,47 @@ export function createApiClient(
     },
     getProject(projectId) {
       return requestJson<ProjectResource>(`/projects/${encodeURIComponent(projectId)}`);
+    },
+    listProjectMembers(projectId) {
+      return requestJson<MemberResource[]>(`/projects/${encodeURIComponent(projectId)}/members`);
+    },
+    listProjectInvitations(projectId) {
+      return requestJson<InvitationResource[]>(`/projects/${encodeURIComponent(projectId)}/invitations`);
+    },
+    createProjectInvitation(projectId, request) {
+      return postJson<InvitationResource>(
+        `/projects/${encodeURIComponent(projectId)}/invitations`,
+        request,
+      );
+    },
+    acceptProjectInvitation(projectId, invitationId) {
+      return requestJson<MemberResource>(
+        `/projects/${encodeURIComponent(projectId)}/invitations/${encodeURIComponent(invitationId)}/accept`,
+        { method: 'POST' },
+      );
+    },
+    revokeProjectInvitation(projectId, invitationId) {
+      return requestJson<InvitationResource>(
+        `/projects/${encodeURIComponent(projectId)}/invitations/${encodeURIComponent(invitationId)}/revoke`,
+        { method: 'POST' },
+      );
+    },
+    updateProjectMemberRole(projectId, userId, request) {
+      const path = `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`;
+      return requestJson<MemberResource>(path, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+    },
+    removeProjectMember(projectId, userId) {
+      return requestJson<MemberResource>(
+        `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+        { method: 'DELETE' },
+      );
+    },
+    listMyInvitations() {
+      return requestJson<InvitationResource[]>('/invitations');
     },
     getModel(projectId) {
       return requestJson<ModelResource>(`/projects/${encodeURIComponent(projectId)}/model`);
@@ -208,6 +328,26 @@ export function createApiClient(
       return postJson<XmiImportResource>(
         `/projects/${encodeURIComponent(projectId)}/xmi/import`,
         request,
+      );
+    },
+    reportProjectPresenceTouch(projectId, targetElementId) {
+      return requestNoContent(
+        `/projects/${encodeURIComponent(projectId)}/presence`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetElementId }),
+        },
+      );
+    },
+    reportProjectCursorPosition(projectId, x, y) {
+      return requestNoContent(
+        `/projects/${encodeURIComponent(projectId)}/presence`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cursorX: x, cursorY: y }),
+        },
       );
     },
     async executeCommand(projectId, envelope) {

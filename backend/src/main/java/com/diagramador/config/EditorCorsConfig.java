@@ -13,7 +13,7 @@ public class EditorCorsConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
                 .allowedOrigins(EDITOR_ORIGIN)
-                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowedMethods("GET", "POST", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("Accept", "Authorization", "Content-Type")
                 .maxAge(3600);
     }
