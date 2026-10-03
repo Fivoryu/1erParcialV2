@@ -814,6 +814,68 @@ congelada son **portantes**, no decorativas.
 
 **Sin desviación de ruteo:** el escritor delegado entregó la unidad completa en **una** vuelta y el padre no escribió fuente en línea.
 
+### S5 progreso — las siete remediaciones cerradas (2026-10-03)
+
+> **Cierre de la deuda de revisión de S3 y S4.** Las siete unidades commiteadas con desviación declarada quedaron **revisadas y aprobadas** por el
+> proveedor nativo, cada una en su propio linaje y con la autoridad quemada. **Ninguna exigió corrección; ninguna devolvió un hallazgo bloqueante.**
+
+**El obstáculo, medido, y cómo se resolvió.** El intento original de remediar C12b usó `baseRef` = commit **padre** con `committedOnly: true`, y
+funcionó porque en ese momento el HEAD del árbol estaba parado justo sobre la unidad. Ese ya no es el caso: se midió que `committedOnly` con `baseRef`
+proyecta siempre **`baseRef..HEAD`** —con `baseRef = 155e93c` la proyección trajo **47 caminos**, todo lo acumulado desde C12b hasta la punta—, así que
+aislar una unidad no se consigue con banderas. Se ancló **un árbol de trabajo por unidad** (`git worktree add --detach`), creado con el `git` de Windows
+porque el proveedor registra rutas `D:/...` y el de WSL habría registrado `/mnt/...`, que el CLI nativo no resuelve. Las anclas viven dentro del proyecto,
+bajo `backend/target/review-anchors/`; `target/` está ignorado, así que **nunca entraron al inventario de no versionados ni a ningún candidato**. Cada
+revisión corrió con `workspaceRoot` apuntando a su ancla y `baseRef` = el padre de la unidad. El árbol principal no se tocó y quedó limpio en todo momento.
+
+**Las siete, con lo que devolvió cada una:**
+
+| Unidad | Commit | Linaje | Caminos | Líneas | Presupuesto | Resultado |
+| --- | --- | --- | --- | --- | --- | --- |
+| C12b | `84e16f1` | `review-287a0db8dee2e619` | 5 | 444 | 200 | aprobada · 2 informativos |
+| C14b | `da3c2d6` | `review-fd66d6a0ccb2668d` | 6 | 279 | 140 | aprobada · 1 informativo |
+| C15 | `c80b1f1` | `review-cc212394dbf3b6d9` | 12 | 633 | 200 | aprobada · 1 informativo |
+| C15b | `805aa57` | `review-238b28a5b6836cbd` | 7 | 293 | 147 | aprobada · **sin hallazgos** |
+| C16 | `3c777e5` | `review-8c370fb5a6fd4770` | 3 | 28 | 14 | aprobada · **sin hallazgos** |
+| C17 | `d9d4d0a` | `review-c9527669f19152af` | 7 | 562 | 200 | aprobada · 1 informativo |
+| C18 | `fc12692` | `review-fb6dde203156fda7` | 9 | 539 | 200 | aprobada · 1 informativo |
+
+Las siete corrieron el mismo protocolo: `inspect` sobre el ancla → `start` con el **sha de commit** (el proveedor emite el del árbol, y el START lo rechaza
+con `base-ref-unresolvable`) → `status` → captura con pronóstico previo (`pi_host_relay`, 1 corrida, sin mutación) → la misma captura exacta con
+`reviewerRunAcknowledged` → `acknowledge-approved`. Tier `medium`, una lente (`review-reliability`, orden 0) en las siete.
+
+**Los seis hallazgos informativos** —todos `WARNING`, todos `disposition: informational`, ninguno abre corrección ni reabre la revisión— apuntan a
+trabajo posterior, no a la unidad revisada:
+
+1. `R3-001` · `api/ProjectEventController.java:41-46` (C12b).
+2. `R3-002` · `collaboration/PresencePublisher.java:23-32` (C12b).
+3. `R3-001` · `diagram/UmlClassNode.tsx:158` (C14b).
+4. `R3-RemoteCursorNotRendered` · `pages/ProjectEditorPage.tsx:290` (C15): señalado en C15 y **pintado por C15b**, la unidad inmediatamente siguiente; el
+   propio secuenciado lo explica, y por eso no queda como defecto pendiente.
+5. `R3-unbounded-history` · `collaboration/ChatService.java:55-57` (C17).
+6. `R3-chat-draft-loss` · `collaboration/ChatPanel.tsx:84` (C18).
+
+El proveedor **no expuso el texto** de ningún hallazgo —sólo `id`, lente, ubicación, severidad y disposición—, así que ninguno se parafrasea: lo que hay
+es lo que devolvió el sobre. Los identificadores con nombre propio (`R3-RemoteCursorNotRendered`, `R3-unbounded-history`, `R3-chat-draft-loss`) son del
+proveedor y se citan literalmente.
+
+**Lo que las remediaciones dejaron ver, como proceso:** C15 no fue una unidad web. `c80b1f1` metió **12 caminos** repartidos entre el backend de
+presencia y cursores y la web del coalescedor —el único commit mixto de la tanda—. Como la revisión mira el candidato tal como está commiteado, quedó
+revisado tal cual. La unidad de revisión estuvo bien; la de *commit* no.
+
+**Límites declarados de esta tanda:**
+
+1. **Nada de esto re-escribe historia.** Las siete siguen siendo unidades commiteadas sin revisión *en el momento del commit*; lo que cambió es que ahora
+   **tienen** un linaje aprobado y quemado por unidad. La desviación declarada se conserva como registro histórico en las secciones de arriba.
+2. **El texto de los hallazgos no se expuso** en ningún sobre: no se parafrasea ni se completa por inferencia.
+3. **Las anclas son descartables.** `backend/target/review-anchors/{c12b,c14b,c15,c15b,c16,c17,c18}` se quitan al cerrar esta tanda; no son parte del repo
+   y no dejan rastro en el índice.
+4. **El relay falló siete veces seguidas y después respondió siete veces seguidas.** Es intermitente y no hay diagnóstico; lo que hay es una tanda cerrada.
+5. **Un linaje sin trayectoria de corrección no prueba ausencia de defectos.** Prueba que el proveedor no encontró nada que justifique corregir este
+   candidato; los hallazgos informativos quedan arriba como deuda visible.
+
+**Sin desviación de ruteo:** en las remediaciones no había fuente que escribir —el candidato era el árbol ya commiteado—, así que la tarea fue de revisión
+y registro, y el padre la ejecutó sin delegar escritura.
+
 ### S6 — Intercambio XMI (RF-09, CU-16, CU-17) — **cedida a otra sesión**
 
 Estas tres tareas **no se ejecutan desde acá**. El 2026-10-01 la sesión `01a0f830`, con el mismo directorio de
