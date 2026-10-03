@@ -511,6 +511,9 @@ El resto de la unidad la escribieron escritores delegados, validados por el padr
 
 ### S3 progreso — C14b implementada y verificada, SIN COMMITEAR (revisión bloqueada por el relay) — 2026-10-01
 
+> **Actualización (2026-10-02): commiteada con DESVIACIÓN DECLARADA, autorizada por el usuario.** Commit `da3c2d6`. El árbol ya no la contiene sin commitear.
+> La remediación sigue abierta: revisar el **rango commiteado** cuando el relay responda. La regla de revisar antes de commitear **sigue vigente** para lo que venga.
+
 **Estado:** el código está escrito, verificado y **sin commitear** (7 archivos: 5 modificados y 2 nuevos). **No se commiteó a propósito**: la regla acordada
 con el usuario es no commitear sin revisión nativa cuando el relay está caído.
 
@@ -542,6 +545,11 @@ commiteado si se autoriza commitear con desviación declarada.
    queda cubierta por lectura, no por prueba.
 
 ### S3 progreso — C15 implementada y verificada, SIN COMMITEAR (revisión bloqueada por el relay) — 2026-10-02
+
+> **Actualización (2026-10-02): commiteada con DESVIACIÓN DECLARADA, autorizada por el usuario.** Commit `c80b1f1`, que además incluyó
+> `ProjectEditorPage.tsx` porque ese archivo lleva cambios de las dos unidades y no se pueden separar por hunks sin riesgo de romper el
+> estado intermedio (los imports mezclan ambas). C14b quedó en `da3c2d6` sin ese archivo, y es coherente por sí solo porque el prop del
+> resaltado es opcional. **Dos remediaciones abiertas**: revisar los rangos commiteados de C14b y de C15 cuando el relay responda.
 
 **Estado:** código escrito, verificado y **sin commitear** (10 archivos propios, más 3 fixtures y la página compartida). **No se commiteó a propósito**: la regla
 acordada es no commitear sin revisión nativa mientras el relay esté caído. Queda **junto a C14b**, que está en el mismo estado: **dos unidades sin commitear**.
