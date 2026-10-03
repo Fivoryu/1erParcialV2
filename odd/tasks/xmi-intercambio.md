@@ -24,7 +24,7 @@ su plan. Lo que queda atado:
 | Forma del bloqueo | Código `EXPORT_BLOCKED_EDITING`; en endpoints de archivo HTTP **409** con el sobre `ApiErrorResource`; en `POST /projects/{id}/generations` el mismo código dentro del cuerpo `outcome` con HTTP 200 (convención D7 del Incremento 2). Claves de `details[0]`: `editorDisplayName`, `targetType`, `targetId`, `reclaimable`, `retryAfterSeconds` |
 | Archivos compartidos | `backend/src/test/java/com/diagramador/SchemaOwnershipTest.java` (compuerta dura: hoy declara que `xmi_exchange` y `xmi_loss_item` **no existen**; al consolidar la unión es versiones 1–10 y las cuatro tablas, con `invitation` de la otra sesión), `docs/puds/datos/02-esquema-fisico.sql`, `web/src/pages/ProjectEditorPage.tsx` |
 | **No compartido** | `backend/src/main/java/com/diagramador/command/CommandService.java` es de la otra sesión (su tarea C13). **Esta unidad no lo toca**: verificado que el servicio resuelve handlers por `Collectors.toUnmodifiableMap(CommandHandler::type, …)` sobre una `List<CommandHandler>` inyectada por constructor, así que un `@Component` nuevo se auto-registra |
-| **Pendiente declarado** | El endpoint de XMI nace **sin** la guarda de la concesión, porque `C19` no está en esta base. Queda como integración de una línea al consolidar, y **así se declara**: hasta entonces la exportación XMI no está protegida contra una edición en curso |
+| **Pendiente declarado** | El endpoint de XMI nace **sin** la guarda de la concesión, porque `C19` no está en esta base. Queda como integración de una línea al consolidar, y **así se declara**: hasta entonces la exportación XMI no está protegida contra una edición en curso. **La línea ya tiene nombre y forma, medidos en §13.7**: `requireExportAllowed(UUID modelId)`, que lanza `ApiException(409, "EXPORT_BLOCKED_EDITING")` |
 
 ## Estado de ejecución
 
@@ -1324,6 +1324,13 @@ La otra sesión planteó la objeción con este dato delante, el usuario decidió
 compartidos modificados: la fila nueva de `message.posted` en §4.1 de `01-contratos-transversales.md` —`message`:
 `id`, `authorUserId`, `authorDisplayName`, `body`, `createdAt` (ISO 8601)— y el plan de la otra unidad.
 
+**Y medido otra vez, porque el desvío se movió.** Al cerrar §13, `git rev-list --count
+main..feat/incremento-3-colaboracion` = **9** commits, con la punta en `38882b4`. El número de arriba —2 commits,
+punta `384edd1`— era cierto cuando se midió, y `git merge-base --is-ancestor 384edd1
+feat/incremento-3-colaboracion` confirma que la rama **avanzó**: no hubo reescritura de historia. Los cuatro commits
+que la otra sesión nombró como «los que la rama fusionada no ve» (`14053ce`, `d9ebf54`, `39dd9cf`, `38882b4`) son los
+que agregó **desde** esa medición, no el total del desvío.
+
 ### 12.5 Un defecto de este mismo documento, declarado
 
 El cuadro **«Estado de ejecución»** (líneas 29–44) marca **«Pendiente»** las filas **X3 a X8**, pero **§5.2 «Qué
@@ -1521,3 +1528,26 @@ ni en `sw1`, ni en la raíz del repo, ni en el worktree, ni en `backend`— y el
 que el usuario autorizó (`icacls …\.git /remove:d <SID>`) **procesó cero archivos**: entre la medición y el comando
 los ACEs ya habían desaparecido solos, así que el estado sano **no es atribuible a ese comando**. La causa de la
 aparición y de la desaparición **no está medida**, y el bloqueo **puede repetirse**.
+
+### 13.7 El desvío medido de nuevo, y la guarda que faltaba con firma medida
+
+La sesión vecina —dueña de `feat/incremento-3-colaboracion`— reportó que la punta de su rama es `38882b4` y no
+`384edd1`, y pasó la firma de la guarda que a este sentido de la exportación le falta. **Ninguna de las dos cosas se
+asienta acá como cita de la otra sesión**: se midieron, en solo lectura, sobre los objetos de git del repositorio
+principal, sin tocar su árbol de trabajo.
+
+| Lo que se midió | Comando | Resultado |
+| --- | --- | --- |
+| Punta de su rama | `git rev-parse feat/incremento-3-colaboracion` | **`38882b4`** |
+| Cuánto queda `main` atrás | `git rev-list --count main..feat/incremento-3-colaboracion` | **9** commits |
+| ¿Avanzó o se reescribió? | `git merge-base --is-ancestor 384edd1 <punta>` | Sí: **avanzó**, no hubo reescritura |
+| La guarda, y con qué firma | `git grep -n requireExportAllowed 14053ce -- backend/src` | `EditingLeaseService.java:73` la declara, `InMemoryEditingLeaseService.java:118` la implementa y la línea 156 lanza `ApiException(CONFLICT, "EXPORT_BLOCKED_EDITING")` |
+
+**La fila «Pendiente declarado» del cuadro de estado queda accionable.** Decía «integración de una línea al
+consolidar» sin decir cuál; ahora la línea tiene nombre, forma y excepción, medidos. **No se conectó, y así se
+declara**: conectar una guarda de una rama que todavía no está en `main` exige primero decidir esa unión, y esa
+decisión es del usuario.
+
+**Lo que esta sección no mide.** El comportamiento del lease en vivo —quién lo toma, cuándo vence, qué pasa con el
+operador— está en su unidad y en su §S6b, no acá. De esa rama solo se midió lo que hace falta para nombrar la
+integración pendiente, que es lo que la tabla de arriba tiene.
