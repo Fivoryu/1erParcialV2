@@ -1,8 +1,10 @@
 # Dialecto XMI de Enterprise Architect — caracterización y política de intercambio
 
-> **Estado: medición acotada a un fixture.** Caracteriza lo que Enterprise Architect emite en el archivo que
-> tenemos, y **no** afirma nada que ese archivo no ejerza. El roundtrip contra EA en vivo sigue sin poder
-> verificarse (GAP-07).
+> **Estado: el roundtrip contra EA en vivo está medido en los dos sentidos.** La exportación de la app se importó
+> en Enterprise Architect (el diagrama con sus 2 figuras y 3 conectores presentes, y los ids nuestros
+> preservados) y una exportación real de EA se leyó de vuelta en la app. Las mediciones están en
+> `odd/tasks/xmi-intercambio.md` §10 y §11. Lo que sigue acotado es la **cobertura**: ningún artefacto prueba una
+> capacidad que el archivo no ejerza.
 
 **Artefactos:**
 
@@ -11,6 +13,10 @@
 | [`tools/xmi-inventory/xmi_inventory.py`](../../../tools/xmi-inventory/xmi_inventory.py) | Arnés que deriva el inventario del dialecto desde el propio archivo |
 | [`tools/xmi-inventory/test_xmi_inventory.py`](../../../tools/xmi-inventory/test_xmi_inventory.py) | Oráculo propio: particiona la línea base y refuta la evidencia declarada |
 | [`docs/fixtures/xmi/Prueba3.xml`](../../fixtures/xmi/Prueba3.xml) | Evidencia medida: export real de EA 16 |
+| [`docs/fixtures/xmi/ea-roundtrip-uml-2.1.xml`](../../fixtures/xmi/ea-roundtrip-uml-2.1.xml) | Nuestro modelo, importado en EA y reexportado por EA: el roundtrip cerrado, con los ids nuestros |
+| [`docs/fixtures/xmi/ea-export-default-1.1.xml`](../../fixtures/xmi/ea-export-default-1.1.xml) | La exportación **por defecto** de EA: dialecto XMI 1.1, que el lector rechaza nombrando el dialecto |
+| [`docs/fixtures/xmi/ea-export-uml-2.2.xml`](../../fixtures/xmi/ea-export-uml-2.2.xml) | La exportación «XMI 2.2» de EA: declara el namespace UML 2.2, que el lector rechaza nombrando el namespace |
+| [`docs/fixtures/xmi/ea-independent-with-diagram.xmi`](../../fixtures/xmi/ea-independent-with-diagram.xmi) | Export de EA de otro repositorio: ids ajenos a nuestro dialecto y conectores sin anclas |
 | [`03-linea-base-uml.v1.json`](03-linea-base-uml.v1.json) | Línea base UML que este dialecto debe poder transportar |
 
 ```bash
@@ -20,13 +26,16 @@ python -m pytest tools/xmi-inventory -q
 
 ## 1. Qué se midió y qué no
 
-**Se midió** un único archivo: `Prueba3.xml`, 91.440 bytes, exportado por **Enterprise Architect 6.5**
+**Se midió** un único archivo en las secciones §1 a §5: `Prueba3.xml`, 91.440 bytes, exportado por **Enterprise
+Architect 6.5**
 (`extenderID`) en **XMI 2.1 / UML 2.1**, codificado en **windows-1252**, con un modelo de 8 clases, 6
-asociaciones, 1 interfaz, 1 enumeración, 1 generalización, 1 realización y 1 diagrama de 18 elementos.
+asociaciones, 1 interfaz, 1 enumeración, 1 generalización, 1 realización y 1 diagrama de 18 elementos. La
+§6.1 amplía la medición a las opciones de exportación de EA, con archivos escritos por EA a partir de nuestro
+propio modelo.
 
 **No se puede concluir** de este archivo:
 
-- cómo se comporta el roundtrip contra EA en vivo (GAP-07);
+- cómo se comporta el roundtrip contra EA en vivo, que se midió aparte y en los dos sentidos (§6.1, acta §10 y §11);
 - ninguna capacidad que el fixture **no ejerza**. Que una etiqueta aparezca no prueba la capacidad.
 
 > **Regla de lectura de este documento:** aparición de una etiqueta **no** es evidencia de la capacidad.
@@ -284,11 +293,35 @@ bloque con contenido **sí** se reporta, con su nombre y su recuento. La pérdid
    `documentation` con `value`. El canal estándar, `uml:Comment`, **no aparece en el modelo**: un consumidor que
    solo lea UML pierde las 12 notas sin enterarse. *(§4.6)*
 
+## 6.1 Qué dialectos de exportación acepta el lector (medido)
+
+Enterprise Architect ofrece el dialecto como una opción del diálogo de exportación, y **la opción por defecto no
+es la que el lector implementa**. Se exportó el mismo paquete con cada opción y se leyó cada archivo con el lector
+real (`jshell --class-path backend/target/classes`, acta §11.2):
+
+| Opción de EA | `EnumXMIType` / bandera | Raíz y namespace | Resultado del lector |
+| --- | --- | --- | --- |
+| XMI 2.1 | `xmiEA21 = 11` | `xmi:XMI xmi:version="2.1"`, `xmlns:uml="…/spec/UML/2.1"` | **Se lee**: 9 clasificadores, 6 relaciones, 1 vista, 1 diagrama de 2 figuras y 3 conectores **con las anclas resueltas** |
+| XMI 2.2 | `xmiEA22 = 14` | `xmi:XMI xmi:version="2.1"`, `xmlns:uml="…/spec/UML/2.2"` | Rechazado; el mensaje nombra el namespace UML 2.2 encontrado |
+| Por defecto | `xmiEADefault = 0` | `XMI xmi.version="1.1"`, `xmlns:UML="omg.org/UML1.3"` | Rechazado; el mensaje nombra el dialecto XMI 1.1 |
+| XMI 1.1 | `xmiEA10` / `xmiEA11` | ídem anterior | Rechazado igual: mismo dialecto, distinto rótulo |
+| XMI 2.1 sin extensiones | `epExcludeEAExtensions` | igual que XMI 2.1 | Se lee, pero **pierde un extremo** de la agregación y de la composición, y las anclas de los conectores: son datos que viven solo en la extensión (§4.2) |
+| XMI 2.1 sin diagramas | `DiagramXML = 0` | igual que XMI 2.1 | Se lee sin diagramas: es una elección explícita de quien exporta, no una falla |
+
+**Regla:** el rechazo se nombra por dialecto, no por elemento faltante. Decir «falta `uml:Model`» manda a buscar un
+elemento cuando la respuesta es otra opción de exportación; el lector nombra el dialecto encontrado y la opción
+que corresponde. El valor `xmiEA21` es **`11`**: exportar con el `2` que documentan terceros escribe XMI 1.0 en
+silencio.
+
+**Lo que sigue sin medir:** si `<links>` es redundante en general (se midió en un archivo, donde sus 12 entradas ya
+aparecían en el resto del documento); si EA preserva nuestros `xmi:id` en todas las opciones de exportación; y el
+dialecto XMI 1.1 como **capacidad** — solo se mide su rechazo.
+
 ## 7. Huecos de esta caracterización
 
 | id | Hueco | Qué bloquea |
 | --- | --- | --- |
-| GAP-07 | El roundtrip contra EA en vivo no se puede verificar: el servidor de EA no responde | Q3, RF-09, RNF-05 |
+| GAP-07 | ~~El roundtrip contra EA en vivo no se puede verificar: el servidor de EA no responde~~ **Cerrado**: se verificó en los dos sentidos con EA en vivo sobre copias del repositorio (acta §10 y §11) | Q3, RF-09, RNF-05 |
 | GAP-10 | Las notas de modelo viajan solo en un canal propietario (atributo `documentation`) y el canal estándar `uml:Comment` no aparece en el modelo | Un consumidor que solo lea UML pierde las 12 notas; el roundtrip de notas sigue sin verificar |
 | — | 9 constructos sin evidencia (§3) | Cada uno necesita un fixture que los ejerza, o una decisión explícita de no soportarlos |
 | — | El dialecto está caracterizado con **un solo** archivo | Un diagrama de despliegue o de paquetes anidados puede traer formas que este fixture no tiene |
@@ -302,7 +335,9 @@ bloque con contenido **sí** se reporta, con su nombre y su recuento. La pérdid
 | Partición de la línea base | 23 evidenciados + 9 declarados sin evidencia = 32 | 2026-09-28 |
 | Prueba de mutación: declarar `BL-FEA-05` evidenciado por `isStatic` | Falla por dos lados y solo por esos dos | 2026-09-28 |
 | Verificación independiente | Falsificó tres afirmaciones: clase abstracta inexistente, `documentation`/`tags` mal medidos como vacíos, y «el modelo no lleva notas». Las tres se corrigieron en el arnés y en este documento | 2026-09-28 |
-| Roundtrip contra Enterprise Architect en vivo | Pendiente (GAP-07) | — |
+| Roundtrip contra Enterprise Architect en vivo | Pasa en los dos sentidos: app → EA (el diagrama con 2 figuras y 3 conectores, ids preservados) y EA → app (9 clasificadores, 6 relaciones, 1 diagrama con anclas resueltas) | 2026-10-03 |
+| Matriz de dialectos de exportación de EA | 6 opciones exportadas y leídas: 1 aceptada, 2 rechazadas nombrando el dialecto, 1 con pérdida medida sin la extensión, 2 sin efecto sobre lo leído | 2026-10-03 |
+| Artefactos de EA como fixtures | 5 archivos pinneados por sha256 y byte-exactos (`XmiReaderTest.everyCommittedEaArtifactIsByteExact`); ninguno se saltea | 2026-10-03 |
 
 ## 9. Trazabilidad
 

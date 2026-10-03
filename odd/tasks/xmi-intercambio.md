@@ -40,7 +40,8 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | X6 — Importación: comando de lote y endpoints | Pendiente | Depende de X2 y X5 |
 | X7 — Web | Pendiente | Depende de X4 y X6 |
 | X8 — Arnés y cierre | Pendiente | Depende de todo lo anterior |
-| Verificación en EA (§7) | **Cerrada en §10** | GAP-07 con causa raíz medida: el arquero de dialecto en `xmi:Documentation`. `t_diagram` 90 → 91, ids preservados y 2 figuras ancladas sobre una copia de `sw1_p2.eapx` |
+| Verificación en EA (§7) | **Cerrada en §10 y §11** | Sentido app → EA: GAP-07 con causa raíz medida, el arquero de dialecto en `xmi:Documentation`. `t_diagram` 90 → 91, ids preservados y 2 figuras ancladas sobre una copia de `sw1_p2.eapx`. Sentido EA → app: medido en §11 con exportaciones reales de EA |
+| E — El sentido EA → app | **Cerrada en §11** | 5 artefactos de EA pinchados por sha256 y byte-exactos; el lector medido sobre la matriz de exportación; `mvn verify` = **260 pruebas, 0 fallos, 0 salteadas**; `python -m pytest tools -q` = **46 pruebas, 0 fallos** |
 
 ## 1. Corte visible que define la unidad
 
@@ -1099,3 +1100,144 @@ de EA con **nuestro árbol semántico** más **nuestro bloque `<diagrams>`** tam
 - Si EA acepta un comentario XML **fuera** de la raíz en todas sus versiones. Se midió que lo acepta en ésta: el
   artefacto verificado es el que lo lleva.
 - El significado de la gramática `Path=` sigue sin establecerse, que es por qué X-4 sigue emitiendo vacío.
+
+## 11. Unidad E — el sentido EA → app, medido con exportaciones reales de EA
+
+La unidad de §10 cerró **app → EA**. Ésta mide el sentido inverso: qué pasa cuando el archivo lo escribe Enterprise
+Architect. §7 ya tenía dos lecturas del dialecto ajeno —el fixture `Prueba3.xml` y un archivo suelto
+`ea-ref-with-diagram.xmi`—, pero las dos son lecturas **del documento**, y una de ellas ni siquiera corre.
+
+### 11.1 El instrumento de exportación, y una corrección a §3.10
+
+§3.10 declaró `ExportPackageXMI` como «lentísimo» —24 exportaciones sin terminar en 10 minutos— y por eso la vía de
+exportar quedó abandonada. **Medido ahora: es rápido.** Una sesión completa de exportación —`OpenFile`, seis
+exportaciones y `Exit`— tarda **18,8 s**, y la exportación completa de 2.1 tarda **1.067 ms**. La lentitud que §3.10
+midió era la misma fragilidad ya registrada en §7.2: **instancias sucias de EA**. Con una instancia limpia aparece el
+instrumento que faltaba, y es el mismo `import.ps1` que ya funcionaba más un `export.ps1` hermano
+(`backend/target/xmi-lab/`, artefactos de build).
+
+Dos mediciones hubo que hacer **antes** de escribir una línea, porque la documentación de la API no coincide con esta
+build. Las dos salen de `Interop.EA.dll`, leído por reflexión (`probe3.ps1`):
+
+```text
+ExportPackageXMI  (string PackageGUID, EnumXMIType XMIType, int DiagramXML, int DiagramImage, int FormatXML, int UseDTD, string FileName)
+ExportPackageXMIEx(string PackageGUID, EnumXMIType XMIType, int DiagramXML, int DiagramImage, int FormatXML, int UseDTD, string FileName, int Flags)
+
+EA.EnumXMIType:  xmiEADefault=0  xmiEA11=3  xmiEA21=11  xmiEA22=14
+EA.ExportPackageXMIFlag:  epSaveToStub=1  epExcludeEAExtensions=2
+```
+
+El parámetro `WriteLog` que documenta Sparx **no existe** en esta build, y `xmiEA21` vale **11**, no el `2` que
+sugiere la lista habitual —con `2` se exporta `xmiEA10`, en silencio—. Las dos cosas se habrían pagado como una
+corrida fallida cada una.
+
+### 11.2 La matriz de exportaciones, y el defecto del sentido inverso
+
+Se exportó **el paquete que contiene nuestro propio modelo importado más el diagrama que EA creó** (la copia de
+`import-final.eapx`), o sea un artefacto con verdad de referencia conocida **en los dos extremos**. Seis variantes,
+medidas con `matrix.ps1`:
+
+| Variante | `XmiType` | `DiagramXml` | `Flags` | Bytes | Dialecto medido | `Extension` | `diagrams` |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |
+| `ea21-full` | 11 | 1 | 0 | 38.208 | `xmi:version="2.1"`, `uml:Model` | 1 | 1 |
+| `ea21-noext` | 11 | 1 | 2 | 12.948 | `2.1`, `uml:Model` | 1 | 1 |
+| `ea21-nodiagram` | 11 | 0 | 0 | 35.137 | `2.1`, `uml:Model` | 1 | 0 |
+| `ea22` | 14 | 1 | 0 | 37.102 | `2.1`, `uml:Model` | 1 | 1 |
+| **`ea-default`** | **0** | 1 | 0 | 46.168 | **`XMI 1.1`**, `UML:Model` | **0** | **0** |
+| `ea11` | 3 | 1 | 0 | 46.168 | `XMI 1.1`, `UML:Model` | 0 | 0 |
+
+Lo que la matriz decide, y es el hallazgo de la unidad:
+
+1. **La exportación por defecto de EA no es 2.1, es el dialecto 1.1.** Su cabecera es
+   `<XMI xmi.version="1.1" xmlns:UML="omg.org/UML1.3" timestamp="…">`, con `XMI.exporter` como **elemento** y no como
+   atributo, y **sin diagramas**. Nuestro lector exige `uml:Model` en el espacio de nombres 2.1 —`first()` usa
+   `getElementsByTagNameNS`, o sea que es estricto— y por lo tanto **no puede leerla**: falla con
+   «The XMI document must contain uml:Model». Si alguien exporta con la opción por defecto del diálogo de EA e
+   importa en la app, ve exactamente el síntoma reportado, y la causa no es un elemento mal generado sino un
+   **dialecto distinto**.
+2. **`epExcludeEAExtensions` no quita el diagrama**: 38.208 → 12.948 bytes con `<diagrams>` intacto. Lo que cae es el
+   bloque `<elements>` de la extensión. Es decir que excluir extensiones **no** explica un diagrama ausente.
+3. `DiagramXml=0` sí quita `<diagrams>`, y es una opción explícita del usuario, no un defecto.
+4. Una exportación de 2.1 conserva **nuestros propios identificadores** (`EAID_00000000_…`) al re-exportar. El viaje
+   completo app → EA → app cierra con la misma identidad, que es lo que §10 habilitó.
+
+### 11.3 Refutado en esta unidad, con instrumento válido
+
+- **Que EA omita los anclajes de los conectores.** En la exportación 2.1 los tres conectores traen
+  `style=Mode=3;EOID=34628065;SOID=23F57788;…`, y esos dos valores son exactamente los `DUID` de las dos figuras del
+  diagrama: los anclajes están y **resuelven**. La hipótesis de que hubiera que reconstruirlos desde `<links>` era
+  falsa, y se cae antes de escribir código.
+- **Que `<links>` sea un canal perdido al leer.** Las 12 entradas de `<links>` de la exportación repiten `(id, start,
+  end)` y **las 12 son redundantes**: cada identificador ya aparece en el árbol semántico o en los conectores de la
+  extensión. Ignorar el canal no pierde nada *en este artefacto*. Queda declarado abajo que en general no está medido.
+- **Que el archivo de EA con diagrama tenga que vivir fuera del repositorio.** Es un problema de higiene, no de
+  dialecto, y se arregla en E1.
+
+### 11.4 Lo que queda sin medir en esta unidad
+
+- Si `<links>` es redundante en un documento de EA **en general**, o solo en éste. Se midió en un artefacto.
+- Si EA respeta el `xmi:id` que emitimos en **todas** sus opciones de exportación, o solo en 2.1.
+- El sentido 1.1 → app como funcionalidad. Acá se mide que **se rechaza**, no se propone soportarlo.
+- El resto de §10.4 sigue vigente sin cambios.
+
+### 11.5 Plan de la unidad, con su evidencia de cierre
+
+| # | Tarea | Evidencia |
+| --- | --- | --- |
+| E1 | Llevar al repositorio, como fixtures pinchados por sha256 en `docs/fixtures/xmi/` (byte-exactos, `windows-1252`), los artefactos que EA escribió: la exportación 2.1 de ida y vuelta, la exportación por defecto 1.1, la exportación «2.2», y el archivo independiente que vivía en `C:/Users/HP/Downloads`. Sacar el `assumeTrue` que salteaba la única prueba del sentido EA → app **con diagrama** | **Cerrada**: `XmiReaderTest.everyCommittedEaArtifactIsByteExact` pincha los 5 sha256; la prueba del archivo independiente apunta al fixture y corre — `XmiReaderTest`: 7 pruebas, **0 salteadas** |
+| E2 | Medir el lector sobre la matriz y fijar los números: la exportación 2.1 se lee completa —con anclajes resueltos—, y la 1.1 se rechaza | **Cerrada, y ampliada**: la medición (§11.6) mostró que **`ea22` también se rechaza**; hay una aserción por artefacto, con los números medidos |
+| E3 | Que el rechazo del dialecto **diga qué pasó**: nombrar el dialecto encontrado y la opción de exportación que corresponde, en vez de solo el elemento ausente | **Cerrada**: `XmiReader.unsupportedDialect(root)`; probado con los dos fixtures reales |
+| E4 | Declarar la matriz de exportación en `docs/puds/contratos/04-dialecto-xmi-ea.md`: qué opciones de exportación de EA acepta la app y cuáles no, con la medición | **Cerrada**: §6.1 del contrato, y su encabezado dejó de decir que el roundtrip en vivo era inverificable |
+
+### 11.6 Lo que el lector devolvió sobre la matriz (medido)
+
+Cada archivo se leyó con el lector real, sin escribir código: `jshell --class-path backend/target/classes
+backend/target/xmi-lab/measure.jsh`, que llama a `XmiReader.read(bytes)` sobre los seis artefactos de la matriz más
+los dos fixtures. Salida literal, resumida:
+
+| Artefacto | Clasificadores | Relaciones | Vistas | Diagramas | Conectores | Pérdidas declaradas |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ea21-full` | 9 | 6 | 1 | 1 | 3, anclas **resueltas** | `attribute_layout_bounds`=3, `attribute_layout_containment`=3, `attribute_layout_coords`=3, `constraint_severity_not_representable`=1, `unresolved_constraint_expression`=1, `unresolved_relationship_end`=2 |
+| `ea21-noext` | 9 | 6 | 1 | 1 | 3, **sin anclas** | las tres de `attribute_layout` desaparecen; **`AGGREGATION` y `COMPOSITION` quedan con 1 extremo en vez de 2** |
+| `ea21-nodiagram` | 9 | 6 | 0 | 0 | — | las seis de `ea21-full` |
+| `ea22` | — | — | — | — | — | **Rechazado**: nombra el namespace UML 2.2 |
+| `ea-default` (1.1) y `ea11` | — | — | — | — | — | **Rechazados**: nombran el dialecto XMI 1.1 |
+| `ea-independent-with-diagram.xmi` | 6 | 4 | 1 | 1 | 4, **sin anclas** (`SOID`/`EOID` en `null`) | las tres de `attribute_layout`=4 y `diagram_connector_anchors_missing`=4 |
+
+Lectura de la tabla, sin adornos:
+
+- **El defecto del sentido EA → app no es «los elementos no se generan»: es el dialecto.** La opción por defecto del
+  diálogo de exportación de EA escribe XMI 1.1, y el lector implementa 2.1. Hasta esta unidad eso se reportaba como
+  «The XMI document must contain uml:Model», que manda a buscar un elemento ausente donde la causa es una opción de
+  exportación.
+- **El único fixture del sentido EA → app con diagrama se salteaba en silencio**, porque su entrada vivía en
+  `C:/Users/HP/Downloads` y la prueba la protegía con `assumeTrue`: en CI no corría nunca.
+- **`ea22` también se rechaza, y no estaba previsto.** EA rotula esa opción «XMI 2.2» pero escribe
+  `xmi:version="2.1"` con `xmlns:uml="…/spec/UML/2.2"`. El lector es estricto por namespace, así que la 2.2 cae
+  igual que la 1.1, por otra razón.
+- **Sin la extensión se pierde semántica, no solo andamiaje.** `epExcludeEAExtensions` deja un solo extremo en la
+  agregación y en la composición, y borra las anclas de los conectores: confirma §4.2 —los modificadores viven solo
+  en los bloques propietarios— y agrega que los anclajes también.
+
+**Lo que esto cambió en el producto.** El rechazo pasó a nombrar el dialecto: `XmiReader.unsupportedDialect(root)`
+distingue XMI 1.1 («es lo que Enterprise Architect exporta por defecto; exportá como XMI 2.1») del namespace ajeno
+(«declara `…/spec/UML/2.2`, y este lector implementa `…/spec/UML/2.1`»), y deja el mensaje original como último
+recurso. Las dos ramas se prueban con los fixtures reales, no con cadenas inventadas.
+
+### 11.7 El traspaso al acta, en las dos listas que §8.1 exige
+
+| Medido | Comando o artefacto |
+| --- | --- |
+| 5 artefactos de EA byte-exactos, pinchados por sha256 | `XmiReaderTest.everyCommittedEaArtifactIsByteExact` |
+| La exportación 2.1 se lee completa: 9 clasificadores, 6 relaciones, 1 diagrama de 2 figuras y 3 conectores con las anclas resueltas | `XmiReaderTest.readsTheEaRoundTripExportOfOurOwnModelWithItsAnchorsResolved` |
+| El archivo independiente, de otro repositorio, con ids ajenos y sin anclas | `XmiReaderTest.readsTheIndependentEaFileWithoutAssumingOurUuidDialect`, ya sin `assumeTrue` |
+| El rechazo nombra el dialecto encontrado y la opción que corresponde | `XmiReaderTest.namesTheDialectItCannotReadInsteadOfOnlyTheMissingElement` |
+| La opción por defecto de EA es XMI 1.1; la 2.2 escribe el namespace UML 2.2 | `head -c 260` sobre cada archivo de `backend/target/xmi-lab/matrix/` (§11.2) |
+| La matriz, declarada en el contrato | `docs/puds/contratos/04-dialecto-xmi-ea.md` §6.1; encabezado corregido |
+| Toda la batería | `mvn -o -B -f backend/pom.xml verify` = **260 pruebas, 0 fallos, 0 salteadas**; `python -m pytest tools -q` = **46 pruebas, 0 fallos** |
+
+| **No medido**, y así se declara | Por qué |
+| --- | --- |
+| Que `<links>` sea redundante en general, y que EA preserve nuestros `xmi:id` en todas las opciones | Se midió en un archivo cada cosa (§11.3, §11.4) |
+| El dialecto XMI 1.1 o 2.2 como **capacidad** | Solo se mide su rechazo: soportarlos es una decisión de producto, no un defecto |
+| La importación de un XMI de EA con notas, o con los 9 constructos de §3 sin evidencia | Ningún artefacto de esta unidad los ejerce |
