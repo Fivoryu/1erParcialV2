@@ -832,6 +832,51 @@ conector de dependencia: es consecuencia, no causa independiente.
 Distinguirlas exige abrir el documento, no leer el veredicto. Un arnés que no se audita a sí mismo termina
 gobernando por sus propias definiciones en vez de por los hechos.
 
+### 7.7 El método correcto para el diagrama, y el experimento que quedó listo
+
+La captura del navegador de EA que trajo el usuario muestra que la importación semántica es **perfecta**: el
+anidamiento `Outer → Inner → Nested`, `AbstractBase` y `Base` como clases, `Feature` con sus dos atributos **y el
+método `transform(String, Boolean)` con la firma completa**, `Contract` con icono de interfaz, `Status` de
+enumeración, y `Boolean` y `String` como primitivos. Es exactamente lo que emitimos. **Falta solo el dibujo.**
+
+Eso obliga a cambiar el método, y el cambio es importante. Hasta acá probé **agregándole campos** a nuestro archivo
+para ver si el diagrama aparecía: tres hipótesis refutadas así. Lo correcto es lo inverso: **partir del archivo de EA,
+que sí dibuja, e ir quitándole o sustituyéndole piezas** hasta que deje de dibujar. Se busca desde el caso que
+funciona hacia el que no, no al revés.
+
+El primer experimento de esa serie quedó **construido y listo**: `%TEMP%\ea-scratch\hybrid.xml` (87.648 bytes), que
+es el **archivo de EA con nuestro bloque `<diagrams>` completo adentro** —5.149 bytes del fixture reemplazados por
+nuestros 1.357—. Interpretación, escrita de antemano para no torcerla después:
+
+| Resultado | Qué significa |
+| --- | --- |
+| EA **crea** el diagrama | Nuestro bloque está bien y el problema es la **interacción con nuestro modelo**. La búsqueda pasa a los sujetos de las figuras y el paquete dueño |
+| EA **no** lo crea | El problema está **dentro de nuestro bloque**, y se biseca ahí: estilos, `<project>`, el id del diagrama |
+
+No se pudo medir: **EA se colgó más de 900 segundos** en esa importación, la misma fragilidad ya registrada que
+obliga a matar los procesos huérfanos entre intentos. El comando queda listo para correr en una corrida limpia:
+
+```sh
+XMI_NAME=hybrid.xml TAG=hybrid powershell.exe -File %TEMP%\imp3ps.ps1
+```
+
+**Y una lección de método que vale más que el experimento:** tres hipótesis refutadas construyendo desde el caso roto,
+y la primera construida desde el caso que funciona quedó lista para decidir en un solo intento. Cuando se depura
+contra un oráculo que funciona, **se parte del oráculo**.
+
+### 7.8 El control de expectativas, que es parte del entregable
+
+El usuario preguntó dónde ver los diagramas generados en EA, y la respuesta correcta es incómoda: **no hay ninguno
+que ver**. Corresponde decirlo con estas palabras y no con rodeos:
+
+- **Su proyecto `sw1_p2` nunca fue tocado.** Su archivo conserva la fecha del 11 de junio; todas las importaciones
+  corrieron sobre **copias** en `%TEMP%\ea-scratch\`. Si abrió su proyecto buscando algo nuestro, no había nada, por
+  diseño.
+- **El artefacto es un archivo, no una imagen**: `backend/target/xmi-sample.xml`. Importarlo a mano da el mismo
+  resultado medido: el modelo, y ningún diagrama.
+- **Advertencia para el usuario**: no importar ese archivo en su proyecto de trabajo. Agrega un paquete con el modelo
+  sintético de la prueba y ningún dibujo.
+
 **Decisión del usuario:** reiniciar EA y reintentar. **Pendiente de su acción**: abrir EA con un proyecto y avisar.
 
 | Desenlace | Qué se declara |
