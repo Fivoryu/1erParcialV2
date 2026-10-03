@@ -536,3 +536,34 @@ describe('session-aware API client', () => {
     expect(loadSession()).not.toBeNull();
   });
 });
+
+describe('editing lease API client', () => {
+  it('calls each editing-lease route with its contract method', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => new Response(
+      JSON.stringify({ lease: null }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+    const client = createApiClient('https://diagram.test', fetcher);
+
+    await client.getEditingLease(projectId);
+    await client.acquireEditingLease(projectId);
+    await client.renewEditingLease(projectId);
+    await client.reclaimEditingLease(projectId);
+    await client.releaseEditingLease(projectId);
+
+    expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+      `https://diagram.test/projects/${projectId}/editing-lease`,
+      `https://diagram.test/projects/${projectId}/editing-lease`,
+      `https://diagram.test/projects/${projectId}/editing-lease/renew`,
+      `https://diagram.test/projects/${projectId}/editing-lease/reclaim`,
+      `https://diagram.test/projects/${projectId}/editing-lease`,
+    ]);
+    expect(fetcher.mock.calls.map(([, init]) => init?.method)).toEqual([
+      undefined,
+      'POST',
+      'POST',
+      'POST',
+      'DELETE',
+    ]);
+  });
+});

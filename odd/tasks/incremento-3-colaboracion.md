@@ -876,6 +876,53 @@ editor, `reclaimable=false`, `retryAfterSeconds>0`, y **ningún run creado**. En
 7. **Sin eventos y sin tabla:** C20 no publica nada nuevo ni persiste nada (regla 10 de C19); `targetType`/`targetId` son la respuesta a «qué está
    editando», no una suscripción.
 
+### S5 — diseño congelado de la web de la concesión (antes de C21)
+
+El §1 pide que «mientras uno tiene una edición activa» la exportación quede bloqueada, pero la fila de C21 en el plan describe **sólo el lado que
+consume** el bloqueo: motivo, editor nombrado y botón de reclamo. **Ninguna unidad se hacía dueña de tomar y renovar la concesión desde la web**, y sin
+eso las guardas de C20 quedan inertes en producción: nadie la tiene, nadie ve el bloqueo. Por decisión del usuario del 2026-10-03, C21 cubre **los dos
+lados** y se congela acá antes de escribir la primera línea, igual que C19 y C20.
+
+**Lo primero que hay que decir, porque ordena todo lo demás: la concesión NO bloquea la edición.** No impide editar; lo que bloquea es **exportar**
+mientras la tiene otro. Con dos personas editando, **una sola** la tiene —`acquire` con una viva ajena es `409` y no se la roba (regla 3 de C19)—, la
+otra sigue editando igual, y su actividad no renueva nada. Quien exporta es quien se topa con el aviso.
+
+**Reglas congeladas:**
+
+1. **Cuándo se toma.** El editor la pide en el primer acto que **modifica el modelo** y la vuelve a pedir en los siguientes: si ya es suya, `acquire` la
+   refresca, así que la actividad misma es latido. **No se pide al montar la página**: estar mirando el diagrama no es estar editando.
+2. **Latido.** Un temporizador de **15 s** (el TTL es 30 s = dos latidos, decisión C6) que actúa **sólo mientras la concesión es nuestra**: `renew`.
+   Si **no** la tenemos, el latido no hace nada: reintentar `acquire` cada 15 s contra una concesión viva ajena produciría un 409 por minuto sin ningún
+   valor. La adquisición se reintenta en la próxima actividad del usuario.
+3. **Si `acquire` devuelve `409`.** La edición **no se interrumpe** y no se muestra un error genérico: se muestra el aviso con el nombre y la razón, y
+   el botón **Reclamar control** queda habilitado **sólo** si la concesión ajena ya no está viva (`reclaimable: true`). Reclamar **nunca** es automático:
+   quitarle el control a otro es un acto explícito (reglas 3 y 6 de C19, decisión C6).
+4. **Al salir** se suelta con `release` al desmontar la página. Un cierre de pestaña **no se puede garantizar** —`beforeunload` no espera a la red— y por
+   eso existe el TTL. Se declara y no se finge.
+5. **Una sola forma canónica del conflicto.** Una misma función mapea **los dos portadores** que ya existen —`details[0]` del 409 y `result` del `outcome`
+   200— a un objeto único con las cinco claves. El cliente **no recalcula la vivacidad cuando el servidor ya la mandó**: usa `reclaimable` y
+   `retryAfterSeconds` del sobre. Cuando lee del `GET`, sí compara `expiresAt` con su propio reloj (desfase declarado abajo).
+6. **Toda la decisión en módulos puros; el hook y los componentes, delgados.** Este proyecto no usa DOM ni testing-library: se prueba lógica pura y markup
+   estático con `renderToStaticMarkup`. El latido es por lo tanto una **decisión pura** —qué corresponde hacer dado el estado y el instante—, probada sin
+   temporizadores reales; el adaptador de React sólo la ejecuta.
+7. **Los tres estados que la prueba de componente tiene que fijar** (es la evidencia que el plan pide para C21): sin concesión registrada; concesión
+   **viva ajena** —nombre visible, motivo visible, botón **deshabilitado**—; concesión ajena **ya no viva** —botón **habilitado**—. Y un cuarto que se
+   agrega: concesión **propia** no muestra aviso.
+8. **Las copias van en inglés**, como el resto de la UI (medido: «Project workspace», «In this diagram», «Generate backend»), con el `displayName`
+   interpolado.
+9. **Sin dependencias nuevas y sin un segundo servicio de tiempo.**
+10. **Archivos compartidos con la sesión de XMI:** se **agrega** en `web/src/api/client.ts` y en `web/src/pages/ProjectEditorPage.tsx`; **no se modifica**
+    ninguna de sus regiones (`client.ts:27-30`, `:118-119`, `:333-346`; `ProjectEditorPage.tsx:30`, `:612`). El aviso queda como componente reutilizable
+    para que la sesión de XMI lo monte en su propio panel del export si quiere, sin que nosotros toquemos el suyo.
+
+**Límites declarados de este diseño:**
+
+1. **Dos pestañas del mismo usuario comparten la concesión** (es por usuario, no por pestaña): la segunda refresca la primera en vez de pelearla.
+2. **Una sola instancia** (C4): con dos instancias el latido no cruza y la guarda no ve la concesión de la otra.
+3. **El desfase de reloj del cliente** al decidir sobre un `GET`; el servidor sigue siendo la autoridad y el siguiente rechazo trae la verdad.
+4. **Si el usuario queda inactivo con la pestaña abierta, la concesión vence y otro puede reclamarla.** Es lo que la decisión C6 quiere —«se libera solo
+   cuando el editor desaparece»— y tiene una consecuencia que se declara: estar presente no es estar editando.
+
 ### S5 progreso — C19 cerrada (2026-10-03)
 
 **Commit:** `14053ce` — *feat(backend): hold an editing lease per model while someone edits* (4 archivos nuevos, +615). El diseño se congeló **antes** de
@@ -1051,6 +1098,62 @@ la evidencia dependiente de que este refactor de `requireExportAllowed` —firma
 
 **Sin desviación de ruteo:** un escritor por vez con superficies exactas, una ronda de corrección acotada después de verificar, la verificación
 independiente en dos rondas, y la suite completa, la revisión nativa y los commits, en el padre.
+
+### S5 progreso — C21 cerrada (2026-10-03)
+
+**Commit:** `d2d5199` — *feat(web): hold the editing lease while editing and let the notice reclaim it* (11 archivos: 5 nuevos y 6 modificados, +658/−6).
+El diseño se congeló antes de escribir (`5d3ed83`) y la decisión de alcance —que C21 cubre también **tomar y renovar** la concesión, no sólo mostrarla—
+la tomó el usuario, porque ninguna unidad del plan era dueña de ese lado y sin él las guardas de C20 quedaban inertes en producción.
+
+**Lo implementado:** `editingLease.ts` (107 líneas) con el mapeador canónico de los dos portadores —`details[0]` del 409 y `result` del outcome 200, con
+validación por tipo de cada campo y `null` para cualquier otro código—, la derivación de los cinco estados y el latido como decisión pura con reloj
+inyectado; `EditingLeaseNotice.tsx` (35) puramente presentacional —sin API, sin reloj, botón gobernado sólo por `reclaimable`—; `useEditingLease.ts`
+(196) como adaptador fino: `GET` al montar, `acquire` en el primer despacho que modifica el modelo (`dispatchEnvelope`, `ProjectEditorPage.tsx:398`),
+latido de 15 s que **sólo** renueva mientras la concesión es nuestra, `release` al desmontar, y un `GET` de refresco programado con el
+`retryAfterSeconds` del servidor para que el botón de reclamo se habilite solo. **Coordinado con la sesión de XMI**: el componente quedó reutilizable
+(export público del mapeador, props `conflict/onReclaim/busy`) para que su panel de export lo monte cuando el usuario lo ordene; su decisión del
+2026-10-03 fue declararlo **pendiente, sin trabajarlo**, y así queda en su §14.10.
+
+**Verificación independiente, en dos rondas, y corrigió una cosa de su propia ronda 1.** La primera cerró **HOLDS en siete ejes** con una tabla de
+mutaciones 3 de 5 tumbadas y el veredicto «**no** es seguro commitear tal cual»: el adaptador no tenía guarda de desmontaje en cuatro caminos asíncronos
+(sólo el `GET` de montaje estaba guardado), y sobrevivían tres mutaciones. **El defecto se arregló en vez de ablandar la promesa**: `mountedRef` global
+del hook, +24 líneas, con el camino feliz intacto. La segunda ronda: **las tres mutaciones murieron** (mapeador aceptando cualquier código, intercambio
+semántico de los cuerpos de `acquire`/`renew` —que además detecta un cambio de verbo—, y la validación de `retryAfterSeconds` negativo), la prueba del
+panel **no es vacua** (falla con `expected … to contain 'Alex Rivera'` al quitar el montaje), y los **13 escritores de estado** del adaptador quedaron
+enumerados uno por uno con su guarda: **ninguno sin guardar**. El verificador además **corrigió su propio registro**: su mutación (e) original era un
+no-op semántico —reordenaba definiciones sin cambiar comportamiento—, así que su primera "supervivencia" probaba menos de lo reportado.
+
+**Medido:** lint 0, `npm test` **169 pasan / 4 omiten** (base 158/4, +11 de esta unidad), build con `tsc` y Vite (231 módulos, ~1.9 s) sin avisos. Las
+regiones XMI de los dos archivos compartidos **byte-idénticas a HEAD**, verificado dos veces por diff independiente contra `git show HEAD:<path>`.
+
+**Revisión nativa:** linaje `review-0451a261a69d4f06`, tier `medium`, **una** lente (`review-reliability`, orden 0), 11 caminos, **664 líneas**,
+presupuesto de corrección 200. **Aprobada al primer intento**, autoridad quemada (`gentle-ai.review-acknowledged/v1`); pronóstico previo
+(`pi_host_relay`, 1 corrida, sin mutación) autorizado como esa corrida exacta.
+
+**Dos hallazgos informativos**, ambos WARNING, ambos `informational`, ninguno abre corrección y el sobre no expuso el texto:
+
+1. `R3-001` · `useEditingLease.ts:72-75`. Lectura propia, atribuida a esta sesión y no al revisor: es el `GET` de montaje, que **se dispara igual** aunque
+   el usuario no tenga la página a la que responde —el `active` del efecto y el `mountedRef` lo protegen del estado, no del pedido—. Con una concesión
+   ajena viva, entrar a la página consulta y no reclama: correcto por diseño, y el costo es un pedido por montaje.
+2. `R3-002` · `useEditingLease.ts:140-145`. Es `acquireForEdit`: un `acquire` **por cada acto de edición** del usuario —cada despacho que modifica el
+   modelo—, no un latido. El servidor lo trata como refresco (regla 3 de C19: mismo usuario ⇒ refresca), así que no es un error, pero con un usuario
+   tecleando rápido significa varios pedidos por segundo contra `POST /editing-lease`. Se declara como patrón deliberado del congelamiento (regla 1:
+   «la actividad misma es latido») y no se cambia sin rediseñar esa regla.
+
+**Límites declarados de esta unidad:**
+
+1. **La guarda de desmontaje no tiene prueba que la capture:** la mutación «nunca activar `mountedRef`» sobrevive (169 pasan) porque el proyecto no
+   puede renderizar hooks. Se mide y se declara; la protección es de lectura, no de suite.
+2. **El comportamiento del adaptador bajo temporizadores reales y orden asíncrono no está probado**, por el mismo límite estructural: toda su evidencia
+   es de lectura de código, `tsc` y la suite de los módulos puros.
+3. **El release al desmontar es incondicional**: se emite aunque el usuario nunca adquiriera (no-op según la regla 5 de C19, pero es un `DELETE` igual).
+4. **El cierre de pestaña no garantiza el release** (`beforeunload` no espera la red); lo cubre el TTL, como declara el congelamiento.
+5. **El desfase de reloj del cliente** al decidir sobre el `GET`; el servidor sigue siendo la autoridad.
+6. **El cuerpo del pedido de `acquire`/`reclaim` no está asertado** (las pruebas fijan verbo y camino, no el cuerpo); lo cubre el backend con 400
+   `INVALID_PAYLOAD` y la validación del mapeador del lado cliente.
+
+**Sin desviación de ruteo:** escritor con superficies exactas, dos rondas de verificación, la corrección del defecto real antes de la revisión nativa, y
+la suite, la revisión y los commits en el padre.
 
 ### S6 — Intercambio XMI (RF-09, CU-16, CU-17) — **cedida a otra sesión**
 

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   DeploymentResource,
+  EditingLeaseConflict,
   GenerationProfileResource,
   GenerationRunResource,
   GenerationTargetResource,
@@ -161,6 +162,23 @@ const TECHNICAL_IDENTIFIERS = [
 ];
 
 describe('generation panel, presentational surface', () => {
+  it('shows the editing lease notice only when a conflict exists', () => {
+    const conflict: EditingLeaseConflict = {
+      editorDisplayName: 'Alex Rivera',
+      targetType: 'CLASSIFIER',
+      targetId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      reclaimable: true,
+      retryAfterSeconds: 0,
+    };
+    const withConflict = render({ editingLeaseConflict: conflict });
+
+    expect(withConflict).toContain('Alex Rivera');
+    expect(withConflict).toContain('Reclaim control');
+
+    const withoutConflict = render({ editingLeaseConflict: null });
+    expect(withoutConflict).not.toContain('editing-lease-notice');
+  });
+
   it('lists every destination the model has, not just the first one', () => {
     const markup = render({
       targets: [firstTarget, secondTarget],
