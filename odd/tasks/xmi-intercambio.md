@@ -1690,3 +1690,35 @@ revisión se hizo porque el segundo intento pasó, no porque el problema esté r
 **Una observación, para el registro.** El `START` que sí funcionó volvió dentro de un sobre cuyo nombre de
 operación era `answer-consent`, con `action: "created"` y sin binding de consentimiento pendiente; no llamé a
 `answer-consent` porque no había nada que contestar. Queda asentado como observación, no como problema.
+
+### 14.8 El segundo movimiento: la documentación del par, ya en `main`
+
+El usuario pidió «coordinar con el otro orquestador para mover todo a `main`». La medición primero dice **qué es
+«todo»**:
+
+| Lo que se midió | Comando | Resultado |
+| --- | --- | --- |
+| Qué ramas no están en `main` | `git rev-list --count main..<rama>`, rama por rama | **Solo una**: `feat/incremento-3-colaboracion`, con **2** commits. `incremento-0`, `incremento-1`, `incremento-2` y `xmi-intercambio` ya son ancestros de `main` |
+| Qué traen esos 2 commits | `git log --stat main..feat/incremento-3-colaboracion` | `c39605a` (+106) y `73a2387` (+22): **docs-only**, los dos solo sobre `odd/tasks/incremento-3-colaboracion.md` —congelar los endpoints de concesión antes de escribirlos, y registrar la guarda de XMI como conectada— |
+| ¿Va a haber conflictos? | `git merge-tree --write-tree main feat/incremento-3-colaboracion` | **Una sola línea de salida** = el árbol resultante, o sea **cero conflictos**, medido **antes** de fusionar |
+| La fusión | `git merge --no-commit --no-ff feat/incremento-3-colaboracion` | «Automatic merge went well»; el árbol, salvo ese archivo, **idéntico** a `efd7abd` |
+| El commit | **`9b7862d`** | Dos padres: `efd7abd` y `73a2387` |
+| Compuertas tras la fusión | las cuatro de §14.4 | `mvn verify` = **332 pruebas, 0 fallos, 0 salteadas, BUILD SUCCESS**; `pytest tools -q` = **54 pasan**; web = **158 pasan, 4 omitidas, 0 fallan**; lint, tipos y build limpios |
+
+**La revisión nativa de este commit no se corrió, y el motivo se declara**: es una fusión cuyo único contenido es
+**documentación pasiva** —un solo archivo de plan ajeno, +128/−1, con el resto del árbol medido **idéntico** a
+`efd7abd`, que ya está revisado—, que es exactamente el caso que el contrato exceptúa. No es una omisión: es la
+excepción declarada.
+
+**Lo que falta para que `main` tenga todo, y de quién depende.** La unidad **C20** del par —la API de concesiones:
+`EditingLeaseController`, `EditingLeaseResources`, `EditingLeaseConflict` y sus pruebas, más los cambios en
+`EditingLeaseService`, `InMemoryEditingLeaseService` y `GenerationApiService`— sigue **sin commitear** en su
+worktree: **9 rutas** medidas con `git status --porcelain` en solo lectura. No se puede fusionar lo que no es un
+commit, y **no se toca su árbol de trabajo**. Se le pidió por intercom el `sha` cuando aterrice, junto con la
+condición ya declarada: al tomarlo hay que **volver a correr `XmiExportApiTest`** y el `mvn verify` completo,
+porque su refactor cambia el **cuerpo** de `requireExportAllowed` delegando en un `blocker(UUID modelId)` nuevo
+(§14.6). El pedido quedó **entregado y sin responder a los 10 minutos**; el resto no depende de que conteste ahora,
+sino de que su unidad se commitee.
+
+**Un desvío más, declarado:** el ref remoto de su rama está en `41588c6`, tres commits atrás de su punta local
+`73a2387`. Empujarla es decisión suya; para `main` no hace falta, porque la fusión ya arrastró esos commits.
