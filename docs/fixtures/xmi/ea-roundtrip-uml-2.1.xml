@@ -1,0 +1,574 @@
+<?xml version="1.0" encoding="windows-1252"?>
+<xmi:XMI xmi:version="2.1" xmlns:uml="http://schema.omg.org/spec/UML/2.1" xmlns:xmi="http://schema.omg.org/spec/XMI/2.1" xmlns:thecustomprofile="http://www.sparxsystems.com/profiles/thecustomprofile/1.0">
+	<xmi:Documentation exporter="Enterprise Architect" exporterVersion="6.5"/>
+	<uml:Model xmi:type="uml:Model" name="EA_Model" visibility="public">
+		<packagedElement xmi:type="uml:Package" xmi:id="EAPK_00000000_0000_0000_0000_000000000001" name="EA_Model" visibility="public">
+			<packagedElement xmi:type="uml:Class" xmi:id="EAID_00000000_0000_0000_0000_000000000011" name="AbstractBase" visibility="public" isAbstract="true"/>
+			<packagedElement xmi:type="uml:Class" xmi:id="EAID_00000000_0000_0000_0000_00000000000C" name="Base" visibility="public"/>
+			<packagedElement xmi:type="uml:Class" xmi:id="EAID_00000000_0000_0000_0000_00000000000E" name="Feature" visibility="public">
+				<ownedAttribute xmi:type="uml:Property" xmi:id="EAID_00000000_0000_0000_0000_000000000014" name="label" visibility="private" isStatic="false" isReadOnly="false" isDerived="false" isOrdered="false" isUnique="false" isDerivedUnion="false">
+					<type xmi:idref="EAID_9BEA9B7F_C0B6_31B9_B461_303D53C3618B"/>
+					<lowerValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000001_0000_0000_0000_000000000014" value="1"/>
+					<upperValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000002_0000_0000_0000_000000000014" value="1"/>
+					<defaultValue xmi:type="uml:LiteralString" xmi:id="EAID_LI000003_0000_0000_0000_000000000014" value="guest"/>
+				</ownedAttribute>
+				<ownedAttribute xmi:type="uml:Property" xmi:id="EAID_00000000_0000_0000_0000_000000000015" name="nickname" visibility="package" isStatic="false" isReadOnly="false" isDerived="false" isOrdered="false" isUnique="false" isDerivedUnion="false">
+					<type xmi:idref="EAID_9BEA9B7F_C0B6_31B9_B461_303D53C3618B"/>
+					<lowerValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000003_0000_0000_0000_000000000015" value="0"/>
+					<upperValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000004_0000_0000_0000_000000000015" value="1"/>
+				</ownedAttribute>
+				<ownedOperation xmi:id="EAID_00000000_0000_0000_0000_00000000001E" name="transform" visibility="protected">
+					<ownedParameter xmi:id="EAID_00000000_0000_0000_0000_00000000001F" name="input" type="EAID_9BEA9B7F_C0B6_31B9_B461_303D53C3618B" direction="in" isStream="false" isException="false" isOrdered="false" isUnique="true"/>
+				</ownedOperation>
+				<ownedAttribute xmi:type="uml:Property" xmi:id="EAID_src000000_0000_0000_0000_00000000005A" name="whole" visibility="public" association="EAID_00000000_0000_0000_0000_00000000005A" isStatic="false" isReadOnly="true" isDerived="false" isOrdered="false" isUnique="true" isDerivedUnion="false" aggregation="none">
+					<type xmi:idref="EAID_00000000_0000_0000_0000_00000000000D"/>
+					<lowerValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000007__0000_0000_0000_00000000005A" value="1"/>
+					<upperValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000008__0000_0000_0000_00000000005A" value="1"/>
+				</ownedAttribute>
+				<ownedAttribute xmi:type="uml:Property" xmi:id="EAID_src000000_0000_0000_0000_000000000064" name="container" visibility="public" association="EAID_00000000_0000_0000_0000_000000000064" isStatic="false" isReadOnly="true" isDerived="false" isOrdered="false" isUnique="true" isDerivedUnion="false" aggregation="none">
+					<type xmi:idref="EAID_00000000_0000_0000_0000_00000000000D"/>
+					<lowerValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000009__0000_0000_0000_000000000064" value="1"/>
+					<upperValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000010__0000_0000_0000_000000000064" value="1"/>
+				</ownedAttribute>
+			</packagedElement>
+			<packagedElement xmi:type="uml:Realization" xmi:id="EAID_00000000_0000_0000_0000_000000000046" name="implements" visibility="public" supplier="EAID_00000000_0000_0000_0000_00000000000F" client="EAID_00000000_0000_0000_0000_00000000000E"/>
+			<packagedElement xmi:type="uml:Dependency" xmi:id="EAID_00000000_0000_0000_0000_000000000050" name="uses" visibility="public" supplier="EAID_00000000_0000_0000_0000_00000000000F" client="EAID_00000000_0000_0000_0000_00000000000E"/>
+			<packagedElement xmi:type="uml:Association" xmi:id="EAID_00000000_0000_0000_0000_000000000032" name="contains" visibility="public">
+				<memberEnd xmi:idref="EAID_dst000000_0000_0000_0000_000000000032"/>
+				<memberEnd xmi:idref="EAID_src000000_0000_0000_0000_000000000032"/>
+				<ownedEnd xmi:type="uml:Property" xmi:id="EAID_src000000_0000_0000_0000_000000000032" name="owner" visibility="public" association="EAID_00000000_0000_0000_0000_000000000032" isStatic="false" isReadOnly="true" isDerived="false" isOrdered="false" isUnique="true" isDerivedUnion="false" aggregation="none">
+					<type xmi:idref="EAID_00000000_0000_0000_0000_00000000000D"/>
+					<lowerValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000005__0000_0000_0000_000000000032" value="1"/>
+					<upperValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000006__0000_0000_0000_000000000032" value="1"/>
+				</ownedEnd>
+				<ownedEnd xmi:type="uml:Property" xmi:id="EAID_dst000000_0000_0000_0000_000000000032" name="items" visibility="public" association="EAID_00000000_0000_0000_0000_000000000032" isStatic="false" isReadOnly="true" isDerived="false" isOrdered="false" isUnique="true" isDerivedUnion="false" aggregation="none">
+					<type xmi:idref="EAID_00000000_0000_0000_0000_00000000000E"/>
+					<lowerValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000013__0000_0000_0000_000000000032" value="0"/>
+					<upperValue xmi:type="uml:LiteralUnlimitedNatural" xmi:id="EAID_LI000014__0000_0000_0000_000000000032" value="-1"/>
+				</ownedEnd>
+			</packagedElement>
+			<packagedElement xmi:type="uml:Association" xmi:id="EAID_00000000_0000_0000_0000_00000000005A" name="aggregates" visibility="public">
+				<memberEnd xmi:idref="EAID_dst000000_0000_0000_0000_00000000005A"/>
+				<memberEnd xmi:idref="EAID_src000000_0000_0000_0000_00000000005A"/>
+				<ownedEnd xmi:type="uml:Property" xmi:id="EAID_dst000000_0000_0000_0000_00000000005A" name="parts" visibility="public" association="EAID_00000000_0000_0000_0000_00000000005A" isStatic="false" isReadOnly="true" isDerived="false" isOrdered="false" isUnique="true" isDerivedUnion="false" aggregation="shared">
+					<type xmi:idref="EAID_00000000_0000_0000_0000_00000000000E"/>
+					<lowerValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000015__0000_0000_0000_00000000005A" value="1"/>
+					<upperValue xmi:type="uml:LiteralUnlimitedNatural" xmi:id="EAID_LI000016__0000_0000_0000_00000000005A" value="-1"/>
+				</ownedEnd>
+			</packagedElement>
+			<packagedElement xmi:type="uml:Association" xmi:id="EAID_00000000_0000_0000_0000_000000000064" name="owns" visibility="public">
+				<memberEnd xmi:idref="EAID_dst000000_0000_0000_0000_000000000064"/>
+				<memberEnd xmi:idref="EAID_src000000_0000_0000_0000_000000000064"/>
+				<ownedEnd xmi:type="uml:Property" xmi:id="EAID_dst000000_0000_0000_0000_000000000064" name="part" visibility="public" association="EAID_00000000_0000_0000_0000_000000000064" isStatic="false" isReadOnly="true" isDerived="false" isOrdered="false" isUnique="true" isDerivedUnion="false" aggregation="composite">
+					<type xmi:idref="EAID_00000000_0000_0000_0000_00000000000E"/>
+					<lowerValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000017__0000_0000_0000_000000000064" value="1"/>
+					<upperValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000018__0000_0000_0000_000000000064" value="1"/>
+				</ownedEnd>
+			</packagedElement>
+			<packagedElement xmi:type="uml:Enumeration" xmi:id="EAID_00000000_0000_0000_0000_000000000010" name="Status" visibility="public">
+				<ownedAttribute xmi:type="uml:Property" xmi:id="EAID_00000000_0000_0000_0000_000000000028" name="ACTIVE" visibility="public" isStatic="false" isReadOnly="false" isDerived="false" isOrdered="false" isUnique="false" isDerivedUnion="false">
+					<lowerValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000011_0000_0000_0000_000000000028" value="1"/>
+					<upperValue xmi:type="uml:LiteralInteger" xmi:id="EAID_LI000012_0000_0000_0000_000000000028" value="1"/>
+				</ownedAttribute>
+			</packagedElement>
+			<packagedElement xmi:type="uml:Interface" xmi:id="EAID_00000000_0000_0000_0000_00000000000F" name="Contract" visibility="public" isAbstract="true"/>
+			<packagedElement xmi:type="uml:PrimitiveType" xmi:id="EAID_E3652FD7_6F2B_38E0_B3B6_3E29F69CEE64" name="Boolean" visibility="public"/>
+			<packagedElement xmi:type="uml:PrimitiveType" xmi:id="EAID_9BEA9B7F_C0B6_31B9_B461_303D53C3618B" name="String" visibility="public"/>
+			<ownedRule xmi:type="uml:Constraint" xmi:id="EAID_00000000_0000_0000_0000_000000000020">
+				<specification xmi:type="uml:OpaqueExpression" xmi:id="EAID_OE000000_0000_0000_0000_000000000020" body="label &lt;&gt; ''"/>
+			</ownedRule>
+			<packagedElement xmi:type="uml:Package" xmi:id="EAPK_00000000_0000_0000_0000_00000000000A" name="Outer" visibility="public">
+				<packagedElement xmi:type="uml:Package" xmi:id="EAPK_00000000_0000_0000_0000_00000000000B" name="Inner" visibility="public">
+					<packagedElement xmi:type="uml:Class" xmi:id="EAID_00000000_0000_0000_0000_00000000000D" name="Nested" visibility="public">
+						<generalization xmi:type="uml:Generalization" xmi:id="EAID_00000000_0000_0000_0000_00000000003C" general="EAID_00000000_0000_0000_0000_00000000000C"/>
+					</packagedElement>
+				</packagedElement>
+			</packagedElement>
+		</packagedElement>
+		<thecustomprofile:enumeration base_Enumeration="EAID_00000000_0000_0000_0000_000000000010"/>
+	</uml:Model>
+	<xmi:Extension extender="Enterprise Architect" extenderID="6.5">
+		<elements>
+			<element xmi:idref="EAPK_00000000_0000_0000_0000_000000000001" xmi:type="uml:Package" name="EA_Model" scope="public">
+				<model package2="EAID_00000000_0000_0000_0000_000000000001" package="EAPK_A560A4C5_A6E9_4325_9825_7515A790B23C" tpos="0" ea_localid="270" ea_eleType="package"/>
+				<properties isSpecification="false" sType="Package" nType="0" scope="public"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="Model"/>
+				<packageproperties version="1.0"/>
+				<paths/>
+				<times created="2026-10-03 00:00:00" modified="2026-10-03 03:21:35"/>
+				<flags iscontrolled="FALSE" isprotected="FALSE" usedtd="FALSE" logxml="FALSE"/>
+			</element>
+			<element xmi:idref="EAID_00000000_0000_0000_0000_000000000011" xmi:type="uml:Class" name="AbstractBase" scope="public">
+				<model package="EAPK_00000000_0000_0000_0000_000000000001" tpos="0" ea_localid="2241" ea_eleType="element"/>
+				<properties isSpecification="false" sType="Class" nType="0" scope="public" isRoot="false" isLeaf="false" isAbstract="true" isActive="false"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="EA_Model"/>
+			</element>
+			<element xmi:idref="EAID_00000000_0000_0000_0000_00000000000C" xmi:type="uml:Class" name="Base" scope="public">
+				<model package="EAPK_00000000_0000_0000_0000_000000000001" tpos="0" ea_localid="2242" ea_eleType="element"/>
+				<properties isSpecification="false" sType="Class" nType="0" scope="public" isRoot="false" isLeaf="false" isAbstract="false" isActive="false"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="EA_Model"/>
+				<links>
+					<Generalization xmi:id="EAID_00000000_0000_0000_0000_00000000003C" start="EAID_00000000_0000_0000_0000_00000000000D" end="EAID_00000000_0000_0000_0000_00000000000C"/>
+				</links>
+			</element>
+			<element xmi:idref="EAID_00000000_0000_0000_0000_00000000000E" xmi:type="uml:Class" name="Feature" scope="public">
+				<model package="EAPK_00000000_0000_0000_0000_000000000001" tpos="0" ea_localid="2244" ea_eleType="element"/>
+				<properties isSpecification="false" sType="Class" nType="0" scope="public" isRoot="false" isLeaf="false" isAbstract="false" isActive="false"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="EA_Model"/>
+				<attributes>
+					<attribute xmi:idref="EAID_00000000_0000_0000_0000_000000000014" name="label" scope="Private">
+						<initial body="guest"/>
+						<documentation/>
+						<model ea_localid="110" ea_guid="{00000000-0000-0000-0000-000000000014}"/>
+						<properties type="String" derived="0" collection="false" static="0" duplicates="1" changeability="changeable"/>
+						<coords ordered="0" scale="0"/>
+						<containment position="0"/>
+						<stereotype/>
+						<bounds lower="1" upper="1"/>
+						<options/>
+						<style/>
+						<styleex value="IsLiteral=0;"/>
+						<tags/>
+						<xrefs/>
+					</attribute>
+					<attribute xmi:idref="EAID_00000000_0000_0000_0000_000000000015" name="nickname" scope="Package">
+						<initial/>
+						<documentation/>
+						<model ea_localid="111" ea_guid="{00000000-0000-0000-0000-000000000015}"/>
+						<properties type="String" derived="0" collection="false" static="0" duplicates="1" changeability="changeable"/>
+						<coords ordered="0" scale="0"/>
+						<containment position="1"/>
+						<stereotype/>
+						<bounds lower="0" upper="1"/>
+						<options/>
+						<style/>
+						<styleex value="IsLiteral=0;"/>
+						<tags/>
+						<xrefs/>
+					</attribute>
+				</attributes>
+				<operations>
+					<operation xmi:idref="EAID_00000000_0000_0000_0000_00000000001E" name="transform" scope="Protected">
+						<properties position="0"/>
+						<stereotype/>
+						<model ea_guid="{00000000-0000-0000-0000-00000000001E}" ea_localid="38"/>
+						<type const="false" static="false" isAbstract="false" synchronised="0" pure="0" isQuery="false"/>
+						<behaviour/>
+						<code/>
+						<style/>
+						<styleex/>
+						<documentation/>
+						<tags/>
+						<parameters>
+							<parameter xmi:idref="EAID_RETURNID_0000_0000_0000_00000000001E" visibility="public">
+								<properties pos="0" const="false" ea_guid="{RETURNID-0000-0000-0000-00000000001E}"/>
+								<style/>
+								<styleex/>
+								<documentation/>
+								<tags/>
+								<xrefs/>
+							</parameter>
+							<parameter xmi:idref="EAID_00000000_0000_0000_0000_00000000001F" visibility="public">
+								<properties pos="0" type="String" const="false" classifier="EAID_9BEA9B7F_C0B6_31B9_B461_303D53C3618B" ea_guid="{00000000-0000-0000-0000-00000000001F}"/>
+								<style/>
+								<styleex/>
+								<documentation/>
+								<tags/>
+								<xrefs/>
+							</parameter>
+						</parameters>
+						<xrefs/>
+					</operation>
+				</operations>
+				<links>
+					<Realisation xmi:id="EAID_00000000_0000_0000_0000_000000000046" start="EAID_00000000_0000_0000_0000_00000000000E" end="EAID_00000000_0000_0000_0000_00000000000F"/>
+					<Dependency xmi:id="EAID_00000000_0000_0000_0000_000000000050" start="EAID_00000000_0000_0000_0000_00000000000E" end="EAID_00000000_0000_0000_0000_00000000000F"/>
+					<Association xmi:id="EAID_00000000_0000_0000_0000_000000000032" start="EAID_00000000_0000_0000_0000_00000000000D" end="EAID_00000000_0000_0000_0000_00000000000E"/>
+					<Aggregation xmi:id="EAID_00000000_0000_0000_0000_00000000005A" start="EAID_00000000_0000_0000_0000_00000000000D" end="EAID_00000000_0000_0000_0000_00000000000E"/>
+					<Aggregation xmi:id="EAID_00000000_0000_0000_0000_000000000064" start="EAID_00000000_0000_0000_0000_00000000000D" end="EAID_00000000_0000_0000_0000_00000000000E"/>
+				</links>
+			</element>
+			<element xmi:idref="EAID_00000000_0000_0000_0000_000000000010" xmi:type="uml:Class" name="Status" scope="public">
+				<model package="EAPK_00000000_0000_0000_0000_000000000001" tpos="0" ea_localid="2246" ea_eleType="element"/>
+				<properties isSpecification="false" sType="Class" nType="0" scope="public" stereotype="enumeration" isRoot="false" isLeaf="false" isAbstract="false" isActive="false"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs value="$XREFPROP=$XID={6CCBD212-0515-4b30-98D4-640981017042}$XID;$NAM=Stereotypes$NAM;$TYP=element property$TYP;$VIS=Public$VIS;$PAR=0$PAR;$DES=@STEREO;Name=enumeration;GUID={7B7A0814-1B21-45ec-BD83-ED5D6F9BB552};@ENDSTEREO;$DES;$CLT={00000000-0000-0000-0000-000000000010}$CLT;$SUP=&lt;none&gt;$SUP;$ENDXREF;"/>
+				<extendedProperties tagged="0" package_name="EA_Model"/>
+				<attributes>
+					<attribute xmi:idref="EAID_00000000_0000_0000_0000_000000000028" name="ACTIVE" scope="Public">
+						<initial/>
+						<documentation/>
+						<model ea_localid="112" ea_guid="{00000000-0000-0000-0000-000000000028}"/>
+						<properties derived="0" collection="false" static="0" duplicates="1" changeability="changeable"/>
+						<coords ordered="0"/>
+						<containment position="0"/>
+						<stereotype/>
+						<bounds lower="1" upper="1"/>
+						<options/>
+						<style/>
+						<styleex value="IsLiteral=0;"/>
+						<tags/>
+						<xrefs/>
+					</attribute>
+				</attributes>
+			</element>
+			<element xmi:idref="EAID_00000000_0000_0000_0000_00000000000F" xmi:type="uml:Interface" name="Contract" scope="public">
+				<model package="EAPK_00000000_0000_0000_0000_000000000001" tpos="0" ea_localid="2243" ea_eleType="element"/>
+				<properties isSpecification="false" sType="Interface" nType="0" scope="public" isRoot="false" isLeaf="false" isAbstract="true"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="EA_Model"/>
+				<links>
+					<Realisation xmi:id="EAID_00000000_0000_0000_0000_000000000046" start="EAID_00000000_0000_0000_0000_00000000000E" end="EAID_00000000_0000_0000_0000_00000000000F"/>
+					<Dependency xmi:id="EAID_00000000_0000_0000_0000_000000000050" start="EAID_00000000_0000_0000_0000_00000000000E" end="EAID_00000000_0000_0000_0000_00000000000F"/>
+				</links>
+			</element>
+			<element xmi:idref="EAID_E3652FD7_6F2B_38E0_B3B6_3E29F69CEE64" xmi:type="uml:PrimitiveType" name="Boolean" scope="public">
+				<model package="EAPK_00000000_0000_0000_0000_000000000001" tpos="0" ea_localid="2247" ea_eleType="element"/>
+				<properties isSpecification="false" sType="PrimitiveType" nType="0" scope="public" isRoot="false" isLeaf="false" isAbstract="false"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="EA_Model"/>
+			</element>
+			<element xmi:idref="EAID_9BEA9B7F_C0B6_31B9_B461_303D53C3618B" xmi:type="uml:PrimitiveType" name="String" scope="public">
+				<model package="EAPK_00000000_0000_0000_0000_000000000001" tpos="0" ea_localid="2248" ea_eleType="element"/>
+				<properties isSpecification="false" sType="PrimitiveType" nType="0" scope="public" isRoot="false" isLeaf="false" isAbstract="false"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="EA_Model" ea_attsclassified="{00000000-0000-0000-0000-000000000015},{00000000-0000-0000-0000-000000000014}" ea_oprparamsclassified="{00000000-0000-0000-0000-00000000001F}"/>
+			</element>
+			<element xmi:idref="EAID_00000000_0000_0000_0000_000000000020" xmi:type="uml:Constraint" scope="public">
+				<model package="EAPK_00000000_0000_0000_0000_000000000001" owner="EAID_00000000_0000_0000_0000_00000000000E" tpos="0" ea_localid="2245" ea_eleType="element"/>
+				<properties documentation="label &lt;&gt; ''" isSpecification="false" sType="Constraint" nType="0" scope="public"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="&lt;none&gt;"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="EA_Model"/>
+			</element>
+			<element xmi:idref="EAPK_00000000_0000_0000_0000_00000000000A" xmi:type="uml:Package" name="Outer" scope="public">
+				<model package2="EAID_00000000_0000_0000_0000_00000000000A" package="EAPK_00000000_0000_0000_0000_000000000001" tpos="0" ea_localid="271" ea_eleType="package"/>
+				<properties isSpecification="false" sType="Package" nType="0" scope="public"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="EA_Model"/>
+				<packageproperties version="1.0"/>
+				<paths/>
+				<times created="2026-10-03 00:00:00" modified="2026-10-03 03:21:35"/>
+				<flags iscontrolled="FALSE" isprotected="FALSE" usedtd="FALSE" logxml="FALSE"/>
+			</element>
+			<element xmi:idref="EAPK_00000000_0000_0000_0000_00000000000B" xmi:type="uml:Package" name="Inner" scope="public">
+				<model package2="EAID_00000000_0000_0000_0000_00000000000B" package="EAPK_00000000_0000_0000_0000_00000000000A" tpos="0" ea_localid="272" ea_eleType="package"/>
+				<properties isSpecification="false" sType="Package" nType="0" scope="public"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="Outer"/>
+				<packageproperties version="1.0"/>
+				<paths/>
+				<times created="2026-10-03 00:00:00" modified="2026-10-03 03:21:35"/>
+				<flags iscontrolled="FALSE" isprotected="FALSE" usedtd="FALSE" logxml="FALSE"/>
+			</element>
+			<element xmi:idref="EAID_00000000_0000_0000_0000_00000000000D" xmi:type="uml:Class" name="Nested" scope="public">
+				<model package="EAPK_00000000_0000_0000_0000_00000000000B" tpos="0" ea_localid="2251" ea_eleType="element"/>
+				<properties isSpecification="false" sType="Class" nType="0" scope="public" isRoot="false" isLeaf="false" isAbstract="false" isActive="false"/>
+				<project author="HP" version="1.0" phase="1.0" created="2026-10-03 03:21:35" modified="2026-10-03 03:21:35" complexity="1" status="Proposed"/>
+				<code gentype="Java"/>
+				<style appearance="BackColor=-1;BorderColor=-1;BorderWidth=-1;FontColor=-1;VSwimLanes=1;HSwimLanes=1;BorderStyle=0;"/>
+				<tags/>
+				<xrefs/>
+				<extendedProperties tagged="0" package_name="Inner"/>
+				<links>
+					<Association xmi:id="EAID_00000000_0000_0000_0000_000000000032" start="EAID_00000000_0000_0000_0000_00000000000D" end="EAID_00000000_0000_0000_0000_00000000000E"/>
+					<Generalization xmi:id="EAID_00000000_0000_0000_0000_00000000003C" start="EAID_00000000_0000_0000_0000_00000000000D" end="EAID_00000000_0000_0000_0000_00000000000C"/>
+					<Aggregation xmi:id="EAID_00000000_0000_0000_0000_00000000005A" start="EAID_00000000_0000_0000_0000_00000000000D" end="EAID_00000000_0000_0000_0000_00000000000E"/>
+					<Aggregation xmi:id="EAID_00000000_0000_0000_0000_000000000064" start="EAID_00000000_0000_0000_0000_00000000000D" end="EAID_00000000_0000_0000_0000_00000000000E"/>
+				</links>
+			</element>
+		</elements>
+		<connectors>
+			<connector xmi:idref="EAID_00000000_0000_0000_0000_00000000003C">
+				<source xmi:idref="EAID_00000000_0000_0000_0000_00000000000D">
+					<model ea_localid="2251" type="Class" name="Nested"/>
+					<role visibility="Public"/>
+					<type multiplicity="1" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</source>
+				<target xmi:idref="EAID_00000000_0000_0000_0000_00000000000C">
+					<model ea_localid="2242" type="Class" name="Base"/>
+					<role visibility="Public"/>
+					<type multiplicity="1" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</target>
+				<model ea_localid="2231"/>
+				<properties ea_type="Generalization" direction="Unspecified"/>
+				<parameterSubstitutions/>
+				<documentation/>
+				<appearance linemode="3" linecolor="-1" linewidth="0" seqno="0" headStyle="0" lineStyle="0"/>
+				<labels/>
+				<extendedProperties/>
+				<style/>
+				<xrefs/>
+				<tags/>
+			</connector>
+			<connector xmi:idref="EAID_00000000_0000_0000_0000_000000000046" name="implements">
+				<source xmi:idref="EAID_00000000_0000_0000_0000_00000000000E">
+					<model ea_localid="2244" type="Class" name="Feature"/>
+					<role visibility="Public"/>
+					<type multiplicity="1" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</source>
+				<target xmi:idref="EAID_00000000_0000_0000_0000_00000000000F">
+					<model ea_localid="2243" type="Interface" name="Contract"/>
+					<role visibility="Public"/>
+					<type multiplicity="1" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</target>
+				<model ea_localid="2234"/>
+				<properties ea_type="Realisation" direction="Unspecified"/>
+				<parameterSubstitutions/>
+				<documentation/>
+				<appearance linemode="3" linecolor="-1" linewidth="0" seqno="0" headStyle="0" lineStyle="0"/>
+				<labels mt="implements"/>
+				<extendedProperties/>
+				<style/>
+				<xrefs/>
+				<tags/>
+			</connector>
+			<connector xmi:idref="EAID_00000000_0000_0000_0000_000000000050" name="uses">
+				<source xmi:idref="EAID_00000000_0000_0000_0000_00000000000E">
+					<model ea_localid="2244" type="Class" name="Feature"/>
+					<role visibility="Public"/>
+					<type multiplicity="1" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</source>
+				<target xmi:idref="EAID_00000000_0000_0000_0000_00000000000F">
+					<model ea_localid="2243" type="Interface" name="Contract"/>
+					<role visibility="Public"/>
+					<type multiplicity="1" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</target>
+				<model ea_localid="2232"/>
+				<properties ea_type="Dependency" direction="Unspecified"/>
+				<documentation/>
+				<appearance linemode="3" linecolor="-1" linewidth="0" seqno="0" headStyle="0" lineStyle="0"/>
+				<labels lb="1" mt="uses" rb="1"/>
+				<extendedProperties/>
+				<style/>
+				<xrefs/>
+				<tags/>
+			</connector>
+			<connector xmi:idref="EAID_00000000_0000_0000_0000_000000000032" name="contains">
+				<source xmi:idref="EAID_00000000_0000_0000_0000_00000000000D">
+					<model ea_localid="2251" type="Class" name="Nested"/>
+					<role name="owner" visibility="Public"/>
+					<type multiplicity="1" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</source>
+				<target xmi:idref="EAID_00000000_0000_0000_0000_00000000000E">
+					<model ea_localid="2244" type="Class" name="Feature"/>
+					<role name="items" visibility="Public"/>
+					<type multiplicity="0..*" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</target>
+				<model ea_localid="2235"/>
+				<properties ea_type="Association" direction="Unspecified"/>
+				<modifiers isRoot="false" isLeaf="false"/>
+				<parameterSubstitutions/>
+				<documentation/>
+				<appearance linemode="3" linecolor="-1" linewidth="0" seqno="0" headStyle="0" lineStyle="0"/>
+				<labels lb="1" lt="+owner" mt="contains" rb="0..*" rt="+items"/>
+				<extendedProperties/>
+				<style/>
+				<xrefs/>
+				<tags/>
+			</connector>
+			<connector xmi:idref="EAID_00000000_0000_0000_0000_00000000005A" name="aggregates">
+				<source xmi:idref="EAID_00000000_0000_0000_0000_00000000000D">
+					<model ea_localid="2251" type="Class" name="Nested"/>
+					<role name="whole" visibility="Public"/>
+					<type multiplicity="1" aggregation="shared"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</source>
+				<target xmi:idref="EAID_00000000_0000_0000_0000_00000000000E">
+					<model ea_localid="2244" type="Class" name="Feature"/>
+					<role name="parts" visibility="Public"/>
+					<type multiplicity="1..*" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</target>
+				<model ea_localid="2236"/>
+				<properties ea_type="Aggregation" direction="Destination -&gt; Source"/>
+				<modifiers isRoot="false" isLeaf="false"/>
+				<documentation/>
+				<appearance linemode="3" linecolor="-1" linewidth="0" seqno="0" headStyle="0" lineStyle="0"/>
+				<labels lb="1" lt="+whole" mt="aggregates" rb="1..*" rt="+parts"/>
+				<extendedProperties/>
+				<style/>
+				<xrefs/>
+				<tags/>
+			</connector>
+			<connector xmi:idref="EAID_00000000_0000_0000_0000_000000000064" name="owns">
+				<source xmi:idref="EAID_00000000_0000_0000_0000_00000000000D">
+					<model ea_localid="2251" type="Class" name="Nested"/>
+					<role name="container" visibility="Public"/>
+					<type multiplicity="1" aggregation="composite"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</source>
+				<target xmi:idref="EAID_00000000_0000_0000_0000_00000000000E">
+					<model ea_localid="2244" type="Class" name="Feature"/>
+					<role name="part" visibility="Public"/>
+					<type multiplicity="1" aggregation="none"/>
+					<constraints/>
+					<modifiers isOrdered="false" isNavigable="false"/>
+					<style value="Owned=0;Navigable=Unspecified;"/>
+					<documentation/>
+					<xrefs/>
+					<tags/>
+				</target>
+				<model ea_localid="2233"/>
+				<properties ea_type="Aggregation" direction="Destination -&gt; Source"/>
+				<modifiers isRoot="false" isLeaf="false"/>
+				<documentation/>
+				<appearance linemode="3" linecolor="-1" linewidth="0" seqno="0" headStyle="0" lineStyle="0"/>
+				<labels lb="1" lt="+container" mt="owns" rb="1" rt="+part"/>
+				<extendedProperties/>
+				<style/>
+				<xrefs/>
+				<tags/>
+			</connector>
+		</connectors>
+		<primitivetypes>
+			<packagedElement xmi:type="uml:Package" xmi:id="EAPrimitiveTypesPackage" name="EA_PrimitiveTypes_Package" visibility="public"/>
+		</primitivetypes>
+		<profiles>
+			<uml:Profile xmi:version="2.1" xmlns:uml="http://schema.omg.org/spec/UML/2.1/" xmlns:xmi="http://schema.omg.org/spec/XMI/2.1" xmi:id="thecustomprofile" nsPrefix="thecustomprofile" name="thecustomprofile" metamodelReference="mmref01">
+				<ownedComment xmi:type="uml:Comment" xmi:id="comment01" annotatedElement="thecustomprofile">
+					<body> Version:1.0</body>
+				</ownedComment>
+				<packageImport xmi:id="mmref01">
+					<importedPackage href="http://schema.omg.org/spec/UML/2.1/"/>
+				</packageImport>
+				<packagedElement xmi:type="uml:Stereotype" xmi:id="enumeration" name="enumeration">
+					<ownedAttribute xmi:type="uml:Property" xmi:id="enumeration-base_Enumeration" name="base_Enumeration" association="Enumeration_enumeration">
+						<type href="http://schema.omg.org/spec/UML/2.1/Enumeration"/>
+					</ownedAttribute>
+				</packagedElement>
+				<packagedElement xmi:type="uml:Extension" xmi:id="Enumeration_enumeration" name="A_Enumeration_enumeration" memberEnd="extension_enumeration enumeration-base_Enumeration">
+					<ownedEnd xmi:id="extension_enumeration" name="extension_enumeration" type="enumeration" isComposite="true" lower="0" upper="1" memberEnd="extension_enumeration enumeration-base_Enumeration"/>
+				</packagedElement>
+			</uml:Profile>
+		</profiles>
+		<diagrams>
+			<diagram xmi:id="EAID_00000000_0000_0000_0000_00000000012C">
+				<model package="EAPK_00000000_0000_0000_0000_000000000001" localID="341" owner="EAPK_00000000_0000_0000_0000_000000000001" tpos="0"/>
+				<properties name="Default" type="Logical"/>
+				<project version="3" created="2026-10-03 03:21:36" modified="2026-10-03 03:21:36"/>
+				<style1 value="ShowPrivate=0;ShowProtected=0;ShowPublic=0;HideRelationships=0;Locked=0;Border=0;HighlightForeign=0;PackageContents=0;SequenceNotes=0;ScalePrintImage=0;PPgs.cx=0;PPgs.cy=0;DocSize.cx=803;DocSize.cy=1146;ShowDetails=0;Orientation=;Zoom=100;ShowTags=0;OpParams=0;VisibleAttributeDetail=0;ShowOpRetType=1;ShowIcons=1;CollabNums=1;HideProps=1;ShowReqs=0;ShowCons=0;PaperSize=9;HideParents=0;UseAlias=0;HideAtts=0;HideOps=0;HideStereo=0;HideElemStereo=0;ShowTests=0;ShowMaint=0;ConnectorNotation=UML 2.1;ExplicitNavigability=0;ShowShape=1;AllDockable=0;AdvancedElementProps=1;AdvancedFeatureProps=1;AdvancedConnectorProps=1;m_bElementClassifier=1;SPT=1;ShowNotes=0;SuppressBrackets=0;SuppConnectorLabels=0;PrintPageHeadFoot=0;ShowAsList=0;"/>
+				<style2 value="SaveTag=F8C93ADE;ExcludeRTF=0;DocAll=0;HideQuals=0;AttPkg=0;ShowTests=0;ShowMaint=0;SuppressFOC=0;MatrixActive=0;SwimlanesActive=1;KanbanActive=0;MatrixLineWidth=1;MatrixLineClr=0;MatrixLocked=0;TConnectorNotation=UML 2.1;TExplicitNavigability=0;AdvancedElementProps=1;AdvancedFeatureProps=1;AdvancedConnectorProps=1;m_bElementClassifier=1;SPT=1;MDGDgm=;STBLDgm=;ShowNotes=0;VisibleAttributeDetail=0;ShowOpRetType=1;SuppressBrackets=0;SuppConnectorLabels=0;PrintPageHeadFoot=0;ShowAsList=0;SuppressedCompartments=;Theme=:119;"/>
+				<swimlanes value="locked=false;orientation=0;width=0;inbar=false;names=false;color=0;bold=false;fcol=0;tcol=15589597;ofCol=-1;ufCol=-1;hl=0;ufh=0;hh=0;cls=0;bw=0;hli=0;SwimlaneFont=lfh:-10,lfw:0,lfi:0,lfu:0,lfs:0,lfface:Calibri,lfe:0,lfo:0,lfchar:1,lfop:0,lfcp:0,lfq:0,lfpf=0,lfWidth=0;"/>
+				<matrixitems value="locked=false;matrixactive=false;swimlanesactive=true;kanbanactive=false;width=1;clrLine=0;"/>
+				<extendedProperties/>
+				<elements>
+					<element geometry="Left=50;Top=50;Right=250;Bottom=140;imgL=25;imgT=35;imgR=225;imgB=125;" subject="EAID_00000000_0000_0000_0000_00000000000D" seqno="1" style="DUID=34628065;"/>
+					<element geometry="Left=350;Top=50;Right=550;Bottom=140;imgL=325;imgT=35;imgR=525;imgB=125;" subject="EAID_00000000_0000_0000_0000_00000000000E" seqno="2" style="DUID=23F57788;"/>
+					<element geometry="SX=0;SY=0;EX=0;EY=0;Path=;" subject="EAID_00000000_0000_0000_0000_00000000005A" style="Mode=3;EOID=34628065;SOID=23F57788;Color=-1;LWidth=0;Hidden=0;"/>
+					<element geometry="SX=0;SY=0;EX=0;EY=0;Path=;" subject="EAID_00000000_0000_0000_0000_000000000032" style="Mode=3;EOID=34628065;SOID=23F57788;Color=-1;LWidth=0;Hidden=0;"/>
+					<element geometry="SX=0;SY=0;EX=0;EY=0;Path=;" subject="EAID_00000000_0000_0000_0000_000000000064" style="Mode=3;EOID=34628065;SOID=23F57788;Color=-1;LWidth=0;Hidden=0;"/>
+				</elements>
+			</diagram>
+		</diagrams>
+	</xmi:Extension>
+</xmi:XMI>
