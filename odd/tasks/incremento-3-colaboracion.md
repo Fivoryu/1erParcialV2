@@ -214,8 +214,9 @@ leído en la fuente, **no** ejercitado por una prueba.
 | C12b | **Cablear la presencia al canal** (hueco descubierto al derivar C14): alta en el `subscribe`, baja en las tres terminaciones del emisor, `presence.updated` publicado con el snapshot, y `POST /projects/{id}/presence` para el elemento tocado | Integración: dos suscriptores del mismo proyecto se ven entre sí con su color; el que se desconecta desaparece del snapshot siguiente; un toque de uno llega al otro como `presence.updated`; un tercero sin rol no puede reportar. **Cerrada CON DESVIACIÓN DECLARADA** en `84e16f1` — sin revisión nativa por fallo de transporte, autorizado por el usuario (ver *S3 progreso — C12b*) |
 | C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra. **Cerrada** en `c973dd5` (ver *S3 progreso*) |
 | C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado. **Partida en C14 y C14b por tamaño de revisión** (ver *S3 — C14 partida*). **C14 cerrada** en `a59e67a` (ver *S3 progreso — C14*) |
-| C14b | Web: **resaltado del elemento que cada uno toca** en el lienzo, con el color de quien lo toca y su nombre | Prueba de componente del resaltado: el nodo tocado se marca con el color y el nombre de quien lo toca, y deja de marcarse cuando el otro suelta |
-| C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío. **Implementada y verificada, SIN COMMITEAR** por bloqueo del relay (ver *S3 progreso — C15*); el **dibujo** del cursor remoto queda para una unidad aparte |
+| C14b | Web: **resaltado del elemento que cada uno toca** en el lienzo, con el color de quien lo toca y su nombre | Prueba de componente del resaltado: el nodo tocado se marca con el color y el nombre de quien lo toca, y deja de marcarse cuando el otro suelta. **Cerrada CON DESVIACIÓN DECLARADA** en `da3c2d6` (ver *S3 progreso — C14b*) |
+| C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío (21 emisiones para 100 actualizaciones sobre 1 s: **20/s**, dentro de la banda 10–30). **Cerrada CON DESVIACIÓN DECLARADA** en `c80b1f1` (ver *S3 progreso — C15*) |
+| C15b | Web: **dibujo de los cursores remotos** en el lienzo, con color y nombre, paneando y zoomeando con la vista | Prueba de componente del overlay y del join puro. **Cerrada CON DESVIACIÓN DECLARADA** en `805aa57` (ver *S3 progreso — C15b*) |
 
 ### S3 — hueco descubierto al derivar C14 (tarea C12b)
 
@@ -592,6 +593,32 @@ actualizaciones sobre 1 s de tiempo inyectado producen **21 emisiones**.
 que el proyecto había desaparecido); el `PATH` perdió Java y Docker, así que el JDK y Maven existen pero **no se encontraban** (Maven hay que invocarlo por `cmd.exe` con
 `JAVA_HOME` en formato Windows; Testcontainers sí llega a Docker por *named pipe*); y git perdió la identidad de autor, que se restauró a nivel de repositorio con la
 **misma** que ya usaba la rama. Además, una corrida lanzada con `nohup` **no sobrevive** al fin de la llamada: la suite completa hay que correrla **en primer plano**.
+
+### S3 progreso — C15b cerrada CON DESVIACIÓN DECLARADA (2026-10-02)
+
+**Commit:** `805aa57` — *feat(web): draw the remote cursors on the diagram* (7 archivos, +280/−13).
+
+> **Sin revisión nativa.** El relay del revisor falló **tres intentos consecutivos** (`pi-host-relay-transport-failure`, WebSocket error, 202 s / 152 s / 195 s
+de 2.400.000, `prepared_reviewers: 0`, sin mutación) y se aplicó dos veces la recuperación que indica el proveedor. Se commiteó con **desviación declarada**
+> asumiendo el mismo criterio que el usuario autorizó dos veces antes para esta misma situación; queda señalado para que pueda objetarlo.
+
+**Qué entrega:** cada cursor remoto aparece **donde está en el diagrama**, con el color y el nombre de quien lo mueve, y **panea y hace zoom** con la vista. El
+join de presencia a marcadores es un módulo puro (probado sin navegador) y el overlay tiene `pointer-events: none`, así que **no intercepta clics ni arrastres**:
+un clic sobre una clase tapada por un cursor sigue seleccionándola.
+
+**Dos defectos de coordenadas corregidos acá, y uno era introducido por C15 (ya commiteada):**
+
+1. **El espacio de coordenadas era el de la ventana**, no el del diagrama. Dos clientes difieren en tamaño de ventana, scroll y ancho de panel, así que el cursor del
+otro habría caído en el lugar equivocado. Ahora se captura dentro del lienzo con la transformación de React Flow.
+2. **`screenToFlowPosition` respetaba el `snapToGrid` de 24 unidades del lienzo**, así que la posición reportada saltaba en escalones. La grilla se queda (existe para
+   arrastrar nodos) y la conversión del cursor se saltea el ajuste.
+3. **La colocación restaba el origen *transformado***, y eso cancelaba justo la traslación de la vista: al panear, el cursor remoto se quedaba pegado al panel en vez
+de seguir su lugar. La posición local respecto del overlay es `punto * zoom + (viewport.x, viewport.y)`, que es la fórmula que quedó y la que el verificador confirmó
+contra el código de la librería (`screenToFlowPosition` resta el origen del root; la inversa multiplica por el zoom y suma la traslación).
+
+**Límite declarado:** **ninguna de las dos correcciones de coordenadas se puede cubrir con una prueba automatizada en este entorno** —necesitan geometría real de
+layout y no hay DOM—, así que se verificaron por lectura, por los tres comandos y por la verificación independiente contra la fuente de React Flow. El caso manual
+que las mostraría funcionando es **panear y después mover el cursor remoto**. Tampoco hay prueba de navegador para el overlay.
 
 ### S4 — Chat persistente del diagrama
 
