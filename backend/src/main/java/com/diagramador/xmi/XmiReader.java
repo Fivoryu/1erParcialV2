@@ -88,9 +88,14 @@ public final class XmiReader {
      * Evidence: {@code odd/tasks/xmi-intercambio.md} section 11.
      */
     private static String unsupportedDialect(Element root) {
-        String namespace = root.getAttributeNS(XMLConstants.XMLNS_ATTRIBUTE_NS_URI, "uml");
-        if (namespace.isEmpty()) {
-            namespace = root.getAttributeNS(XMLConstants.XMLNS_ATTRIBUTE_NS_URI, "UML");
+        String namespace = "";
+        for (int index = 0; index < root.getAttributes().getLength(); index++) {
+            Node declaration = root.getAttributes().item(index);
+            if (XMLConstants.XMLNS_ATTRIBUTE_NS_URI.equals(declaration.getNamespaceURI())
+                    && declaration.getNodeValue().contains("/spec/UML/")) {
+                namespace = declaration.getNodeValue();
+                break;
+            }
         }
         String version = root.getAttributeNS(XMI, "version");
         if (version.isEmpty()) {

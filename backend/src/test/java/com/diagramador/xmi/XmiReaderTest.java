@@ -198,6 +198,23 @@ class XmiReaderTest {
     }
 
     @Test
+    void reportsUnsupportedUmlNamespaceWhenDeclaredUnderAnotherPrefix() {
+        String xml = """
+                <xmi:XMI xmlns:xmi="http://schema.omg.org/spec/XMI/2.1"
+                         xmlns:u="http://schema.omg.org/spec/UML/2.2" xmi:version="2.1">
+                    <u:Model xmi:type="u:Model" name="WrongDialect"/>
+                </xmi:XMI>
+                """;
+
+        assertThatThrownBy(() -> reader.read(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("http://schema.omg.org/spec/UML/2.2")
+                .hasMessageContaining("implements http://schema.omg.org/spec/UML/2.1")
+                .satisfies(error -> assertThat(error.getMessage())
+                        .doesNotContain("The XMI document must contain uml:Model"));
+    }
+
+    @Test
     void everyCommittedEaArtifactIsByteExact() throws Exception {
         // The dialect is the evidence, so each Enterprise Architect artifact is pinned by hash: a fixture that changed
         // silently would turn a measurement into an opinion. `.gitattributes` keeps docs/fixtures/** byte-exact.
