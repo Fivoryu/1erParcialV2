@@ -1656,5 +1656,37 @@ ruta de Windows; siempre `git -C` con ruta absoluta**.
 - **El desvío de la rama del par sigue abierto**: su punta es `c39605a` —un commit de documentación, `docs-only`—
   y tiene su unidad siguiente sin commitear, así que esa rama queda 10 commits delante de `main`. Ese commit **no
   se fusionó**: es el diseño de un incremento ajeno todavía sin implementar. Se declara, no se cierra.
-- **La revisión nativa de esta sección** todavía no se corrió: se declara al correrla.
+- **La revisión nativa de esta sección** se corrió sobre el rango posterior a la fusión: lineage `review-d8a85e5a4031c35f`, **approved** y autoridad quemada, en §14.7.
 - **El cierre del arnés S7** sigue sin estar en ninguna de las dos ramas (§13.6).
+
+### 14.7 La revisión nativa del consolidado
+
+| Lo que se midió | Resultado |
+| --- | --- |
+| Alcance | Rango **committed** `f2fd947..bbd9d53`: **5 archivos, 168 líneas** cambiadas —la guarda, su controlador, su prueba de API, la reparación de la prueba web y esta sección— |
+| Lineage | **`review-d8a85e5a4031c35f`**, de `reviewing` a `approved` |
+| Riesgo y lentes | **`medium`**, con un motivo medido: «an executable change in `backend/src/main/java/com/diagramador/api/XmiExportController.java`». Una lente: `review-reliability` |
+| Presupuesto | `correction_budget` **84** líneas lógicas, congelado por el proveedor |
+| Corridas | Pronóstico `model_runs: 1` por relay del host; **1 revisor preparado y 1 enviado** (`prompt_bytes` 35470, `result_bytes` 752) |
+| Veredicto | **`approved`** en la última admisión, sin corrección abierta |
+| Autoridad | **`burned`**, con `burn_evidence` `gentle-ai.review-acknowledged/v1`; `delivery: ordinary-repository-policy` |
+| Avisos | **Ninguno expuesto por el cierre.** No se reconstruye ninguno: un cierre que no los expone no autoriza a inventarlos |
+
+**Qué quedó fuera, y se declara.** El **acto de fusión** no es candidato natural de esta revisión —con el árbol
+ya commiteado la proyección del espacio de trabajo queda vacía y el proveedor exige un `baseRef` explícito
+(§12.6)—, así que la revisión cubre lo **posterior** a la fusión, que es lo que esta unidad agregó. El código que
+la fusión trajo del otro lado lleva su propia autoridad de revisión en su unidad. El desvío de `c39605a` y de
+`73a2387` sigue declarado y sin fusionar (§14.6).
+
+**La compuerta de DACL volvió a fallar, y volvió a ser un fantasma.** El primer `START` con el rango explícito
+devolvió `candidate-owner-preparation-failed` («candidate view rejected before native START»). La medición
+encontró, **otra vez y solo en `.git`**, los dos ACEs de **denegación** del SID ausente
+`S-1-5-21-542072663-2363636745-3304252722-4107386395`, con los dos subdirectorios que el validador exige
+—`.git/gentle-ai` y `.git/gentle-ai/candidate-views`— sanos. El segundo intento, **sin tocar ninguna ACL**, creó
+la lineage. Conclusión declarada: el bloqueo es **intermitente**, la causa de la aparición y de la desaparición de
+esos ACEs **sigue sin medir**, y el estado sano **no es atribuible a ningún comando** —igual que en §13.6—. La
+revisión se hizo porque el segundo intento pasó, no porque el problema esté resuelto.
+
+**Una observación, para el registro.** El `START` que sí funcionó volvió dentro de un sobre cuyo nombre de
+operación era `answer-consent`, con `action: "created"` y sin binding de consentimiento pendiente; no llamé a
+`answer-consent` porque no había nada que contestar. Queda asentado como observación, no como problema.
