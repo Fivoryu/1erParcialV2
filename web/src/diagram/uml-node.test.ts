@@ -7,6 +7,7 @@ import type { ClassifierResource, ModelResource } from '../api/types';
 import { UmlClassCard } from './UmlClassNode';
 import PropertiesPanel from './PropertiesPanel';
 import { formatMultiplicity } from './uml-format';
+import type { TouchedBy } from './touch-highlight';
 
 const classifier: ClassifierResource = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -99,8 +100,15 @@ const modelFixture: ModelResource = {
   }],
 };
 
-function renderClassifier(value: ClassifierResource): string {
-  return renderToStaticMarkup(createElement(UmlClassCard, { classifier: value }));
+function renderClassifier(value: ClassifierResource, touchedBy?: TouchedBy[]): string {
+  return renderToStaticMarkup(createElement(UmlClassCard, {
+    classifier: value,
+    ...(touchedBy ? { touchedBy } : {}),
+  }));
+}
+
+function touchChipMarkup(toucher: TouchedBy): string {
+  return `<span class="uml-touch-chip"><span aria-hidden="true" class="uml-touch-chip-swatch" style="background-color:${toucher.color}"></span><span class="uml-touch-chip-name">${toucher.displayName}</span></span>`;
 }
 
 describe('UML class node presentation', () => {
@@ -118,10 +126,47 @@ describe('UML class node presentation', () => {
     expect(interfaceMarkup).toContain('«interface»');
     expect(interfaceMarkup).toContain('Readable');
 
-    expect(markup).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-    for (const rawIdentifier of ['classifier_id', 'EXACTLY_ONE', 'ZERO_OR_MANY', 'NOT_NAVIGABLE', 'ABSTRACT_CLASS']) {
-      expect(markup).not.toContain(rawIdentifier);
+    for (const rendered of [markup, interfaceMarkup]) {
+      expect(rendered).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      for (const rawIdentifier of ['classifier_id', 'EXACTLY_ONE', 'ZERO_OR_MANY', 'NOT_NAVIGABLE', 'ABSTRACT_CLASS']) {
+        expect(rendered).not.toContain(rawIdentifier);
+      }
     }
+  });
+
+  it('shows one toucher name beside that toucher\'s own colour', () => {
+    const toucher: TouchedBy = {
+      userId: 'user-ada',
+      displayName: 'Ada',
+      color: '#c7503a',
+    };
+    const markup = renderClassifier(classifier, [toucher]);
+
+    expect(markup).toContain(touchChipMarkup(toucher));
+    expect(markup).not.toContain(toucher.userId);
+  });
+
+  it('shows both touchers with each name paired to that toucher\'s own colour', () => {
+    const first: TouchedBy = { userId: 'user-ada', displayName: 'Ada', color: '#c7503a' };
+    const second: TouchedBy = { userId: 'user-lin', displayName: 'Lin', color: '#347aa1' };
+    const markup = renderClassifier(classifier, [first, second]);
+    const firstChip = touchChipMarkup(first);
+    const secondChip = touchChipMarkup(second);
+
+    expect(markup).toContain(firstChip);
+    expect(markup).toContain(secondChip);
+    expect(markup.indexOf(firstChip)).toBeLessThan(markup.indexOf(secondChip));
+    for (const toucher of [first, second]) {
+      expect(markup).not.toContain(toucher.userId);
+    }
+  });
+
+  it('renders no touch chip when nobody is touching the card', () => {
+    const markupWithoutHighlights = renderClassifier(classifier);
+    const markupWithEmptyHighlights = renderClassifier(classifier, []);
+
+    expect(markupWithoutHighlights).not.toContain('uml-touch-chip');
+    expect(markupWithEmptyHighlights).not.toContain('uml-touch-chip');
   });
 
   it('shows a symbol only for non-default constraint severity without spelling the enum value', () => {
