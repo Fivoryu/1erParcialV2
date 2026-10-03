@@ -732,7 +732,7 @@ formatea la hora salen del entorno, mientras la **prueba** del formateador usa l
 
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
-| C19 | `EditingLeaseService`: adquirir, renovar por latido, vencer por TTL y reclamar | Pruebas unitarias con reloj controlado |
+| C19 | `EditingLeaseService`: adquirir, renovar por latido, vencer por TTL y reclamar | Pruebas unitarias con reloj controlado. **Cerrada** en `14053ce` (ver *S5 progreso — C19*) |
 | C20 | Guarda en `POST /generations`, en la descarga de artefactos y en la exportación XMI; respuesta con el editor, el motivo y la posibilidad de reclamar | Integración: bloqueado con lease ajeno, permitido con lease propio y tras vencer |
 | C21 | Web: botones de exportación con motivo y editor nombrado, y botón **Reclamar control** | Pruebas de componente de los tres estados |
 
@@ -769,6 +769,50 @@ es la única que bloquea, el TTL la mata sola, y reclamar es el acto explícito 
 C20 pueda vencerlo sin esperar; sigue siendo de **una sola instancia** (C4), así que con dos instancias la concesión no cruza; y **un editor cuyo
 latido siga fluyendo no puede ser despojado** — la salida es que el TTL venza, y si el canal sigue vivo la concesión sigue viva. Eso último se
 declara y no se finge resuelto.
+
+### S5 progreso — C19 cerrada (2026-10-03)
+
+**Commit:** `14053ce` — *feat(backend): hold an editing lease per model while someone edits* (4 archivos nuevos, +615). El diseño se congeló **antes** de
+escribir la primera línea (`d9ebf54`), para que C19, C20 y C21 no se diseñaran entre tres y para que el revisor tuviera autoridad en el repo.
+
+**Revisión nativa:** linaje `review-43b6f804e24d884e`, tier `medium`, **una** lente (`review-reliability`, orden 0), 4 caminos, 615 líneas,
+presupuesto de corrección 200. Cerró **aprobada al primer intento** con autoridad quemada (`gentle-ai.review-acknowledged/v1`): es la primera unidad
+desde C14 que no necesita ni una recuperación —después de que el relay respondiera, las siete anteriores quedaron con desviación declarada—. El slot
+devolvió pronóstico antes de correr (`pi_host_relay`, 1 corrida, sin mutación) y se autorizó esa corrida exacta con `reviewerRunAcknowledged`.
+
+**Hallazgo informativo — `R3-001`**: lente `reliability`, ubicación `collaboration/InMemoryEditingLeaseService.java:124-126` (las tres líneas de la
+guarda: el `leases.get`, el `clock.instant()` y la condición), severidad `WARNING`, disposición `informational`. El proveedor fue explícito: **ninguno
+abre corrección, ninguno reabre la revisión y no se ofrece transición de corrección para este candidato**; el sobre **no expuso el texto** del hallazgo
+y no se inventa. Lectura propia de esa región, **atribuida a esta sesión y no al revisor**: `requireExportAllowed` es un *check-then-act* — lee la
+concesión con `get` y recién después decide, sin que la lectura y la decisión sean una sola operación atómica—, así que un `acquire` o un `release`
+concurrente en esa ventana de microsegundos puede permitir una exportación justo cuando otro toma el control, o bloquearla justo después de que lo soltó.
+No corrompe nada (la exportación es una lectura y el servidor sigue siendo la autoridad) y no se toca: el proveedor prohíbe la transición de corrección y
+arreglarlo pediría un candidato y un linaje nuevos. Queda como trabajo posterior candidato.
+
+**Medido:** `EditingLeaseServiceTest` = **14 pruebas, 0 fallos** · `mvn -o -B -f backend/pom.xml verify` = **300 pruebas, 0 fallos, 0 errores,
+0 omitidas**, `BUILD SUCCESS`, **4:27 min** (286 de base + 14 nuevas).
+
+**Verificación independiente (read-only, con sus propias corridas):** los **diez ejes HOLDS**. La comprobación de mutación se hizo sobre copias **fuera
+del repo** (un archivo nuevo adentro habría entrado al candidato) y las **cuatro mutaciones tumbaron la suite**, cada una por la aserción que le
+toca: renombrar la clave `reclaimable` (4 fallos), tratar como viva la concesión en el instante exacto de vencimiento (2 fallos y 1 error), quitar la
+exención del operador (1 fallo) y dejar que `acquire` se apropie de una concesión vencida ajena (1 fallo). Las aserciones que sostienen la firma
+congelada son **portantes**, no decorativas.
+
+**Límites declarados de esta unidad:**
+
+1. **La guarda de TTL no positivo no tiene aserción.** El constructor rechaza cero y negativos con `IllegalArgumentException` y está leído en la fuente,
+   pero ninguna prueba lo fija; el verificador lo marcó `UNPROVEN` por cobertura, no por sospecha de defecto.
+2. **Los argumentos nulos del servicio tampoco están asertados.** Los `Objects.requireNonNull` existen; la prueba sólo afirma el rechazo de nulos en el record.
+3. **La prueba de concurrencia no es una prueba de linealidad.** Ocho hilos con usuarios distintos contra un modelo libre dan **exactamente un ganador y
+   siete conflictos**, pero una implementación con *check-then-act* podría pasarla si el planificador serializa sus pasos; la atomicidad real la aporta el
+   `compute` por clave del `ConcurrentHashMap`, no la prueba.
+4. **Una sola instancia y sin eventos** (C4): la concesión no cruza instancias ni publica nada. El catálogo del contrato no tiene un nombre de evento para
+   esto y no se le inventó uno.
+5. **Un editor cuyo latido sigue fluyendo no puede ser despojado**: el TTL vence sólo si el latido se corta. Declarado en el código y en §S5.
+6. `details[0]` se arma con un `LinkedHashMap` y la prueba afirma el **orden** de las claves, además de que el mapa sea de ese tipo; la aserción del tipo
+   concreto es más estricta de lo que el contrato pide y se registra como tal.
+
+**Sin desviación de ruteo:** el escritor delegado entregó la unidad completa en **una** vuelta y el padre no escribió fuente en línea.
 
 ### S6 — Intercambio XMI (RF-09, CU-16, CU-17) — **cedida a otra sesión**
 
