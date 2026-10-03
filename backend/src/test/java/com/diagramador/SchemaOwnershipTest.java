@@ -45,6 +45,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("invitation", Set.of("invitation_id", "project_id", "invited_by_user_id", "invitee_user_id",
                     "role", "status", "created_at", "updated_at")),
             Map.entry("uml_model", Set.of("model_id", "project_id", "name", "current_revision", "created_at")),
+            Map.entry("diagram_message", Set.of("message_id", "model_id", "author_user_id", "body", "created_at")),
             Map.entry("model_version", Set.of("version_id", "model_id", "revision", "parent_revision", "state_hash",
                     "validation_state", "created_by_user_id", "created_at")),
             Map.entry("model_command", Set.of("command_id", "model_id", "author_user_id", "base_revision",
@@ -104,6 +105,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("project_member", Set.of("idx_member_user")),
             Map.entry("invitation", Set.of("idx_invitation_project", "uq_invitation_pending_project_invitee")),
             Map.entry("uml_model", Set.of()),
+            Map.entry("diagram_message", Set.of("idx_diagram_message_model")),
             Map.entry("model_version", Set.of("idx_version_model_rev")),
             Map.entry("model_command", Set.of("idx_command_model_rev", "idx_command_author")),
             Map.entry("cascade_group", Set.of()),
@@ -145,7 +147,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2", "3", "4", "5", "6", "7", "8");
+                .contains("1", "2", "3", "4", "5", "6", "7", "8", "9");
     }
 
     @Test

@@ -314,6 +314,16 @@ CREATE TABLE model_command (
 
 COMMENT ON TABLE model_command IS 'Registro append-only lógico. Las correcciones se expresan como comandos nuevos; el SQL recomienda rechazar mutaciones retroactivas en la capa de servicio.';
 
+CREATE TABLE diagram_message (
+    message_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    model_id UUID NOT NULL REFERENCES uml_model(model_id) ON DELETE CASCADE,
+    author_user_id UUID NOT NULL REFERENCES user_account(user_id) ON DELETE RESTRICT,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE diagram_message IS 'Revoking a user''s access never erases messages they posted while they had it.';
+
 CREATE TABLE cascade_group (
     cascade_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     model_id       UUID NOT NULL REFERENCES uml_model(model_id) ON DELETE CASCADE,
@@ -566,6 +576,7 @@ CREATE INDEX idx_relationship_end_cls ON relationship_end(classifier_id);
 CREATE INDEX idx_constraint_model     ON uml_constraint(model_id);
 CREATE INDEX idx_command_model_rev    ON model_command(model_id, base_revision);
 CREATE INDEX idx_command_author       ON model_command(author_user_id);
+CREATE INDEX idx_diagram_message_model ON diagram_message(model_id, created_at, message_id);
 CREATE INDEX idx_version_model_rev    ON model_version(model_id, revision DESC);
 CREATE INDEX idx_tombstone_model      ON tombstone(model_id);
 CREATE INDEX idx_conflict_model_state ON model_conflict(model_id, state);
