@@ -770,6 +770,112 @@ C20 pueda vencerlo sin esperar; sigue siendo de **una sola instancia** (C4), as�
 latido siga fluyendo no puede ser despojado** — la salida es que el TTL venza, y si el canal sigue vivo la concesión sigue viva. Eso último se
 declara y no se finge resuelto.
 
+### S5 — diseño congelado de los endpoints de la concesión (antes de C20)
+
+C20 toca **tres superficies con dos formas de respuesta distintas** y agrega cinco endpoints que C21 consume y que la sesión de XMI
+usa como molde para su guarda. Todo eso se decide acá porque hay un dato medido que un escritor habría improvisado: **`OperationOutcomeResource`
+no tiene campo `details`** —es `(outcome, code, message, idempotencyKey, result)`, `GenerationResources.java:89-95`—, así que en la respuesta de
+`POST /generations` las cinco claves de §S6b no tienen dónde viajar salvo dentro de `result`.
+
+**Direccionamiento: el modelo se resuelve desde el proyecto, el cliente nunca manda un `modelId`.** Medido: `UmlModel` es uno a uno con `Project`
+(único `project_id`), **no existe ninguna ruta `/models/{modelId}`**, y el código que ya existe resuelve el modelo desde el proyecto
+(`GenerationApiService.requireModel` → `modelRepository.findByProjectId`, `:249` y `:272`). Las cinco rutas cuelgan del proyecto y el servidor
+traduce a `UUID modelId` para la interfaz congelada de C19, que no cambia. El estilo es el de `ProjectPresenceController` (ruta completa en el
+método, sin prefijo de clase, `POST /projects/{id}/presence`) y `DELETE` ya es verbo de esta casa (`InvitationController`).
+
+| Verbo y ruta | Operación de C19 | Cuerpo | Éxito |
+| --- | --- | --- | --- |
+| `POST /projects/{projectId}/editing-lease` | `acquire` | opcional `{targetType, targetId}` | 200 |
+| `POST /projects/{projectId}/editing-lease/renew` | `renew` | — | 200 |
+| `DELETE /projects/{projectId}/editing-lease` | `release` | — | 200 |
+| `POST /projects/{projectId}/editing-lease/reclaim` | `reclaim` | opcional `{targetType, targetId}` | 200 |
+| `GET /projects/{projectId}/editing-lease` | `current` | — | 200 |
+
+**Una sola forma de respuesta para los cinco**, agrupada en un `EditingLeaseResources.java` nuevo como ya se agrupan `ChatResources` y
+`GenerationResources`:
+
+```json
+{ "lease": { "modelId": "…", "editorUserId": "…", "editorDisplayName": "…", "targetType": "CLASSIFIER",
+             "targetId": "…", "acquiredAt": "…", "expiresAt": "…" } }
+```
+
+con `"lease": null` cuando no hay ninguna registrada —sólo posible en `GET` y después de `release`—. **Por qué un sobre y no `204` ni `404`:** el
+cliente parsea un solo tipo; `null` distingue «nadie está editando» de un `403`/`404`, que significan otra cosa; y `204` obligaría a un caso especial
+en el cliente para una lectura que hoy no existe en el proyecto. **Por qué viaja `expiresAt` y no `live` ni `reclaimable`:** la regla de vivacidad vive
+dentro del servicio con su propio reloj (regla 2 de C19) y la interfaz no expone ni `now` ni una consulta de vivacidad; calcularla en el borde pediría
+un **segundo reloj**, que es exactamente la deriva que este congelamiento evita. El cliente compara `expiresAt` con su reloj y el servidor sigue siendo
+la autoridad: si el cliente calcula mal, la próxima escritura se rechaza y el rechazo trae la verdad.
+
+**Autorización:** las cinco piden acceso de editor con el `ProjectAuthorizationService.requireEditor` que ya existe —operador o miembro activo
+OWNER/EDITOR—, la misma compuerta que usa la generación (`GenerationApiService:113-115`). La identidad del solicitante (`userId` y `displayName`) sale
+de `CurrentUserContext.require()`; **es la primera vez que un controlador lee `displayName()`**, y se declara.
+
+**La forma única del conflicto, y de dónde sale.** `renew` falla con `Optional.empty()` (regla 4 de C19) mientras el resto **lanza**, y
+`retryAfterSeconds` (regla 9) necesita el reloj del servicio. Así que las cinco claves se arman **adentro** del servicio y se exponen como un solo
+registro:
+
+```java
+public record EditingLeaseConflict(String editorDisplayName, TargetType targetType, UUID targetId,
+        boolean reclaimable, int retryAfterSeconds) {}
+```
+
+más **un** método en la interfaz congelada: `Optional<EditingLeaseConflict> blocker(UUID modelId)`, vacío sólo cuando no hay ninguna concesión
+registrada. `requireExportAllowed` y los rechazos de `acquire`/`reclaim` se refactorizan para armar su `details[0]` desde ahí, así **el conjunto de
+claves y su orden existen una sola vez** y no pueden derivar. `reclaimable` es «la concesión registrada no está viva»; `retryAfterSeconds` es el techo
+de los segundos que faltan, nunca negativo. **`requireExportAllowed(UUID modelId)` conserva su firma y su comportamiento exactos**, porque §S6b la
+congeló y la sesión de XMI depende de ella sin poder escribirla.
+
+**Las dos formas del bloqueo, y la diferencia es del contrato, no del escritor:**
+
+- **Endpoints de archivo** —la descarga de artefactos, y después la exportación XMI—: HTTP **409** con el sobre `ApiErrorResource` de siempre y
+  `details` = una **lista con un objeto** con las cinco claves, serializada por el `@RestControllerAdvice` que ya existe (`ApiExceptionHandler:51-54`).
+  La guarda **lanza**; el manejador arma el sobre. Ojo con un detalle que no se «unifica»: la descarga ya responde 200 con `outcome` para
+  `RUN_NOT_COMPLETE`, pero el bloqueo por concesión **no** va por ese camino —§S6b congela 409 para endpoints de archivo—.
+- **`POST /projects/{projectId}/generations`**: HTTP **200** con `outcome`, la convención D7 del Incremento 2. Como `OperationOutcomeResource` no tiene
+  `details`, las cinco claves viajan adentro de **`result`**, como el mismo registro. El punto de traducción es un `try/catch (ApiException)` alrededor
+  de `requireExportAllowed` dentro de `createGeneration`, que devuelve
+  `outcome("REJECTED", "EXPORT_BLOCKED_EDITING", mensaje, request.idempotencyKey(), conflict)` y **re-lanza cualquier otra `ApiException`**. El `catch` es
+  deliberado: mantiene al servicio como única autoridad de la vivacidad y de la exención del operador, en vez de reimplementarlas en el borde.
+  Consecuencia declarada: **las mismas claves, en el mismo orden, con dos portadores** —`details[0]` en el camino de error, `result` en el camino de
+  outcome—, porque la convención del Incremento 2 no admite un error HTTP ahí.
+
+**Dónde va cada guarda, en orden exacto:**
+
+1. `createGeneration`: después de `requireEditorProject` (403) y de `validateGenerationRequest` aceptado (`MODEL_NOT_IN_PROJECT` y compañía) y **antes**
+   de `identityService.startRun`, para que una generación bloqueada no deje ningún run. El `modelId` sale de `request.modelId()`, que ya quedó validado
+   como el del modelo del proyecto.
+2. `downloadArtifacts`: después de la comprobación de que el run pertenece al modelo (`GenerationApiService:161-179`) y antes de armar el ZIP, así «no
+   existe» sigue siendo «no existe» y no se producen bytes.
+3. **Exportación XMI: sigue siendo la línea de una sola llamada de la sesión hermana** en el consolidado (§S6b). Hasta entonces el acta declara que la
+   exportación XMI no está protegida, y esa frase no se borra.
+
+**Los estados que la evidencia de C20 tiene que probar** (integración, con `@SpringBootTest` y PostgreSQL real, como `GenerationApiTest`, 632 líneas):
+
+1. **Bloqueado con concesión viva ajena.** En `POST /generations`: 200, `outcome=REJECTED`, `code=EXPORT_BLOCKED_EDITING`, `result.editorDisplayName` del otro
+editor, `reclaimable=false`, `retryAfterSeconds>0`, y **ningún run creado**. En la descarga: 409 y `details[0]` con las cinco claves exactas y en orden.
+2. **Permitido con concesión propia.** El titular exporta y descarga: 200.
+3. **Permitido después de vencer.** Con la concesión ajena ya no viva, la exportación se permite —el TTL la mata sola— y el `GET` la sigue mostrando.
+4. **Exento por operador:** con una concesión viva ajena, el operador exporta igual (regla 8 de C19).
+5. **Ciclo de los cinco endpoints:** `acquire` → `renew` → `GET` con la concesión → `DELETE` → `GET` con `lease: null`; `reclaim` sólo con la anterior
+   no viva; `acquire` sobre una vencida ajena da 409 con `reclaimable: true` y `retryAfterSeconds: 0`; un par `targetType`/`targetId` incompleto da
+   400 `INVALID_PAYLOAD`; quien no es editor da 403.
+
+**Límites declarados de este congelamiento:**
+
+1. **La vivacidad se calcula en el cliente** comparando `expiresAt` con su reloj. Con desfase de reloj, el cliente puede habilitar un botón que el
+   servidor rechaza; el rechazo trae la verdad. No se agrega un segundo reloj en el servidor por esto.
+2. **`targetType` viaja como texto en el cuerpo** y se parsea en el borde, para que un literal desconocido termine en 400 `INVALID_PAYLOAD` con el sobre
+   propio y no en el error por defecto de Spring. El par incompleto lo sigue validando C19.
+3. **`renew` que falla devuelve el mismo 409 con las cinco claves sólo si hay una concesión registrada.** Si no hay ninguna —nunca la tuviste, o la
+   soltaste—, `details` queda **vacío**: no se inventa un editor ni se rellenan las claves con `null`, y la acción del cliente es adquirir de nuevo.
+4. **La traducción del borde no reimplementa la vivacidad ni la exención del operador:** las dos siguen viviendo en el servicio.
+5. **Una sola instancia (C4):** con dos instancias la concesión no cruza, y ninguna guarda de este borde lo arregla.
+6. **La guarda de la generación no es atómica contra la concesión:** entre la comprobación y el arranque del run puede adquirirse una concesión —el
+   *check-then-act* que ya quedó como `R3-001` en C19—. La ventana es de microsegundos y el efecto es un run que arranca justo cuando alguien empezaba a
+   editar. Se declara y no se finge resuelto.
+7. **Sin eventos y sin tabla:** C20 no publica nada nuevo ni persiste nada (regla 10 de C19); `targetType`/`targetId` son la respuesta a «qué está
+   editando», no una suscripción.
+
 ### S5 progreso — C19 cerrada (2026-10-03)
 
 **Commit:** `14053ce` — *feat(backend): hold an editing lease per model while someone edits* (4 archivos nuevos, +615). El diseño se congeló **antes** de
