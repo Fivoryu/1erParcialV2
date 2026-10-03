@@ -11,6 +11,8 @@ import com.diagramador.domain.GenerationProfile;
 import com.diagramador.domain.GenerationRun;
 import com.diagramador.domain.GenerationState;
 import com.diagramador.domain.ModelVersion;
+import com.diagramador.domain.ProjectMemberRole;
+import com.diagramador.domain.TargetType;
 import com.diagramador.domain.TemplateVersion;
 import com.diagramador.generation.GenerationArtifactBundleBuilder.GeneratedArtifactBundle;
 import com.diagramador.generation.GenerationArtifactService;
@@ -24,25 +26,40 @@ import com.diagramador.persistence.ModelVersionRepository;
 import com.diagramador.persistence.VerificationResultRepository;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-@SpringBootTest
+@SpringBootTest(properties = "diagrammer.collaboration.editing-lease-ttl=PT2S")
 @AutoConfigureMockMvc
 class GenerationApiTest extends AuthenticatedApiTest {
+
+    private static final String OPERATOR_TOKEN = UUID.randomUUID().toString();
+
+    @DynamicPropertySource
+    static void operatorProperties(DynamicPropertyRegistry registry) {
+        registry.add("diagrammer.operator.token", () -> OPERATOR_TOKEN);
+    }
 
     private final MockMvc mockMvc;
     private final ObjectMapper objectMapper;
@@ -159,6 +176,102 @@ class GenerationApiTest extends AuthenticatedApiTest {
         assertThat(run.path("profileRevision").asInt()).isEqualTo(profile.path("profileRevision").asInt());
         assertThat(run.path("templateId").asText()).isEqualTo(profile.path("templateId").asText());
         assertThat(run.path("templateRevision").asInt()).isEqualTo(profile.path("templateRevision").asInt());
+    }
+
+    @Test
+    void liveForeignLeaseRejectsGenerationWithoutCreatingARunAndReturnsConflictInResult() throws Exception {
+        Fixture fixture = fixture("lease-blocked-generation");
+        JsonNode target = createTarget(fixture, "blocked", "Blocked", "blocked_database", null).path("result");
+        String holder = addEditor(fixture, "lease-holder");
+        JsonNode lease = acquireLease(fixture.projectId(), holder);
+        long runsBefore = runRepository.countByTargetId(UUID.fromString(target.path("targetId").asText()));
+
+        JsonNode rejection = postGeneration(fixture.projectId(), generationRequest(fixture,
+                target.path("targetId").asText(), "blocked-" + UUID.randomUUID()));
+
+        assertThat(rejection.path("outcome").asText()).isEqualTo("REJECTED");
+        assertThat(rejection.path("code").asText()).isEqualTo("EXPORT_BLOCKED_EDITING");
+        JsonNode conflict = rejection.path("result");
+        assertConflictKeys(conflict);
+        assertThat(conflict.path("editorDisplayName").asText()).isEqualTo("Integration Test");
+        assertThat(conflict.path("targetType").asText()).isEqualTo("CLASSIFIER");
+        assertThat(conflict.path("targetId").asText()).isEqualTo(lease.path("lease").path("targetId").asText());
+        assertThat(conflict.path("reclaimable").asBoolean()).isFalse();
+        assertThat(conflict.path("retryAfterSeconds").asInt()).isPositive();
+        assertThat(runRepository.countByTargetId(UUID.fromString(target.path("targetId").asText())))
+                .isEqualTo(runsBefore);
+    }
+
+    @Test
+    void ownLiveLeaseAllowsGenerationAndArtifactDownload() throws Exception {
+        Fixture fixture = fixture("lease-own-generation");
+        JsonNode target = createTarget(fixture, "own", "Own", "own_database", null).path("result");
+        acquireLease(fixture.projectId(), null);
+
+        JsonNode accepted = postGeneration(fixture.projectId(), generationRequest(fixture,
+                target.path("targetId").asText(), "own-" + UUID.randomUUID()));
+
+        assertThat(accepted.path("outcome").asText()).isEqualTo("ACCEPTED");
+        assertThat(accepted.path("result").path("state").asText()).isEqualTo("SUCCEEDED");
+        byte[] archive = download(fixture.projectId(), UUID.fromString(accepted.at("/result/runId").asText()));
+        assertThat(archive).isNotEmpty();
+    }
+
+    @Test
+    void expiredForeignLeaseAllowsGeneration() throws Exception {
+        Fixture fixture = fixture("lease-expired-generation");
+        JsonNode target = createTarget(fixture, "expired", "Expired", "expired_database", null).path("result");
+        String holder = addEditor(fixture, "expired-lease-holder");
+        JsonNode lease = acquireLease(fixture.projectId(), holder);
+        Instant expiresAt = Instant.parse(lease.path("lease").path("expiresAt").asText());
+        Awaitility.await().atMost(Duration.ofSeconds(4)).until(() -> !Instant.now().isBefore(expiresAt));
+
+        JsonNode accepted = postGeneration(fixture.projectId(), generationRequest(fixture,
+                target.path("targetId").asText(), "expired-" + UUID.randomUUID()));
+
+        assertThat(accepted.path("outcome").asText()).isEqualTo("ACCEPTED");
+        assertThat(accepted.path("result").path("state").asText()).isEqualTo("SUCCEEDED");
+    }
+
+    @Test
+    void operatorCanDownloadArtifactsDespiteLiveForeignLease() throws Exception {
+        Fixture fixture = fixture("lease-operator-download");
+        JsonNode target = createTarget(fixture, "operator", "Operator", "operator_database", null).path("result");
+        JsonNode generated = postGeneration(fixture.projectId(), generationRequest(fixture,
+                target.path("targetId").asText(), "operator-" + UUID.randomUUID()));
+        UUID runId = UUID.fromString(generated.at("/result/runId").asText());
+        String holder = addEditor(fixture, "operator-lease-holder");
+        acquireLease(fixture.projectId(), holder);
+
+        MvcResult response = mockMvc.perform(withOperator(get(
+                "/projects/{projectId}/generations/{runId}/artifacts", fixture.projectId(), runId)
+                .accept(MediaType.ALL)))
+                .andExpect(status().isOk()).andReturn();
+
+        assertThat(response.getResponse().getContentType()).isEqualTo("application/zip");
+        assertThat(response.getResponse().getContentAsByteArray()).isNotEmpty();
+    }
+
+    @Test
+    void artifactDownloadUsesApiErrorEnvelopeAndOrderedConflictDetailsForForeignLease() throws Exception {
+        Fixture fixture = fixture("lease-blocked-artifact");
+        JsonNode target = createTarget(fixture, "artifact", "Artifact", "artifact_database", null).path("result");
+        JsonNode generated = postGeneration(fixture.projectId(), generationRequest(fixture,
+                target.path("targetId").asText(), "artifact-" + UUID.randomUUID()));
+        UUID runId = UUID.fromString(generated.at("/result/runId").asText());
+        String holder = addEditor(fixture, "artifact-lease-holder");
+        acquireLease(fixture.projectId(), holder);
+
+        MvcResult response = mockMvc.perform(authorized(get(
+                "/projects/{projectId}/generations/{runId}/artifacts", fixture.projectId(), runId)
+                .accept(MediaType.ALL)))
+                .andExpect(status().isConflict()).andReturn();
+
+        JsonNode error = objectMapper.readTree(response.getResponse().getContentAsByteArray());
+        assertThat(error.path("code").asText()).isEqualTo("EXPORT_BLOCKED_EDITING");
+        assertThat(error.path("details")).hasSize(1);
+        assertConflictKeys(error.path("details").get(0));
+        assertThat(error.path("details").get(0).path("editorDisplayName").asText()).isEqualTo("Integration Test");
     }
 
     @Test
@@ -464,6 +577,34 @@ class GenerationApiTest extends AuthenticatedApiTest {
                 .andReturn();
         assertThat(objectMapper.readTree(missingKey.getResponse().getContentAsByteArray())
                 .path("code").asText()).isEqualTo("INVALID_PAYLOAD");
+    }
+
+    private String addEditor(Fixture fixture, String prefix) throws Exception {
+        String username = prefix + "-" + UUID.randomUUID();
+        bearer(username);
+        addMembership(username, fixture.projectId(), ProjectMemberRole.EDITOR);
+        return username;
+    }
+
+    private JsonNode acquireLease(UUID projectId, String username) throws Exception {
+        Map<String, Object> request = Map.of("targetType", TargetType.CLASSIFIER.name(), "targetId", UUID.randomUUID());
+        MockHttpServletRequestBuilder builder = post("/projects/{projectId}/editing-lease", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(request));
+        MvcResult result = mockMvc.perform(username == null ? authorized(builder) : authorizedAs(username, builder))
+                .andExpect(status().isOk()).andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    private MockHttpServletRequestBuilder withOperator(MockHttpServletRequestBuilder builder) {
+        return builder.header(HttpHeaders.AUTHORIZATION, "Bearer " + OPERATOR_TOKEN);
+    }
+
+    private void assertConflictKeys(JsonNode conflict) {
+        List<String> keys = new ArrayList<>();
+        conflict.fieldNames().forEachRemaining(keys::add);
+        assertThat(keys).containsExactly(
+                "editorDisplayName", "targetType", "targetId", "reclaimable", "retryAfterSeconds");
     }
 
     private GeneratedRun generatedRun(Fixture fixture, String key) throws Exception {

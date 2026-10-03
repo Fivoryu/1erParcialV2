@@ -7,7 +7,6 @@ import com.diagramador.identity.CurrentUserContext;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -63,7 +62,8 @@ public class InMemoryEditingLeaseService implements EditingLeaseService {
                 return new EditingLease(modelId, editorUserId, editorDisplayName, targetType, targetId,
                         existing.acquiredAt(), now.plus(ttl));
             }
-            throw blocked(existing, now, !existing.isLive(now));
+            throw blocked(blocker(modelId).orElseThrow(() ->
+                    new IllegalStateException("Conflicting lease disappeared during acquisition.")));
         });
     }
 
@@ -102,7 +102,8 @@ public class InMemoryEditingLeaseService implements EditingLeaseService {
         return leases.compute(modelId, (id, existing) -> {
             Instant now = clock.instant();
             if (existing != null && existing.isLive(now)) {
-                throw blocked(existing, now, false);
+                throw blocked(blocker(modelId).orElseThrow(() ->
+                        new IllegalStateException("Conflicting lease disappeared during reclamation.")));
             }
             return newLease(modelId, editorUserId, editorDisplayName, targetType, targetId, now);
         });
@@ -115,16 +116,33 @@ public class InMemoryEditingLeaseService implements EditingLeaseService {
     }
 
     @Override
+    public Optional<EditingLeaseConflict> blocker(UUID modelId) {
+        Objects.requireNonNull(modelId, "modelId");
+        EditingLease existing = leases.get(modelId);
+        if (existing == null) {
+            return Optional.empty();
+        }
+        Instant now = clock.instant();
+        boolean live = existing.isLive(now);
+        int retryAfterSeconds = live ? retryAfterSeconds(now, existing.expiresAt()) : 0;
+        return Optional.of(new EditingLeaseConflict(existing.editorDisplayName(), existing.targetType(),
+                existing.targetId(), !live, retryAfterSeconds));
+    }
+
+    @Override
     public void requireExportAllowed(UUID modelId) {
         Objects.requireNonNull(modelId, "modelId");
         if (currentUserContext.isOperator()) {
             return;
         }
         UUID requesterUserId = currentUserContext.optional().map(CurrentUser::userId).orElse(null);
+        Optional<EditingLeaseConflict> blocker = blocker(modelId);
+        if (blocker.isEmpty() || blocker.get().reclaimable()) {
+            return;
+        }
         EditingLease existing = leases.get(modelId);
-        Instant now = clock.instant();
-        if (existing != null && existing.isLive(now) && !existing.editorUserId().equals(requesterUserId)) {
-            throw blocked(existing, now, false);
+        if (existing != null && !existing.editorUserId().equals(requesterUserId)) {
+            throw blocked(blocker.get());
         }
     }
 
@@ -146,22 +164,17 @@ public class InMemoryEditingLeaseService implements EditingLeaseService {
         }
     }
 
-    private static ApiException blocked(EditingLease lease, Instant now, boolean reclaimable) {
-        LinkedHashMap<String, Object> details = new LinkedHashMap<>();
-        details.put("editorDisplayName", lease.editorDisplayName());
-        details.put("targetType", lease.targetType() == null ? null : lease.targetType().name());
-        details.put("targetId", lease.targetId());
-        details.put("reclaimable", reclaimable);
-        details.put("retryAfterSeconds", reclaimable ? 0L : retryAfterSeconds(now, lease.expiresAt()));
+    private static ApiException blocked(EditingLeaseConflict conflict) {
         return new ApiException(HttpStatus.CONFLICT, "EXPORT_BLOCKED_EDITING",
-                "Export is blocked by an editing lease.", List.of(details), null);
+                "Export is blocked by an editing lease.", List.of(conflict.toDetails()), null);
     }
 
-    private static long retryAfterSeconds(Instant now, Instant expiresAt) {
+    private static int retryAfterSeconds(Instant now, Instant expiresAt) {
         Duration remaining = Duration.between(now, expiresAt);
         if (remaining.isZero() || remaining.isNegative()) {
-            return 0L;
+            return 0;
         }
-        return remaining.getSeconds() + (remaining.getNano() == 0 ? 0 : 1);
+        long seconds = remaining.getSeconds() + (remaining.getNano() == 0 ? 0 : 1);
+        return (int) Math.min(Integer.MAX_VALUE, seconds);
     }
 }

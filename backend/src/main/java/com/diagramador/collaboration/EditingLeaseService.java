@@ -61,6 +61,9 @@ public interface EditingLeaseService {
     /** Returns the recorded lease, whether live or expired, or empty if no lease is recorded. */
     Optional<EditingLease> current(UUID modelId);
 
+    /** Returns conflict details for any recorded lease, whether live or expired. */
+    Optional<EditingLeaseConflict> blocker(UUID modelId);
+
     /**
      * Throws {@code ApiException(409, "EXPORT_BLOCKED_EDITING")} only when another user holds a live lease.
      * The current holder and the operator principal may export; an anonymous requester is treated as a

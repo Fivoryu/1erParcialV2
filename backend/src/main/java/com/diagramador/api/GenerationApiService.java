@@ -8,6 +8,8 @@ import static com.diagramador.api.GenerationResources.GenerationRunResource;
 import static com.diagramador.api.GenerationResources.GenerationTargetResource;
 import static com.diagramador.api.GenerationResources.OperationOutcomeResource;
 
+import com.diagramador.collaboration.EditingLeaseConflict;
+import com.diagramador.collaboration.EditingLeaseService;
 import com.diagramador.domain.GenerationRun;
 import com.diagramador.domain.GenerationState;
 import com.diagramador.domain.GenerationTarget;
@@ -55,6 +57,7 @@ public class GenerationApiService {
     private final InputSnapshotFactory snapshotFactory;
     private final TransactionTemplate transactionTemplate;
     private final ProjectAuthorizationService projectAuthorizationService;
+    private final EditingLeaseService editingLeaseService;
 
     public GenerationApiService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
             GenerationTargetRepository targetRepository, ModelVersionRepository versionRepository,
@@ -62,7 +65,7 @@ public class GenerationApiService {
             GenerationRunRepository runRepository, GenerationIdentityService identityService,
             GenerationArtifactService artifactService, GenerationVerificationService verificationService,
             InputSnapshotFactory snapshotFactory, TransactionTemplate transactionTemplate,
-            ProjectAuthorizationService projectAuthorizationService) {
+            ProjectAuthorizationService projectAuthorizationService, EditingLeaseService editingLeaseService) {
         this.projectRepository = projectRepository;
         this.modelRepository = modelRepository;
         this.targetRepository = targetRepository;
@@ -76,6 +79,7 @@ public class GenerationApiService {
         this.snapshotFactory = snapshotFactory;
         this.transactionTemplate = transactionTemplate;
         this.projectAuthorizationService = projectAuthorizationService;
+        this.editingLeaseService = editingLeaseService;
     }
 
     public List<GenerationTargetResource> listTargets(UUID projectId) {
@@ -115,6 +119,20 @@ public class GenerationApiService {
         OperationOutcomeResource identityRejection = validateGenerationRequest(projectId, request);
         if (identityRejection != null) {
             return identityRejection;
+        }
+
+        try {
+            editingLeaseService.requireExportAllowed(request.modelId());
+        } catch (ApiException exception) {
+            if (!"EXPORT_BLOCKED_EDITING".equals(exception.code())) {
+                throw exception;
+            }
+            EditingLeaseConflict conflict = exception.details().stream().findFirst()
+                    .map(EditingLeaseConflict::fromDetails)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "The blocking lease returned no conflict details."));
+            return outcome("REJECTED", "EXPORT_BLOCKED_EDITING", exception.getMessage(),
+                    request.idempotencyKey(), conflict);
         }
 
         GenerationRunStart start;
@@ -165,6 +183,7 @@ public class GenerationApiService {
         if (run == null || !run.getModel().getId().equals(model.getId())) {
             return runNotFound();
         }
+        editingLeaseService.requireExportAllowed(model.getId());
         if (run.getState() != GenerationState.SUCCEEDED || run.getArtifactSetHash() == null
                 || run.getArtifactZipHash() == null) {
             return outcome("REJECTED", "RUN_NOT_COMPLETE",
