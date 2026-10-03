@@ -28,6 +28,18 @@ export interface PresencePerson {
   cursorY: number | null;
 }
 
+export interface ChatMessageResource {
+  id: Uuid;
+  authorUserId: Uuid;
+  authorDisplayName: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface MessagePostedPayload {
+  message: ChatMessageResource;
+}
+
 export interface PresenceUpdatedPayload {
   presence: PresencePerson[];
 }

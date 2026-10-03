@@ -1,5 +1,6 @@
 import type {
   ApiErrorResource,
+  ChatMessageResource,
   CommandOutcome,
   CommandResult,
   CreateGenerationRequest,
@@ -99,6 +100,8 @@ export interface ApiClient {
   createProject(request: CreateProjectRequest): Promise<ProjectResource>;
   listProjects(): Promise<ProjectResource[]>;
   getProject(projectId: Uuid): Promise<ProjectResource>;
+  listProjectMessages(projectId: Uuid): Promise<ChatMessageResource[]>;
+  postProjectMessage(projectId: Uuid, body: string): Promise<ChatMessageResource>;
   listProjectMembers(projectId: Uuid): Promise<MemberResource[]>;
   listProjectInvitations(projectId: Uuid): Promise<InvitationResource[]>;
   createProjectInvitation(projectId: Uuid, request: CreateInvitationRequest): Promise<InvitationResource>;
@@ -273,6 +276,15 @@ export function createApiClient(
     },
     getProject(projectId) {
       return requestJson<ProjectResource>(`/projects/${encodeURIComponent(projectId)}`);
+    },
+    listProjectMessages(projectId) {
+      return requestJson<ChatMessageResource[]>(`/projects/${encodeURIComponent(projectId)}/messages`);
+    },
+    postProjectMessage(projectId, body) {
+      return postJson<ChatMessageResource>(
+        `/projects/${encodeURIComponent(projectId)}/messages`,
+        { body },
+      );
     },
     listProjectMembers(projectId) {
       return requestJson<MemberResource[]>(`/projects/${encodeURIComponent(projectId)}/members`);

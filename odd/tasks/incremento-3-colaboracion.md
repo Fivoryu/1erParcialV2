@@ -620,13 +620,23 @@ contra el código de la librería (`screenToFlowPosition` resta el origen del ro
 layout y no hay DOM—, así que se verificaron por lectura, por los tres comandos y por la verificación independiente contra la fuente de React Flow. El caso manual
 que las mostraría funcionando es **panear y después mover el cursor remoto**. Tampoco hay prueba de navegador para el overlay.
 
+> **Estado de las ramas al 2026-10-03 (medido por la sesión de XMI, no por ésta):** `main` se movió de `90f4f4a` a **`012ae6e`** por avance rápido
+> (decisión explícita del usuario, asentada en §12.4 del acta de la sesión de XMI). Esa punta es la fusión que une **esta** rama (`61bf2d2`) con
+> `feat/xmi-intercambio` (`7c2ad45`) en el commit de fusión `f3f8e33`. Consecuencia declarada y vigente: **`main` quedó atrás de esta rama** — C17 en
+> adelante, S5 y S7 no están en `main`, y corregirlo lo vuelve a decidir el usuario. La **rama de esta sesión no está empujada** al remoto privado
+> (`github.com/Fivoryu/1erParcialV2`), que la sesión de XMI creó; empujarla es decisión del usuario. La **revisión nativa de la fusión no se corrió**, con
+> motivo medido: un merge no tiene base que aísle la resolución (sus únicas bases son los padres, y el alcance sería el contenido entero de una rama,
+> 58 archivos/7.052 líneas o 41/11.048), así que quedó cubierta por el verificador independiente, las cuatro compuertas y la autocrítica de la sesión de
+> XMI, que encontró y corrigió un defecto **propio** de su resolución manual —`previewXmi` caído del objeto de implementación, `TS2741`—. Eso es evidencia
+> de otro tipo, no revisión, y así queda declarado.
+
 ### S4 — Chat persistente del diagrama
 
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
 | C16 | Migración `V9__diagram_messages.sql`: tabla `diagram_message` (nueva, no está en el físico) con índices por modelo y tiempo | Migración aplicada contra PostgreSQL real (Flyway 1–9, PostgreSQL 16.15) y prueba de esquema en verde (9 pruebas). **Cerrada CON DESVIACIÓN DECLARADA** en `3c777e5` (ver *S4 progreso — C16*) |
-| C17 | `ChatService` y `GET/POST /projects/{id}/messages`, con autorización, saneado y evento `message.posted` | Integración: publicar, listar ordenado, y rechazo sin rol |
-| C18 | Web: panel de chat con historial, autor y hora, y recepción en vivo | Pruebas de componente y lint |
+| C17 | `ChatService` y `GET/POST /projects/{id}/messages`, con autorización, saneado y evento `message.posted` | Integración: publicar, listar ordenado, y rechazo sin rol. **Cerrada CON DESVIACIÓN DECLARADA** en `d9d4d0a` (ver *S4 progreso — C17*): 8 pruebas nuevas y 286 en la suite |
+| C18 | Web: panel de chat con historial, autor y hora, y recepción en vivo | Pruebas de componente y lint. **Cerrada CON DESVIACIÓN DECLARADA** (ver *S4 progreso — C18*): 152 pruebas web, lint 0, build 0 |
 
 ### S4 progreso — C16 cerrada CON DESVIACIÓN DECLARADA (2026-10-03)
 
@@ -663,13 +673,208 @@ instrucción habría significado «sacar» algo que no existía. Las que sí est
    fuentes ni en `target` (la rareza «validated 10 migrations» que vio el verificador no corresponde a ningún archivo), pero la unión real contra los cambios de la
    otra sesión no se pudo verificar acá.
 
+### S4 progreso — C17 cerrada CON DESVIACIÓN DECLARADA (2026-10-03)
+
+**Commit:** `d9d4d0a` — *feat(backend): talk in the diagram* (7 archivos, +562).
+
+> **Sin revisión nativa**: tres fallos consecutivos de transporte del relay (324 s / 236 s / 308 s de 2.400.000, sin mutación) con la recuperación indicada
+> aplicada dos veces. **Desviación declarada**, mismo criterio autorizado por el usuario para esta situación.
+
+**Qué entrega:** historial y publicación por proyecto. **Cualquier miembro participa, VIEWER incluido** —conversar sobre el diagrama no es editarlo— y esa regla está
+fijada por una prueba y escrita en el código, porque es la clase de decisión que alguien "corrige" después asumiendo que sólo escriben los editores. El cuerpo se
+recorta y se limita; vacío o excedido es `400` y **no escribe nada**. **No hay sanitización de HTML** y el comentario dice por qué: el servidor guarda texto plano y el
+cliente lo renderiza como texto, así que escapar es una garantía del cliente y no algo que el servidor finja hacer. El historial ordena por hora y desempata por id.
+
+**El evento `message.posted` no estaba en el catálogo del contrato §4.1** (medido): lo autoriza el plan, así que el escritor **agregó la fila al contrato** con su
+contenido mínimo — la misma regla que se aplicó al esquema físico en C16, porque una autoridad que no menciona lo que el sistema emite está mintiendo.
+
+**Un defecto que encontró la verificación independiente, y la solución superó lo pedido:** el escritor publicaba registrando una sincronización `afterCommit`
+**incondicionalmente**. Con transacción activa (el camino del controlador) eso es correcto y **mejor** que publicar después del bloque, porque espera el commit externo;
+pero sin proxy transaccional la registración lanza `IllegalStateException` **después** de que el mensaje ya se escribió: el mensaje quedaba guardado y el llamador
+recibía un error. Ahora hay dos ramas —con sincronización espera el commit, sin ella publica apenas la escritura es durable— y una prueba que llega al servicio
+**sin proxy** (`AopTestUtils.getTargetObject`) fija la guarda.
+
+**Medido, y reproducido por el verificador con sus propias corridas:** `ChatApiTest` = **8 pruebas, 0 fallos** · `mvn -o -B -f backend/pom.xml verify` =
+**286 pruebas, 0 fallos** (278 + 8).
+
+**Límites declarados:**
+
+1. **Sin prueba de rollback forzado**: la publicación espera el commit y la entrega por SSE está probada, pero no se forzó un rollback para ver que no publica.
+2. Sin prueba del **borde exacto** de 2000 caracteres (el `> MAX_BODY_LENGTH` lo implica, no lo afirma una prueba).
+3. La **cardinalidad del evento** no se afirma: se comprueba el contenido, no que sea exactamente uno por mensaje.
+
+### S4 progreso — C18 cerrada CON DESVIACIÓN DECLARADA (2026-10-03) — **S4 COMPLETO**
+
+**Commit:** el de esta unidad (9 archivos: panel de chat, formateador puro, tipos y métodos de cliente, cableado y estilos).
+
+> **Sin revisión nativa, por fallo nativo del proveedor**: el START devolvió `native-operation-failed` / `candidate-owner-preparation-failed` («candidate view
+> rejected before native START»), **sin crear linaje y sin mutación**, y su único `next_action` es «resolve-native-operation-failure», sin diagnóstico adicional.
+> Medido antes de declararlo: el árbol tenía exactamente los 9 archivos declarados (5 modificados + 4 nuevos) y `.codegraph/` está ignorado, así que la falla **no**
+> es por un archivo sin declarar. Es un modo nuevo, distinto del `pi-host-relay-transport-failure` de las unidades anteriores.
+
+**Qué entrega:** el panel de chat del editor con historial (autor y hora por mensaje, del más viejo al más nuevo), envío, y recepción en vivo por `message.posted`.
+Dos reglas que quedaron escritas en el código porque son la clase de cosa que alguien rompe después: **desduplicación por id** (quien publica recibe su propio evento, así
+que el mensaje aparecería dos veces: se ignoran los ids ya presentes, en los dos órdenes posibles, y también al fusionar el historial) y **el cuerpo se renderiza como texto,
+con `dangerouslySetInnerHTML` prohibido** (el servidor guarda texto plano y no sanitiza HTML, así que escapar es trabajo del cliente).
+
+**Medido:** `npm run lint` 0 · `npx vitest run` = **152 pruebas pasadas, 4 omitidas** (141 de base + 11) · `npm run build` 0 (227 módulos).
+
+**Verificación independiente:** un `FAILS` real, **defensivo y corregido antes del commit** — `new Date(null)` es la época Unix, así que un payload malformado con
+`createdAt: null` mostraba **1970** en vez del fallback; ahora cualquier valor no utilizable cae en el mismo texto que ya usaba una cadena inválida. Todo lo demás HOLDS,
+con lo importante confirmado por búsqueda exhaustiva: **ninguna vía de inyección de markup en todo `web/src`**, la hora de cada mensaje atada a **su propia fila**, y la
+desduplicación funcionando con el evento antes y después de la respuesta del POST.
+
+**Límites declarados:** el cableado de página (fetch, evento, POST) **no tiene prueba automatizada** y sin DOM no puede tenerla —queda verificado por lectura—; el cliente
+acepta **cualquier 2xx** y no exige exactamente el 201 que manda el servidor (convención de `requestJson`, no descuido de esta unidad); y el locale/zona con que el panel
+formatea la hora salen del entorno, mientras la **prueba** del formateador usa locale y zona explícitos para ser determinista.
+
 ### S5 — Bloqueo de exportación con aviso y reclamo
 
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
-| C19 | `EditingLeaseService`: adquirir, renovar por latido, vencer por TTL y reclamar | Pruebas unitarias con reloj controlado |
+| C19 | `EditingLeaseService`: adquirir, renovar por latido, vencer por TTL y reclamar | Pruebas unitarias con reloj controlado. **Cerrada** en `14053ce` (ver *S5 progreso — C19*) |
 | C20 | Guarda en `POST /generations`, en la descarga de artefactos y en la exportación XMI; respuesta con el editor, el motivo y la posibilidad de reclamar | Integración: bloqueado con lease ajeno, permitido con lease propio y tras vencer |
 | C21 | Web: botones de exportación con motivo y editor nombrado, y botón **Reclamar control** | Pruebas de componente de los tres estados |
+
+### S5 — diseño congelado de la concesión de edición (antes de C19)
+
+La tabla de S5 nombra las cuatro operaciones y §S6b congela **sólo** el nombre del tipo y `requireExportAllowed(UUID modelId)`, así que la
+semántica de adquisición, vencimiento y reclamo queda decidida acá antes de que exista el primer archivo. Sin esto, C19, C20 y C21 se
+diseñarían entre tres y el reclamo terminaría siendo un alias silencioso de la adquisición.
+
+**Lo que el plan ya resolvía, y de dónde sale:** §1 pide «un botón para reclamar el control **cuando su lease vence**»; C6 se decide contra el
+bloqueo indefinido porque «con TTL corto renovado por latido, el bloqueo es real mientras se edita y **se libera solo** cuando el editor
+desaparece»; y la evidencia de C20 dice **«permitido con lease propio y tras vencer»**. Las tres frases juntas fijan: una concesión **viva**
+es la única que bloquea, el TTL la mata sola, y reclamar es el acto explícito de un usuario, disponible recién cuando la anterior ya no está viva.
+
+**Reglas congeladas de C19:**
+
+1. Se guarda **una concesión por modelo**, efímera y en memoria (C4): `editorUserId`, `editorDisplayName`, `targetType`, `targetId`,
+   `acquiredAt` y `expiresAt`. `targetType` es el enum que ya existe, `com.diagramador.domain.TargetType` — no se inventa vocabulario.
+2. `viva(now)` es `now < expiresAt`. Sólo una concesión viva de **otro** usuario bloquea.
+3. `acquire`: sin concesión, la toma; del **mismo** usuario, la refresca (es el latido); viva de otro usuario, `409 EXPORT_BLOCKED_EDITING`;
+   **no viva de otro usuario, también `409`, pero con `reclaimable: true` y `retryAfterSeconds: 0`** — quitarle el control a otro es un acto
+   explícito y no un efecto colateral de empezar a editar.
+4. `renew`: sólo el titular vivo; extiende `expiresAt`. Una concesión vencida **no revive** por renovación.
+5. `release`: sólo el titular; idempotente; sin titular no hace nada.
+6. `reclaim`: es lo único que toma el control de otro usuario, y **sólo si esa concesión ya no está viva**; viva devuelve el mismo `409`.
+7. `current(modelId)`: la concesión registrada (viva o no) o vacío; es la lectura del endpoint de estado de C20.
+8. `requireExportAllowed(modelId)`: lanza `ApiException(409, "EXPORT_BLOCKED_EDITING")` **sólo** con una concesión viva ajena; el titular
+   puede exportar su propio modelo y **el principal de operador queda exento**, como congela §S6b.
+9. `details[0]` lleva exactamente `editorDisplayName`, `targetType`, `targetId`, `reclaimable` y `retryAfterSeconds`, en ese orden;
+   `targetType` viaja como `TargetType.name()` y `retryAfterSeconds` es el techo de los segundos que faltan, nunca negativo.
+10. C19 **no publica ningún evento**: el catálogo del contrato §4.1 no tiene un nombre para esto y no se le inventa uno.
+
+**Límites declarados de esta decisión:** el TTL por defecto es **30 s** (dos latidos del canal, que late cada 15 s) y es configurable para que
+C20 pueda vencerlo sin esperar; sigue siendo de **una sola instancia** (C4), así que con dos instancias la concesión no cruza; y **un editor cuyo
+latido siga fluyendo no puede ser despojado** — la salida es que el TTL venza, y si el canal sigue vivo la concesión sigue viva. Eso último se
+declara y no se finge resuelto.
+
+### S5 progreso — C19 cerrada (2026-10-03)
+
+**Commit:** `14053ce` — *feat(backend): hold an editing lease per model while someone edits* (4 archivos nuevos, +615). El diseño se congeló **antes** de
+escribir la primera línea (`d9ebf54`), para que C19, C20 y C21 no se diseñaran entre tres y para que el revisor tuviera autoridad en el repo.
+
+**Revisión nativa:** linaje `review-43b6f804e24d884e`, tier `medium`, **una** lente (`review-reliability`, orden 0), 4 caminos, 615 líneas,
+presupuesto de corrección 200. Cerró **aprobada al primer intento** con autoridad quemada (`gentle-ai.review-acknowledged/v1`): es la primera unidad
+desde C14 que no necesita ni una recuperación —después de que el relay respondiera, las siete anteriores quedaron con desviación declarada—. El slot
+devolvió pronóstico antes de correr (`pi_host_relay`, 1 corrida, sin mutación) y se autorizó esa corrida exacta con `reviewerRunAcknowledged`.
+
+**Hallazgo informativo — `R3-001`**: lente `reliability`, ubicación `collaboration/InMemoryEditingLeaseService.java:124-126` (las tres líneas de la
+guarda: el `leases.get`, el `clock.instant()` y la condición), severidad `WARNING`, disposición `informational`. El proveedor fue explícito: **ninguno
+abre corrección, ninguno reabre la revisión y no se ofrece transición de corrección para este candidato**; el sobre **no expuso el texto** del hallazgo
+y no se inventa. Lectura propia de esa región, **atribuida a esta sesión y no al revisor**: `requireExportAllowed` es un *check-then-act* — lee la
+concesión con `get` y recién después decide, sin que la lectura y la decisión sean una sola operación atómica—, así que un `acquire` o un `release`
+concurrente en esa ventana de microsegundos puede permitir una exportación justo cuando otro toma el control, o bloquearla justo después de que lo soltó.
+No corrompe nada (la exportación es una lectura y el servidor sigue siendo la autoridad) y no se toca: el proveedor prohíbe la transición de corrección y
+arreglarlo pediría un candidato y un linaje nuevos. Queda como trabajo posterior candidato.
+
+**Medido:** `EditingLeaseServiceTest` = **14 pruebas, 0 fallos** · `mvn -o -B -f backend/pom.xml verify` = **300 pruebas, 0 fallos, 0 errores,
+0 omitidas**, `BUILD SUCCESS`, **4:27 min** (286 de base + 14 nuevas).
+
+**Verificación independiente (read-only, con sus propias corridas):** los **diez ejes HOLDS**. La comprobación de mutación se hizo sobre copias **fuera
+del repo** (un archivo nuevo adentro habría entrado al candidato) y las **cuatro mutaciones tumbaron la suite**, cada una por la aserción que le
+toca: renombrar la clave `reclaimable` (4 fallos), tratar como viva la concesión en el instante exacto de vencimiento (2 fallos y 1 error), quitar la
+exención del operador (1 fallo) y dejar que `acquire` se apropie de una concesión vencida ajena (1 fallo). Las aserciones que sostienen la firma
+congelada son **portantes**, no decorativas.
+
+**Límites declarados de esta unidad:**
+
+1. **La guarda de TTL no positivo no tiene aserción.** El constructor rechaza cero y negativos con `IllegalArgumentException` y está leído en la fuente,
+   pero ninguna prueba lo fija; el verificador lo marcó `UNPROVEN` por cobertura, no por sospecha de defecto.
+2. **Los argumentos nulos del servicio tampoco están asertados.** Los `Objects.requireNonNull` existen; la prueba sólo afirma el rechazo de nulos en el record.
+3. **La prueba de concurrencia no es una prueba de linealidad.** Ocho hilos con usuarios distintos contra un modelo libre dan **exactamente un ganador y
+   siete conflictos**, pero una implementación con *check-then-act* podría pasarla si el planificador serializa sus pasos; la atomicidad real la aporta el
+   `compute` por clave del `ConcurrentHashMap`, no la prueba.
+4. **Una sola instancia y sin eventos** (C4): la concesión no cruza instancias ni publica nada. El catálogo del contrato no tiene un nombre de evento para
+   esto y no se le inventó uno.
+5. **Un editor cuyo latido sigue fluyendo no puede ser despojado**: el TTL vence sólo si el latido se corta. Declarado en el código y en §S5.
+6. `details[0]` se arma con un `LinkedHashMap` y la prueba afirma el **orden** de las claves, además de que el mapa sea de ese tipo; la aserción del tipo
+   concreto es más estricta de lo que el contrato pide y se registra como tal.
+
+**Sin desviación de ruteo:** el escritor delegado entregó la unidad completa en **una** vuelta y el padre no escribió fuente en línea.
+
+### S5 progreso — las siete remediaciones cerradas (2026-10-03)
+
+> **Cierre de la deuda de revisión de S3 y S4.** Las siete unidades commiteadas con desviación declarada quedaron **revisadas y aprobadas** por el
+> proveedor nativo, cada una en su propio linaje y con la autoridad quemada. **Ninguna exigió corrección; ninguna devolvió un hallazgo bloqueante.**
+
+**El obstáculo, medido, y cómo se resolvió.** El intento original de remediar C12b usó `baseRef` = commit **padre** con `committedOnly: true`, y
+funcionó porque en ese momento el HEAD del árbol estaba parado justo sobre la unidad. Ese ya no es el caso: se midió que `committedOnly` con `baseRef`
+proyecta siempre **`baseRef..HEAD`** —con `baseRef = 155e93c` la proyección trajo **47 caminos**, todo lo acumulado desde C12b hasta la punta—, así que
+aislar una unidad no se consigue con banderas. Se ancló **un árbol de trabajo por unidad** (`git worktree add --detach`), creado con el `git` de Windows
+porque el proveedor registra rutas `D:/...` y el de WSL habría registrado `/mnt/...`, que el CLI nativo no resuelve. Las anclas viven dentro del proyecto,
+bajo `backend/target/review-anchors/`; `target/` está ignorado, así que **nunca entraron al inventario de no versionados ni a ningún candidato**. Cada
+revisión corrió con `workspaceRoot` apuntando a su ancla y `baseRef` = el padre de la unidad. El árbol principal no se tocó y quedó limpio en todo momento.
+
+**Las siete, con lo que devolvió cada una:**
+
+| Unidad | Commit | Linaje | Caminos | Líneas | Presupuesto | Resultado |
+| --- | --- | --- | --- | --- | --- | --- |
+| C12b | `84e16f1` | `review-287a0db8dee2e619` | 5 | 444 | 200 | aprobada · 2 informativos |
+| C14b | `da3c2d6` | `review-fd66d6a0ccb2668d` | 6 | 279 | 140 | aprobada · 1 informativo |
+| C15 | `c80b1f1` | `review-cc212394dbf3b6d9` | 12 | 633 | 200 | aprobada · 1 informativo |
+| C15b | `805aa57` | `review-238b28a5b6836cbd` | 7 | 293 | 147 | aprobada · **sin hallazgos** |
+| C16 | `3c777e5` | `review-8c370fb5a6fd4770` | 3 | 28 | 14 | aprobada · **sin hallazgos** |
+| C17 | `d9d4d0a` | `review-c9527669f19152af` | 7 | 562 | 200 | aprobada · 1 informativo |
+| C18 | `fc12692` | `review-fb6dde203156fda7` | 9 | 539 | 200 | aprobada · 1 informativo |
+
+Las siete corrieron el mismo protocolo: `inspect` sobre el ancla → `start` con el **sha de commit** (el proveedor emite el del árbol, y el START lo rechaza
+con `base-ref-unresolvable`) → `status` → captura con pronóstico previo (`pi_host_relay`, 1 corrida, sin mutación) → la misma captura exacta con
+`reviewerRunAcknowledged` → `acknowledge-approved`. Tier `medium`, una lente (`review-reliability`, orden 0) en las siete.
+
+**Los seis hallazgos informativos** —todos `WARNING`, todos `disposition: informational`, ninguno abre corrección ni reabre la revisión— apuntan a
+trabajo posterior, no a la unidad revisada:
+
+1. `R3-001` · `api/ProjectEventController.java:41-46` (C12b).
+2. `R3-002` · `collaboration/PresencePublisher.java:23-32` (C12b).
+3. `R3-001` · `diagram/UmlClassNode.tsx:158` (C14b).
+4. `R3-RemoteCursorNotRendered` · `pages/ProjectEditorPage.tsx:290` (C15): señalado en C15 y **pintado por C15b**, la unidad inmediatamente siguiente; el
+   propio secuenciado lo explica, y por eso no queda como defecto pendiente.
+5. `R3-unbounded-history` · `collaboration/ChatService.java:55-57` (C17).
+6. `R3-chat-draft-loss` · `collaboration/ChatPanel.tsx:84` (C18).
+
+El proveedor **no expuso el texto** de ningún hallazgo —sólo `id`, lente, ubicación, severidad y disposición—, así que ninguno se parafrasea: lo que hay
+es lo que devolvió el sobre. Los identificadores con nombre propio (`R3-RemoteCursorNotRendered`, `R3-unbounded-history`, `R3-chat-draft-loss`) son del
+proveedor y se citan literalmente.
+
+**Lo que las remediaciones dejaron ver, como proceso:** C15 no fue una unidad web. `c80b1f1` metió **12 caminos** repartidos entre el backend de
+presencia y cursores y la web del coalescedor —el único commit mixto de la tanda—. Como la revisión mira el candidato tal como está commiteado, quedó
+revisado tal cual. La unidad de revisión estuvo bien; la de *commit* no.
+
+**Límites declarados de esta tanda:**
+
+1. **Nada de esto re-escribe historia.** Las siete siguen siendo unidades commiteadas sin revisión *en el momento del commit*; lo que cambió es que ahora
+   **tienen** un linaje aprobado y quemado por unidad. La desviación declarada se conserva como registro histórico en las secciones de arriba.
+2. **El texto de los hallazgos no se expuso** en ningún sobre: no se parafrasea ni se completa por inferencia.
+3. **Las anclas son descartables.** `backend/target/review-anchors/{c12b,c14b,c15,c15b,c16,c17,c18}` se quitan al cerrar esta tanda; no son parte del repo
+   y no dejan rastro en el índice.
+4. **El relay falló siete veces seguidas y después respondió siete veces seguidas.** Es intermitente y no hay diagnóstico; lo que hay es una tanda cerrada.
+5. **Un linaje sin trayectoria de corrección no prueba ausencia de defectos.** Prueba que el proveedor no encontró nada que justifique corregir este
+   candidato; los hallazgos informativos quedan arriba como deuda visible.
+
+**Sin desviación de ruteo:** en las remediaciones no había fuente que escribir —el candidato era el árbol ya commiteado—, así que la tarea fue de revisión
+y registro, y el padre la ejecutó sin delegar escritura.
 
 ### S6 — Intercambio XMI (RF-09, CU-16, CU-17) — **cedida a otra sesión**
 
