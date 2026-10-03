@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ApiTransportError, createApiClient } from '../api/client';
@@ -20,6 +19,7 @@ import type {
 } from '../api/types';
 import PresencePanel from '../collaboration/PresencePanel';
 import { createCursorCoalescer, type CursorCoalescer } from '../collaboration/cursorCoalescer';
+import { buildRemoteCursorMarkers } from '../collaboration/remoteCursors';
 import { subscribeProjectEvents } from '../collaboration/projectEvents';
 import UmlCanvas from '../diagram/UmlCanvas';
 import PropertiesPanel from '../diagram/PropertiesPanel';
@@ -121,7 +121,7 @@ export default function ProjectEditorPage() {
   const [model, setModel] = useState<ModelResource | null>(null);
   const [selection, setSelection] = useState<CanvasSelection | null>(null);
   const [presence, setPresence] = useState<PresencePerson[]>([]);
-  const [, setRemoteCursors] = useState<Map<string, { x: number; y: number }>>(() => new Map());
+  const [remoteCursorPositions, setRemoteCursors] = useState<Map<string, { x: number; y: number }>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -381,6 +381,10 @@ export default function ProjectEditorPage() {
 
   const targetElementId = selectedTargetElementId(selection);
   const touchedElements = useMemo(() => groupTouchesByElement(presence), [presence]);
+  const remoteCursorMarkers = useMemo(
+    () => buildRemoteCursorMarkers(presence, remoteCursorPositions, currentUserId),
+    [currentUserId, presence, remoteCursorPositions],
+  );
 
   useEffect(() => {
     if (!projectId) {
@@ -474,15 +478,7 @@ export default function ProjectEditorPage() {
               </div>
             )}
 
-            <div
-              className="editor-workspace"
-              onPointerMove={(event: ReactPointerEvent<HTMLDivElement>) => {
-                if (!(event.target instanceof Element) || !event.target.closest('.diagram-canvas')) {
-                  return;
-                }
-                cursorCoalescerRef.current?.schedule({ x: event.clientX, y: event.clientY });
-              }}
-            >
+            <div className="editor-workspace">
               <UmlCanvas
                 model={model}
                 selection={selection}
@@ -491,6 +487,8 @@ export default function ProjectEditorPage() {
                 onAddClassifier={addClassifier}
                 onDelete={deleteSelection}
                 touchedElements={touchedElements}
+                remoteCursors={remoteCursorMarkers}
+                onCursorMove={(position) => cursorCoalescerRef.current?.schedule(position)}
               />
               <PropertiesPanel
                 model={model}

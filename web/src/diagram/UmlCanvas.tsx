@@ -8,6 +8,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useViewport,
   type Connection,
   type EdgeTypes,
   type NodeTypes,
@@ -23,6 +24,8 @@ import { createGeometryCoalescer } from './geometry-coalescer';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
 import UmlRelationshipEdge, { type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
+import RemoteCursors from '../collaboration/RemoteCursors.tsx';
+import type { RemoteCursorMarker } from '../collaboration/remoteCursors';
 import type { TouchedElement } from './touch-highlight';
 
 const DEFAULT_NODE_WIDTH = 260;
@@ -47,6 +50,8 @@ interface UmlCanvasProps {
   onAddClassifier: (kind: ClassifierKind) => void;
   onDelete: (selection: CanvasSelection) => void;
   touchedElements?: TouchedElement[];
+  remoteCursors?: readonly RemoteCursorMarker[];
+  onCursorMove?: (position: { x: number; y: number }) => void;
 }
 
 interface NodeRectangle {
@@ -229,7 +234,14 @@ export function buildFlowEdges(
 }
 
 function CanvasFrame(props: UmlCanvasProps) {
-  const { fitView } = useReactFlow<ClassFlowNode>();
+  const { fitView, screenToFlowPosition } = useReactFlow<ClassFlowNode>();
+  const viewport = useViewport();
+  const screenCursors = useMemo(() => (props.remoteCursors ?? []).map((marker) => ({
+    ...marker,
+    // Local = flow * zoom + viewport offset; subtracting the transformed origin cancelled the pan.
+    x: marker.x * viewport.zoom + viewport.x,
+    y: marker.y * viewport.zoom + viewport.y,
+  })), [props.remoteCursors, viewport]);
   const viewId = defaultView(props.model)?.id;
   const coalescer = useMemo(() => createGeometryCoalescer<GeometryUpdate>((_elementId, payload) => {
     props.onCommand(buildGeometrySetRequest(payload));
@@ -392,7 +404,18 @@ function CanvasFrame(props: UmlCanvasProps) {
           <button className="text-button" onClick={() => setConnectionDraft(null)} type="button">Cancel</button>
         </form>
       )}
-      <div className="diagram-canvas" onKeyDown={handleKeyDown} tabIndex={0}>
+      <div
+        className="diagram-canvas"
+        onKeyDown={handleKeyDown}
+        onPointerMove={(event) => {
+          // Presence coordinates belong to the diagram, not the window, whose size, scroll, and panel widths differ by client.
+          props.onCursorMove?.(screenToFlowPosition(
+            { x: event.clientX, y: event.clientY },
+            { snapToGrid: false },
+          ));
+        }}
+        tabIndex={0}
+      >
         <ReactFlow<ClassFlowNode, RelationshipFlowEdge>
           nodes={nodes}
           edges={edges}
@@ -421,6 +444,7 @@ function CanvasFrame(props: UmlCanvasProps) {
         >
           <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1.2} color="#cbd8d3" />
           <Controls position="bottom-left" showInteractive={false} />
+          <RemoteCursors markers={screenCursors} />
         </ReactFlow>
       </div>
     </section>
