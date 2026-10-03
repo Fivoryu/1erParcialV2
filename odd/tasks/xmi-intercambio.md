@@ -1658,7 +1658,7 @@ ruta de Windows; siempre `git -C` con ruta absoluta**.
   y tiene su unidad siguiente sin commitear, así que esa rama queda 10 commits delante de `main`. Ese commit **no
   se fusionó**: es el diseño de un incremento ajeno todavía sin implementar. Se declara, no se cierra.
 - **La revisión nativa de esta sección** se corrió sobre el rango posterior a la fusión: lineage `review-d8a85e5a4031c35f`, **approved** y autoridad quemada, en §14.7.
-- **El cierre del arnés S7** sigue sin estar en ninguna de las dos ramas (§13.6).
+- **El cierre del arnés S7** sigue sin estar en ninguna de las dos ramas, pero **ya tiene dueño declarado**: lo cierra el par, y esta unidad queda afuera (§14.12).
 
 ### 14.7 La revisión nativa del consolidado
 
@@ -1866,3 +1866,29 @@ código ya revisado, así que el día que se retome no hay que volver a decidir 
 **Dos hallazgos informativos de la revisión del par**, asentados como suyos: la guarda de desmontaje del adaptador
 no tiene prueba que la capture —el proyecto no renderiza hooks, declarado—, y `acquire` se dispara en **cada** acto
 de edición, que el servidor trata como refresco por patrón deliberado del congelamiento (regla 1).
+
+### 14.12 El arnés S7 lo cierra el par: declarado, y esta unidad queda afuera
+
+§14.6 dejaba declarado que el cierre del arnés de aceptación no estaba en ninguna de las dos ramas. Eso cambió, y
+cambió **del lado del par**: su commit **`6139d7c`** —*freeze the acceptance harness design before writing it*,
+docs-only, +20— congela el diseño en su §S7, y un escritor delegado suyo está construyendo
+`tools/collaboration-acceptance/`. **Lo cierra él, y esta unidad queda afuera a propósito**: dos implementaciones
+del mismo arnés es exactamente lo que hay que evitar, y por eso se preguntó antes de escribir una línea.
+
+Lo que el par reportó como medido y **se asienta como suyo**, sin reformularlo: el arnés corre dos sesiones de API
+contra `docker compose -p collaboration-acceptance`; cuenta contenedores **por etiqueta de proyecto** y **nunca**
+global, porque en el daemon hay Testcontainers ajenos; recorre el camino completo con las tres guardas, incluida la
+**exportación XMI**; verifica el teardown; y exige **doble corrida**. Dos hallazgos suyos, que quedan como suyos: la
+**presencia no tiene listado por HTTP** —`POST` 204 vacío y roster solo por SSE—, así que el arnés lee el snapshot
+inicial del canal y cierra, con el «no medido» estrechado a la entrega en vivo; y en la descarga de artefactos la
+**validación del run va antes** que la guarda de concesión, así que la prueba tiene que preparar un run primero.
+
+**Por qué contar por etiqueta es la decisión correcta, confirmado acá**: esta unidad levanta sus propios
+Testcontainers en el mismo daemon cuando corre `mvn -o -B -f backend/pom.xml verify`. Con un conteo global, el arnés
+del par fallaría por culpa de esta suite y de cualquier otra; etiquetado, no se tocan. Queda asentado como razón
+medida, no como opinión.
+
+**Lo que falta para cerrarlo, y de quién depende.** Cuando aterrice, el par pasa el **contrato de corrida** —comando
+exacto, puertos, la cláusula de rechazo al arranque si encuentra contenedores etiquetados huérfanos y el conteo por
+etiqueta— y esta unidad lo toma con el procedimiento de siempre: fusión, compuertas medidas, revisión nativa y
+`main`. Nada de eso se hizo todavía, y **no se declara cerrado**: se declara **con dueño**.
