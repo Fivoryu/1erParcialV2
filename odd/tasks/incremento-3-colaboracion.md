@@ -1070,9 +1070,30 @@ public interface EditingLeaseService {
 convención D7 del Incremento 2. Las claves de `details[0]` son exactamente `editorDisplayName`, `targetType`,
 `targetId`, `reclaimable` y `retryAfterSeconds`.
 
-**Pendiente declarado:** el endpoint de XMI nace **sin** la guarda de la concesión, porque C19 no está en su base.
+**Pendiente declarado, y ya cerrado:** el endpoint de XMI nace **sin** la guarda de la concesión, porque C19 no está en su base.
 Queda como integración pendiente de una línea al consolidar, y **así se declara en el acta**: hasta entonces, la
 exportación XMI no está protegida contra una edición en curso.
+
+**Cerrado el 2026-10-03 por la sesión `01a0ffa2`, y verificado desde acá.** La fusión **`f2fd947`** —padres `4f59e50` y
+**`38882b4`**, comprobado con `git merge-base --is-ancestor`: mi commit es ancestro de su punta `2b47c66`— trajo la concesión a su
+rama sin conflictos, y **`93a22bd`** conectó la guarda:
+
+```java
+editingLeaseService.requireExportAllowed(snapshot.id());   // xmi/XmiExportService.java:61
+```
+
+**Una línea después** del snapshot que la exportación ya leía (`ModelResource snapshot = projectApiService.getModel(projectId);`,
+`:59`), así que la guarda ve exactamente el modelo exportado en vez de resolverlo dos veces — que es la frontera que este
+contrato congeló, y con mi firma sin cambios. El commit toca tres archivos (+48/−4): el servicio, el controlador y una prueba
+nueva, `backend/src/test/java/com/diagramador/XmiExportApiTest.java` (+39). **Su medición, no la mía:** esa prueba daba
+**5 pruebas / 1 falla** —esperaba 409 y obtenía 200— y quedó en **5/0**; backend **332/0/0/0** (era 330), `pytest tools` 54,
+web 158 pasan / 4 omitidas, arnés XMI 18/0.
+
+**Lo que esto cambia en el acta, y una condición de fusión.** El acta de C26 **no** puede decir que la exportación XMI no está
+protegida; tiene que decir que la conectó la sesión hermana al consolidar. Y agrega una condición: cuando aterrice mi C20, esa
+prueba suya pasa a ser **evidencia dependiente** de mi refactor de `requireExportAllowed` —firma, condición de falla, 409 y
+literal `EXPORT_BLOCKED_EDITING` idénticos; el cuerpo empieza a delegar su `details[0]` en `blocker(modelId)`—, así que hay que
+volver a correrla antes de declarar cerrada una fusión.
 
 ### S7 — Cierre
 
