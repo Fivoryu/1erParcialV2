@@ -625,7 +625,7 @@ que las mostraría funcionando es **panear y después mover el cursor remoto**. 
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
 | C16 | Migración `V9__diagram_messages.sql`: tabla `diagram_message` (nueva, no está en el físico) con índices por modelo y tiempo | Migración aplicada contra PostgreSQL real (Flyway 1–9, PostgreSQL 16.15) y prueba de esquema en verde (9 pruebas). **Cerrada CON DESVIACIÓN DECLARADA** en `3c777e5` (ver *S4 progreso — C16*) |
-| C17 | `ChatService` y `GET/POST /projects/{id}/messages`, con autorización, saneado y evento `message.posted` | Integración: publicar, listar ordenado, y rechazo sin rol |
+| C17 | `ChatService` y `GET/POST /projects/{id}/messages`, con autorización, saneado y evento `message.posted` | Integración: publicar, listar ordenado, y rechazo sin rol. **Cerrada CON DESVIACIÓN DECLARADA** en `d9d4d0a` (ver *S4 progreso — C17*): 8 pruebas nuevas y 286 en la suite |
 | C18 | Web: panel de chat con historial, autor y hora, y recepción en vivo | Pruebas de componente y lint |
 
 ### S4 progreso — C16 cerrada CON DESVIACIÓN DECLARADA (2026-10-03)
@@ -662,6 +662,36 @@ instrucción habría significado «sacar» algo que no existía. Las que sí est
 3. **La fusión con la sesión de XMI no está probada**: este candidato no crea `V10` ni toca `xmi_exchange`/`xmi_loss_item`, y **medido: no existe ningún `V10`** en
    fuentes ni en `target` (la rareza «validated 10 migrations» que vio el verificador no corresponde a ningún archivo), pero la unión real contra los cambios de la
    otra sesión no se pudo verificar acá.
+
+### S4 progreso — C17 cerrada CON DESVIACIÓN DECLARADA (2026-10-03)
+
+**Commit:** `d9d4d0a` — *feat(backend): talk in the diagram* (7 archivos, +562).
+
+> **Sin revisión nativa**: tres fallos consecutivos de transporte del relay (324 s / 236 s / 308 s de 2.400.000, sin mutación) con la recuperación indicada
+> aplicada dos veces. **Desviación declarada**, mismo criterio autorizado por el usuario para esta situación.
+
+**Qué entrega:** historial y publicación por proyecto. **Cualquier miembro participa, VIEWER incluido** —conversar sobre el diagrama no es editarlo— y esa regla está
+fijada por una prueba y escrita en el código, porque es la clase de decisión que alguien "corrige" después asumiendo que sólo escriben los editores. El cuerpo se
+recorta y se limita; vacío o excedido es `400` y **no escribe nada**. **No hay sanitización de HTML** y el comentario dice por qué: el servidor guarda texto plano y el
+cliente lo renderiza como texto, así que escapar es una garantía del cliente y no algo que el servidor finja hacer. El historial ordena por hora y desempata por id.
+
+**El evento `message.posted` no estaba en el catálogo del contrato §4.1** (medido): lo autoriza el plan, así que el escritor **agregó la fila al contrato** con su
+contenido mínimo — la misma regla que se aplicó al esquema físico en C16, porque una autoridad que no menciona lo que el sistema emite está mintiendo.
+
+**Un defecto que encontró la verificación independiente, y la solución superó lo pedido:** el escritor publicaba registrando una sincronización `afterCommit`
+**incondicionalmente**. Con transacción activa (el camino del controlador) eso es correcto y **mejor** que publicar después del bloque, porque espera el commit externo;
+pero sin proxy transaccional la registración lanza `IllegalStateException` **después** de que el mensaje ya se escribió: el mensaje quedaba guardado y el llamador
+recibía un error. Ahora hay dos ramas —con sincronización espera el commit, sin ella publica apenas la escritura es durable— y una prueba que llega al servicio
+**sin proxy** (`AopTestUtils.getTargetObject`) fija la guarda.
+
+**Medido, y reproducido por el verificador con sus propias corridas:** `ChatApiTest` = **8 pruebas, 0 fallos** · `mvn -o -B -f backend/pom.xml verify` =
+**286 pruebas, 0 fallos** (278 + 8).
+
+**Límites declarados:**
+
+1. **Sin prueba de rollback forzado**: la publicación espera el commit y la entrega por SSE está probada, pero no se forzó un rollback para ver que no publica.
+2. Sin prueba del **borde exacto** de 2000 caracteres (el `> MAX_BODY_LENGTH` lo implica, no lo afirma una prueba).
+3. La **cardinalidad del evento** no se afirma: se comprueba el contenido, no que sea exactamente uno por mensaje.
 
 ### S5 — Bloqueo de exportación con aviso y reclamo
 
