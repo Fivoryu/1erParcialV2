@@ -1070,6 +1070,8 @@ de EA con **nuestro árbol semántico** más **nuestro bloque `<diagrams>`** tam
 
 ### 10.5 Plan de reparación, con su evidencia de cierre
 
+**Commit de la unidad:** `c561376` — `fix(xmi): declare the Enterprise Architect dialect marker on export`, sobre `feat/xmi-intercambio`.
+
 | # | Tarea | Estado y evidencia |
 | --- | --- | --- |
 | R1 | Emitir el arquero de dialecto medido en `xmi:Documentation` (`exporter="Enterprise Architect"`, `exporterVersion="6.5"`) y conservar la procedencia real en un comentario XML; invertir la aserción de `XmiSemanticEmitterTest` que codificaba X-5, con la medición citada | **Cerrada.** `mvn -o -B -f backend/pom.xml -Dtest=XmiSemanticEmitterTest test` = **8 pruebas, 0 fallos**; la aserción vieja ya no existe y la nueva exige el arquero y el comentario |
