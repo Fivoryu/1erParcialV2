@@ -1779,3 +1779,39 @@ escrita como tal.
 su §S6b. El texto del aviso `R3-001` de la autoridad del par no se reconstruye: su sobre tampoco lo expuso. Y la
 revisión del par, sobre el árbol de trabajo, **no** cubre el commit de documentación `6c75b37`: eso es lo que mi
 corrida aporta de más.
+
+### 14.10 El componente de conflicto del par: declarado pendiente, no trabajado
+
+La unidad C21 del par trae un componente web que muestra el conflicto de concesión: nombre del editor, motivo y un
+botón **Reclamar control** habilitado solo cuando `reclaimable` es verdadero. El par avisó que **la exportación XMI
+se topa con el mismo 409** y ofreció el contrato para montarlo, en vez de que esta unidad escriba otro.
+
+**El hueco, medido acá.** Ante el 409 de `/projects/{id}/xmi/export`, el panel muestra hoy `error.message` por
+`messageFor` (`web/src/xmi/XmiImportPanel.tsx:285`), o sea el literal del backend —«Export is blocked by an editing
+lease.»—: **sin** nombre del editor, **sin** `reclaimable` y **sin** forma de reclamar.
+
+**La integración sería viable sin tocar archivos compartidos, y eso también está medido**: `ApiTransportError`
+(`web/src/api/client.ts:34-48`) ya expone `code`, `message`, `details: Array<Record<string, unknown>>`,
+`operationId` y `status`, así que el código `EXPORT_BLOCKED_EDITING` y las cinco claves de `details[0]` **ya llegan**
+al panel; y el punto de montaje es `web/src/xmi/XmiImportPanel.tsx` (382 líneas), montado en
+`ProjectEditorPage.tsx:612`, de modo que montar **dentro** del panel no obliga a tocar el archivo compartido.
+
+**Decisión del usuario: queda declarado como pendiente, sin trabajarlo.** No se monta nada ahora y el panel queda
+como está; la reutilización queda como **plan escrito** —no como rechazo— y la unidad se retoma cuando el usuario lo
+pida. El motivo es de secuencia, no técnico: la unidad C21 **todavía no existe commiteada** del lado del par, y el
+contrato llega con nombres finales recién cuando cierre su revisión nativa.
+
+**Lo que el par anunció, asentado como anuncio suyo y no como contrato verificado**: el mapeador canónico quedará
+exportado público en un módulo puro y aceptará el conflicto de **cualquiera de los dos portadores** —el
+`details[0]` del 409 y el `result` del 200— devolviendo las cinco claves; el aviso será **puramente
+presentacional**, con `onReclaim` opcional y un flag `busy`, sin llamar a la API por su cuenta; el botón se
+habilitará con el `reclaimable` que decide el **servidor**, sin calcular vivacidad en el cliente; y los textos
+irán en inglés, como el resto del panel. **Nombres y props no se asientan**: el par avisó que su revisión nativa
+sigue pendiente y que va a mandar nombres finales, no intenciones.
+
+**Lo que esta sección no mide.** Nada del componente: no existe todavía. Lo medido es el hueco de este panel, la
+viabilidad de montarlo sin tocar los archivos compartidos, y que la decisión quedó declarada.
+
+**Un desvío más, del mismo día:** `5d3ed83` —*freeze the web editing-lease design before writing it*, docs-only,
++47— es hoy el único commit fuera de `main`. Se asienta como desvío declarado, no como problema, y se tomará junto
+con la unidad C21 cuando su código aterrice.
