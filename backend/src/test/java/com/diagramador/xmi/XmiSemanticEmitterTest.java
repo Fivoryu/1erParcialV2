@@ -50,11 +50,16 @@ class XmiSemanticEmitterTest {
                 "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>");
         assertThat(root.getNamespaceURI()).isEqualTo(XMI_NAMESPACE);
         assertThat(root.getAttributeNS(XMI_NAMESPACE, "version")).isEqualTo("2.1");
-        assertThat(find(document, XMI_NAMESPACE, "Documentation").getAttribute("exporter"))
-                .isEqualTo("UML Class Diagrammer")
-                .isNotEqualTo("Enterprise Architect");
+        // Measured against a live repository, not chosen: Enterprise Architect keys identifier and diagram import on
+        // this marker, so a foreign value makes EA discard every xmi:id and skip the diagrams block entirely.
+        // Evidence: odd/tasks/xmi-intercambio.md section 10.2.
+        Element documentation = find(document, XMI_NAMESPACE, "Documentation");
+        assertThat(documentation.getAttribute("exporter")).isEqualTo("Enterprise Architect");
+        assertThat(documentation.getAttribute("exporterVersion")).isEqualTo("6.5");
+        assertThat(result.document()).contains("Produced by UML Class Diagrammer 0.1.0");
         Element extension = find(document, XMI_NAMESPACE, "Extension");
         assertThat(extension.getAttribute("extender")).isEqualTo("Enterprise Architect");
+        assertThat(extension.getAttribute("extenderID")).isEqualTo("6.5");
         assertThat(childNames(extension)).containsExactly("elements", "connectors", "primitivetypes", "profiles",
                 "diagrams");
         assertThat(directChildrenNoNamespace(extension, "elements")).hasSize(1);

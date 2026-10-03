@@ -39,10 +39,17 @@ El archivo tiene dos mitades bien separadas, colgando de la raíz `XMI`:
 
 ```text
 XMI
-├─ Documentation   (procedencia: exporter / exporterVersion)
+├─ Documentation   (dialecto declarado: exporter / exporterVersion)
 ├─ Model           (uml:Model)  ->  el árbol UML semántico
 └─ Extension       (extender / extenderID)  ->  todo lo propietario de EA
 ```
+
+> **Medido, y no deducible del formato.** `xmi:Documentation exporter` **no** es un campo libre de procedencia: EA 16
+> lo lee para decidir si el documento habla su dialecto. Con un valor ajeno, EA **descarta todos los `xmi:id`** del
+> archivo y **no procesa el bloque `diagrams`**: el modelo entra sin identidad y ninguna figura puede anclarse. Un
+> documento de intercambio declara `exporter="Enterprise Architect"` y `exporterVersion="6.5"`; la procedencia real
+> viaja en un comentario XML, que ningún lector de dialecto interpreta. Medición y comandos:
+> [`odd/tasks/xmi-intercambio.md`](../../../odd/tasks/xmi-intercambio.md) §10.2.
 
 | Familia | Elementos | Proporción | Qué es |
 | --- | ---: | ---: | --- |

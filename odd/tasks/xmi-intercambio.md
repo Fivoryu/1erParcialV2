@@ -40,7 +40,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | X6 — Importación: comando de lote y endpoints | Pendiente | Depende de X2 y X5 |
 | X7 — Web | Pendiente | Depende de X4 y X6 |
 | X8 — Arnés y cierre | Pendiente | Depende de todo lo anterior |
-| Verificación en EA (§7) | **Bloqueada por acción del usuario** | EA corriendo sin repositorio abierto; el add-in del MCP no contesta |
+| Verificación en EA (§7) | **Cerrada en §10** | GAP-07 con causa raíz medida: el arquero de dialecto en `xmi:Documentation`. `t_diagram` 90 → 91, ids preservados y 2 figuras ancladas sobre una copia de `sw1_p2.eapx` |
 
 ## 1. Corte visible que define la unidad
 
@@ -369,7 +369,7 @@ X-4 y la emisión de multiplicidades por cerradas.
 | X-2 | El **bloque `diagrams`** con la geometría es obligatorio en la emisión | Exportar solo el árbol UML | Sin `diagrams` el archivo importa el modelo pero **no dibuja nada**, que es justo el pedido del usuario |
 | X-3 | Los conectores se emiten con **`source`/`target` en el registro** *y* `SOID`/`EOID` contra el `DUID` de cada figura | Confiar solo en `source`/`target` | El fixture ejerce **los dos** mecanismos a la vez. Emitir los dos hace que el conector caiga en las figuras correctas aunque EA use uno u otro |
 | X-4 | `Path=` **vacío** y el ruteo del canónico como **pérdida declarada** | Inventar puntos intermedios | Medido en §3.4, **y corregido**: el dialecto **sí** transporta ruteo —1 de 8 conectores trae `Path=622:-260$`—, pero **una sola muestra no fija la gramática**: no se sabe si esas coordenadas son absolutas del diagrama o desplazamientos relativos, y el `y` negativo frente a figuras en coordenadas positivas deja la duda abierta. Emitir un formato deducido de un punto de datos sería afirmar una capacidad no medida. Se emite vacío, como EA en 7 de 8, y el canal queda pinneado como candidato para una iteración verificada contra EA |
-| X-5 | `xmi:Documentation exporter` declara **la app**, no EA; el `extender` de la extensión sí dice `Enterprise Architect` | Firmar el archivo como `exporter="Enterprise Architect"` | El `xmi:Documentation` describe quién produjo el archivo y mentir ahí es falsear procedencia. El `extender` es lo que declara **a qué dialecto** pertenece el contenido, y ahí sí corresponde EA. **Riesgo declarado**: si EA exigiera su propio nombre en `exporter`, es un cambio de una línea, y solo la verificación de §7 lo decide |
+| X-5 | **Revertida en §10.2 por medición.** El `exporter`/`exporterVersion` de `xmi:Documentation` son el **arquero de dialecto** que EA lee, no un campo de procedencia. Se emite `exporter="Enterprise Architect" exporterVersion="6.5"`, y la procedencia real viaja en un **comentario XML** | Declarar la app en el `exporter` | La decisión original era por honestidad de procedencia y **declaró el riesgo textualmente**: «si EA exigiera su propio nombre en `exporter`, es un cambio de una línea, y solo la verificación de §7 lo decide». La verificación lo decidió: con un `exporter` ajeno **0 de 11 ids sobreviven** (EA asigna GUID nuevos) y `t_diagram` queda en 90 → 90; con el arquero de EA los **11 sobreviven exactos** y `t_diagram` 90 → **91**, con las figuras ancladas. La honestidad se conserva por otro canal, que es el comentario |
 | X-6 | **Vista previa sin escrituras**, y confirmación que reenvía los bytes con `checksum` | Guardar el archivo en el servidor entre vista previa y confirmación | La vista previa está obligada por CU-16 y no puede tocar el proyecto. Guardar el temporal introduce estado que hay que expirar y limpiar; comparar el `checksum` del reenvío es determinista y no deja basura |
 | X-7 | Los dos modos, **REEMPLAZAR** y **AGREGAR**, elegidos por el usuario | Un solo modo | Decisión del usuario en esta sesión, textual: «borrar todo» o «poner el diagrama junto a lo que estaba antes». Son dos intenciones distintas y el sistema no puede adivinar cuál |
 | X-8 | En **AGREGAR**, una colisión de nombre con lo existente **bloquea la confirmación** y se reporta | Renombrar con sufijo, o dejar pasar | El canónico tiene como invariante «sin colisiones de nombre abiertas» (contrato §1.2.2). Renombrar en silencio rompería la trazabilidad del archivo importado; bloquear y reportar deja la decisión en el usuario |
@@ -979,3 +979,121 @@ Y un dato que puede ahorrarle un susto a cualquiera que corra `mvn verify` en es
 líneas con `T8_INCOMPLETE`, `FAILED` y `NOT_RUN` que son **telemetría preexistente** de
 `GenerationIdentityServiceTest`, ajena a la unidad que se esté midiendo. El veredicto se lee en los totales de
 pruebas, no en esas líneas.
+
+## 10. Reparación verificada en vivo: el diagrama ausente en EA (GAP-07)
+
+Sección agregada con la sesión de reparación. **GAP-07 queda cerrado con causa identificada y medida**, no con una
+hipótesis plausible.
+
+### 10.1 El instrumento que faltaba, y por qué los tres veredictos de §7.3 eran inválidos
+
+La medición se hizo **leyendo la base de EA directamente**, sobre una **copia** de `sw1_p2.eapx`, con
+`Microsoft.ACE.OLEDB.12.0` vía PowerShell. Ese instrumento no depende del add-in MCP ni de COM para verificar, y
+sobrevive a los cuelgues que arruinaron §7.2 y §7.3.
+
+Y al medir con él apareció el defecto de método que invalida los tres veredictos de §7.3:
+
+> **Las tres hipótesis que §7.3 declaró «REFUTADAS» se probaron mientras EA descartaba todos nuestros identificadores
+> y les asignaba GUID nuevos.** Con los ids regenerándose en cada importación, ninguna corrección de cabecera del
+> diagrama *podía* funcionar: los `subject` de las figuras y el `package` del diagrama apuntaban a ids que la
+> importación ya había tirado. Eran falsos negativos, no refutaciones.
+
+Y el add-in MCP mintió en el otro sentido: reportó la operación `transform` con `parameters: []`, y la base de EA
+demuestra que los parámetros **entraron completos** (`input: String`, `return: Boolean`, `Pos 0/1`). El motivo está en
+`%APPDATA%\Sparx Systems\EA\DBError.txt`: su consulta es
+`SELECT ... Pos AS POS FROM t_operationparams WHERE OperationID = 37 ORDER BY Pos` y el motor la rechaza por
+*«Circular reference caused by alias 'POS'»*. **Un veredicto del add-in no es evidencia de importación.**
+
+### 10.2 Causa raíz, con el experimento que la aísla
+
+El emisor declaraba procedencia propia en la cabecera del documento:
+
+```xml
+<xmi:Documentation exporter="UML Class Diagrammer" exporterVersion="0.1.0"/>
+```
+
+EA lee esa cabecera para decidir **si el archivo habla su dialecto**. Con un `exporter` desconocido:
+
+1. **Regenera todos los identificadores.** Medido: con `exporter="UML Class Diagrammer"`, los 11 objetos importados
+   recibieron GUID nuevos y **0 ids propios sobrevivieron**; con `exporter="Enterprise Architect"`, EA devolvió
+   `{00000000-0000-0000-0000-000000000001}` —nuestro propio id de modelo— y los 11 sobrevivieron exactos.
+2. **No procesa el bloque `<diagrams>`.** Medido: `t_diagram` 90 → 90 con nuestro archivo, y 90 → 91 con el archivo
+   de EA. Y con **solo** ese cambio de cabecera, 90 → **91** con nuestro archivo.
+
+Las dos partes son independientes y quedó probado con una sola variable cada una:
+
+| Test | Cambio único sobre nuestro archivo | Ids preservados | Diagramas |
+| --- | --- | --- | --- |
+| T4 | `exporter="Enterprise Architect"` (versión `0.1.0`) | **sí** | 90 (sin diagrama) |
+| T5 | + `extenderID="6.5"` | sí | 90 |
+| **T16** | `exporter="Enterprise Architect" exporterVersion="6.5"` | sí | **91** |
+| Control | `docs/fixtures/xmi/Prueba3.xml` (archivo de EA) | sí | **91** |
+
+O sea que **el arreglo mínimo son dos atributos**, y `extenderID` **no** es necesario: T16 funciona sin él. La forma
+final del arquero es emitirlo igual, porque está medido en el dialecto de §3.1 y no cuesta nada.
+
+Y **el arreglo mínimo bastó**: con T16, EA creó el diagrama (`t_diagram` 341, nombre `Default`, GUID
+`{00000000-0000-0000-0000-00000000012C}` = nuestro id) y ancló las **2 figuras** en `t_diagramobjects`, además de
+conservar `label → String/Private/guest` y `nickname → String/Package`.
+
+Consecuencia directa sobre la decisión **X-5**, que se revierte: el plan la había tomado por honestidad de procedencia
+y había declarado el riesgo textualmente —«si EA exigiera su propio nombre en `exporter`, es un cambio de una línea, y
+solo la verificación de §7 lo decide»—. La verificación lo decidió, y la honestidad se conserva por otro canal: la
+procedencia real viaja en un **comentario XML**, que ningún lector de dialecto interpreta.
+
+### 10.3 Refutado, con instrumento válido
+
+Todo lo siguiente se midió una variable por vez contra la base, y **no** cambia el resultado: `StripGUID` (con
+`StripGUID=0` explícito los ids igual se regeneraban, porque el problema era la cabecera), identificadores
+degenerados (`EAID_00000000_…` reemplazados por `A1B2C3D4_…`: igual), los bloques `<style1>`, `<style2>`,
+`<swimlanes>` y `<matrixitems>` vacíos (reemplazados por los `value` medidos de EA: igual), `<project>` sin
+`author`/`created`/`modified` (igual), `<properties>` sin `documentation` (igual), el contenido de los registros de
+`<elements>` y `<connectors>` (vaciados: igual), `<profiles/>` vacío (reemplazado por el de EA: igual),
+`<primitivetypes>` (reemplazado por el de EA: igual), el vocabulario no medido `defaultValue`/`specification`
+(borrado: igual), que el dueño del diagrama sea un `uml:Package` real (igual) y que las figuras sean miembros
+directos del dueño (igual).
+
+**El bloque `<diagrams>` de nuestro emisor estaba bien desde el principio.** Probado dos veces: metido en el documento
+de EA produce el diagrama (`Diagram_ID 341`, `ea_guid` = nuestro id de diagrama, 2 figuras ancladas), y el documento
+de EA con **nuestro árbol semántico** más **nuestro bloque `<diagrams>`** también lo produce (90 → 91).
+
+### 10.4 Lo que queda sin medir, y se declara
+
+- Los tipos primitivos: los declaramos en el árbol semántico como `uml:PrimitiveType` con ids `EAID_…` generados, y
+  dejamos `<primitivetypes>` sin declaraciones. EA escribe `EAJava_String`, `EAJava_Boolean`, `EAJava_void`,
+  `EAnone_*` **dentro** de `<primitivetypes>` y los referencia por nombre. **Medido que no rompe nada** —los tipos
+  resolvieron—, pero **no medido** si otra build o otro camino de EA lo tolera. Es un desvío declarado, no un defecto
+  probado.
+- El sentido **EA → app** no se midió en esta sección. Es una unidad aparte.
+- Los tres defectos del control positivo de X8 (§7.5) siguen como estaban: el arnés comprueba contra su propio
+  conjunto de relaciones y el defecto 2 ya fue diagnosticado en §7.6 como desacuerdo de conteo, no como emisión.
+
+### 10.5 Plan de reparación, con su evidencia de cierre
+
+| # | Tarea | Estado y evidencia |
+| --- | --- | --- |
+| R1 | Emitir el arquero de dialecto medido en `xmi:Documentation` (`exporter="Enterprise Architect"`, `exporterVersion="6.5"`) y conservar la procedencia real en un comentario XML; invertir la aserción de `XmiSemanticEmitterTest` que codificaba X-5, con la medición citada | **Cerrada.** `mvn -o -B -f backend/pom.xml -Dtest=XmiSemanticEmitterTest test` = **8 pruebas, 0 fallos**; la aserción vieja ya no existe y la nueva exige el arquero y el comentario |
+| R2 | Emitir `extenderID="6.5"` en `xmi:Extension`, medido en §3.1 | **Cerrada.** La prueba afirma `extenderID`; sin él la importación también funciona (T16), así que es fidelidad de dialecto, no requisito |
+| R3 | Verificación de punta a punta contra EA, sobre copia | **Cerrada.** `mvn -o -B -f backend/pom.xml verify` = **257 pruebas, 0 fallos**; `python -m pytest tools -q` = **46 pruebas, 0 fallos**; importación de `backend/target/xmi-sample.xml` (sha256 `32bec0aa…`) sobre una copia de `sw1_p2.eapx` con `ImportPackageXMI(…, ImportDiagrams=1, StripGUID=0)`: EA devolvió `{00000000-0000-0000-0000-000000000001}` —el id propio—, `t_diagram` **90 → 91** con `Diagram_ID 341`, nombre `Default` y `ea_guid {00000000-0000-0000-0000-00000000012C}`, y **2 filas** en `t_diagramobjects` |
+| R4 | Revertir X-5 en §4 y actualizar el contrato `docs/puds/contratos/04-dialecto-xmi-ea.md` | **Cerrada.** La fila X-5 de §4 declara la reversión con la medición citada, y el contrato declara el arquero como requisito medido |
+| R5 | Registrar los límites de §10.3 y §10.4 en el cierre de la unidad | **Cerrada** con esta sección; los límites viven en §10.3 y §10.4 y el traspaso al acta es §8.1 |
+
+### 10.6 El traspaso al acta, en las dos listas que §8.1 exige
+
+**Lo medido**, cada número con el comando que lo produjo:
+
+| Medición | Comando |
+| --- | --- |
+| 257 pruebas, 0 fallos | `mvn -o -B -f backend/pom.xml verify` |
+| 46 pruebas, 0 fallos | `python -m pytest tools -q` |
+| 19.470 bytes, sha256 `32bec0aa…` | `sha256sum backend/target/xmi-sample.xml` |
+| `t_diagram` 90 → 91, ids preservados, 2 figuras | `import.ps1` + `query.ps1` sobre `backend/target/xmi-lab/import-final.eapx` (evidencia y muestras en `backend/target/xmi-lab/`) |
+
+**Lo no medido**, explícito:
+
+- Si otra build de EA, u otro camino de importación, tolera nuestra declaración de primitivos (ids `EAID_` generados
+  en el árbol semántico y `<primitivetypes>` sin declaraciones) como la toleró ésta.
+- El sentido **EA → app** completo.
+- Si EA acepta un comentario XML **fuera** de la raíz en todas sus versiones. Se midió que lo acepta en ésta: el
+  artefacto verificado es el que lo lleva.
+- El significado de la gramática `Path=` sigue sin establecerse, que es por qué X-4 sigue emitiendo vacío.

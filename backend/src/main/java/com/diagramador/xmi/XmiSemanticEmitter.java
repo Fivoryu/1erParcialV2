@@ -45,8 +45,18 @@ public final class XmiSemanticEmitter {
 
     private static final String XMI_NAMESPACE = "http://schema.omg.org/spec/XMI/2.1";
     private static final String UML_NAMESPACE = "http://schema.omg.org/spec/UML/2.1";
-    private static final String EXPORTER = "UML Class Diagrammer";
-    private static final String EXPORTER_VERSION = "0.1.0";
+    /**
+     * The dialect marker Enterprise Architect reads to decide whether a document speaks its own dialect. Measured
+     * against a live repository: with any other {@code exporter} value EA discards every {@code xmi:id} in the document
+     * and never processes {@code <diagrams>}, so the file imports as a foreign document and no figure can bind. This is
+     * a measured interoperability requirement, not a claim about who produced the file; the real provenance travels in
+     * the document comment below. Evidence: {@code odd/tasks/xmi-intercambio.md} section 10.2.
+     */
+    private static final String DIALECT_EXPORTER = "Enterprise Architect";
+    /** The dialect version Enterprise Architect reports for the measured fixture; also the extension's extenderID. */
+    private static final String EA_DIALECT_VERSION = "6.5";
+    /** Where the document states who produced it, since the dialect marker above cannot. */
+    private static final String PROVENANCE = "UML Class Diagrammer 0.1.0";
     private static final String MODEL_NAME = "EA_Model";
     private static final String EA_CLASS_DIAGRAM_TYPE = "Logical";
     private static final String EA_PRIMITIVES_PACKAGE_ID = "EAPrimitiveTypesPackage";
@@ -69,9 +79,15 @@ public final class XmiSemanticEmitter {
         document.appendChild(root);
 
         Element documentation = document.createElementNS(XMI_NAMESPACE, "xmi:Documentation");
-        documentation.setAttribute("exporter", EXPORTER);
-        documentation.setAttribute("exporterVersion", EXPORTER_VERSION);
+        documentation.setAttribute("exporter", DIALECT_EXPORTER);
+        documentation.setAttribute("exporterVersion", EA_DIALECT_VERSION);
         root.appendChild(documentation);
+        // A comment node is invisible to every dialect reader, so provenance stays truthful without changing the
+        // dialect markers Enterprise Architect keys its import on.
+        document.insertBefore(document.createComment(
+                " Produced by " + PROVENANCE
+                        + ". exporter/exporterVersion declare the XMI dialect Enterprise Architect reads, not the"
+                        + " tool that wrote the file. "), root);
 
         Element model = document.createElementNS(UML_NAMESPACE, "uml:Model");
         setXmiAttribute(model, "type", "uml:Model");
@@ -443,6 +459,7 @@ public final class XmiSemanticEmitter {
     private void appendExtension(Document document, Element root, ModelResource snapshot, Context context) {
         Element extension = document.createElementNS(XMI_NAMESPACE, "xmi:Extension");
         extension.setAttribute("extender", "Enterprise Architect");
+        extension.setAttribute("extenderID", EA_DIALECT_VERSION);
         root.appendChild(extension);
 
         ViewResource defaultView = defaultView(snapshot, context);
