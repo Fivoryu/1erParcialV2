@@ -678,8 +678,12 @@ número de versión no se pueden fusionar y Flyway los rechaza.
   y nunca porque sobre— así que agregarla es higiene y no coordina nada. Lo que **sí** es compuerta exacta es la lista
   de tablas: las **cuatro** nuevas tienen que quedar en `MAPPED_COLUMNS` con sus columnas exactas y en
   `SUPPORT_INDEXES`: `invitation` (más `diagram_message`) de esta sesión, `xmi_exchange` y `xmi_loss_item` de la otra.
-  Las cuatro están hoy en `TABLES_RESERVED_FOR_LATER_TASKS`, que **afirma que no existen**, y
-  `doesNotContainAnyElementsOf` rechaza la suite si se migran sin sacarlas de ahí. Para las dos de XMI el esquema
+  **Medido dos veces —por esta sesión y por un verificador independiente— ese conjunto NO contiene `invitation` ni
+  `diagram_message`**: hoy lista `model_conflict`, `name_collision`, `ai_proposal`, `detected_element`, `xmi_exchange`,
+  `xmi_loss_item` y `audit_log`. Así que sacarlas de ahí no era trabajo pendiente de esta sesión: `invitation` salió al
+  migrarse en C8 y `diagram_message` **nunca estuvo** (C16 lo verificó y no tocó la lista). Las que **sí** están, y tienen
+  que salir al migrarse, son las dos de la sesión de XMI: para `xmi_exchange` y `xmi_loss_item` sí
+  `doesNotContainAnyElementsOf` rechaza la suite si se migran sin sacarlas. Para las dos de XMI el esquema
   autoritativo declara **un solo** índice de soporte, `idx_exchange_model` sobre `xmi_exchange(model_id, direction)`;
   `xmi_loss_item` no tiene ninguno y declararle uno hace fallar el test exacto. Y hay **dos compuertas más** en ese archivo,
   descubiertas por la sesión de XMI al leer el resto: `nativeEnumColumnsUseTheirPostgresType` y
