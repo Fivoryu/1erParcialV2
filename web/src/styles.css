@@ -1691,7 +1691,8 @@ h3 {
   margin-top: 22px;
 }
 
-.presence-panel {
+.presence-panel,
+.chat-panel {
   margin-top: 18px;
   padding: 26px;
 }
@@ -1742,6 +1743,95 @@ h3 {
 
 .presence-row--reader .presence-copy h3 {
   color: var(--accent-dark);
+}
+
+.chat-list {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+}
+
+.chat-message {
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcfb;
+}
+
+.chat-message--own {
+  margin-left: min(8%, 72px);
+  border-color: #c6ddd3;
+  background: var(--accent-wash);
+}
+
+.chat-message-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-message-heading h3 {
+  margin-bottom: 0;
+}
+
+.chat-author-you {
+  margin-left: 7px;
+  color: var(--accent-dark);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.chat-message-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.chat-message-body {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+  color: #35453f;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.chat-empty {
+  min-height: 74px;
+}
+
+.chat-compose-form {
+  margin-top: 15px;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.chat-compose-form input {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.chat-compose-form input::placeholder {
+  color: #a0aaa6;
+}
+
+.chat-compose-form input:focus {
+  border-color: #8fb3a8;
+  box-shadow: 0 0 0 3px rgb(33 107 97 / 9%);
+  outline: none;
 }
 
 .invitation-copy h3,
@@ -1838,7 +1928,8 @@ h3 {
 @media (max-width: 560px) {
   .invitations-panel,
   .members-panel,
-  .presence-panel {
+  .presence-panel,
+  .chat-panel {
     padding: 20px;
   }
 
@@ -1850,6 +1941,14 @@ h3 {
 
   .invitation-row {
     flex-direction: column;
+  }
+
+  .chat-message--own {
+    margin-left: 4%;
+  }
+
+  .chat-compose-form {
+    align-items: stretch;
   }
 
   .member-controls {

@@ -10,6 +10,8 @@ import { Link, useParams } from 'react-router-dom';
 import { ApiTransportError, createApiClient } from '../api/client';
 import { loadSession } from '../api/session';
 import type {
+  ChatMessageResource,
+  MessagePostedPayload,
   ModelResource,
   OperationEnvelope,
   PresenceCursorUpdatePayload,
@@ -17,6 +19,7 @@ import type {
   PresenceUpdatedPayload,
   ProjectResource,
 } from '../api/types';
+import ChatPanel from '../collaboration/ChatPanel';
 import PresencePanel from '../collaboration/PresencePanel';
 import { createCursorCoalescer, type CursorCoalescer } from '../collaboration/cursorCoalescer';
 import { buildRemoteCursorMarkers } from '../collaboration/remoteCursors';
@@ -36,6 +39,7 @@ import {
 } from '../diagram/commands';
 import type { CanvasSelection } from '../diagram/selection';
 import { groupTouchesByElement } from '../diagram/touch-highlight';
+import { loginErrorMessage } from './LoginPage';
 
 const api = createApiClient();
 
@@ -107,6 +111,23 @@ function cursorsFromSnapshot(
   return cursors;
 }
 
+function postedMessage(data: unknown): ChatMessageResource | null {
+  if (typeof data !== 'object' || data === null) {
+    return null;
+  }
+
+  const payload = (data as { payload?: MessagePostedPayload }).payload;
+  const message = payload?.message;
+  if (typeof message?.id !== 'string'
+    || typeof message.authorUserId !== 'string'
+    || typeof message.authorDisplayName !== 'string'
+    || typeof message.body !== 'string'
+    || typeof message.createdAt !== 'string') {
+    return null;
+  }
+  return message;
+}
+
 interface PendingCommand {
   sequence: number;
   envelope: OperationEnvelope;
@@ -121,6 +142,11 @@ export default function ProjectEditorPage() {
   const [model, setModel] = useState<ModelResource | null>(null);
   const [selection, setSelection] = useState<CanvasSelection | null>(null);
   const [presence, setPresence] = useState<PresencePerson[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatMessageResource[]>([]);
+  const [chatLoading, setChatLoading] = useState(true);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatDraft, setChatDraft] = useState('');
+  const [chatBusy, setChatBusy] = useState(false);
   const [remoteCursorPositions, setRemoteCursors] = useState<Map<string, { x: number; y: number }>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
@@ -207,6 +233,50 @@ export default function ProjectEditorPage() {
       active = false;
     };
   }, [projectId, publishModel]);
+
+  useEffect(() => {
+    let active = true;
+    setChatHistory([]);
+    setChatLoading(Boolean(projectId));
+    setChatError(null);
+    setChatDraft('');
+    setChatBusy(false);
+    if (!projectId) {
+      return () => {
+        active = false;
+      };
+    }
+
+    void api.listProjectMessages(projectId)
+      .then((history) => {
+        if (!active) {
+          return;
+        }
+        setChatHistory((current) => {
+          const messagesById = new Map(current.map((message) => [message.id, message]));
+          for (const message of history) {
+            if (!messagesById.has(message.id)) {
+              messagesById.set(message.id, message);
+            }
+          }
+          return [...messagesById.values()];
+        });
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setChatError(loginErrorMessage(cause));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setChatLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
 
   const reconcileAfterCommand = useCallback(async (sequence: number, envelope: OperationEnvelope, resultRevision?: number | null) => {
     let canonical = canonicalModelRef.current;
@@ -299,6 +369,17 @@ export default function ProjectEditorPage() {
           if (snapshot) {
             setPresence(snapshot);
             setRemoteCursors(cursorsFromSnapshot(snapshot, currentUserId));
+          }
+        } else if (event.type === 'message.posted') {
+          const message = postedMessage(event.data);
+          if (message) {
+            setChatHistory((current) => {
+              // The poster receives their own event after POST, so deduplicate messages by id.
+              if (current.some((item) => item.id === message.id)) {
+                return current;
+              }
+              return [...current, message];
+            });
           }
         } else if (event.type === 'operation.applied') {
           void refreshModelFromEvent();
@@ -394,6 +475,34 @@ export default function ProjectEditorPage() {
       // Presence is ephemeral and must never break editing.
     });
   }, [projectId, targetElementId]);
+
+  async function sendMessage(body: string): Promise<void> {
+    const trimmedBody = body.trim();
+    if (!projectId || !trimmedBody || chatBusy) {
+      return;
+    }
+
+    setChatBusy(true);
+    setChatError(null);
+    try {
+      const message = await api.postProjectMessage(projectId, trimmedBody);
+      if (currentProjectIdRef.current !== projectId) {
+        return;
+      }
+      setChatHistory((current) => current.some((item) => item.id === message.id)
+        ? current
+        : [...current, message]);
+      setChatDraft('');
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId) {
+        setChatError(loginErrorMessage(cause));
+      }
+    } finally {
+      if (currentProjectIdRef.current === projectId) {
+        setChatBusy(false);
+      }
+    }
+  }
 
   const deleteSelection = useCallback((selected: CanvasSelection) => {
     const current = modelRef.current;
@@ -500,6 +609,16 @@ export default function ProjectEditorPage() {
             </div>
 
             <PresencePanel entries={presence} userId={currentUserId} />
+            <ChatPanel
+              busy={chatBusy}
+              draft={chatDraft}
+              error={chatError}
+              history={chatHistory}
+              loading={chatLoading}
+              onDraftChange={setChatDraft}
+              onSend={(body) => void sendMessage(body)}
+              userId={currentUserId}
+            />
             <MembersPanel key={project.id} projectId={project.id} />
 
             <GenerationPanel

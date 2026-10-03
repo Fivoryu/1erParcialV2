@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildOperationEnvelope, type UuidFactory } from './envelope';
 import { ApiTransportError, createApiClient } from './client';
 import { clearSession, loadSession, saveSession, SESSION_STORAGE_KEY } from './session';
-import type { ModelResource, OperationEnvelope, UserResource } from './types';
+import type { ChatMessageResource, ModelResource, OperationEnvelope, UserResource } from './types';
 import recordedModelFixture from './fixtures/model-response.json';
 
 // Captured from GET /projects/{id}/model during the Increment 1 acceptance run. The `versionId`
@@ -290,6 +290,52 @@ describe('project member and invitation API client', () => {
       code: 'HTTP_ERROR',
       status: 200,
     });
+  });
+});
+
+describe('project chat API client', () => {
+  it('lists and posts messages on the project chat routes with the server resource shape', async () => {
+    const authorUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const message: ChatMessageResource = {
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      authorUserId,
+      authorDisplayName: 'Diagram User',
+      body: 'Hello, team.',
+      createdAt: '2026-02-01T12:34:56Z',
+    };
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify([message]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      // POST returns the created resource with HTTP 201.
+      .mockResolvedValueOnce(new Response(JSON.stringify(message), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    saveSession({
+      token: 'opaque-session-token',
+      userId: authorUserId,
+      username: 'diagram.user',
+      displayName: 'Diagram User',
+      expiresAt: '2026-10-01T12:00:00Z',
+    });
+
+    expect(await client.listProjectMessages(projectId)).toEqual([message]);
+    expect(await client.postProjectMessage(projectId, message.body)).toEqual(message);
+
+    const calls = fetcher.mock.calls;
+    expect(calls.map(([input]) => String(input))).toEqual([
+      `https://diagram.test/projects/${projectId}/messages`,
+      `https://diagram.test/projects/${projectId}/messages`,
+    ]);
+    expect(calls.map(([, init]) => init?.method)).toEqual([undefined, 'POST']);
+    expect(JSON.parse(String(calls[1]?.[1]?.body))).toEqual({ body: 'Hello, team.' });
+    expect(new Headers(calls[1]?.[1]?.headers).get('Content-Type')).toBe('application/json');
+    for (const [, init] of calls) {
+      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
+    }
   });
 });
 
