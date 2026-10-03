@@ -624,9 +624,44 @@ que las mostraría funcionando es **panear y después mover el cursor remoto**. 
 
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
-| C16 | Migración `V9__diagram_messages.sql`: tabla `diagram_message` (nueva, no está en el físico) con índices por modelo y tiempo | Migración y prueba de esquema |
+| C16 | Migración `V9__diagram_messages.sql`: tabla `diagram_message` (nueva, no está en el físico) con índices por modelo y tiempo | Migración aplicada contra PostgreSQL real (Flyway 1–9, PostgreSQL 16.15) y prueba de esquema en verde (9 pruebas). **Cerrada CON DESVIACIÓN DECLARADA** en `3c777e5` (ver *S4 progreso — C16*) |
 | C17 | `ChatService` y `GET/POST /projects/{id}/messages`, con autorización, saneado y evento `message.posted` | Integración: publicar, listar ordenado, y rechazo sin rol |
 | C18 | Web: panel de chat con historial, autor y hora, y recepción en vivo | Pruebas de componente y lint |
+
+### S4 progreso — C16 cerrada CON DESVIACIÓN DECLARADA (2026-10-03)
+
+**Commit:** `3c777e5` — *feat(backend): persist the diagram chat* (3 archivos, +27/−1).
+
+> **Sin revisión nativa.** Tres fallos consecutivos de transporte del relay (`pi-host-relay-transport-failure`, WebSocket error, 110 s / 134 s / 167 s de
+> 2.400.000, sin mutación) con la recuperación indicada aplicada dos veces. Se commiteó con **desviación declarada**, mismo criterio que el usuario ya
+> autorizó para esta situación; queda señalado para que pueda objetarlo.
+
+**Qué entrega:** la tabla `diagram_message` ligada al **modelo** (la API será por proyecto porque hoy un proyecto tiene un modelo y `uml_project` no existe:
+`uml_model.project_id` es `UNIQUE`), con autor **restringido** al borrar y cascada por modelo, y un índice `(model_id, created_at, message_id)` — el tiempo es
+lo que lee el historial y el id desempata dos mensajes del mismo instante. El comentario de la tabla declara el invariante: **revocar el acceso no borra lo que
+se escribió mientras se tenía**. Sin enums, que importa porque dos de las compuertas del test son sobre columnas y etiquetas de enum.
+
+**Y arregla una mentira del documento de autoridad:** `docs/puds/datos/02-esquema-fisico.sql` no declaraba esta tabla, así que la migración estaba creando algo
+que el físico nunca mencionaba. Ahora está declarada ahí, con su índice, en la misma forma que las tablas vecinas y **sin tocar nada más** — ese archivo es punto
+de fusión con la sesión de XMI, que le agrega dos tablas propias.
+
+**Medido, y reproducido por el verificador con sus propias corridas:** `mvn -o -B -f backend/pom.xml test -Dtest=SchemaOwnershipTest` = **9 pruebas, 0 fallos**
+(la corrida prueba que Flyway aplica 1–9 contra PostgreSQL **16.15** real) · `mvn -o -B -f backend/pom.xml verify` = **278 pruebas, 0 fallos**.
+
+**Corrección de documentación aparte (`c7e17fc`):** el contrato congelado §S6b afirmaba que `diagram_message` estaba en `TABLES_RESERVED_FOR_LATER_TASKS` y que
+había que sacarla. **Medido dos veces —esta sesión y un verificador independiente— no está ahí** (la lista tiene `model_conflict`, `name_collision`, `ai_proposal`,
+`detected_element`, `xmi_exchange`, `xmi_loss_item`, `audit_log`); `invitation` salió al migrarse en C8 y `diagram_message` nunca estuvo. Cumplir en falso esa
+instrucción habría significado «sacar» algo que no existía. Las que sí están y deben salir son las dos de la sesión de XMI.
+
+**Límites declarados de esta unidad:**
+
+1. **No hay prueba nueva**: la tabla queda forzada por las compuertas **exactas** que ya existían (`MAPPED_COLUMNS`, `SUPPORT_INDEXES`, la lista de versiones), así
+   que el total de la suite no cambia. Es el diseño, no un descuido — pero conviene saberlo: **el verificador confirmó que no hay ningún método nuevo**.
+2. Las compuertas comparan **conjuntos de nombres**, no el tipo físico de las columnas ni el **orden** de las columnas del índice: eso lo declara la migración y lo
+   verificó la lectura del verificador, no una aserción.
+3. **La fusión con la sesión de XMI no está probada**: este candidato no crea `V10` ni toca `xmi_exchange`/`xmi_loss_item`, y **medido: no existe ningún `V10`** en
+   fuentes ni en `target` (la rareza «validated 10 migrations» que vio el verificador no corresponde a ningún archivo), pero la unión real contra los cambios de la
+   otra sesión no se pudo verificar acá.
 
 ### S5 — Bloqueo de exportación con aviso y reclamo
 
