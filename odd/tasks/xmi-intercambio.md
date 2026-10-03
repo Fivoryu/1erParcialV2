@@ -1316,6 +1316,13 @@ hasta que alguien la mueva otra vez**, y ese movimiento lo vuelve a decidir el u
 La otra sesión planteó la objeción con este dato delante, el usuario decidió mover igual, y queda asentado acá como
 **decisión suya registrada**, no como descuido de ninguna de las dos sesiones.
 
+**Cuánto queda atrás, medido.** Al cerrar esta sección, `git rev-list --count main..feat/incremento-3-colaboracion`
+= **2** commits: `d9d4d0a` («talk in the diagram») y su registro `384edd1`. Lo que la próxima unión arrastraría, según
+`git diff --name-status 61bf2d2 384edd1`, son cinco archivos nuevos del chat (`ChatController`, `ChatResources`,
+`ChatService`, `DiagramMessage`, `DiagramMessageRepository`), su prueba `ChatApiTest.java`, y dos documentos
+compartidos modificados: la fila nueva de `message.posted` en §4.1 de `01-contratos-transversales.md` —`message`:
+`id`, `authorUserId`, `authorDisplayName`, `body`, `createdAt` (ISO 8601)— y el plan de la otra unidad.
+
 ### 12.5 Un defecto de este mismo documento, declarado
 
 El cuadro **«Estado de ejecución»** (líneas 29–44) marca **«Pendiente»** las filas **X3 a X8**, pero **§5.2 «Qué
@@ -1339,10 +1346,22 @@ empty_candidate_base_ref_required`: un START tendría que llevar un `baseRef` ex
 | `7c2ad45` (mi punta previa) | **58 archivos, 7.052 líneas agregadas, 55 borradas**: el contenido completo del Incremento 3, ya commiteado por la otra sesión |
 | `61bf2d2` (su punta) | **41 archivos, 11.048 líneas agregadas, 24 borradas**: el contenido completo de la unidad XMI |
 
-O sea que la revisión nativa no puede apuntar a las **~10 líneas** que resolvieron los conflictos (§12.1), que es lo
-único escrito a mano por esta unidad: apuntaría a trabajo ya revisado o ya commiteado por ambas ramas. Queda
-declarado como **no revisado nativamente**, con su evidencia en §12.2 y §12.3 —el verificador independiente y las
-cuatro compuertas— y como decisión pendiente del usuario, no como omisión silenciosa.
+O sea que la revisión nativa no puede apuntar a las **~10 líneas** que resolvieron los conflictos (§12.1):
+apuntaría a trabajo ya revisado o ya commiteado por ambas ramas. **Y esas diez líneas son código nuevo**, no un
+trámite: la resolución de un conflicto se escribe a mano y es justo donde se cuelan los defectos —§12.2 es la prueba,
+con un método público del cliente que desapareció y ninguna suite de Java capaz de verlo—. Lo que hay que declarar,
+entonces, no es «cubierto» sino **cubierto por evidencia de otra naturaleza**:
+
+| Naturaleza | Qué la aporta | Qué no puede decir |
+| --- | --- | --- |
+| Revisión nativa | Nadie: no existe un candidato que aísle la resolución (tabla de arriba) | **Nada** sobre esta fusión; su ausencia no se compensa con las otras filas |
+| Verificación independiente | Un verificador leyó el árbol fusionado, encontró el `TS2741` de `client.ts` (§12.2) y **volvió a verificar** después de la corrección: lint y build en verde | No es un veredicto de revisión, y no cubre lo que no se le pidió mirar |
+| Compuertas automáticas | `mvn verify` = 307/0, `pytest` = 46, `npm run lint`, `npm run build` (§12.3) | Miden el árbol resultante, no la intención de la resolución |
+| Autocrítica del autor | §12.2 declara el defecto, su causa y el orden de las corridas | No reemplaza a un tercero |
+
+La precisión de este apartado —que la resolución **es código nuevo** y que su cobertura es de **otra naturaleza**,
+no revisión— la pidió la sesión del Incremento 3 al leer el primer registro, y se aplica acá con su atribución.
+Queda declarado como **no revisado nativamente** y como decisión pendiente del usuario, no como omisión silenciosa.
 
 ### 12.7 Lo que esta sección no mide
 
