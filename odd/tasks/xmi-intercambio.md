@@ -45,6 +45,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | Consolidación y publicación | **Cerrada en §12** | Fusión de `feat/incremento-3-colaboracion` (`61bf2d2`) en `feat/xmi-intercambio` como unión de los dos lados, commit `f3f8e33` de dos padres; `mvn verify` = **307 pruebas, 0 fallos, 0 salteadas**; `pytest` = **46**; `npm run lint` y `npm run build` limpios; remoto privado creado y `main` movida a la punta por decisión del usuario |
 | F — Lo que el oráculo no medía | **Cerrada en §13** | Las seis filas X3–X8 reconciliadas contra §5.2; el control positivo con el artefacto de EA en los dos casilleros **refutó dos de los tres «defectos» de §7.5**; el diagnóstico del dialecto mira las declaraciones de namespace, no el prefijo; arnés **18/0** en los dos corpus y las suites verdes (`mvn verify` **308 pruebas, 0 fallos**; `pytest` **54**); revisión nativa `review-5fceca1cdf2aad8c` = **approved**, autoridad quemada, tres avisos no bloqueantes en §13.6 |
 | G — La guarda de exportación, conectada | **Cerrada en §14** | Fusión de `feat/incremento-3-colaboracion` (`38882b4`) en `f2fd947`, sin conflictos y con auditoría semántica contra el diff del par; la guarda declarada quedó conectada en `XmiExportService.java:61` con su prueba **primero en rojo** (5/1 → 5/0) y su control positivo; la fusión trajo **2 fallas reales** en la web, reparadas en `2b47c66`; `mvn verify` = **332 pruebas, 0 fallos, 0 salteadas, BUILD SUCCESS**; `pytest tools` = **54**; web **158 pasan, 4 omitidas, 0 fallan** con lint, tipos y build limpios; arnés XMI **18/0** |
+| H — La edición con concesión en la web (C21 del par) | **Cerrada en §14.11** | Fusión real de `feat/incremento-3-colaboracion` (`2b87028`) en **`0fac48e`**, sin conflictos y predicha limpia con `git merge-tree`; **12 archivos, +761/−6**, ningún archivo de `backend/` y mis regiones XMI medidas **byte-idénticas**; web **169 pasan, 4 omitidas, 0 fallan** con lint, tipos y build limpios; `mvn verify` **347 pruebas, 0 fallos**; `pytest` **54**; arnés XMI **18/0**; revisión nativa `review-779a63dd31675724` = **approved**, autoridad quemada, más la del par `review-0451a261a69d4f06` como evidencia independiente |
 
 ## 1. Corte visible que define la unidad
 
@@ -1815,3 +1816,53 @@ viabilidad de montarlo sin tocar los archivos compartidos, y que la decisión qu
 **Un desvío más, del mismo día:** `5d3ed83` —*freeze the web editing-lease design before writing it*, docs-only,
 +47— es hoy el único commit fuera de `main`. Se asienta como desvío declarado, no como problema, y se tomará junto
 con la unidad C21 cuando su código aterrice.
+
+### 14.11 C21 en `main`: la concesión de edición del lado web
+
+El par entregó C21 en **`d2d5199`** —*hold the editing lease while editing and let the notice reclaim it*, 11
+archivos de web— más dos documentos (`5d3ed83`, congelamiento del diseño; `2b87028`, registro de la unidad), y su
+punta quedó en **`2b87028`**. Esta vez **no fue avance rápido**:
+
+| Lo que se midió | Comando | Resultado |
+| --- | --- | --- |
+| Divergencia | `git rev-list --count` en los dos sentidos | 2 commits míos que su rama no tenía (`d100cba`, `6db8077`, documentación) y **3 suyos** que yo no tenía → **fusión real** |
+| ¿Va a haber conflictos? | `git merge-tree --write-tree main feat/incremento-3-colaboracion` | **Una sola línea** de salida = cero conflictos, medido **antes** de fusionar |
+| Qué entró | staged tras `git merge --no-commit --no-ff` | **12 archivos, +761/−6**: sus once rutas de web y su documento |
+| ¿Y el backend? | `git diff --name-only main..feat/incremento-3-colaboracion` filtrado por `^backend/` | **0 archivos**: el árbol del backend no cambia |
+| Mis regiones XMI | `git diff --stat` sobre las rutas de XMI | **Vacío**: byte-idénticas, medido acá y no citado |
+| ¿Sobrevivieron los dos lados? | búsqueda de símbolos tras el staged | `previewXmi`, `importXmi` y `XmiImportPanel` siguen definidos; `mapEditingLeaseConflict`, `EditingLeaseNotice` y `useEditingLease` existen |
+| Mi documento | `git diff --cached --stat -- odd/tasks/xmi-intercambio.md` | **Vacío**: intacto |
+| El commit | **`0fac48e`** | Dos padres: `6db8077` (mi `main`) y `2b87028` (su punta) |
+
+`ProjectEditorPage.tsx` es el único archivo compartido que entra, y **cambia solo de su lado** (6 líneas): por eso
+no hubo conflicto, y por eso el montaje del panel XMI y el cableado de la concesión conviven sin resolución manual.
+
+| Compuerta | Resultado |
+| --- | --- |
+| Web | `npm test` = **169 pasan, 4 omitidas, 0 fallan** (las 158 anteriores más las suyas); `npm run lint` y `npm run build` limpios |
+| Backend | `mvn -o -B -f backend/pom.xml verify` = **347 pruebas, 0 fallos, 0 errores, 0 salteadas, BUILD SUCCESS** —remedido aunque ningún archivo de `backend/` cambie— |
+| Oráculo del dialecto | `python -m pytest tools -q` = **54 pasan** |
+| Arnés XMI | **18 pasan, 0 fallan**, con el control positivo de EA en el otro casillero |
+
+**Dos autoridades, otra vez distintas.** La del par: `review-0451a261a69d4f06`, `medium`, **11 caminos / 664
+líneas**, aprobada al primer intento y quemada. La mía, sobre el rango que entra a `main`:
+**`review-779a63dd31675724`**, `medium`, una lente de confiabilidad, **12 caminos / 767 líneas**, presupuesto 200,
+una corrida (`prompt_bytes` 59948, `result_bytes` 2413), **aprobada** y **quemada**; el sobre **no expuso avisos** y
+no se reconstruye ninguno.
+
+**El contrato prometido llegó con nombres finales, y ahora sí se asienta** (§14.10 lo había dejado como anuncio, a
+propósito):
+
+| Pieza | Nombre y forma |
+| --- | --- |
+| Mapeador | `mapEditingLeaseConflict(carrier: unknown)`, export público de `web/src/collaboration/editingLease.ts`; detecta `code === 'EXPORT_BLOCKED_EDITING'` y toma `details[0]` o `result` según el portador; devuelve las cinco claves o **`null`** para cualquier otro código o forma malformada |
+| Componente | export por defecto `EditingLeaseNotice` de `web/src/collaboration/EditingLeaseNotice.tsx`; props `conflict: EditingLeaseConflict \| null`, `onReclaim?: () => void`, `busy: boolean`; **no llama a la API ni lee el reloj**, y el botón sale del `reclaimable` que decide el servidor |
+| Estados que fija su prueba | sin conflicto (nada), ajena viva (botón deshabilitado), ajena no viva (habilitado, «The editing lease has expired.»), propia (nada) |
+
+**La decisión del usuario no cambia**: la integración en el panel XMI sigue **declarada pendiente, sin trabajarla**.
+Lo único que cambió es que el contrato dejó de ser una intención: ahora tiene nombres, props y estados medidos en
+código ya revisado, así que el día que se retome no hay que volver a decidir nada.
+
+**Dos hallazgos informativos de la revisión del par**, asentados como suyos: la guarda de desmontaje del adaptador
+no tiene prueba que la capture —el proyecto no renderiza hooks, declarado—, y `acquire` se dispara en **cada** acto
+de edición, que el servidor trata como refresco por patrón deliberado del congelamiento (regla 1).
