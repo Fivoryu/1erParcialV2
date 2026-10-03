@@ -215,7 +215,7 @@ leído en la fuente, **no** ejercitado por una prueba.
 | C13 | Publicar `operation.applied` desde `CommandService` sin mover la autoridad del servidor | Integración: comando aceptado en una sesión llega a la otra. **Cerrada** en `c973dd5` (ver *S3 progreso*) |
 | C14 | Web: hook SSE, panel de presencia con color y nombre, y resaltado del elemento tocado | Pruebas de componente del panel y del resaltado. **Partida en C14 y C14b por tamaño de revisión** (ver *S3 — C14 partida*). **C14 cerrada** en `a59e67a` (ver *S3 progreso — C14*) |
 | C14b | Web: **resaltado del elemento que cada uno toca** en el lienzo, con el color de quien lo toca y su nombre | Prueba de componente del resaltado: el nodo tocado se marca con el color y el nombre de quien lo toca, y deja de marcarse cuando el otro suelta |
-| C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío |
+| C15 | Web: cursores remotos en vivo, con coalescencia para no romper el SLO de RNF-11 | Prueba del coalescedor; medición de frecuencia de envío. **Implementada y verificada, SIN COMMITEAR** por bloqueo del relay (ver *S3 progreso — C15*); el **dibujo** del cursor remoto queda para una unidad aparte |
 
 ### S3 — hueco descubierto al derivar C14 (tarea C12b)
 
@@ -540,6 +540,50 @@ commiteado si se autoriza commitear con desviación declarada.
    pudo correr la revisión previa para comparar test por test.
 4. Los tests de nombre-sólo y color-sólo en la deduplicación **no** están afirmados por separado: el que existe cambia nombre **y** color a la vez, así que esa rama
    queda cubierta por lectura, no por prueba.
+
+### S3 progreso — C15 implementada y verificada, SIN COMMITEAR (revisión bloqueada por el relay) — 2026-10-02
+
+**Estado:** código escrito, verificado y **sin commitear** (10 archivos propios, más 3 fixtures y la página compartida). **No se commiteó a propósito**: la regla
+acordada es no commitear sin revisión nativa mientras el relay esté caído. Queda **junto a C14b**, que está en el mismo estado: **dos unidades sin commitear**.
+
+**Medido, y reproducido por el verificador con sus propias corridas:**
+`mvn -o -B -f backend/pom.xml verify` = **278 pruebas, 0 fallos, `BUILD SUCCESS`** (275 de base + 3) · `PresenceChannelTest` = **11 pruebas** ·
+web `npm run lint` 0 · `npm test` **132 pasadas, 4 omitidas** · `npm run build` 0 (223 módulos).
+
+**Qué entrega:** el cursor viaja como parte de `presence.updated` (el catálogo del contrato no tiene otro nombre de evento), con **dos formas de payload deliberadas**:
+cambio de integrantes o de elemento → **snapshot completo**; movimiento de cursor → **sólo el cursor** (`userId`, `x`, `y`), para que hasta 30 actualizaciones por segundo por
+usuario no rebroadcasteen la lista entera. Del lado del cliente, un **limitador de tasa** (intervalo de 50 ms = **20/s**, dentro de la banda que pide RNF-11) con reloj
+inyectable: primera emisión inmediata, como máximo una por intervalo, y **siempre la última posición pendiente**. La medición que el plan pedía está hecha: 100
+actualizaciones sobre 1 s de tiempo inyectado producen **21 emisiones**.
+
+**Cuatro defectos que encontró la verificación independiente, los cuatro corregidos antes de esta foto:**
+
+1. **Un reporte con una sola coordenada borraba el elemento tocado**: `hasCursor` exigía ambas, así que una coordenada suelta caía al camino del target y llamaba
+   `touchUser(..., null)`. Ahora un par incompleto es un reporte inválido: **400 `INVALID_PAYLOAD`** con el sobre de siempre, y no cambia nada. Se prefirió rechazar
+   el reporte malformado antes que adivinar. (El escritor lo había descrito como «sigue el camino legacy», que describía la rama pero **ocultaba el efecto**.)
+2. **Abrir una segunda pestaña podía borrar el cursor visible**: `join` sólo heredaba campos de la misma sesión, así que la sesión nueva nacía con cursor nulo — y el
+   snapshot elige la sesión **más reciente**. Ahora una sesión nueva del mismo usuario se **siembra** desde el estado vivo de ese usuario (cursor y elemento tocado),
+   mientras que una sesión reutilizada por **otro** usuario sigue arrancando limpia: la regla que se arregló con medición en C12 no se toca.
+3. **El cursor estaba tipado como opcional además de nulable** — una concesión del escritor para no tocar fixtures ajenas. El servidor **siempre** manda la clave, así
+   que ahora es **requerido y nulable**, con las fixtures actualizadas y una aserción de tipos que falla si vuelve a ser opcional.
+4. **El transporte era código muerto**: el coalescedor no tenía llamador y la página ignoraba los eventos de cursor. **Eso fue culpa del encargo**, que dejó el cableado
+   para después; ahora la página consume los eventos de cursor de forma incremental, alimenta el coalescedor desde el movimiento del puntero, reporta y cancela al
+   desmontar o cambiar de proyecto.
+
+**Límites declarados de esta unidad:**
+
+1. **El dibujo del cursor remoto no entra acá**: la página guarda el mapa de cursores pero **nadie lo lee todavía** hasta que se dibuje. Es un puente declarado entre
+   dos unidades, no una función a medias.
+2. **Sin prueba de integración de la página**: no hay DOM en el entorno de pruebas, así que el ciclo evento+puntero se verifica por lectura y por tipos, no por prueba.
+3. **El registro no tiene barrido propio de sesiones obsoletas**: la limpieza depende del ciclo de vida del canal (C11/C12b), y sólo puede sembrar desde entradas
+   todavía registradas.
+4. Inherente a la revisión read-only: la comparación del delta de pruebas contra una foto anterior no es reproducible por el verificador; los totales actuales sí
+   (278 backend, 132 web), y los observó él mismo.
+
+**Incidentes de entorno de esta etapa, diagnosticados (importan para retomar):** los montajes del shell pasaron de `/c` a **`/mnt/c`** y de `/d` a **`/mnt/d`** (parecía
+que el proyecto había desaparecido); el `PATH` perdió Java y Docker, así que el JDK y Maven existen pero **no se encontraban** (Maven hay que invocarlo por `cmd.exe` con
+`JAVA_HOME` en formato Windows; Testcontainers sí llega a Docker por *named pipe*); y git perdió la identidad de autor, que se restauró a nivel de repositorio con la
+**misma** que ya usaba la rama. Además, una corrida lanzada con `nohup` **no sobrevive** al fin de la llamada: la suite completa hay que correrla **en primer plano**.
 
 ### S4 — Chat persistente del diagrama
 
