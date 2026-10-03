@@ -42,6 +42,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | X8 — Arnés y cierre | Pendiente | Depende de todo lo anterior |
 | Verificación en EA (§7) | **Cerrada en §10 y §11** | Sentido app → EA: GAP-07 con causa raíz medida, el arquero de dialecto en `xmi:Documentation`. `t_diagram` 90 → 91, ids preservados y 2 figuras ancladas sobre una copia de `sw1_p2.eapx`. Sentido EA → app: medido en §11 con exportaciones reales de EA |
 | E — El sentido EA → app | **Cerrada en §11** | 5 artefactos de EA pinchados por sha256 y byte-exactos; el lector medido sobre la matriz de exportación; `mvn verify` = **260 pruebas, 0 fallos, 0 salteadas**; `python -m pytest tools -q` = **46 pruebas, 0 fallos**; revisión nativa `review-79d56d80554b3cd0` = **approved**, autoridad quemada |
+| Consolidación y publicación | **Cerrada en §12** | Fusión de `feat/incremento-3-colaboracion` (`61bf2d2`) en `feat/xmi-intercambio` como unión de los dos lados, commit `f3f8e33` de dos padres; `mvn verify` = **307 pruebas, 0 fallos, 0 salteadas**; `pytest` = **46**; `npm run lint` y `npm run build` limpios; remoto privado creado y `main` movida a la punta por decisión del usuario |
 
 ## 1. Corte visible que define la unidad
 
@@ -1243,3 +1244,110 @@ recurso. Las dos ramas se prueban con los fixtures reales, no con cadenas invent
 | El dialecto XMI 1.1 o 2.2 como **capacidad** | Solo se mide su rechazo: soportarlos es una decisión de producto, no un defecto |
 | La importación de un XMI de EA con notas, o con los 9 constructos de §3 sin evidencia | Ningún artefacto de esta unidad los ejerce |
 | El texto del hallazgo no bloqueante `R3-001` (SUGGESTION, `XmiReader.java:91`, lente de fiabilidad) | El cierre de la revisión trae su ubicación y su severidad, no su texto. Queda como trabajo posterior; **no** habilita repetir la revisión de este candidato |
+
+## 12. Consolidación con el Incremento 3, publicación y movimiento de `main`
+
+Cierra el pedido del usuario: publicar la unidad XMI y llevar `main` al estado que reúne las dos ramas. Todo lo que
+sigue está medido en este repositorio, salvo lo que §12.5 y §12.6 declaran como no reconciliado o no revisado.
+
+| Paso | Comando | Resultado medido |
+| --- | --- | --- |
+| Estado inicial del remoto | `git remote -v` | **Vacío**: el repositorio no tenía ningún remoto |
+| Remoto | `gh repo create Fivoryu/1erParcialV2 --private` | Repositorio privado nuevo en `https://github.com/Fivoryu/1erParcialV2` |
+| Publicación de la rama | `git push -u origin feat/xmi-intercambio` con el git **de Windows** | `* [new branch] feat/xmi-intercambio -> feat/xmi-intercambio` |
+| Fusión | `git merge --no-edit feat/incremento-3-colaboracion` | 3 archivos en conflicto, resueltos a mano; commit de fusión `f3f8e33`, **con dos padres** |
+| Movimiento de `main` | `git branch -f main <punta fusionada>` | `main` estaba en `90f4f4a` y es **ancestro** de la punta (`git merge-base --is-ancestor` = sí): el movimiento es avance rápido, sin reescritura de historia |
+
+**El git de WSL no sirve para empujar.** El intento desde WSL quedó colgado **900 s** y no publicó nada: esa
+instalación no tiene ayudante de credenciales. La publicación se hizo con `git` 2.54.0.windows.1 desde PowerShell,
+que sí trae `manager`. Queda anotado porque es un límite del entorno, no del repositorio.
+
+### 12.1 Los tres conflictos, y por qué se resolvieron así
+
+Todos los hunks eran **adiciones de los dos lados**; la resolución es la unión, con una excepción semántica en la
+compuerta de esquema.
+
+| Archivo | Conflicto | Resolución |
+| --- | --- | --- |
+| `SchemaOwnershipTest.java` | `TABLES_RESERVED_FOR_LATER_TASKS` | Quedó en **cinco** entradas: `model_conflict`, `name_collision`, `ai_proposal`, `detected_element`, `audit_log`. Mi base reservaba `invitation` —que la otra sesión migró en su C8 y corrigió en `c7e17fc`— y la punta de la otra sesión reservaba `xmi_exchange` y `xmi_loss_item`, que migro yo en `V10`. Después de fusionar **las tres existen** y están declaradas en `TABLES`, así que dejar reservada cualquiera de ellas **haría fallar la compuerta de propiedad exacta** |
+| idem | Aserción de versiones de Flyway | `1..10`. Es un **subconjunto**, no la compuerta: la compuerta real son las tablas, las columnas mapeadas y los índices de soporte, que quedaron en `xmi_exchange → {idx_exchange_model}` y `xmi_loss_item → ∅` |
+| `web/src/api/client.ts` | Interfaz y objeto | Los **cuatro** métodos de ambos lados: `previewXmi`, `importXmi`, `reportProjectPresenceTouch`, `reportProjectCursorPosition` |
+| `web/src/pages/ProjectEditorPage.tsx` | Import y JSX | `XmiImportPanel` del lado XMI, `PresencePanel` y `MembersPanel` del lado colaboración |
+
+Además se comprobó, **por eliminación contra cada padre** (`git diff HEAD` y `git diff MERGE_HEAD`, mirando solo las
+supresiones), que ninguna otra línea se perdió: las únicas supresiones son las dos ediciones intencionales de la
+compuerta, y el resto de las diferencias respecto de cada padre son cambios propios de ese lado fuera de los hunks
+en conflicto.
+
+### 12.2 Un defecto mío, y quién lo encontró
+
+La primera resolución del hunk grande de `client.ts` **dejó caer `previewXmi`** del objeto de implementación,
+mientras la interfaz seguía declarándolo. Ninguna suite de Java lo ve; el verificador independiente sí:
+
+```
+src/api/client.ts(255,3): error TS2741: Property 'previewXmi' is missing in type '{ register(...): ...;
+  26 more ...; stopDeployment(deploymentId: string): Promise<...>; }' but required in type 'ApiClient'.
+```
+
+Lo devolvieron `npm run lint` y `npm run build` con el mismo error. Se restauró **antes** de commitear la fusión y se
+volvió a verificar. Queda registrado porque es la lección que importa: **una fusión resuelta a mano necesita su
+propia verificación aunque las dos ramas por separado estén verdes**, y esta vez la encontró el verificador.
+
+### 12.3 Verificación medida sobre el árbol fusionado
+
+| Comprobación | Comando | Resultado |
+| --- | --- | --- |
+| Backend | `mvn -o -B -f backend/pom.xml verify` | **307 pruebas, 0 fallos, 0 errores, 0 salteadas**, BUILD SUCCESS |
+| Arnés de Python | `python -m pytest tools -q` | **46 pruebas, 0 fallos** |
+| Web: tipos y estilo | `npm run lint` (`eslint . && tsc --noEmit`) | Sin diagnósticos |
+| Web: construcción | `npm run build` (`tsc --noEmit && vite build`) | **226 módulos**, construido en **6,17 s**, `dist/` emitido |
+| Conflictos | `grep -rn "^<<<<<<< \|^>>>>>>> "` y `git diff --name-only --diff-filter=U` | Sin coincidencias, sin rutas sin resolver |
+
+Nota honesta sobre el orden: el backend se midió **antes** de la corrección de una línea en el cliente web; esa
+corrección no puede afectar a Java, y el lado web se volvió a medir **después**. Las dos corridas están declaradas.
+
+### 12.4 La consecuencia declarada de mover `main`
+
+`main` queda apuntando a un **Incremento 3 a medias**: la fusión se apoya en `61bf2d2`, así que lo que la otra sesión
+cierre después —el servicio y los endpoints de chat (C17 en adelante), el lease de edición (S5) y el arnés de cierre
+(S7)— **no está en `main`**. Que la rama por defecto quede atrás de `feat/incremento-3-colaboracion` es **permanente
+hasta que alguien la mueva otra vez**, y ese movimiento lo vuelve a decidir el usuario.
+
+La otra sesión planteó la objeción con este dato delante, el usuario decidió mover igual, y queda asentado acá como
+**decisión suya registrada**, no como descuido de ninguna de las dos sesiones.
+
+### 12.5 Un defecto de este mismo documento, declarado
+
+El cuadro **«Estado de ejecución»** (líneas 29–44) marca **«Pendiente»** las filas **X3 a X8**, pero **§5.2 «Qué
+verificación cerró cada etapa» (líneas 506–619) registra la ejecución y la verificación de esas etapas**, con los
+totales de `mvn verify` por unidad y los veredictos de sus verificadores. El cuadro resumen quedó sin actualizar
+cuando el plan se reorganizó.
+
+**No se reconcilia en esta sección**, y se declara con su ubicación exacta para que nadie lea ese cuadro como el
+estado real de la unidad XMI: la decisión quedó fuera del alcance que el usuario eligió para este turno, y hacerlo
+bien exige mapear la evidencia de §5.2 etapa por etapa, no pintar seis casilleros.
+
+### 12.6 La revisión nativa del candidato de fusión, y por qué no se corrió
+
+`gentle_review` con `operation: inspect` sobre este worktree devolvió `applicability: unrelated` con la proyección
+de cambios **vacía** —el árbol quedó commiteado— y `next_transition.reason_code:
+empty_candidate_base_ref_required`: un START tendría que llevar un `baseRef` explícito. Para un commit de fusión las
+únicas bases posibles son sus dos padres, y ninguna de las dos aísla lo que esta fusión escribió a mano:
+
+| `baseRef` | Alcance que revisaría |
+| --- | --- |
+| `7c2ad45` (mi punta previa) | **58 archivos, 7.052 líneas agregadas, 55 borradas**: el contenido completo del Incremento 3, ya commiteado por la otra sesión |
+| `61bf2d2` (su punta) | **41 archivos, 11.048 líneas agregadas, 24 borradas**: el contenido completo de la unidad XMI |
+
+O sea que la revisión nativa no puede apuntar a las **~10 líneas** que resolvieron los conflictos (§12.1), que es lo
+único escrito a mano por esta unidad: apuntaría a trabajo ya revisado o ya commiteado por ambas ramas. Queda
+declarado como **no revisado nativamente**, con su evidencia en §12.2 y §12.3 —el verificador independiente y las
+cuatro compuertas— y como decisión pendiente del usuario, no como omisión silenciosa.
+
+### 12.7 Lo que esta sección no mide
+
+| **No medido** | Por qué |
+| --- | --- |
+| La reconciliación de las filas X3–X8 del cuadro de estado | Declarada en §12.5 |
+| Que la fusión resuelta a mano tenga revisión nativa propia | Declarado en §12.6, con los dos alcances medidos y su costo |
+| Lo que la otra sesión cierre después de `61bf2d2` | Depende de su trabajo y exigirá otra unión |
