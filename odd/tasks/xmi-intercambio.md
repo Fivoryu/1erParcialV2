@@ -797,6 +797,41 @@ resolución no es relajar la comprobación sino **distinguir un desvío declarad
 explícita, corta y razonada, de modo que cualquier vocabulario **nuevo** que nadie midió siga fallando. Un arnés que
 siempre falla no sirve de compuerta; uno que pasa por ablandarse no sirve de nada.
 
+### 7.6 El diagnóstico del defecto 2: no era un defecto de emisión
+
+Se midió relación por relación contra registro por registro, y **nuestra emisión es internamente consistente**:
+
+```
+NUESTRO:  6 relaciones en el modelo  ↔  6 registros de conector
+ORÁCULO:  cuenta 5 relaciones
+```
+
+El `5` sale de que **el oráculo no cuenta las dependencias** como relaciones, y el `EAID_…050` «sin emparejar» es
+la dependencia `uses`. O sea que el defecto 2 **no es que emitamos un registro de más**: es que la comprobación y la
+emisión **cuentan cosas distintas**, y el arnés lo reportó como falla en vez de decirlo con esas palabras.
+
+Y queda en pie la verdad de fondo, que es la misma del defecto 1: **el fixture no tiene ninguna dependencia**, así que
+la forma de un conector de dependencia **nunca se midió**. Emitimos una forma que nadie observó.
+
+La comparación cruda de un conector contra otro destapó además diferencias que no estaban en la lista:
+
+| | Fixture (EA) | Nuestro |
+| --- | --- | --- |
+| `name` en el conector | `hereda`, `realiza` | **ausente** |
+| `<model>` | `ea_localid="253"` | **vacío** (declarado como pérdida `extension_connector_vendor_metadata`) |
+| `properties` | `subtype="<none>"` | **sin `subtype`** |
+| `direction` en una agregación | `Unspecified` | `Destination -> Source` |
+
+**Entonces el defecto 2 se descompone en dos cosas distintas que no hay que confundir:** una **corrección del arnés**
+—su conjunto de relaciones tiene que incluir las dependencias, o decir explícitamente que las excluye— y una
+**decisión de emisión** sobre una forma no medida. Y el defecto 3 —un conector sin etiquetas `mt`— es el mismo
+conector de dependencia: es consecuencia, no causa independiente.
+
+**Lo que este episodio enseña, y que vale más que los tres defectos:** el arnés encontró una discrepancia **real y
+útil** (vocabulario no medido) y la reportó junto a una **falsa** (un conteo distinto entre dos piezas correctas).
+Distinguirlas exige abrir el documento, no leer el veredicto. Un arnés que no se audita a sí mismo termina
+gobernando por sus propias definiciones en vez de por los hechos.
+
 **Decisión del usuario:** reiniciar EA y reintentar. **Pendiente de su acción**: abrir EA con un proyecto y avisar.
 
 | Desenlace | Qué se declara |
