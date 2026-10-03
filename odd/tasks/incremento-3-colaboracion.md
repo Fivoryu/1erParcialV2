@@ -982,6 +982,76 @@ revisado tal cual. La unidad de revisión estuvo bien; la de *commit* no.
 **Sin desviación de ruteo:** en las remediaciones no había fuente que escribir —el candidato era el árbol ya commiteado—, así que la tarea fue de revisión
 y registro, y el padre la ejecutó sin delegar escritura.
 
+### S5 progreso — C20 cerrada (2026-10-03)
+
+**Commit:** `9211b09` — *feat(api): expose the editing lease and block exports while it is held* (9 archivos: 5 nuevos y 4 modificados, +738/−19). El
+diseño se congeló **antes** de escribir la primera línea (`c39605a`), y el contrato de rutas, payloads y respuestas no se movió durante la implementación.
+
+**Escritor delegado, con RED observado de verdad:** antes de tocar producción la corrida enfocada dio **45 pruebas, 11 fallos y 3 errores** —los tres
+errores pidiendo el `blocker(UUID)` que todavía no existía, y las pruebas de API recibiendo 404 por rutas inexistentes—. Después: **46/46 en 1:57**
+(14 de C19 + 3 + 7 + 22). El TTL se acortó por propiedad (`diagrammer.collaboration.editing-lease-ttl=PT2S`) y el vencimiento se observa con
+**Awaitility**, nunca con `Thread.sleep`.
+
+**Verificación independiente, en dos rondas.** La primera cerró con **seis ejes HOLDS** y **6 de 7 mutaciones tumbadas**, cada una por su propia
+aserción: quitar la exención del operador (`doesNotThrowAnyException`), devolver 200+`outcome` en la descarga (`expected:<409> but was:<200>`), quitar o
+reordenar una clave de `toDetails()` (la aserción de claves exactas), invertir `reclaimable`, y mover la guarda de la generación después de `startRun`
+(`expected: 0L but was: 1L` — el run que no debía existir). Todas las mutaciones corrieron sobre copias **fuera del repo**, nunca dentro del candidato. La
+tabla completa, con la mutación que sobrevive y por qué, está en los límites de abajo.
+
+**Dos defectos reales, uno de código y uno de diseño:**
+
+1. **El `catch` de la guarda de generación prefería una lectura fresca de `blocker()`** antes que el conflicto que él mismo había lanzado. Eso agregaba
+   una segunda lectura del reloj y una carrera: un `release`, un reemplazo o un vencimiento entre las dos lecturas cambia `retryAfterSeconds` o
+   `reclaimable` respecto de lo que el servicio reportó. Va contra lo congelado («las cinco claves viajan como el mismo registro»). Corregido: el
+   conflicto lanzado es la **fuente única** (neto −1 línea), y se agregó la aserción que faltaba —que `details` tenga **exactamente un** elemento—. La
+   segunda ronda probó que esa aserción **no es vacua**: mutando el servicio en su copia externa para que la lista llevara dos entradas, el test falló
+   con `Expected size: 1 but was: 2`.
+2. **El operador NO entra a los cinco endpoints**, aunque la interfaz use `requireEditor`, que sí lo admite. La compuerta global
+   `AuthenticationInterceptor` no tiene ninguna ruta `editing-lease` en su lista blanca (`AuthenticationWebConfig:18-22`,
+   `AuthenticationInterceptor:89-109`), así que el operador recibe **403 antes del controlador**; y aun allowlisteada, `CurrentUserContext.require()` lo
+   rechazaría por no tener identidad de usuario. **La conducta es la correcta** —el operador no es un editor interactivo y no tiene por qué tomar una
+   concesión— y **el error estaba en el texto congelado**: el paréntesis «(operador o miembro activo OWNER/EDITOR)» de la sección de arriba es falso
+   para estas cinco rutas, y queda corregido acá. Lo que sí importa —la exención para **exportar**— es alcanzable y está probada en la ruta de descarga,
+   que es la que el operador sí puede usar.
+
+**Un tercer hallazgo que se registra como conforme, no como defecto:** el verificador marcó `BROKEN` que un proyecto inexistente dé **403** y no 404. El
+congelamiento nunca pidió 404: dice «quien no es editor da 403», y para un autenticado sin membresía `requireActiveMember` lanza `FORBIDDEN` antes de
+resolver el modelo. Además tiene una propiedad deseable: un no-miembro no puede distinguir «proyecto inexistente» de «proyecto en el que no estoy». La
+rama 404 del controlador sigue existiendo para el caso miembro-sin-modelo.
+
+**Revisión nativa:** linaje `review-9d023011615ed35e`, tier `medium`, **una** lente (`review-reliability`, orden 0), 9 caminos, **757 líneas**,
+presupuesto de corrección 200. Cerró **aprobada al primer intento** con la autoridad quemada (`gentle-ai.review-acknowledged/v1`); el slot devolvió
+pronóstico antes de correr (`pi_host_relay`, 1 corrida, sin mutación), autorizado como esa corrida exacta.
+
+**Hallazgo informativo — `R3-001`:** lente `reliability`, ubicación `collaboration/InMemoryEditingLeaseService.java:139`, severidad `WARNING`,
+disposición `informational`. El proveedor fue explícito: **no abre corrección, no reabre la revisión y no se ofrece transición de corrección para este
+candidato**. El sobre **no expuso el texto** y no se inventa. Lectura propia de esa línea, **atribuida a esta sesión y no al revisor**: es la
+llamada `blocker(modelId)` dentro de `requireExportAllowed`, o sea el mismo *check-then-act* ensanchado que se declara abajo — las coordenadas del revisor
+convergen con lo que el verificador y esta sesión ya habían marcado en el mismo lugar.
+
+**Medido en la base consolidada, que es la que se empujaría:** la rama avanzó a `main` con `git merge --ff-only origin/main` (decisión del usuario) y la
+verificación quedó intacta porque `main` no toca ninguno de los 9 caminos. `mvn -o -B -f backend/pom.xml verify` sobre **`b488e5e` + C20** = **347
+pruebas, 0 fallos, 0 errores, 0 omitidas**, `BUILD SUCCESS`, **5:29 min**. Dentro de esa corrida, `XmiExportApiTest` de la sesión hermana pasó **5/0**: es
+la evidencia dependiente de que este refactor de `requireExportAllowed` —firma, condición, 409 y literal idénticos; el cuerpo delega su `details[0]` en
+`blocker(modelId)`— **no rompe la guarda que ellos conectaron**.
+
+**Límites declarados de esta unidad:**
+
+1. **El conflicto de `renew`/`release` se arma releyendo con `blocker()`**, lo que ensancha la ventana del *check-then-act* que ya era `R3-001` en C19. El
+   revisor apuntó exactamente a esa línea. No corrompe nada —la escritura se rechaza con la verdad— y se declara.
+2. **La mutación «capturar toda `ApiException`» sobrevive, y es equivalente.** `requireEditorProject` queda fuera del `try` y la única implementación
+   lanza sólo `EXPORT_BLOCKED_EDITING`, así que ningún test puede observar la diferencia. Matarla pediría un doble que simule un servicio que no existe:
+   probaría una hipótesis, no el contrato. Se declara con la tabla del verificador.
+3. **La vivacidad la calcula el cliente** comparando `expiresAt` con su reloj (desfase posible), y la guarda de la generación **no es atómica** contra la
+   concesión: entre la comprobación y el arranque del run cabe una adquisición. Declarado desde el congelamiento.
+4. **La saturación del retry en `Integer.MAX_VALUE` no está ejercida**, y el verificador no tenía instantánea byte a byte de `GenerationApiTest` de su
+   primera ronda, así que el «una sola línea agregada» ahí se apoya en mtimes y contenido, no en `cmp`.
+5. **Una sola instancia y sin eventos ni tabla** (C4, regla 10 de C19). C20 no publica nada nuevo ni persiste nada.
+6. **La guarda de la exportación XMI no es de esta unidad:** la conectó la sesión hermana al consolidar (§S6b) y su prueba pasó acá, en la corrida de 347.
+
+**Sin desviación de ruteo:** un escritor por vez con superficies exactas, una ronda de corrección acotada después de verificar, la verificación
+independiente en dos rondas, y la suite completa, la revisión nativa y los commits, en el padre.
+
 ### S6 — Intercambio XMI (RF-09, CU-16, CU-17) — **cedida a otra sesión**
 
 Estas tres tareas **no se ejecutan desde acá**. El 2026-10-01 la sesión `01a0f830`, con el mismo directorio de
