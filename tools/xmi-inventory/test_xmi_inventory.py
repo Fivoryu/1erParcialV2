@@ -36,7 +36,14 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from xmi_inventory import DEFAULT_FIXTURE, build_inventory  # noqa: E402
+from xmi_inventory import DEFAULT_FIXTURE, build_inventory, load_fixture  # noqa: E402
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools" / "xmi-acceptance"))
+from xmi_acceptance import (  # noqa: E402
+    DECLARED_VOCABULARY_DEVIATIONS,
+    inspect_document,
+    unmeasured_vocabulary_tags,
+)
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 BL1_PATH = REPO_ROOT / "docs" / "puds" / "contratos" / "03-linea-base-uml.v1.json"
@@ -567,3 +574,195 @@ def test_render_includes_the_interchange_measurements(inventory: dict[str, Any])
     assert "8 conectores" in output
     assert "Path de conectores" in output
     assert "labels" in output
+
+
+def _write_synthetic_xmi(
+    path: pathlib.Path,
+    relations: list[dict[str, Any]],
+    extra_model_tags: str = "",
+) -> pathlib.Path:
+    relation_xml = []
+    connector_xml = []
+    placement_xml = [
+        '<element subject="C1" geometry="Left=0;Top=0;Right=10;Bottom=10;" '
+        'seqno="1" style="DUID=AAAAAAAA;"/>',
+        '<element subject="C2" geometry="Left=20;Top=0;Right=30;Bottom=10;" '
+        'seqno="2" style="DUID=BBBBBBBB;"/>',
+    ]
+    for relation in relations:
+        name = relation.get("name")
+        name_attribute = f' name="{name}"' if name is not None else ""
+        relation_xml.append(
+            f'<packagedElement xmi:type="uml:{relation["type"]}" '
+            f'xmi:id="{relation["id"]}"{name_attribute}/>'
+        )
+        labels = " ".join(
+            f'{key}="{value}"' for key, value in relation.get("labels", {}).items()
+        )
+        connector_xml.append(
+            f'<connector xmi:idref="{relation["id"]}"{name_attribute}>'
+            '<source xmi:idref="C1"><model name="A" type="Class"/>'
+            '<role name="source"/><type multiplicity="1"/></source>'
+            '<target xmi:idref="C2"><model name="B" type="Class"/>'
+            '<role name="target"/><type multiplicity="1"/></target>'
+            f'<properties ea_type="{relation["type"]}"/><labels {labels}/></connector>'
+        )
+        placement_xml.append(
+            f'<element subject="{relation["id"]}" '
+            'geometry="SX=0;SY=0;EX=0;EY=0;Path=;" '
+            'style="Mode=3;SOID=AAAAAAAA;EOID=BBBBBBBB;"/>'
+        )
+
+    document = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<xmi:XMI xmlns:xmi="http://schema.omg.org/spec/XMI/2.1" '
+        'xmlns:uml="http://schema.omg.org/spec/UML/2.1">'
+        '<uml:Model xmi:type="uml:Model" name="Synthetic">'
+        '<packagedElement xmi:type="uml:Class" xmi:id="C1" name="A"/>'
+        '<packagedElement xmi:type="uml:Class" xmi:id="C2" name="B"/>'
+        + "".join(relation_xml)
+        + extra_model_tags
+        + '</uml:Model><xmi:Extension extender="Enterprise Architect"><connectors>'
+        + "".join(connector_xml)
+        + '</connectors><diagrams><diagram><elements>'
+        + "".join(placement_xml)
+        + '</elements></diagram></diagrams></xmi:Extension></xmi:XMI>'
+    )
+    path.write_text(document, encoding="utf-8")
+    return path
+
+
+def _harness_output(path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> str:
+    results: list[bool] = []
+    assert inspect_document(path, "Synthetic XMI", results) is not None
+    return capsys.readouterr().out
+
+
+def test_dependency_is_counted_as_a_model_relation(tmp_path: pathlib.Path) -> None:
+    path = _write_synthetic_xmi(
+        tmp_path / "dependency.xmi",
+        [{"id": "D1", "type": "Dependency", "name": "uses", "labels": {"mt": "uses"}}],
+    )
+
+    relations = build_inventory(path)["interchange"]["model"]["relations"]
+
+    assert relations == [{"id": "D1", "type": "uml:Dependency", "name": "uses"}]
+
+
+def test_dependency_connector_matches_its_model_relation(tmp_path: pathlib.Path) -> None:
+    path = _write_synthetic_xmi(
+        tmp_path / "dependency-connector.xmi",
+        [{"id": "D1", "type": "Dependency", "name": "uses", "labels": {"mt": "uses"}}],
+    )
+
+    interchange = build_inventory(path)["interchange"]
+
+    assert interchange["connectors"][0]["id"] == "D1"
+    assert interchange["connectors"][0]["modelType"] == "uml:Dependency"
+
+
+def test_anonymous_relation_may_omit_mt_while_named_relation_keeps_it(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _write_synthetic_xmi(
+        tmp_path / "anonymous-relation.xmi",
+        [
+            {
+                "id": "R1",
+                "type": "Association",
+                "name": "named",
+                "labels": {"lt": "+source", "rt": "+target", "lb": "1", "rb": "1", "mt": "named"},
+            },
+            {
+                "id": "R2",
+                "type": "Generalization",
+                "name": None,
+                "labels": {"lt": "+source", "rt": "+target", "lb": "1", "rb": "1"},
+            },
+        ],
+    )
+
+    output = _harness_output(path, capsys)
+
+    assert "[OK] Measured connector labels include the complete observed form: " in output
+    assert '"namedRelationsMissingMt": 0' in output
+
+
+def test_named_relation_without_mt_fails_even_when_another_label_set_is_complete(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _write_synthetic_xmi(
+        tmp_path / "named-relation-without-mt.xmi",
+        [
+            {
+                "id": "R1",
+                "type": "Association",
+                "name": "complete",
+                "labels": {"lt": "+source", "rt": "+target", "lb": "1", "rb": "1", "mt": "complete"},
+            },
+            {
+                "id": "R2",
+                "type": "Association",
+                "name": "named-without-mt",
+                "labels": {"lt": "+source", "rt": "+target", "lb": "1", "rb": "1"},
+            },
+        ],
+    )
+
+    output = _harness_output(path, capsys)
+
+    assert "[FAIL] Measured connector labels include the complete observed form: " in output
+    assert '"completeLabelSets": 1' in output
+    assert '"namedRelationsMissingMt": 1' in output
+
+
+def test_declared_standard_vocabulary_deviations_are_accepted(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _write_synthetic_xmi(
+        tmp_path / "declared-deviations.xmi",
+        [{"id": "R1", "type": "Association", "name": "named", "labels": {"mt": "named"}}],
+        extra_model_tags="<defaultValue/><specification/>",
+    )
+
+    output = _harness_output(path, capsys)
+
+    assert "[OK] Declared dialect vocabulary: " in output
+
+
+def test_declared_vocabulary_deviations_are_exact_and_traceable() -> None:
+    assert set(DECLARED_VOCABULARY_DEVIATIONS) == {"defaultValue", "specification"}
+    assert all(
+        "odd/tasks/xmi-intercambio.md sections 7.5 and 13.2" in reason and "\n" not in reason
+        for reason in DECLARED_VOCABULARY_DEVIATIONS.values()
+    )
+
+
+def test_measured_vocabulary_covers_the_committed_ea_artifacts() -> None:
+    ea_artifacts = (
+        "Prueba3.xml",
+        "ea-export-default-1.1.xml",
+        "ea-export-uml-2.2.xml",
+        "ea-independent-with-diagram.xmi",
+        "ea-roundtrip-uml-2.1.xml",
+    )
+
+    for artifact in ea_artifacts:
+        root = load_fixture(REPO_ROOT / "docs" / "fixtures" / "xmi" / artifact)
+        observed_tags = {element.tag.split("}")[-1] for element in root.iter()}
+        assert unmeasured_vocabulary_tags({"tagCounts": dict.fromkeys(observed_tags, 1)}) == [], artifact
+
+
+def test_injected_unmeasured_tag_still_fails_vocabulary_assertion(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _write_synthetic_xmi(
+        tmp_path / "unmeasured-tag.xmi",
+        [{"id": "R1", "type": "Association", "name": "named", "labels": {"mt": "named"}}],
+        extra_model_tags="<unmeasuredDialectTag/>",
+    )
+
+    output = _harness_output(path, capsys)
+
+    assert "[FAIL] Declared dialect vocabulary: " in output
+    assert '"unmeasuredDialectTag"' in output

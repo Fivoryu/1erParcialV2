@@ -23,6 +23,137 @@ DEFAULT_EA_FIXTURE = ROOT / "docs" / "fixtures" / "xmi" / "Prueba3.xml"
 DEFAULT_EMITTED_SAMPLE = ROOT / "backend" / "target" / "xmi-sample.xml"
 EXPECTED_EA_FIXTURE_SHA256 = "336d13b1ae87da5643dc74903e9787899aaeb3896eb2ca30d5c5a74a2cd0dab2"
 
+# Element names measured across the pinned EA-authored artifacts. The two
+# separately declared deviations are excluded here because they are absent from
+# the canonical Prueba3.xml fixture. Never infer this set from the document
+# under test: new vocabulary must be reviewed, not self-authorized.
+MEASURED_EA_VOCABULARY = frozenset(
+    {
+        "Aggregation",
+        "Association",
+        "Association.connection",
+        "AssociationEnd",
+        "Attribute",
+        "Attribute.initialValue",
+        "BehavioralFeature.parameter",
+        "Class",
+        "Classifier",
+        "Classifier.feature",
+        "ClassifierRole",
+        "Collaboration",
+        "Collaboration.interaction",
+        "Constraint",
+        "DataType",
+        "Dependency",
+        "Diagram",
+        "Diagram.element",
+        "DiagramElement",
+        "Documentation",
+        "EAModel.paramSub",
+        "Expression",
+        "Extension",
+        "Generalization",
+        "Interface",
+        "Model",
+        "ModelElement.stereotype",
+        "ModelElement.taggedValue",
+        "Namespace.ownedElement",
+        "Operation",
+        "Package",
+        "Parameter",
+        "Parameter.defaultValue",
+        "Parameter.type",
+        "Profile",
+        "Realisation",
+        "Stereotype",
+        "StructuralFeature.type",
+        "TaggedValue",
+        "XMI",
+        "XMI.content",
+        "XMI.difference",
+        "XMI.documentation",
+        "XMI.exporter",
+        "XMI.exporterVersion",
+        "XMI.extensions",
+        "XMI.header",
+        "_lineStyle",
+        "appearance",
+        "attribute",
+        "attributes",
+        "appliedProfile",
+        "behaviour",
+        "body",
+        "bounds",
+        "code",
+        "constrainedElement",
+        "connector",
+        "connectors",
+        "constraints",
+        "containment",
+        "coords",
+        "diagram",
+        "diagrams",
+        "documentation",
+        "element",
+        "elements",
+        "enumeration",
+        "extendedProperties",
+        "flags",
+        "general",
+        "generalization",
+        "importedPackage",
+        "initial",
+        "labels",
+        "links",
+        "lowerValue",
+        "matrixitems",
+        "memberEnd",
+        "model",
+        "modifiers",
+        "operation",
+        "operations",
+        "options",
+        "ownedAttribute",
+        "ownedComment",
+        "ownedEnd",
+        "ownedOperation",
+        "ownedParameter",
+        "ownedRule",
+        "packageImport",
+        "packagedElement",
+        "packageproperties",
+        "parameter",
+        "parameterSubstitutions",
+        "parameters",
+        "paths",
+        "primitivetypes",
+        "profileApplication",
+        "profiles",
+        "project",
+        "properties",
+        "role",
+        "source",
+        "stereotype",
+        "style",
+        "style1",
+        "style2",
+        "styleex",
+        "swimlanes",
+        "tag",
+        "tags",
+        "target",
+        "times",
+        "type",
+        "upperValue",
+        "xrefs",
+    }
+)
+
+DECLARED_VOCABULARY_DEVIATIONS = {
+    "defaultValue": "Standard UML 2.1 value syntax absent from the canonical EA fixture; see odd/tasks/xmi-intercambio.md sections 7.5 and 13.2.",
+    "specification": "Standard UML 2.1 specification syntax absent from the canonical EA fixture; see odd/tasks/xmi-intercambio.md sections 7.5 and 13.2.",
+}
+
 # Keep the oracle read-only and use its dialect inventory/parser as the single
 # source for XML classification, connector placement, geometry, and resolution.
 # Suppress bytecode output so importing the oracle does not write into its directory.
@@ -49,6 +180,14 @@ UNMEASURED = (
 
 def display(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def unmeasured_vocabulary_tags(inventory: dict[str, Any]) -> list[str]:
+    if "tagCounts" not in inventory:
+        return ["<missing tagCounts>"]
+    observed_tags = set(inventory["tagCounts"])
+    allowed = MEASURED_EA_VOCABULARY | set(DECLARED_VOCABULARY_DEVIATIONS)
+    return sorted(observed_tags - allowed)
 
 
 def current_command() -> str:
@@ -128,9 +267,15 @@ def inspect_document(path: pathlib.Path, label: str, results: list[bool]) -> dic
     diagram = interchange.get("diagram", {})
     connectors = interchange.get("connectors", [])
     undeclared = inventory.get("undeclaredTags", ["inventory missing undeclaredTags"])
+    unmeasured_tags = unmeasured_vocabulary_tags(inventory)
+    declared_deviations_present = sorted(
+        set(inventory.get("tagCounts", {})) & set(DECLARED_VOCABULARY_DEVIATIONS)
+    )
 
-    report(results, f"Declared dialect vocabulary: {shown_path(path)}", undeclared == [],
-           "no tags outside the oracle's declared vocabulary", undeclared, command)
+    report(results, f"Declared dialect vocabulary: {shown_path(path)}", not unmeasured_tags,
+           "every observed tag is in measured EA artifact vocabulary or is a declared deviation",
+           {"unmeasuredTags": unmeasured_tags,
+            "declaredDeviationsPresent": declared_deviations_present}, command)
 
     model_present = bool(model.get("elements")) and bool(model.get("name"))
     extension_present = bool(extension.get("directChildTags"))
@@ -208,15 +353,20 @@ def inspect_document(path: pathlib.Path, label: str, results: list[bool]) -> dic
 
     labels = interchange.get("labels", {})
     label_keys = labels.get("keyCounts", {})
+    named_relations_missing_mt = sum(
+        1 for relation in connectors
+        if relation.get("modelRelationName") and not relation.get("labels", {}).get("mt")
+    )
     labels_ok = (
         bool(connectors)
         and labels.get("connectorsWithCompleteLabels", 0) > 0
-        and label_keys.get("mt", 0) == len(connectors)
+        and named_relations_missing_mt == 0
     )
     report(results, f"Measured connector labels include the complete observed form: {shown_path(path)}", labels_ok,
-           "at least one complete label set and an mt label for every connector",
+           "at least one complete label set and an mt label for every named model relation",
            {"completeLabelSets": labels.get("connectorsWithCompleteLabels", 0),
-            "labelKeyCounts": label_keys}, command)
+            "labelKeyCounts": label_keys,
+            "namedRelationsMissingMt": named_relations_missing_mt}, command)
 
     anchors = diagram.get("anchoredPlacements", [])
     anchor_ok = bool(anchors) and all(

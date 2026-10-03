@@ -598,7 +598,12 @@ def _build_interchange_inventory(root: ET.Element, unresolved_type_refs: int) ->
         "uml:Package",
         "uml:PrimitiveType",
     }
-    relation_types = {"uml:Association", "uml:Generalization", "uml:Realization"}
+    relation_types = {
+        "uml:Association",
+        "uml:Dependency",
+        "uml:Generalization",
+        "uml:Realization",
+    }
     elements: list[dict] = []
     features: list[dict] = []
     model_relations: dict[str, dict] = {}
@@ -675,12 +680,14 @@ def _build_interchange_inventory(root: ET.Element, unresolved_type_refs: int) ->
                 ),
             }
         relation_id = _xmi_attribute(connector, "idref")
+        matched_relation = model_relations.get(relation_id)
         properties = _direct_child(connector, "properties")
         relationships.append(
             {
                 "id": relation_id,
                 "name": connector.attrib.get("name", ""),
-                "modelType": model_relations.get(relation_id, {}).get("type", ""),
+                "modelType": matched_relation.get("type", "") if matched_relation else "",
+                "modelRelationName": matched_relation.get("name") if matched_relation else None,
                 "eaType": properties.attrib.get("ea_type", "") if properties is not None else "",
                 "source": endpoints["source"],
                 "target": endpoints["target"],
