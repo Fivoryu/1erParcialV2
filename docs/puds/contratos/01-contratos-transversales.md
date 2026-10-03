@@ -173,6 +173,7 @@ Canal de eventos por proyecto (los nombres NO fijan protocolo de transporte):
 | `operation.rejected` | `operationId`, diagnóstico |
 | `conflict.opened` / `conflict.resolved` | `conflictId`, `target`, `kind`, `payloads` |
 | `presence.updated` | usuario, proyecto, cursor/estado (efímero) |
+| `message.posted` | `message`: `id`, `authorUserId`, `authorDisplayName`, `body`, `createdAt` (ISO 8601) |
 | `layout.updated` | geometrías afectadas de la disposición compartida |
 | `collision.registered` / `collision.resolved` | `nameCollisionId`, scope |
 | `session.invalidated` | revocación de acceso (posible causa de `operation.rejected`) |
