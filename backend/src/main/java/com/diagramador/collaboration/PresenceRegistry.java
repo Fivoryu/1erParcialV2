@@ -45,7 +45,8 @@ public class PresenceRegistry {
     private final AtomicReference<Instant> latestTimestamp = new AtomicReference<>(Instant.MIN);
 
     /**
-     * Adds a session, or refreshes the same user's existing entry without changing its original join time or target.
+     * Adds a session, or refreshes the same user's existing entry without changing its original join time,
+     * target, or cursor.
      */
     public PresenceEntry join(UUID projectId, UUID sessionId, UUID userId, String displayName) {
         Objects.requireNonNull(projectId, "projectId");
@@ -61,8 +62,17 @@ public class PresenceRegistry {
             sessions.compute(sessionId, (session, existing) -> {
                 Instant now = nextTimestamp();
                 boolean sameUser = existing != null && existing.userId().equals(userId);
+                PresenceEntry carriedState = sameUser ? existing : existing == null
+                        ? sessions.values().stream()
+                                .filter(entry -> entry.userId().equals(userId))
+                                .findFirst()
+                                .orElse(null)
+                        : null;
+                // Seed a newly opened tab so the latest-session snapshot keeps the user's visible cursor and target.
                 PresenceEntry entry = new PresenceEntry(sessionId, userId, displayName, colorFor(userId),
-                        sameUser ? existing.targetElementId() : null,
+                        carriedState == null ? null : carriedState.targetElementId(),
+                        carriedState == null ? null : carriedState.cursorX(),
+                        carriedState == null ? null : carriedState.cursorY(),
                         sameUser ? existing.joinedAt() : now, now);
                 joined.set(entry);
                 return entry;
@@ -92,7 +102,8 @@ public class PresenceRegistry {
             sessions.computeIfPresent(sessionId, (session, existing) -> {
                 updated.set(true);
                 return new PresenceEntry(existing.sessionId(), existing.userId(), existing.displayName(),
-                        existing.color(), targetElementId, existing.joinedAt(), nextTimestamp());
+                        existing.color(), targetElementId, existing.cursorX(), existing.cursorY(),
+                        existing.joinedAt(), nextTimestamp());
             });
             return sessions;
         });
@@ -116,7 +127,34 @@ public class PresenceRegistry {
                 }
                 updated.set(true);
                 return new PresenceEntry(existing.sessionId(), existing.userId(), existing.displayName(),
-                        existing.color(), targetElementId, existing.joinedAt(), nextTimestamp());
+                        existing.color(), targetElementId, existing.cursorX(), existing.cursorY(),
+                        existing.joinedAt(), nextTimestamp());
+            });
+            return sessions;
+        });
+        return updated.get();
+    }
+
+    /**
+     * Updates every live session for a user on this project; returns false and changes nothing if
+     * that user has no live session. Cursors are per person, not per tab, so the latest position is
+     * shared across the user's live sessions.
+     */
+    public boolean moveCursor(UUID projectId, UUID userId, Double x, Double y) {
+        Objects.requireNonNull(projectId, "projectId");
+        Objects.requireNonNull(userId, "userId");
+        Objects.requireNonNull(x, "x");
+        Objects.requireNonNull(y, "y");
+
+        AtomicBoolean updated = new AtomicBoolean();
+        projects.computeIfPresent(projectId, (id, sessions) -> {
+            sessions.replaceAll((sessionId, existing) -> {
+                if (!existing.userId().equals(userId)) {
+                    return existing;
+                }
+                updated.set(true);
+                return new PresenceEntry(existing.sessionId(), existing.userId(), existing.displayName(),
+                        existing.color(), existing.targetElementId(), x, y, existing.joinedAt(), nextTimestamp());
             });
             return sessions;
         });
@@ -130,7 +168,8 @@ public class PresenceRegistry {
         projects.computeIfPresent(projectId, (id, sessions) -> {
             sessions.computeIfPresent(sessionId, (session, existing) -> new PresenceEntry(
                     existing.sessionId(), existing.userId(), existing.displayName(), existing.color(),
-                    existing.targetElementId(), existing.joinedAt(), nextTimestamp()));
+                    existing.targetElementId(), existing.cursorX(), existing.cursorY(),
+                    existing.joinedAt(), nextTimestamp()));
             return sessions;
         });
     }

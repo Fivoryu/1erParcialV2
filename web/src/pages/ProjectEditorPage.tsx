@@ -1,15 +1,25 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ApiTransportError, createApiClient } from '../api/client';
 import { loadSession } from '../api/session';
 import type {
   ModelResource,
   OperationEnvelope,
+  PresenceCursorUpdatePayload,
   PresencePerson,
   PresenceUpdatedPayload,
   ProjectResource,
 } from '../api/types';
 import PresencePanel from '../collaboration/PresencePanel';
+import { createCursorCoalescer, type CursorCoalescer } from '../collaboration/cursorCoalescer';
 import { subscribeProjectEvents } from '../collaboration/projectEvents';
 import UmlCanvas from '../diagram/UmlCanvas';
 import PropertiesPanel from '../diagram/PropertiesPanel';
@@ -25,6 +35,7 @@ import {
   type ModelCommandRequest,
 } from '../diagram/commands';
 import type { CanvasSelection } from '../diagram/selection';
+import { groupTouchesByElement } from '../diagram/touch-highlight';
 
 const api = createApiClient();
 
@@ -69,6 +80,33 @@ function presenceSnapshot(data: unknown): PresencePerson[] | null {
   return Array.isArray(payload?.presence) ? payload.presence : null;
 }
 
+function presenceCursor(data: unknown): PresenceCursorUpdatePayload['cursor'] | null {
+  if (typeof data !== 'object' || data === null) {
+    return null;
+  }
+  const payload = (data as { payload?: { cursor?: unknown } }).payload;
+  if (typeof payload !== 'object' || payload === null || typeof payload.cursor !== 'object' || payload.cursor === null) {
+    return null;
+  }
+  const cursor = payload.cursor as Partial<PresenceCursorUpdatePayload['cursor']>;
+  return typeof cursor.userId === 'string' && typeof cursor.x === 'number' && typeof cursor.y === 'number'
+    ? { userId: cursor.userId, x: cursor.x, y: cursor.y }
+    : null;
+}
+
+function cursorsFromSnapshot(
+  people: PresencePerson[],
+  currentUserId: string | null,
+): Map<string, { x: number; y: number }> {
+  const cursors = new Map<string, { x: number; y: number }>();
+  for (const person of people) {
+    if (person.userId !== currentUserId && person.cursorX !== null && person.cursorY !== null) {
+      cursors.set(person.userId, { x: person.cursorX, y: person.cursorY });
+    }
+  }
+  return cursors;
+}
+
 interface PendingCommand {
   sequence: number;
   envelope: OperationEnvelope;
@@ -83,6 +121,7 @@ export default function ProjectEditorPage() {
   const [model, setModel] = useState<ModelResource | null>(null);
   const [selection, setSelection] = useState<CanvasSelection | null>(null);
   const [presence, setPresence] = useState<PresencePerson[]>([]);
+  const [, setRemoteCursors] = useState<Map<string, { x: number; y: number }>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +139,28 @@ export default function ProjectEditorPage() {
   const sequenceRef = useRef(0);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const currentUserId = loadSession()?.userId ?? null;
+  const cursorCoalescerRef = useRef<CursorCoalescer<{ x: number; y: number }> | null>(null);
+
+  useEffect(() => {
+    if (!projectId) {
+      cursorCoalescerRef.current = null;
+      return;
+    }
+
+    // The 50 ms rate limit exists to keep cursor reports within the SLO's 10–30 updates/second budget.
+    const coalescer = createCursorCoalescer<{ x: number; y: number }>((position) => {
+      void api.reportProjectCursorPosition(projectId, position.x, position.y).catch(() => {
+        // Presence is ephemeral and must never break editing.
+      });
+    });
+    cursorCoalescerRef.current = coalescer;
+    return () => {
+      coalescer.cancel();
+      if (cursorCoalescerRef.current === coalescer) {
+        cursorCoalescerRef.current = null;
+      }
+    };
+  }, [projectId]);
 
   const publishModel = useCallback((next: ModelResource) => {
     modelRef.current = next;
@@ -213,24 +274,38 @@ export default function ProjectEditorPage() {
   useEffect(() => {
     if (!projectId) {
       setPresence([]);
+      setRemoteCursors(new Map());
       return;
     }
 
     setPresence([]);
+    setRemoteCursors(new Map());
     return subscribeProjectEvents({
       projectId,
       onEvent(event) {
         if (event.type === 'presence.updated') {
+          const cursor = presenceCursor(event.data);
+          if (cursor) {
+            if (cursor.userId !== currentUserId) {
+              setRemoteCursors((current) => {
+                const next = new Map(current);
+                next.set(cursor.userId, { x: cursor.x, y: cursor.y });
+                return next;
+              });
+            }
+            return;
+          }
           const snapshot = presenceSnapshot(event.data);
           if (snapshot) {
             setPresence(snapshot);
+            setRemoteCursors(cursorsFromSnapshot(snapshot, currentUserId));
           }
         } else if (event.type === 'operation.applied') {
           void refreshModelFromEvent();
         }
       },
     });
-  }, [projectId, refreshModelFromEvent]);
+  }, [currentUserId, projectId, refreshModelFromEvent]);
 
   const dispatchEnvelope = useCallback((envelope: OperationEnvelope): void => {
     if (!projectId || !modelRef.current) {
@@ -305,6 +380,7 @@ export default function ProjectEditorPage() {
   }, [dispatchEnvelope]);
 
   const targetElementId = selectedTargetElementId(selection);
+  const touchedElements = useMemo(() => groupTouchesByElement(presence), [presence]);
 
   useEffect(() => {
     if (!projectId) {
@@ -398,7 +474,15 @@ export default function ProjectEditorPage() {
               </div>
             )}
 
-            <div className="editor-workspace">
+            <div
+              className="editor-workspace"
+              onPointerMove={(event: ReactPointerEvent<HTMLDivElement>) => {
+                if (!(event.target instanceof Element) || !event.target.closest('.diagram-canvas')) {
+                  return;
+                }
+                cursorCoalescerRef.current?.schedule({ x: event.clientX, y: event.clientY });
+              }}
+            >
               <UmlCanvas
                 model={model}
                 selection={selection}
@@ -406,6 +490,7 @@ export default function ProjectEditorPage() {
                 onCommand={dispatchCommand}
                 onAddClassifier={addClassifier}
                 onDelete={deleteSelection}
+                touchedElements={touchedElements}
               />
               <PropertiesPanel
                 model={model}

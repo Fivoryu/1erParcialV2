@@ -109,6 +109,7 @@ export interface ApiClient {
   listMyInvitations(): Promise<InvitationResource[]>;
   getModel(projectId: Uuid): Promise<ModelResource>;
   reportProjectPresenceTouch(projectId: Uuid, targetElementId: Uuid | null): Promise<void>;
+  reportProjectCursorPosition(projectId: Uuid, x: number, y: number): Promise<void>;
   executeCommand(projectId: Uuid, envelope: OperationEnvelope): Promise<CommandOutcome>;
   listGenerationTargets(projectId: Uuid): Promise<GenerationTargetResource[]>;
   createGenerationTarget(
@@ -318,6 +319,16 @@ export function createApiClient(
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ targetElementId }),
+        },
+      );
+    },
+    reportProjectCursorPosition(projectId, x, y) {
+      return requestNoContent(
+        `/projects/${encodeURIComponent(projectId)}/presence`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cursorX: x, cursorY: y }),
         },
       );
     },

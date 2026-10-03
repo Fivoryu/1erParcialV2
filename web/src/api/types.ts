@@ -24,10 +24,20 @@ export interface PresencePerson {
   displayName: string;
   color: string;
   targetElementId: Uuid | null;
+  cursorX: number | null;
+  cursorY: number | null;
 }
 
 export interface PresenceUpdatedPayload {
   presence: PresencePerson[];
+}
+
+export interface PresenceCursorUpdatePayload {
+  cursor: {
+    userId: Uuid;
+    x: number;
+    y: number;
+  };
 }
 
 export interface InvitationResource {

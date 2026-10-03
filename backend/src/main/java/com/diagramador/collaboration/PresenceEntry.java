@@ -6,7 +6,7 @@ import java.util.UUID;
 
 /** Immutable state for one live collaboration session. */
 public record PresenceEntry(UUID sessionId, UUID userId, String displayName, String color,
-        UUID targetElementId, Instant joinedAt, Instant lastSeenAt) {
+        UUID targetElementId, Double cursorX, Double cursorY, Instant joinedAt, Instant lastSeenAt) {
 
     public PresenceEntry {
         Objects.requireNonNull(sessionId, "sessionId");

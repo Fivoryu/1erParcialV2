@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
-/** Publishes full, client-replaceable snapshots of project presence. */
+/** Publishes full presence snapshots and cursor-only presence updates. */
 @Component
 public class PresencePublisher {
 
@@ -27,9 +27,21 @@ public class PresencePublisher {
             person.put("displayName", entry.displayName());
             person.put("color", entry.color());
             person.put("targetElementId", entry.targetElementId());
+            person.put("cursorX", entry.cursorX());
+            person.put("cursorY", entry.cursorY());
             // Session IDs are server-side and are deliberately excluded from the wire payload.
             presence.add(person);
         }
         projectEventBus.publish(ProjectEvent.of("presence.updated", projectId, Map.of("presence", presence)));
+    }
+
+    public void publishCursor(UUID projectId, UUID userId, Double x, Double y) {
+        Map<String, Object> cursor = new LinkedHashMap<>();
+        cursor.put("userId", userId);
+        cursor.put("x", x);
+        cursor.put("y", y);
+        // The catalogue defines only presence.updated; cursor-only payloads avoid rebroadcasting the roster
+        // for movements arriving up to 30 times per second.
+        projectEventBus.publish(ProjectEvent.of("presence.updated", projectId, Map.of("cursor", cursor)));
     }
 }

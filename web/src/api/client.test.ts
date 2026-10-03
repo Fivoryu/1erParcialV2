@@ -232,8 +232,10 @@ describe('project member and invitation API client', () => {
     await client.listMyInvitations();
     const touchResult = await client.reportProjectPresenceTouch(projectId, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd');
     await client.reportProjectPresenceTouch(projectId, null);
+    const cursorResult = await client.reportProjectCursorPosition(projectId, 123.5, 456.25);
 
     expect(touchResult).toBeUndefined();
+    expect(cursorResult).toBeUndefined();
     const calls = fetcher.mock.calls;
     expect(calls.map(([input]) => String(input))).toEqual([
       `https://diagram.test/projects/${projectId}/members`,
@@ -244,6 +246,7 @@ describe('project member and invitation API client', () => {
       `https://diagram.test/projects/${projectId}/members/${userId}`,
       `https://diagram.test/projects/${projectId}/members/${userId}`,
       'https://diagram.test/invitations',
+      `https://diagram.test/projects/${projectId}/presence`,
       `https://diagram.test/projects/${projectId}/presence`,
       `https://diagram.test/projects/${projectId}/presence`,
     ]);
@@ -258,6 +261,7 @@ describe('project member and invitation API client', () => {
       undefined,
       'POST',
       'POST',
+      'POST',
     ]);
     expect(JSON.parse(String(calls[2]?.[1]?.body))).toEqual({ username: 'new.member', role: 'EDITOR' });
     expect(calls[3]?.[1]?.body).toBeUndefined();
@@ -268,8 +272,10 @@ describe('project member and invitation API client', () => {
       targetElementId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     });
     expect(JSON.parse(String(calls[9]?.[1]?.body))).toEqual({ targetElementId: null });
+    expect(JSON.parse(String(calls[10]?.[1]?.body))).toEqual({ cursorX: 123.5, cursorY: 456.25 });
     expect(new Headers(calls[8]?.[1]?.headers).get('Content-Type')).toBe('application/json');
     expect(new Headers(calls[9]?.[1]?.headers).get('Content-Type')).toBe('application/json');
+    expect(new Headers(calls[10]?.[1]?.headers).get('Content-Type')).toBe('application/json');
     for (const [, init] of calls) {
       expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
     }

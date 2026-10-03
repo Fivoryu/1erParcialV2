@@ -145,6 +145,134 @@ class PresenceChannelTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void cursorMovePublishesOnlyTheCursorAndFullSnapshotsRetainItsPosition() throws Exception {
+        String owner = username("cursor-watcher");
+        UUID projectId = createProject(owner);
+        String member = username("cursor-mover");
+        bearer(member);
+        addMembership(member, projectId, ProjectMemberRole.VIEWER);
+        MvcResult watcherStream = openStream(owner, projectId);
+        MvcResult firstMemberStream = openStream(member, projectId);
+        MvcResult secondMemberStream = openStream(member, projectId);
+        UUID memberId = userIdFor(member);
+        int eventsBeforeMove = presenceEventCount(watcherStream);
+        double cursorX = 172.25;
+        double cursorY = -34.5;
+
+        mockMvc.perform(authorizedAs(member, cursorRequest(projectId, cursorX, cursorY)))
+                .andExpect(status().isNoContent());
+
+        assertThat(presenceEventCount(watcherStream)).isEqualTo(eventsBeforeMove + 1);
+        JsonNode cursorEvent = latestPresenceEvent(watcherStream);
+        JsonNode payload = cursorEvent.path("payload");
+        JsonNode cursor = payload.path("cursor");
+        assertThat(cursorEvent.path("type").asText()).isEqualTo("presence.updated");
+        assertThat(payload.size()).isEqualTo(1);
+        assertThat(payload.has("presence")).isFalse();
+        assertThat(cursor.path("userId").asText()).isEqualTo(memberId.toString());
+        assertThat(cursor.path("x").asDouble()).isEqualTo(cursorX);
+        assertThat(cursor.path("y").asDouble()).isEqualTo(cursorY);
+
+        UUID targetElementId = UUID.randomUUID();
+        mockMvc.perform(authorizedAs(member, presenceRequest(projectId, targetElementId, cursorX, cursorY)))
+                .andExpect(status().isNoContent());
+        JsonNode fullPayload = latestPresenceEvent(watcherStream).path("payload");
+        JsonNode fullSnapshot = fullPayload.path("presence");
+        JsonNode memberPresence = findPerson(fullSnapshot, memberId);
+        assertThat(fullPayload.has("cursor")).isFalse();
+        assertThat(memberPresence.path("targetElementId").asText()).isEqualTo(targetElementId.toString());
+        assertThat(memberPresence.path("cursorX").asDouble()).isEqualTo(cursorX);
+        assertThat(memberPresence.path("cursorY").asDouble()).isEqualTo(cursorY);
+
+        // Removing the most recently active tab must leave the cursor on the user's other live tab.
+        secondMemberStream.getRequest().getAsyncContext().complete();
+        PresenceEntry remainingEntry = presenceRegistry.snapshot(projectId).stream()
+                .filter(entry -> entry.userId().equals(memberId))
+                .findFirst()
+                .orElseThrow();
+        assertThat(remainingEntry.cursorX()).isEqualTo(cursorX);
+        assertThat(remainingEntry.cursorY()).isEqualTo(cursorY);
+        assertThat(firstMemberStream.getRequest().isAsyncStarted()).isTrue();
+    }
+
+    @Test
+    void partialCursorReportDoesNotChangeAnExistingTargetOrPublish() throws Exception {
+        String owner = username("partial-cursor");
+        UUID projectId = createProject(owner);
+        MvcResult ownerStream = openStream(owner, projectId);
+        UUID targetElementId = UUID.randomUUID();
+        mockMvc.perform(authorizedAs(owner, touchRequest(projectId, targetElementId)))
+                .andExpect(status().isNoContent());
+        PresenceEntry before = presenceRegistry.snapshot(projectId).get(0);
+        int eventsBeforeReport = presenceEventCount(ownerStream);
+
+        mockMvc.perform(authorizedAs(owner, partialCursorRequest(projectId, 12.5))).andReturn();
+
+        assertThat(presenceRegistry.snapshot(projectId)).containsExactly(before);
+        assertThat(presenceEventCount(ownerStream)).isEqualTo(eventsBeforeReport);
+    }
+
+    @Test
+    void partialCursorReportReturnsTheInvalidPayloadErrorEnvelope() throws Exception {
+        String owner = username("invalid-cursor");
+        UUID projectId = createProject(owner);
+
+        MvcResult result = mockMvc.perform(authorizedAs(owner, partialCursorRequest(projectId, 12.5)))
+                .andExpect(status().isBadRequest())
+                .andReturn();
+
+        JsonNode error = objectMapper.readTree(result.getResponse().getContentAsByteArray());
+        assertThat(error.path("code").asText()).isEqualTo("INVALID_PAYLOAD");
+        assertThat(error.path("message").asText()).isEqualTo("Cursor coordinates must be provided together.");
+        assertThat(error.path("details").isArray()).isTrue();
+    }
+
+    @Test
+    void openingAnotherSessionPreservesTheUsersCursorAndTarget() throws Exception {
+        String owner = username("cursor-new-tab");
+        UUID projectId = createProject(owner);
+        MvcResult firstStream = openStream(owner, projectId);
+        UUID ownerId = userIdFor(owner);
+        double cursorX = 172.25;
+        double cursorY = -34.5;
+        UUID targetElementId = UUID.randomUUID();
+
+        mockMvc.perform(authorizedAs(owner, cursorRequest(projectId, cursorX, cursorY)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(authorizedAs(owner, touchRequest(projectId, targetElementId)))
+                .andExpect(status().isNoContent());
+        MvcResult secondStream = openStream(owner, projectId);
+
+        JsonNode ownerPresence = findPerson(latestPresenceEvent(secondStream).path("payload").path("presence"), ownerId);
+        assertThat(ownerPresence.path("cursorX").asDouble()).isEqualTo(cursorX);
+        assertThat(ownerPresence.path("cursorY").asDouble()).isEqualTo(cursorY);
+        assertThat(ownerPresence.path("targetElementId").asText()).isEqualTo(targetElementId.toString());
+        assertThat(firstStream.getRequest().isAsyncStarted()).isTrue();
+    }
+
+    @Test
+    void cursorReportWithoutALiveSessionIsA204NoOpThatCreatesNothing() throws Exception {
+        String owner = username("cursor-owner");
+        UUID projectId = createProject(owner);
+        MvcResult ownerStream = openStream(owner, projectId);
+        String offlineMember = username("offline-cursor");
+        bearer(offlineMember);
+        addMembership(offlineMember, projectId, ProjectMemberRole.VIEWER);
+        UUID memberId = userIdFor(offlineMember);
+        List<PresenceEntry> before = presenceRegistry.snapshot(projectId);
+        int eventsBeforeReport = presenceEventCount(ownerStream);
+
+        mockMvc.perform(authorizedAs(offlineMember, cursorRequest(projectId, 12.5, 99.25)))
+                .andExpect(status().isNoContent());
+
+        assertThat(presenceRegistry.snapshot(projectId)).isEqualTo(before)
+                .extracting(PresenceEntry::userId)
+                .doesNotContain(memberId);
+        assertThat(presenceRegistry.sessionCount(projectId)).isEqualTo(1);
+        assertThat(presenceEventCount(ownerStream)).isEqualTo(eventsBeforeReport);
+    }
+
+    @Test
     void touchRequiresAuthenticationAndMembershipWithoutCreatingPresence() throws Exception {
         String owner = username("owner");
         UUID projectId = createProject(owner);
@@ -249,6 +377,28 @@ class PresenceChannelTest extends AuthenticatedApiTest {
                 .content("{}");
     }
 
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder partialCursorRequest(
+            UUID projectId, double cursorX) throws Exception {
+        return post("/projects/{id}/presence", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("cursorX", cursorX)));
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder cursorRequest(
+            UUID projectId, double cursorX, double cursorY) throws Exception {
+        return post("/projects/{id}/presence", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("cursorX", cursorX, "cursorY", cursorY)));
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder presenceRequest(
+            UUID projectId, UUID targetElementId, double cursorX, double cursorY) throws Exception {
+        return post("/projects/{id}/presence", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of(
+                        "targetElementId", targetElementId, "cursorX", cursorX, "cursorY", cursorY)));
+    }
+
     private int presenceEventCount(MvcResult result) throws Exception {
         return result.getResponse().getContentAsString().split("event:presence.updated", -1).length - 1;
     }
@@ -286,6 +436,10 @@ class PresenceChannelTest extends AuthenticatedApiTest {
         assertThat(person.path("color").asText()).isEqualTo(presenceRegistry.colorFor(userId));
         assertThat(person.has("displayName")).isTrue();
         assertThat(person.has("targetElementId")).isTrue();
+        assertThat(person.has("cursorX")).isTrue();
+        assertThat(person.path("cursorX").isNull()).isTrue();
+        assertThat(person.has("cursorY")).isTrue();
+        assertThat(person.path("cursorY").isNull()).isTrue();
     }
 
     private static JsonNode findPerson(JsonNode snapshot, UUID userId) {

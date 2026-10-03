@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { PresencePerson } from '../api/types';
 import PresencePanel from './PresencePanel';
 
@@ -11,12 +11,16 @@ const entries: PresencePerson[] = [
     displayName: 'Diagram Reader',
     color: '#2f6fdb',
     targetElementId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    cursorX: null,
+    cursorY: null,
   },
   {
     userId: '22222222-2222-4222-8222-222222222222',
     displayName: 'Remote Collaborator',
     color: '#d45d79',
     targetElementId: null,
+    cursorX: null,
+    cursorY: null,
   },
 ];
 
@@ -25,6 +29,11 @@ function render(presence: PresencePerson[], userId: string | null): string {
 }
 
 describe('project presence panel', () => {
+  it('requires nullable cursor coordinates in each presence person', () => {
+    expectTypeOf<Pick<PresencePerson, 'cursorX'>>().toEqualTypeOf<{ cursorX: number | null }>();
+    expectTypeOf<Pick<PresencePerson, 'cursorY'>>().toEqualTypeOf<{ cursorY: number | null }>();
+  });
+
   it('renders each person with their color and marks the current reader', () => {
     const markup = render(entries, readerId);
     const rows = markup.match(/<li\b[^>]*>[\s\S]*?<\/li>/g) ?? [];
