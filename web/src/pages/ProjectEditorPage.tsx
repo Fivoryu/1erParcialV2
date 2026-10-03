@@ -24,6 +24,7 @@ import PresencePanel from '../collaboration/PresencePanel';
 import { createCursorCoalescer, type CursorCoalescer } from '../collaboration/cursorCoalescer';
 import { buildRemoteCursorMarkers } from '../collaboration/remoteCursors';
 import { subscribeProjectEvents } from '../collaboration/projectEvents';
+import { useEditingLease } from '../collaboration/useEditingLease';
 import UmlCanvas from '../diagram/UmlCanvas';
 import PropertiesPanel from '../diagram/PropertiesPanel';
 import GenerationPanel from '../generation/GenerationPanel';
@@ -166,6 +167,7 @@ export default function ProjectEditorPage() {
   const sequenceRef = useRef(0);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const currentUserId = loadSession()?.userId ?? null;
+  const editingLease = useEditingLease(projectId, currentUserId);
   const cursorCoalescerRef = useRef<CursorCoalescer<{ x: number; y: number }> | null>(null);
 
   useEffect(() => {
@@ -393,6 +395,7 @@ export default function ProjectEditorPage() {
     if (!projectId || !modelRef.current) {
       return;
     }
+    editingLease.acquireForEdit(envelope.targets[0]);
     const sequence = sequenceRef.current + 1;
     sequenceRef.current = sequence;
     pendingCommandsRef.current = [...pendingCommandsRef.current, { sequence, envelope }];
@@ -436,7 +439,7 @@ export default function ProjectEditorPage() {
     });
 
     queueRef.current = operation.then(() => undefined, () => undefined);
-  }, [projectId, publishModel, reconcileAfterCommand]);
+  }, [editingLease.acquireForEdit, projectId, publishModel, reconcileAfterCommand]);
 
   const dispatchCommand = useCallback((request: ModelCommandRequest): OperationEnvelope | null => {
     const current = modelRef.current;
@@ -628,6 +631,7 @@ export default function ProjectEditorPage() {
               modelId={model.id}
               versionId={model.versionId}
               modelRevision={model.revision}
+              editingLease={editingLease}
             />
           </>
         ) : null}

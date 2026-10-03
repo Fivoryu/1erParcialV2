@@ -452,6 +452,33 @@ export interface OperationOutcomeResource<TResult> {
   result: TResult | null;
 }
 
+export interface EditingLeaseResource {
+  modelId: Uuid;
+  editorUserId: Uuid;
+  editorDisplayName: string;
+  targetType: string | null;
+  targetId: Uuid | null;
+  acquiredAt: string;
+  expiresAt: string;
+}
+
+export interface EditingLeaseEnvelope {
+  lease: EditingLeaseResource | null;
+}
+
+export interface EditingLeaseRequest {
+  targetType?: string;
+  targetId?: Uuid;
+}
+
+export interface EditingLeaseConflict {
+  editorDisplayName: string;
+  targetType: string | null;
+  targetId: Uuid | null;
+  reclaimable: boolean;
+  retryAfterSeconds: number;
+}
+
 export type GenerationArchiveDownload =
   | { kind: 'archive'; filename: string; blob: Blob }
   | { kind: 'rejected'; code: string; message: string };

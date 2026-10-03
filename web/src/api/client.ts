@@ -29,6 +29,7 @@ import type {
   XmiPreviewRequest,
   XmiPreviewResource,
 } from './types';
+import type { EditingLeaseEnvelope, EditingLeaseRequest } from './types';
 import { clearSession, getAuthorizationHeaderValue } from './session';
 
 export class ApiTransportError extends Error {
@@ -135,6 +136,11 @@ export interface ApiClient {
   listDeployments(projectId: Uuid): Promise<DeploymentResource[]>;
   requestDeployment(projectId: Uuid, runId: Uuid): Promise<DeploymentResource>;
   stopDeployment(deploymentId: Uuid): Promise<DeploymentResource>;
+  getEditingLease(projectId: Uuid): Promise<EditingLeaseEnvelope>;
+  acquireEditingLease(projectId: Uuid, request?: EditingLeaseRequest): Promise<EditingLeaseEnvelope>;
+  renewEditingLease(projectId: Uuid): Promise<EditingLeaseEnvelope>;
+  reclaimEditingLease(projectId: Uuid, request?: EditingLeaseRequest): Promise<EditingLeaseEnvelope>;
+  releaseEditingLease(projectId: Uuid): Promise<EditingLeaseEnvelope>;
 }
 
 function archiveFilename(response: Response, fallback: string): string {
@@ -414,6 +420,35 @@ export function createApiClient(
       return requestJson<DeploymentResource>(
         `/deployments/${encodeURIComponent(deploymentId)}/stop`,
         { method: 'POST' },
+      );
+    },
+    getEditingLease(projectId) {
+      return requestJson<EditingLeaseEnvelope>(
+        `/projects/${encodeURIComponent(projectId)}/editing-lease`,
+      );
+    },
+    acquireEditingLease(projectId, request = {}) {
+      return postJson<EditingLeaseEnvelope>(
+        `/projects/${encodeURIComponent(projectId)}/editing-lease`,
+        request,
+      );
+    },
+    renewEditingLease(projectId) {
+      return postJson<EditingLeaseEnvelope>(
+        `/projects/${encodeURIComponent(projectId)}/editing-lease/renew`,
+        {},
+      );
+    },
+    reclaimEditingLease(projectId, request = {}) {
+      return postJson<EditingLeaseEnvelope>(
+        `/projects/${encodeURIComponent(projectId)}/editing-lease/reclaim`,
+        request,
+      );
+    },
+    releaseEditingLease(projectId) {
+      return requestJson<EditingLeaseEnvelope>(
+        `/projects/${encodeURIComponent(projectId)}/editing-lease`,
+        { method: 'DELETE' },
       );
     },
   };

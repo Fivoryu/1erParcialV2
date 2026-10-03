@@ -2,12 +2,16 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ApiTransportError, createApiClient } from '../api/client';
 import type {
   DeploymentResource,
+  EditingLeaseConflict,
   GenerationProfileResource,
   GenerationRunResource,
   GenerationState,
   GenerationTargetResource,
   Uuid,
 } from '../api/types';
+import { mapEditingLeaseConflict } from '../collaboration/editingLease';
+import EditingLeaseNotice from '../collaboration/EditingLeaseNotice';
+import type { EditingLeaseAdapter } from '../collaboration/useEditingLease';
 import {
   blockingDiagnostics,
   canDownloadArchive,
@@ -56,6 +60,9 @@ export interface GenerationPanelViewProps {
   busy: boolean;
   error: string | null;
   notice: string | null;
+  editingLeaseConflict?: EditingLeaseConflict | null;
+  reclaimBusy?: boolean;
+  onReclaimLease?: () => void;
   onSelectTarget(targetId: string): void;
   onSelectProfile(profileId: string): void;
   onCreateTarget(name: string, databaseName: string): void;
@@ -78,6 +85,9 @@ export function GenerationPanelView({
   busy,
   error,
   notice,
+  editingLeaseConflict = null,
+  reclaimBusy = false,
+  onReclaimLease,
   onSelectTarget,
   onSelectProfile,
   onCreateTarget,
@@ -129,6 +139,14 @@ export function GenerationPanelView({
 
       {notice && (
         <p className="generation-notice" role="status">{notice}</p>
+      )}
+
+      {editingLeaseConflict !== null && (
+        <EditingLeaseNotice
+          conflict={editingLeaseConflict}
+          onReclaim={onReclaimLease}
+          busy={reclaimBusy}
+        />
       )}
 
       {error && (
@@ -317,13 +335,20 @@ export interface GenerationPanelProps {
   versionId: Uuid;
   /** Reloads the destinations and the profile whenever the model changes. */
   modelRevision: number;
+  editingLease: EditingLeaseAdapter;
 }
 
 /**
  * The container: it owns the requests, the selected destination and the poll of a run that is not
  * finished. Generation is driven entirely through the published API.
  */
-export default function GenerationPanel({ projectId, modelId, versionId, modelRevision }: GenerationPanelProps) {
+export default function GenerationPanel({
+  projectId,
+  modelId,
+  versionId,
+  modelRevision,
+  editingLease,
+}: GenerationPanelProps) {
   const [targets, setTargets] = useState<GenerationTargetResource[]>([]);
   const [profiles, setProfiles] = useState<GenerationProfileResource[]>([]);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
@@ -339,6 +364,15 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
     activeRunRef.current = next;
     setRun(next);
   }, []);
+
+  const captureLeaseConflict = useCallback((carrier: unknown): boolean => {
+    const conflict = mapEditingLeaseConflict(carrier);
+    if (conflict === null) {
+      return false;
+    }
+    editingLease.recordConflict(conflict);
+    return true;
+  }, [editingLease.recordConflict]);
 
   const loadDestinations = useCallback(async () => {
     const [loadedTargets, loadedProfiles, loadedDeployments] = await Promise.all([
@@ -444,6 +478,9 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
         templateId: profile.templateId,
         idempotencyKey: crypto.randomUUID(),
       });
+      if (captureLeaseConflict(outcome)) {
+        return;
+      }
       publishRun(outcome.result);
       if (!outcome.result) {
         setError(outcome.message);
@@ -451,11 +488,13 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
         setError('The model cannot be generated yet. See what blocks it below.');
       }
     } catch (cause: unknown) {
-      setError(messageFor(cause));
+      if (!captureLeaseConflict(cause)) {
+        setError(messageFor(cause));
+      }
     } finally {
       setBusy(false);
     }
-  }, [modelId, profiles, projectId, publishRun, selectedProfileId, selectedTargetId, versionId]);
+  }, [captureLeaseConflict, modelId, profiles, projectId, publishRun, selectedProfileId, selectedTargetId, versionId]);
 
   const loadDeployments = useCallback(async () => {
     setDeployments(await api.listDeployments(projectId));
@@ -545,11 +584,13 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
       URL.revokeObjectURL(url);
       setNotice('The generated backend was downloaded as a ZIP archive.');
     } catch (cause: unknown) {
-      setError(messageFor(cause));
+      if (!captureLeaseConflict(cause)) {
+        setError(messageFor(cause));
+      }
     } finally {
       setBusy(false);
     }
-  }, [projectId]);
+  }, [captureLeaseConflict, projectId]);
 
   return (
     <GenerationPanelView
@@ -564,6 +605,11 @@ export default function GenerationPanel({ projectId, modelId, versionId, modelRe
       busy={busy}
       error={error}
       notice={notice}
+      editingLeaseConflict={editingLease.conflict}
+      reclaimBusy={editingLease.reclaimBusy}
+      onReclaimLease={() => {
+        void editingLease.reclaim();
+      }}
       onSelectTarget={setSelectedTargetId}
       onSelectProfile={setSelectedProfileId}
       onCreateTarget={(name, databaseName) => {
