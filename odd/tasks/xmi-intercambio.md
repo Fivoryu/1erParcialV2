@@ -24,7 +24,7 @@ su plan. Lo que queda atado:
 | Forma del bloqueo | Código `EXPORT_BLOCKED_EDITING`; en endpoints de archivo HTTP **409** con el sobre `ApiErrorResource`; en `POST /projects/{id}/generations` el mismo código dentro del cuerpo `outcome` con HTTP 200 (convención D7 del Incremento 2). Claves de `details[0]`: `editorDisplayName`, `targetType`, `targetId`, `reclaimable`, `retryAfterSeconds` |
 | Archivos compartidos | `backend/src/test/java/com/diagramador/SchemaOwnershipTest.java` (compuerta dura: hoy declara que `xmi_exchange` y `xmi_loss_item` **no existen**; al consolidar la unión es versiones 1–10 y las cuatro tablas, con `invitation` de la otra sesión), `docs/puds/datos/02-esquema-fisico.sql`, `web/src/pages/ProjectEditorPage.tsx` |
 | **No compartido** | `backend/src/main/java/com/diagramador/command/CommandService.java` es de la otra sesión (su tarea C13). **Esta unidad no lo toca**: verificado que el servicio resuelve handlers por `Collectors.toUnmodifiableMap(CommandHandler::type, …)` sobre una `List<CommandHandler>` inyectada por constructor, así que un `@Component` nuevo se auto-registra |
-| **Pendiente declarado** | El endpoint de XMI nace **sin** la guarda de la concesión, porque `C19` no está en esta base. Queda como integración de una línea al consolidar, y **así se declara**: hasta entonces la exportación XMI no está protegida contra una edición en curso. **La línea ya tiene nombre y forma, medidos en §13.7**: `requireExportAllowed(UUID modelId)`, que lanza `ApiException(409, "EXPORT_BLOCKED_EDITING")` |
+| **Pendiente declarado** | El endpoint de XMI nace **sin** la guarda de la concesión, porque `C19` no está en esta base. Queda como integración de una línea al consolidar, y **así se declara**: hasta entonces la exportación XMI no está protegida contra una edición en curso. **La línea ya tiene nombre y forma, medidos en §13.7**: `requireExportAllowed(UUID modelId)`, que lanza `ApiException(409, "EXPORT_BLOCKED_EDITING")`. **Cerrada en §14.2**: la línea se conectó en `XmiExportService.java:61`, con su prueba primero en rojo y la compuerta completa medida. El comportamiento de la concesión **en vivo** —quién la toma, cuándo vence, qué pasa con el operador— sigue siendo de la otra unidad |
 
 ## Estado de ejecución
 
@@ -44,6 +44,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | E — El sentido EA → app | **Cerrada en §11** | 5 artefactos de EA pinchados por sha256 y byte-exactos; el lector medido sobre la matriz de exportación; `mvn verify` = **260 pruebas, 0 fallos, 0 salteadas**; `python -m pytest tools -q` = **46 pruebas, 0 fallos**; revisión nativa `review-79d56d80554b3cd0` = **approved**, autoridad quemada |
 | Consolidación y publicación | **Cerrada en §12** | Fusión de `feat/incremento-3-colaboracion` (`61bf2d2`) en `feat/xmi-intercambio` como unión de los dos lados, commit `f3f8e33` de dos padres; `mvn verify` = **307 pruebas, 0 fallos, 0 salteadas**; `pytest` = **46**; `npm run lint` y `npm run build` limpios; remoto privado creado y `main` movida a la punta por decisión del usuario |
 | F — Lo que el oráculo no medía | **Cerrada en §13** | Las seis filas X3–X8 reconciliadas contra §5.2; el control positivo con el artefacto de EA en los dos casilleros **refutó dos de los tres «defectos» de §7.5**; el diagnóstico del dialecto mira las declaraciones de namespace, no el prefijo; arnés **18/0** en los dos corpus y las suites verdes (`mvn verify` **308 pruebas, 0 fallos**; `pytest` **54**); revisión nativa `review-5fceca1cdf2aad8c` = **approved**, autoridad quemada, tres avisos no bloqueantes en §13.6 |
+| G — La guarda de exportación, conectada | **Cerrada en §14** | Fusión de `feat/incremento-3-colaboracion` (`38882b4`) en `f2fd947`, sin conflictos y con auditoría semántica contra el diff del par; la guarda declarada quedó conectada en `XmiExportService.java:61` con su prueba **primero en rojo** (5/1 → 5/0) y su control positivo; la fusión trajo **2 fallas reales** en la web, reparadas en `2b47c66`; `mvn verify` = **332 pruebas, 0 fallos, 0 salteadas, BUILD SUCCESS**; `pytest tools` = **54**; web **158 pasan, 4 omitidas, 0 fallan** con lint, tipos y build limpios; arnés XMI **18/0** |
 
 ## 1. Corte visible que define la unidad
 
@@ -1546,8 +1547,114 @@ principal, sin tocar su árbol de trabajo.
 **La fila «Pendiente declarado» del cuadro de estado queda accionable.** Decía «integración de una línea al
 consolidar» sin decir cuál; ahora la línea tiene nombre, forma y excepción, medidos. **No se conectó, y así se
 declara**: conectar una guarda de una rama que todavía no está en `main` exige primero decidir esa unión, y esa
-decisión es del usuario.
+decisión es del usuario. **El usuario la tomó en esta sesión, y §14.2 mide la conexión.**
 
 **Lo que esta sección no mide.** El comportamiento del lease en vivo —quién lo toma, cuándo vence, qué pasa con el
 operador— está en su unidad y en su §S6b, no acá. De esa rama solo se midió lo que hace falta para nombrar la
 integración pendiente, que es lo que la tabla de arriba tiene.
+
+## 14. Consolidación con la guarda conectada
+
+El usuario tomó dos decisiones en esta sesión: empujar y mover `main` (ejecutado en §12 y §13), y **consolidar la
+rama del par conectando la guarda declarada**. Esta sección mide esa consolidación. Lo que la sesión vecina
+reportó no se asienta acá como cita: se midió con instrumentos propios —los objetos de git, el árbol fusionado,
+las suites— y lo que no se pudo medir se declara al final.
+
+### 14.1 La fusión, y la auditoría que la acompaña
+
+| Lo que se midió | Comando | Resultado |
+| --- | --- | --- |
+| Punta de la rama del par | `git rev-parse --short feat/incremento-3-colaboracion` | **`38882b4`** al fusionar; **`c39605a`** al re-medir después (§14.6) |
+| Cuánto traía | `git diff --stat 61bf2d2..38882b4` | **21 archivos, +1921 inserciones, −6 borrados** |
+| La fusión | `git merge --no-commit --no-ff feat/incremento-3-colaboracion` | **Sin conflictos**: auto-fusionó `client.ts`, `types.ts` y `ProjectEditorPage.tsx` |
+| El commit | `f2fd947` | Dos padres: `4f59e50` (esta rama) y `38882b4` (la del par) |
+| ¿Entró todo lo que traía? | lo aportado contra `git diff --stat 61bf2d2..38882b4` | Idéntico: 21 archivos, +1921, −6 |
+| ¿Sobrevivieron las costuras de §12.1? | búsqueda de los símbolos resueltos a mano | **Cero borrados** en los cuatro archivos compartidos, y `previewXmi`, `importXmi`, `reportProjectPresenceTouch`, `reportProjectCursorPosition`, `XmiImportPanel`, `PresencePanel`, `MembersPanel` y `ChatPanel` siguen definidos |
+
+Que la fusión fuera limpia no es suerte: el par partió de `61bf2d2`, donde las resoluciones de §12.1 todavía no
+existían, así que su lado no volvió a disputar esas cuatro costuras.
+
+### 14.2 La guarda, conectada con el rojo primero
+
+La guarda quedó en **`XmiExportService.java:61`**, una línea después del snapshot que esa exportación ya lee:
+
+| Dónde | Por qué ahí, y no en el controlador |
+| --- | --- |
+| `editingLeaseService.requireExportAllowed(snapshot.id())`, dentro de `exportProject` | recibe **exactamente** el `modelId` que la exportación va a leer. Hacerlo en el controlador obligaba a resolver el modelo otra vez —una lectura completa del agregado— y dejaba abierta la puerta de que los dos identificadores divergieran |
+| `requireEditor` sigue primero, en el controlador | el orden congelado en §S6b: primero el permiso sobre el proyecto, después la concesión |
+| El `TODO(consolidation)` se reemplazó por la nota que dice dónde vive la guarda | un TODO cumplido miente si queda escrito |
+
+Con la prueba escrita **antes** que la conexión:
+
+| Paso | Comando | Resultado |
+| --- | --- | --- |
+| Rojo | `mvn -o -B -f backend/pom.xml -Dtest=XmiExportApiTest test` | **5 pruebas, 1 falla**: `Status expected:<409> but was:<200>` |
+| Verde | el mismo comando, con la guarda conectada | **5 pruebas, 0 fallas**, BUILD SUCCESS |
+
+Lo que la prueba tiene de más, y por qué: además del rechazo trae un **control positivo** —que el titular de la
+concesión sí pueda exportar—. Sin él, una guarda que bloqueara siempre pasaría la prueba roja. Ese control ya
+estaba verde antes de conectar la guarda y siguió verde después. Lo que la prueba **no** ejerce: el exento del
+operador (§14.6).
+
+### 14.3 Un defecto que trajo la fusión, y quién lo encontró
+
+La suite web del árbol fusionado quedó con **dos fallas reales que no existían en ninguno de los dos lados por
+separado**: `web/src/api/xmi.test.ts` afirmaba `headers: { 'Content-Type': 'application/json' }` como objeto
+plano, mientras que el helper de peticiones que trajo el par entrega a `fetch` una instancia de **`Headers`**.
+
+| Lo que se midió | Resultado |
+| --- | --- |
+| Árbol fusionado, primer `npm test` | **1 archivo y 2 pruebas en falla**: `156 pasan, 4 omitidas` |
+| Causa medida | `authorizedInit` fusionado devuelve `{ ...init, headers }` con `new Headers(init?.headers)` |
+| Reparación | `2b47c66`: las dos aserciones leen el encabezado por `Headers`, que es el idioma que la propia suite fusionada ya usaba |
+| No vacuidad de la aserción reparada | apuntando `postJson` a `text/plain`, las dos vuelven a fallar con `expected 'text/plain' to be 'application/json'`; el archivo se restauró **desde el índice** y `git diff` quedó vacío |
+| Árbol fusionado, después | **158 pasan, 4 omitidas, 0 fallan**, en 24 archivos |
+
+Se reparó **la prueba, no la implementación**: el contrato fusionado —el helper entrega `Headers`— es el que
+queda, y la aserción se adaptó leyendo el encabezado, que comprueba lo mismo.
+
+### 14.4 Verificación medida sobre el árbol consolidado
+
+| Compuerta | Comando | Antes de esta unidad | Con la guarda conectada |
+| --- | --- | --- | --- |
+| Backend | `mvn -o -B -f backend/pom.xml verify` | 330 pruebas, 0 fallos, 0 salteadas (árbol fusionado, sin la guarda) | **332 pruebas, 0 fallos, 0 errores, 0 salteadas, BUILD SUCCESS** |
+| Oráculo del dialecto | `python -m pytest tools -q` | 54 pasan | **54 pasan** |
+| Web, pruebas | `npm test` | 156 pasan, 4 omitidas, **2 fallan** | **158 pasan, 4 omitidas, 0 fallan** |
+| Web, tipos y estilo | `npm run lint` (`eslint . && tsc --noEmit`) | limpio | **limpio** |
+| Web, build | `npm run build` | ok | **ok** |
+| Arnés de aceptación XMI | `python tools/xmi-acceptance/xmi_acceptance.py --ea-fixture docs/fixtures/xmi/Prueba3.xml --emitted-sample backend/target/xmi-sample.xml` | no medido por separado | **18 pasan, 0 fallan**, con el control positivo de EA en el otro casillero |
+
+Las 332 pruebas del backend son las 330 del árbol fusionado más **2**: la del rechazo y su control positivo. El
+`mvn verify` regenera `backend/target/xmi-sample.xml`, que es lo que el arnés de aceptación consume.
+
+### 14.5 Un comando mío corrió en el worktree del par (declaración)
+
+Al revertir la mutación de prueba de §14.3 quise ejecutar `git checkout -- web/src/api/client.ts` **en mi
+worktree**, y un `cd` con ruta de Windows falló en `bash`: el comando corrió entonces en el directorio de la
+sesión, que es el worktree del par. **No hubo pérdida, y eso no es una suposición: lo midió el dueño del
+árbol** — al lanzar su unidad siguiente el `git status --porcelain` de ese worktree estaba vacío, después el
+`git diff --stat HEAD -- web/` quedó vacío, `git stash list` quedó vacío, y el último commit que tocó ese archivo
+era suyo (`fc12692`). Como el archivo quedó igual a su `HEAD`, la restauración fue un **no-op**; su trabajo en
+vuelo —9 rutas, ninguna bajo `web/`— quedó intacto. La mutación se revirtió después con `git -C <ruta absoluta>`,
+y `git diff` sobre ese archivo quedó vacío. La lección se asienta como regla de este entorno: **nunca `cd` con
+ruta de Windows; siempre `git -C` con ruta absoluta**.
+
+### 14.6 Lo que esta sección no mide
+
+- **El comportamiento de la concesión en vivo** —quién la toma, cuándo vence, qué pasa con el operador— es de la
+  unidad del par y de su §S6b. Acá solo se mide que **el endpoint la consulta** y que el resultado llega como 409
+  con `editorDisplayName` y `reclaimable` en `details[0]`.
+- **El exento del operador no se ejerce acá**: se apoya en la prueba de la otra unidad, no en una medición propia.
+- **La API de concesiones que el par tiene en vuelo** (`EditingLeaseController`, `EditingLeaseResources`,
+  `EditingLeaseConflict` y sus pruebas) no entra en esta fusión. Su refactor **sí cambia el cuerpo** de
+  `requireExportAllowed`: delega el bloqueo en un `blocker(UUID modelId)` nuevo y `blocked(EditingLeaseConflict)`
+  conserva `CONFLICT` y el literal `EXPORT_BLOCKED_EDITING`. Un chequeo previo mío —`git diff -U0 | grep
+  requireExportAllowed`— **no podía ver ese cambio**: filtra por el nombre del método, y un cambio de cuerpo sin
+  cambio de firma no produce ninguna línea modificada que contenga el nombre. Queda como límite del método, no
+  como dato. El compromiso, declarado: cuando ese commit aterrice, se vuelven a correr `XmiExportApiTest` y el
+  `mvn verify` completo sobre el consolidado; si se pone rojo, el hallazgo es de la otra unidad.
+- **El desvío de la rama del par sigue abierto**: su punta es `c39605a` —un commit de documentación, `docs-only`—
+  y tiene su unidad siguiente sin commitear, así que esa rama queda 10 commits delante de `main`. Ese commit **no
+  se fusionó**: es el diseño de un incremento ajeno todavía sin implementar. Se declara, no se cierra.
+- **La revisión nativa de esta sección** todavía no se corrió: se declara al correrla.
+- **El cierre del arnés S7** sigue sin estar en ninguna de las dos ramas (§13.6).
