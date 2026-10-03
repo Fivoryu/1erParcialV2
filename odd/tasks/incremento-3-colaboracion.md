@@ -620,6 +620,16 @@ contra el código de la librería (`screenToFlowPosition` resta el origen del ro
 layout y no hay DOM—, así que se verificaron por lectura, por los tres comandos y por la verificación independiente contra la fuente de React Flow. El caso manual
 que las mostraría funcionando es **panear y después mover el cursor remoto**. Tampoco hay prueba de navegador para el overlay.
 
+> **Estado de las ramas al 2026-10-03 (medido por la sesión de XMI, no por ésta):** `main` se movió de `90f4f4a` a **`012ae6e`** por avance rápido
+> (decisión explícita del usuario, asentada en §12.4 del acta de la sesión de XMI). Esa punta es la fusión que une **esta** rama (`61bf2d2`) con
+> `feat/xmi-intercambio` (`7c2ad45`) en el commit de fusión `f3f8e33`. Consecuencia declarada y vigente: **`main` quedó atrás de esta rama** — C17 en
+> adelante, S5 y S7 no están en `main`, y corregirlo lo vuelve a decidir el usuario. La **rama de esta sesión no está empujada** al remoto privado
+> (`github.com/Fivoryu/1erParcialV2`), que la sesión de XMI creó; empujarla es decisión del usuario. La **revisión nativa de la fusión no se corrió**, con
+> motivo medido: un merge no tiene base que aísle la resolución (sus únicas bases son los padres, y el alcance sería el contenido entero de una rama,
+> 58 archivos/7.052 líneas o 41/11.048), así que quedó cubierta por el verificador independiente, las cuatro compuertas y la autocrítica de la sesión de
+> XMI, que encontró y corrigió un defecto **propio** de su resolución manual —`previewXmi` caído del objeto de implementación, `TS2741`—. Eso es evidencia
+> de otro tipo, no revisión, y así queda declarado.
+
 ### S4 — Chat persistente del diagrama
 
 | # | Tarea | Evidencia que la cierra |
