@@ -636,7 +636,7 @@ que las mostraría funcionando es **panear y después mover el cursor remoto**. 
 | --- | --- | --- |
 | C16 | Migración `V9__diagram_messages.sql`: tabla `diagram_message` (nueva, no está en el físico) con índices por modelo y tiempo | Migración aplicada contra PostgreSQL real (Flyway 1–9, PostgreSQL 16.15) y prueba de esquema en verde (9 pruebas). **Cerrada CON DESVIACIÓN DECLARADA** en `3c777e5` (ver *S4 progreso — C16*) |
 | C17 | `ChatService` y `GET/POST /projects/{id}/messages`, con autorización, saneado y evento `message.posted` | Integración: publicar, listar ordenado, y rechazo sin rol. **Cerrada CON DESVIACIÓN DECLARADA** en `d9d4d0a` (ver *S4 progreso — C17*): 8 pruebas nuevas y 286 en la suite |
-| C18 | Web: panel de chat con historial, autor y hora, y recepción en vivo | Pruebas de componente y lint |
+| C18 | Web: panel de chat con historial, autor y hora, y recepción en vivo | Pruebas de componente y lint. **Cerrada CON DESVIACIÓN DECLARADA** (ver *S4 progreso — C18*): 152 pruebas web, lint 0, build 0 |
 
 ### S4 progreso — C16 cerrada CON DESVIACIÓN DECLARADA (2026-10-03)
 
@@ -702,6 +702,31 @@ recibía un error. Ahora hay dos ramas —con sincronización espera el commit, 
 1. **Sin prueba de rollback forzado**: la publicación espera el commit y la entrega por SSE está probada, pero no se forzó un rollback para ver que no publica.
 2. Sin prueba del **borde exacto** de 2000 caracteres (el `> MAX_BODY_LENGTH` lo implica, no lo afirma una prueba).
 3. La **cardinalidad del evento** no se afirma: se comprueba el contenido, no que sea exactamente uno por mensaje.
+
+### S4 progreso — C18 cerrada CON DESVIACIÓN DECLARADA (2026-10-03) — **S4 COMPLETO**
+
+**Commit:** el de esta unidad (9 archivos: panel de chat, formateador puro, tipos y métodos de cliente, cableado y estilos).
+
+> **Sin revisión nativa, por fallo nativo del proveedor**: el START devolvió `native-operation-failed` / `candidate-owner-preparation-failed` («candidate view
+> rejected before native START»), **sin crear linaje y sin mutación**, y su único `next_action` es «resolve-native-operation-failure», sin diagnóstico adicional.
+> Medido antes de declararlo: el árbol tenía exactamente los 9 archivos declarados (5 modificados + 4 nuevos) y `.codegraph/` está ignorado, así que la falla **no**
+> es por un archivo sin declarar. Es un modo nuevo, distinto del `pi-host-relay-transport-failure` de las unidades anteriores.
+
+**Qué entrega:** el panel de chat del editor con historial (autor y hora por mensaje, del más viejo al más nuevo), envío, y recepción en vivo por `message.posted`.
+Dos reglas que quedaron escritas en el código porque son la clase de cosa que alguien rompe después: **desduplicación por id** (quien publica recibe su propio evento, así
+que el mensaje aparecería dos veces: se ignoran los ids ya presentes, en los dos órdenes posibles, y también al fusionar el historial) y **el cuerpo se renderiza como texto,
+con `dangerouslySetInnerHTML` prohibido** (el servidor guarda texto plano y no sanitiza HTML, así que escapar es trabajo del cliente).
+
+**Medido:** `npm run lint` 0 · `npx vitest run` = **152 pruebas pasadas, 4 omitidas** (141 de base + 11) · `npm run build` 0 (227 módulos).
+
+**Verificación independiente:** un `FAILS` real, **defensivo y corregido antes del commit** — `new Date(null)` es la época Unix, así que un payload malformado con
+`createdAt: null` mostraba **1970** en vez del fallback; ahora cualquier valor no utilizable cae en el mismo texto que ya usaba una cadena inválida. Todo lo demás HOLDS,
+con lo importante confirmado por búsqueda exhaustiva: **ninguna vía de inyección de markup en todo `web/src`**, la hora de cada mensaje atada a **su propia fila**, y la
+desduplicación funcionando con el evento antes y después de la respuesta del POST.
+
+**Límites declarados:** el cableado de página (fetch, evento, POST) **no tiene prueba automatizada** y sin DOM no puede tenerla —queda verificado por lectura—; el cliente
+acepta **cualquier 2xx** y no exige exactamente el 201 que manda el servidor (convención de `requestJson`, no descuido de esta unidad); y el locale/zona con que el panel
+formatea la hora salen del entorno, mientras la **prueba** del formateador usa locale y zona explícitos para ser determinista.
 
 ### S5 — Bloqueo de exportación con aviso y reclamo
 
