@@ -1722,3 +1722,60 @@ sino de que su unidad se commitee.
 
 **Un desvío más, declarado:** el ref remoto de su rama está en `41588c6`, tres commits atrás de su punta local
 `73a2387`. Empujarla es decisión suya; para `main` no hace falta, porque la fusión ya arrastró esos commits.
+
+### 14.9 La unidad C20 del par, y `main` con todo
+
+El par entregó **`9211b09`** —*expose the editing lease and block exports while it is held*, 9 archivos de código—
+**commiteada encima de `b488e5e`**, sobre mi `main`, más un commit de documentación `6c75b37`. Eso cambia la
+forma del movimiento: no hubo nada que fusionar.
+
+| Lo que se midió | Comando | Resultado |
+| --- | --- | --- |
+| Punta del par | `git rev-parse --short feat/incremento-3-colaboracion` | **`6c75b37`** |
+| ¿Fusión o avance rápido? | `git merge-base --is-ancestor b488e5e feat/incremento-3-colaboracion` | Sí: **`b488e5e` es ancestro** → avance rápido, **sin commit de fusión** |
+| Qué entró | `git diff --stat b488e5e..6c75b37` | **10 archivos, +808/−19**: los 9 de C20 (`EditingLeaseController`, `EditingLeaseResources`, `EditingLeaseConflict`, `EditingLeaseService`, `InMemoryEditingLeaseService`, `GenerationApiService` y tres pruebas) más su documento |
+| El avance | `git merge --ff-only feat/incremento-3-colaboracion` | Historia **lineal**: `b488e5e` → `9211b09` → `6c75b37` |
+
+**La condición pactada se cumplió, y no citando al otro.** Antes de dar el movimiento por bueno corrí **mi**
+prueba sobre el árbol consolidado: `mvn -o -B -f backend/pom.xml -Dtest=XmiExportApiTest test` = **5 pruebas,
+0 fallas, BUILD SUCCESS**. El par había medido lo mismo en su árbol; acá quedó **reproducido** con instrumento
+propio.
+
+| Compuerta | Comando | Resultado |
+| --- | --- | --- |
+| La guarda de XMI | `mvn … -Dtest=XmiExportApiTest test` | **5 pruebas, 0 fallas, BUILD SUCCESS** |
+| Backend completo | `mvn -o -B -f backend/pom.xml verify` | **347 pruebas, 0 fallos, 0 errores, 0 salteadas, BUILD SUCCESS** (mis 332 + las 15 del par) |
+| Oráculo del dialecto | `python -m pytest tools -q` | **54 pasan** |
+| Web | `npm test`, `npm run lint`, `npm run build` | **158 pasan, 4 omitidas, 0 fallan**; tipos y estilo limpios; build ok |
+| Arnés XMI | `xmi_acceptance.py` con EA en el otro casillero | **18 pasan, 0 fallan** |
+
+**Dos autoridades sobre el mismo contenido, y no son la misma.** El par ya había revisado C20 de su lado. Corrí
+además la mía porque **el candidato no coincide**: la suya fue sobre el árbol de trabajo (9 caminos de código,
+sin el documento) y la mía sobre el rango commiteado `b488e5e..6c75b37` (**10 caminos, 827 líneas**, presupuesto
+200), que incluye el commit de documentación y es exactamente lo que entra a `main`.
+
+| | Autoridad del par | Autoridad de esta sesión |
+| --- | --- | --- |
+| Lineage | `review-9d023011615ed35e` | **`review-a54b05bff7b92b81`** |
+| Candidato | árbol de trabajo, 9 caminos / 757 líneas | rango `b488e5e..6c75b37`, **10 caminos / 827 líneas** |
+| Corridas | una lente | una lente: `prompt_bytes` 71863, `result_bytes` 1996 |
+| Veredicto | aprobada al primer intento, autoridad quemada | **aprobada**, autoridad **quemada** (`gentle-ai.review-acknowledged/v1`) |
+| Avisos | `R3-001`, informativo, `InMemoryEditingLeaseService.java:139`, `WARNING`, sin transición de corrección; su sobre no expuso el texto | **el sobre no expuso ninguno**, y no se reconstruye ninguno |
+| Registro durable | `…/terminal-consumption/v1/21396e06….json`, 259 bytes | `…/terminal-consumption/v1/d33c21d1….json`, 259 bytes |
+
+Que las dos existan como registro nativo se midió (`grep -rl <lineage> .git/gentle-ai/`): son dos autoridades
+**independientes** sobre contenido idéntico más el documento, no una que reemplaza a la otra.
+
+**Un dato de ruta del par, medido acá, con su consecuencia.** `AuthenticationInterceptor.isOperatorAllowed` es una
+lista blanca por **forma** de ruta: `GET /projects`; `GET /projects/{uuid}/deployments` y `/generation-targets`;
+`GET /projects/{uuid}/generations/{uuid}/artifacts`; `POST /projects/{uuid}/deployments/{claim|report|stop}`.
+`POST /projects/{uuid}/xmi/export` tiene **cinco segmentos** y no encaja en ninguna forma, así que el interceptor
+devuelve `403 FORBIDDEN` con el token de operador **antes** de llegar al controlador. Consecuencia declarada:
+**la rama de exención del operador que vive en `requireExportAllowed` es inalcanzable por HTTP en esta ruta**;
+sigue siendo alcanzable por código, y la ejercen las pruebas del par. No es un defecto: es una frontera, y queda
+escrita como tal.
+
+**Lo que esta sección no mide.** El comportamiento de la concesión en vivo sigue siendo de la unidad del par y de
+su §S6b. El texto del aviso `R3-001` de la autoridad del par no se reconstruye: su sobre tampoco lo expuso. Y la
+revisión del par, sobre el árbol de trabajo, **no** cubre el commit de documentación `6c75b37`: eso es lo que mi
+corrida aporta de más.
