@@ -45,6 +45,7 @@ import org.xml.sax.helpers.DefaultHandler;
 public final class XmiReader {
 
     private static final String XMI = "http://schema.omg.org/spec/XMI/2.1";
+    private static final String UML_NAMESPACE_PREFIX = "http://schema.omg.org/spec/UML/";
     private static final String UML = "http://schema.omg.org/spec/UML/2.1";
     private static final String UUID_NAMESPACE = "ea-xmi-reader:";
 
@@ -89,12 +90,16 @@ public final class XmiReader {
      */
     private static String unsupportedDialect(Element root) {
         String namespace = "";
+        boolean hasReaderNamespace = false;
         for (int index = 0; index < root.getAttributes().getLength(); index++) {
             Node declaration = root.getAttributes().item(index);
+            String value = declaration.getNodeValue();
             if (XMLConstants.XMLNS_ATTRIBUTE_NS_URI.equals(declaration.getNamespaceURI())
-                    && declaration.getNodeValue().contains("/spec/UML/")) {
-                namespace = declaration.getNodeValue();
-                break;
+                    && value.startsWith(UML_NAMESPACE_PREFIX)) {
+                if (namespace.isEmpty()) {
+                    namespace = value;
+                }
+                hasReaderNamespace |= UML.equals(value);
             }
         }
         String version = root.getAttributeNS(XMI, "version");
@@ -105,7 +110,7 @@ public final class XmiReader {
             return "Unsupported XMI dialect: the document is XMI 1.1, which this reader cannot represent. XMI 1.1 is"
                     + " what Enterprise Architect exports by default; export as XMI 2.1 and import again.";
         }
-        if (!namespace.isEmpty() && !UML.equals(namespace)) {
+        if (!namespace.isEmpty() && !hasReaderNamespace) {
             return "Unsupported XMI dialect: the document declares the UML namespace " + namespace + ", and this"
                     + " reader implements " + UML + " (UML 2.1). Export as XMI 2.1 and import again.";
         }

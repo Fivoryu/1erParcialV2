@@ -6,12 +6,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.diagramador.api.ModelResource;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.RelationshipKind;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class XmiReaderTest {
@@ -182,6 +185,128 @@ class XmiReaderTest {
     }
 
     @Test
+    void treatsLookalikeNamespaceAsMissingUmlModel() {
+        String xml = """
+                <xmi:XMI xmlns:xmi="http://schema.omg.org/spec/XMI/2.1"
+                         xmlns:lookalike="http://example.com/spec/UML/tools" xmi:version="2.1"/>
+                """;
+
+        assertThatThrownBy(() -> reader.read(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The XMI document must contain uml:Model in the http://schema.omg.org/spec/UML/2.1 namespace.");
+    }
+
+    @Test
+    void treatsReaderNamespaceAmongDeclarationsAsMissingUmlModel() {
+        String xml = """
+                <xmi:XMI xmlns:xmi="http://schema.omg.org/spec/XMI/2.1"
+                         xmlns:u="http://schema.omg.org/spec/UML/2.2"
+                         xmlns:uml="http://schema.omg.org/spec/UML/2.1" xmi:version="2.1"/>
+                """;
+
+        assertThatThrownBy(() -> reader.read(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The XMI document must contain uml:Model in the http://schema.omg.org/spec/UML/2.1 namespace.");
+    }
+
+    @Test
+    void readsOwnedOperationsWithoutXmiTypeFromCanonicalFixture() throws Exception {
+        ModelResource model = reader.read(Files.readAllBytes(FIXTURE)).model();
+        List<String> operationNames = model.classifiers().stream()
+                .flatMap(classifier -> classifier.operations().stream())
+                .map(ModelResource.OperationResource::name)
+                .toList();
+
+        // concurrency is NOT parsed; this unit declares it instead of implementing the feature.
+        assertThat(operationNames).hasSize(11).containsExactlyInAnyOrder(
+                "publicarInmueble", "reservar", "calcularSuperficie", "calcularPrecio", "capturar",
+                "procesar", "cancelar", "confirmar", "autenticar", "procesar", "reembolsar");
+    }
+
+    @Test
+    void readingDoesNotDependOnOwnedEndAssociationAttributes() throws Exception {
+        Charset encoding = Charset.forName("windows-1252");
+        String source = new String(Files.readAllBytes(FIXTURE), encoding);
+        String withoutAssociation = source.replaceAll(" association=\\\"[^\\\"]*\\\"", "");
+        assertThat(withoutAssociation).isNotEqualTo(source);
+
+        assertThat(reader.read(source.getBytes(encoding)))
+                .isEqualTo(reader.read(withoutAssociation.getBytes(encoding)));
+    }
+
+    @Test
+    void readsAttributeTypeFromTypeElementIdref() throws Exception {
+        Charset encoding = Charset.forName("windows-1252");
+        String source = new String(Files.readAllBytes(FIXTURE), encoding);
+        XmiReadingResult original = reader.read(source.getBytes(encoding));
+        ModelResource.AttributeResource matricula = attribute(original, "Agente", "matricula");
+        ModelResource.AttributeResource numero = attribute(original, "Habitacion", "numero");
+
+        assertThat(matricula.typeReferenceId()).isNotNull().isEqualTo(numero.typeReferenceId());
+        assertThat(matricula.type()).isEqualTo("String");
+
+        String moved = source.replaceFirst("<type xmi:idref=\"EAJava_String\"/>",
+                "<type type=\"EAJava_String\"/>");
+        assertThat(moved).isNotEqualTo(source);
+        ModelResource.AttributeResource unresolved = attribute(reader.read(moved.getBytes(encoding)),
+                "Agente", "matricula");
+        assertThat(unresolved.typeReferenceId()).isNull();
+        assertThat(unresolved.type()).isNull();
+    }
+
+    @Test
+    void resolvesPrimitiveAttributeTypeIdExactly() throws Exception {
+        ModelResource.AttributeResource date = attribute(
+                reader.read(Files.readAllBytes(FIXTURE)), "Cliente", "fechaRegistro");
+
+        assertThat(date.typeReferenceId()).isEqualTo(UUID.nameUUIDFromBytes(
+                "ea-xmi-reader:id:EAnone_DateTime".getBytes(StandardCharsets.UTF_8)));
+        assertThat(date.type()).isEqualTo("DateTime");
+    }
+
+    @Test
+    void reportsUnresolvedParameterTypeWithoutAnIdrefInIsolation() {
+        String xml = """
+                <xmi:XMI xmlns:xmi="http://schema.omg.org/spec/XMI/2.1"
+                         xmlns:uml="http://schema.omg.org/spec/UML/2.1" xmi:version="2.1">
+                    <uml:Model xmi:type="uml:Model" name="ParameterCase">
+                        <packagedElement xmi:type="uml:Class" name="Example">
+                            <ownedOperation name="accept">
+                                <ownedParameter name="value" direction="in"><type/></ownedParameter>
+                            </ownedOperation>
+                        </packagedElement>
+                    </uml:Model>
+                </xmi:XMI>
+                """;
+
+        XmiReadingResult result = reader.read(xml.getBytes(StandardCharsets.UTF_8));
+        var parameter = result.model().classifiers().get(0).operations().get(0).parameters().get(0);
+
+        assertThat(parameter.typeReferenceId()).isNull();
+        assertThat(parameter.type()).isNull();
+        assertThat(result.losses()).containsExactly(
+                new XmiReadingResult.Loss("unresolved_type_reference", 1));
+    }
+
+    @Test
+    void synthesizesModelIdDeterministicallyFromModelName() {
+        String xml = """
+                <xmi:XMI xmlns:xmi="http://schema.omg.org/spec/XMI/2.1"
+                         xmlns:uml="http://schema.omg.org/spec/UML/2.1" xmi:version="2.1">
+                    <uml:Model xmi:type="uml:Model" name="StableName"/>
+                </xmi:XMI>
+                """;
+        byte[] bytes = xml.getBytes(StandardCharsets.UTF_8);
+        UUID firstId = reader.read(bytes).model().id();
+        UUID secondId = reader.read(bytes).model().id();
+        String renamed = xml.replace("name=\"StableName\"", "name=\"DifferentName\"");
+        UUID renamedId = reader.read(renamed.getBytes(StandardCharsets.UTF_8)).model().id();
+
+        assertThat(firstId).isEqualTo(secondId);
+        assertThat(renamedId).isNotEqualTo(firstId);
+    }
+
+    @Test
     void namesTheDialectItCannotReadInsteadOfOnlyTheMissingElement() throws Exception {
         // Measured against what Enterprise Architect actually exports: its default export is the XMI 1.1 dialect, and
         // its XMI 2.2 export declares the UML 2.2 namespace. The reader implements 2.1 and has to say so.
@@ -223,6 +348,16 @@ class XmiReaderTest {
         assertThat(sha256(EA_ROUND_TRIP)).isEqualTo("5184207171448479880bbda4c184fcb5df1a3053c1814880a0750bc985fb718b");
         assertThat(sha256(EA_DEFAULT_DIALECT)).isEqualTo("2547bc7fa16d63600a72b350cc17d74af4a1b04272b4bb59d99ac1751902301a");
         assertThat(sha256(EA_UML_22)).isEqualTo("a97c90bc49290fe34da3e0f2405575c6bbdbdf90a1be0aeafb426900b5beaa16");
+    }
+
+    private static ModelResource.AttributeResource attribute(XmiReadingResult result, String classifierName,
+            String attributeName) {
+        return result.model().classifiers().stream()
+                .filter(classifier -> classifierName.equals(classifier.name()))
+                .flatMap(classifier -> classifier.attributes().stream())
+                .filter(attribute -> attributeName.equals(attribute.name()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private static String sha256(Path path) throws Exception {
