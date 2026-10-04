@@ -196,6 +196,34 @@ Canal de eventos por proyecto (los nombres NO fijan protocolo de transporte):
 
 - La clasificación la hace el servidor con su versión de permisos y el historial causal; el cliente nunca se auto-clasifica como definitivo.
 
+### 4.4 Concesión de edición (lease)
+
+Una concesión **efímera por modelo, en memoria** (una sola instancia): mientras otro editor la tiene **viva**, las exportaciones quedan bloqueadas; la
+generación, la descarga del ZIP y la exportación XMI. No bloquea la edición.
+
+**Endpoints** (todos piden acceso de editor; el operador no entra a ninguno — la lista blanca del interceptor no incluye la ruta):
+
+| Verbo y ruta | Operación | Cuerpo | Éxito |
+| --- | --- | --- | --- |
+| `POST /projects/{projectId}/editing-lease` | adquirir (es el latido si ya es tuya) | opcional `{targetType, targetId}` | 200 |
+| `POST /projects/{projectId}/editing-lease/renew` | renovar (sólo titular vivo) | — | 200 |
+| `DELETE /projects/{projectId}/editing-lease` | soltar (idempotente) | — | 200 |
+| `POST /projects/{projectId}/editing-lease/reclaim` | reclamar (sólo si la ajena ya no está viva) | opcional `{targetType, targetId}` | 200 |
+| `GET /projects/{projectId}/editing-lease` | estado actual | — | 200 |
+
+Éxito único: `{ "lease": { modelId, editorUserId, editorDisplayName, targetType, targetId, acquiredAt, expiresAt } }`, con `"lease": null` cuando no hay
+ninguna. `expiresAt` es la verdad del servidor; la vivacidad la calcula el cliente comparando contra su reloj (desfase declarado). El TTL por defecto es
+30 s (dos latidos de 15 s) y es configurable (`diagrammer.collaboration.editing-lease-ttl`).
+
+**La forma del bloqueo, con dos portadores:** código `EXPORT_BLOCKED_EDITING`; en endpoints de archivo, HTTP **409** con `ApiErrorResource` y
+`details[0]`; en `POST /projects/{id}/generations`, HTTP **200** con `outcome=REJECTED` y las mismas cinco claves dentro de `result`. Las claves, en
+orden exacto: `editorDisplayName`, `targetType`, `targetId`, `reclaimable`, `retryAfterSeconds`. `reclaimable: true` + `retryAfterSeconds: 0` significa
+que la concesión ajena ya no está viva y puede reclamarse explícitamente; reclamar nunca es automático.
+
+**Límites declarados:** una sola instancia (la concesión no cruza); sin eventos ni tabla; un editor con latido vivo no puede ser despojado (el TTL vence
+sólo si se corta); el cierre de pestaña no garantiza el release (lo cubre el TTL); la guarda de exportación XMI está conectada en
+`XmiExportService` tras la consolidación con la sesión de XMI.
+
 ## 5. Conflictos
 
 ### 5.1 Criterios
