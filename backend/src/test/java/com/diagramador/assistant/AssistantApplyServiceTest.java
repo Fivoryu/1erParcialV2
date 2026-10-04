@@ -2,7 +2,9 @@ package com.diagramador.assistant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -31,6 +33,7 @@ import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
 import com.diagramador.persistence.UmlOperationRepository;
+import com.diagramador.undo.UndoCaptureService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,6 +58,7 @@ class AssistantApplyServiceTest {
     private final OperationParameterRepository parameterRepository = mock(OperationParameterRepository.class);
     private final UmlConstraintRepository constraintRepository = mock(UmlConstraintRepository.class);
     private final RelationshipEndRepository relationshipEndRepository = mock(RelationshipEndRepository.class);
+    private final UndoCaptureService undoCaptureService = mock(UndoCaptureService.class);
     private final CurrentUserContext currentUserContext = new CurrentUserContext();
 
     @BeforeEach
@@ -122,6 +126,10 @@ class AssistantApplyServiceTest {
         assertThat(response.steps().get(1).status()).isEqualTo("ACCEPTED");
         assertThat(response.steps().get(1).targetId()).isEqualTo(createdClassifierId);
         assertThat(response.finalRevision()).isEqualTo(9L);
+
+        // IA4-04: every accepted AI step is captured for undo with the session user.
+        verify(undoCaptureService, times(2)).snapshotTargets(any());
+        verify(undoCaptureService, times(2)).recordAccepted(any(), any(), eq(USER_ID), any());
     }
 
     @Test
@@ -228,6 +236,7 @@ class AssistantApplyServiceTest {
                 new AssistantApplyOp("classifier.setAbstract", CLASSIFIER_ID, Map.of("value", true))), 7L));
 
         verify(commandService, times(1)).execute(any());
+        verify(undoCaptureService, never()).recordAccepted(any(), any(), any(), any());
         assertThat(response.steps()).hasSize(2);
         assertThat(response.steps().get(0).status()).isEqualTo("REJECTED");
         assertThat(response.steps().get(0).diagnostics())
@@ -251,7 +260,7 @@ class AssistantApplyServiceTest {
     private AssistantApplyService service() {
         return new AssistantApplyService(projectApiService, authorizationService, currentUserContext, commandService,
                 attributeRepository, operationRepository, parameterRepository, constraintRepository,
-                relationshipEndRepository);
+                relationshipEndRepository, undoCaptureService);
     }
 
     private static CommandResult accepted(long revision) {

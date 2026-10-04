@@ -22,6 +22,7 @@ import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
 import com.diagramador.persistence.UmlOperationRepository;
+import com.diagramador.undo.UndoCaptureService;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -49,12 +50,14 @@ public class AssistantApplyService {
     private final OperationParameterRepository parameterRepository;
     private final UmlConstraintRepository constraintRepository;
     private final RelationshipEndRepository relationshipEndRepository;
+    private final UndoCaptureService undoCaptureService;
 
     public AssistantApplyService(ProjectApiService projectApiService,
             ProjectAuthorizationService projectAuthorizationService, CurrentUserContext currentUserContext,
             CommandService commandService, UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, OperationParameterRepository parameterRepository,
-            UmlConstraintRepository constraintRepository, RelationshipEndRepository relationshipEndRepository) {
+            UmlConstraintRepository constraintRepository, RelationshipEndRepository relationshipEndRepository,
+            UndoCaptureService undoCaptureService) {
         this.projectApiService = projectApiService;
         this.projectAuthorizationService = projectAuthorizationService;
         this.currentUserContext = currentUserContext;
@@ -64,6 +67,7 @@ public class AssistantApplyService {
         this.parameterRepository = parameterRepository;
         this.constraintRepository = constraintRepository;
         this.relationshipEndRepository = relationshipEndRepository;
+        this.undoCaptureService = undoCaptureService;
     }
 
     public AssistantApplyResponse apply(UUID projectId, AssistantApplyRequest request) {
@@ -101,8 +105,12 @@ public class AssistantApplyService {
             OperationEnvelope envelope = new OperationEnvelope(UUID.randomUUID(), operation.type(), author,
                     projectId, model.id(), model.revision(), mapped.targets(), mapped.preconditions(),
                     mapped.payload(), CommandOrigin.AI, null, UUID.randomUUID().toString());
+            // IA4-04: the AI path bypasses the HTTP capture hook, so it records the undo_log
+            // entry itself with the same semantics: pre-state of the targets BEFORE the step.
+            com.fasterxml.jackson.databind.JsonNode preSnapshot = undoCaptureService.snapshotTargets(envelope);
             CommandResult result = commandService.execute(envelope);
             if (result.status() == CommandStatus.ACCEPTED) {
+                undoCaptureService.recordAccepted(envelope, result, user.userId(), preSnapshot);
                 steps.add(new AssistantApplyResponse.Step(index, operation.type(), operation.targetId(), "ACCEPTED",
                         result.operationId(), result.resultRevision(), List.of()));
                 finalRevision = result.resultRevision() == null ? finalRevision : result.resultRevision();
