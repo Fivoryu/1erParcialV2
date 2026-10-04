@@ -28,7 +28,16 @@ public record AssistantPlanResponse(
                 "NAME_COLLISION",
                 "REVIEW_REQUIRED",
                 "UNPARSEABLE_DRAFT",
-                "PROVIDER_DISABLED");
+                "PROVIDER_DISABLED",
+                // Apply-phase codes (IA4-03): assistant plan validation plus command pass-through.
+                "MISSING_ARGUMENT",
+                "INVALID_PAYLOAD",
+                "PRECONDITION_FAILED",
+                "REVISION_MISMATCH",
+                "UNAUTHORIZED",
+                "FORBIDDEN",
+                "NAME_COLLISION_BLOCKS",
+                "MODEL_INVALID");
 
         public Diagnostic {
             if (!CODES.contains(code)) {
