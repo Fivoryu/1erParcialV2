@@ -77,3 +77,19 @@ Regla de la guía §8: test-first donde exista escenario determinista (RED obser
 | 2026-10-04 | IA4-01 | GGUF 0.8B/2B descargados y verificados por sha256; runtime llama.cpp b11388 CPU en `D:\ai-eval\`; corridas diferidas por RAM del host | 359502d |
 | 2026-10-04 | IA4-01 | Corredor + juez con selftest sin RAM (27/27); corridas 0.8B y 2B con prompt v1; enmiendas de instrumento (thinking, sampler $pid) | 36534bc, d437c27, 824ce75 |
 | 2026-10-04 | IA4-01 | **CERRADA**: iteración única de prompt (v2, few-shot con elementos ajenos al corpus); veredictos 0.8B 6/15 y 2B 11/15; informe y recomendación DEC-I4-01 (2B Q4_K_M base) y DEC-I4-02 (llama.cpp) en docs/puds/verificacion/03 | (este commit) |
+
+## 6. Diseño congelado de IA4-02 — plan tipado + validador determinista
+
+**Paquete nuevo** `com.diagramador.assistant` (backend). El modelo propone; el validador decide; acá **no se muta nada**.
+
+- `AssistantPlanRequest` (record): `utterance` (no vacía), `baseRevision` (long), `selection` (UUID opcional).
+- `AssistantPlanOperation` (record post-validación): `type`, `targetId` (UUID resuelto), `args`.
+- `AssistantPlanResponse` (record): `intent` (PLAN|EXPLAIN|CLARIFY|REJECT), `operations` (resueltas), `question`, `explanation`, `diagnostics` (códigos: `UNKNOWN_OPERATION`, `AMBIGUOUS_TARGET`, `UNKNOWN_TARGET`, `NAME_COLLISION`, `REVIEW_REQUIRED`).
+- `AssistantPlanCatalog`: catálogo cerrado del subconjunto decidido (classifier create/rename/delete/setAbstract, attribute add/update/remove, operation add, relationship create/update/delete). Fuera de esto: rechazo.
+- `AiAssistantProvider` (interfaz) + `LlamaCppAssistantProvider` (HTTP a `diagrammer.assistant.url`, default `http://127.0.0.1:8099`; prompt v2; temp 0; thinking off; timeout configurable). Si `diagrammer.assistant.enabled=false` (default) el endpoint responde 503 sin llamar a nadie.
+- `AssistantPlanService`: snapshot del modelo → contexto (misma forma que el fixture del corpus) → provider → parseo tolerante (mismas reglas del juez del arnés) → `AssistantPlanValidator` → respuesta tipada. El parseo no consumible es REJECT con diagnóstico, nunca error 500.
+- `AssistantPlanValidator` (determinista, test-first): catálogo cerrado; resolución por nombre con normalización acentos/mayúsculas; ambiguo → CLARIFY; inexistente → REJECT; create con nombre colisionante → diagnóstico; ops destructivas sin destino resuelto → REJECT; `baseRevision` vencida → `REVIEW_REQUIRED` (guía §3.6: no reaplicar sobre datos nuevos).
+- `AssistantPlanController`: `POST /api/projects/{projectId}/assistant/plan`, mismas convenciones de autorización que los comandos (miembros OWNER/EDITOR; el operador queda fuera por la lista blanca del interceptor, como ya ocurre con commands).
+- Pruebas: validator (7 casos), service (parseo vallado/inválido/provider caído/disabled), controller (auth). RED observado antes de implementar cada grupo.
+
+**Fuera de alcance de IA4-02**: aplicar el plan (IA4-03), UI (IA4-05), streaming (innecesario: respuesta completa por petición).
