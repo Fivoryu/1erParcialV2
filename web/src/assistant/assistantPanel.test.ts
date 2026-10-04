@@ -321,6 +321,23 @@ describe('assistant controller (React-free)', () => {
     expect(harness.planCalls()).toHaveLength(1);
   });
 
+  it('reset discards a preview and blocks its confirm (project switch protection, R3-001)', async () => {
+    const harness = createHarness();
+    harness.controller.ask('creá la clase Cliente');
+    harness.resolvePlan(planResponse);
+    await tick();
+    expect(harness.state().phase).toBe('preview');
+
+    // the hook now calls controller.reset() on every projectId change
+    harness.controller.reset();
+    expect(harness.state().phase).toBe('idle');
+
+    // the discarded preview can no longer be applied
+    harness.controller.confirm();
+    await tick();
+    expect(harness.applyCalls()).toHaveLength(0);
+  });
+
   it('a late plan resolution after unmount writes no state and does not throw', async () => {
     const harness = createHarness();
     harness.controller.ask('creá la clase Cliente');

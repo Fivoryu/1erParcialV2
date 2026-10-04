@@ -71,9 +71,10 @@ export function useAssistantPanel({
 
   useEffect(() => {
     projectIdRef.current = projectId;
-    if (!projectId) {
-      controller.reset();
-    }
+    // R3-001 correction: switching projects must discard the previous
+    // project's assistant state and in-flight tickets, or a stale preview
+    // could be confirmed against the new project id.
+    controller.reset();
   }, [controller, projectId]);
 
   // Stale detection: the page feeds the live revision (SSE operation.applied
