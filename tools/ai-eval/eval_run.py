@@ -430,9 +430,13 @@ def chat(port: int, context: dict, utterance: str, timeout_s: float) -> tuple[st
 
 
 RAM_SAMPLER = (
-    "$pid=%d; $f='%s';"
+    # NOTE: do NOT name the variable $pid — it is PowerShell's read-only automatic
+    # variable (the sampler's own pid); assigning it fails silently and the
+    # sampler ends up measuring ITSELF. That bug invalidated the peaks of the
+    # first two runs (76-96 MiB "peaks" were the PowerShell process).
+    "$srvpid=%d; $f='%s';"
     "while($true){"
-    "$p=Get-Process -Id $pid -ErrorAction SilentlyContinue;"
+    "$p=Get-Process -Id $srvpid -ErrorAction SilentlyContinue;"
     "$os=Get-CimInstance Win32_OperatingSystem;"
     "if($p){ '{0},{1},{2},{3}' -f $p.WorkingSet64,$p.PrivateMemorySize64,"
     "$os.FreePhysicalMemory,$os.TotalVisibleMemorySize"
