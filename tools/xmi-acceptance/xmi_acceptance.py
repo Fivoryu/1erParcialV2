@@ -271,11 +271,15 @@ def inspect_document(path: pathlib.Path, label: str, results: list[bool]) -> dic
     declared_deviations_present = sorted(
         set(inventory.get("tagCounts", {})) & set(DECLARED_VOCABULARY_DEVIATIONS)
     )
+    vocabulary_ok = not unmeasured_tags
+    vocabulary_evidence = {
+        "unmeasuredTags": unmeasured_tags,
+        "declaredDeviationsPresent": declared_deviations_present,
+    }
 
-    report(results, f"Declared dialect vocabulary: {shown_path(path)}", not unmeasured_tags,
+    report(results, f"Declared dialect vocabulary: {shown_path(path)}", vocabulary_ok,
            "every observed tag is in measured EA artifact vocabulary or is a declared deviation",
-           {"unmeasuredTags": unmeasured_tags,
-            "declaredDeviationsPresent": declared_deviations_present}, command)
+           vocabulary_evidence, command)
 
     model_present = bool(model.get("elements")) and bool(model.get("name"))
     extension_present = bool(extension.get("directChildTags"))
