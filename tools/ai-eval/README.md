@@ -9,6 +9,7 @@ Este arnés todavía **no mide nada**: mide cuando exista la corrida.
 | Archivo | Contenido |
 | --- | --- |
 | [`corpus.json`](corpus.json) | Corpus fijo en español: 15 casos sobre un fixture declarado (`ecommerce-base`), cada uno con intención esperada (`plan` / `explain` / `clarify` / `reject`) y operaciones esperadas a nivel `{type, targetName}`. |
+| [`eval_run.py`](eval_run.py) | Corredor + juez, solo stdlib. Tres modos: `--judge-selftest` (27 casos sintéticos contra el juez, **sin modelo y sin RAM**), `--judge RAW.json` (re-juzgar una corrida guardada) y `--run --model PATH` (medición completa: levanta `llama-server`, mide carga fría, latencia por caso, muestrea RAM del proceso y del sistema, juzga y emite `results.json` + `report.md` + `raw_answers.json` bajo `results/`). |
 
 ## Reglas del protocolo (fijadas antes de medir)
 
@@ -41,6 +42,13 @@ Este arnés todavía **no mide nada**: mide cuando exista la corrida.
 
 ## Próximo paso
 
-Corredor (`eval_run.py`) que: levanta el runtime con el artefacto elegido, envía cada caso con el
-prompt de plan tipado, aplica las reglas §2 y emite el informe en Markdown con las métricas §4.
-Se construye después de autorizar la descarga.
+El corredor existe y está verificado sin modelo: `python3 tools/ai-eval/eval_run.py --judge-selftest`
+(27/27, cubre los 15 casos). La corrida real espera RAM libre del host: cuando la haya,
+
+```
+python3 tools/ai-eval/eval_run.py --run --model D:\ai-eval\models\Qwen3.5-0.8B-Q4_0.gguf
+python3 tools/ai-eval/eval_run.py --run --model D:\ai-eval\models\Qwen3.5-2B-Q4_K_M.gguf
+```
+
+cada corrida escribe su informe en `tools/ai-eval/results/<modelo>/`. El juez rechaza además
+operaciones destructivas que nadie pidió dentro de un plan y mutaciones fuera de él (E05/E15).
