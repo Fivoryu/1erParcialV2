@@ -26,6 +26,7 @@ import { buildRemoteCursorMarkers } from '../collaboration/remoteCursors';
 import { subscribeProjectEvents } from '../collaboration/projectEvents';
 import { useEditingLease } from '../collaboration/useEditingLease';
 import UmlCanvas from '../diagram/UmlCanvas';
+import { useUndoRedoShortcuts } from '../diagram/useUndoRedoShortcuts';
 import PropertiesPanel from '../diagram/PropertiesPanel';
 import AssistantPanel from '../assistant/AssistantPanel';
 import GenerationPanel from '../generation/GenerationPanel';
@@ -345,6 +346,23 @@ export default function ProjectEditorPage() {
     }
   }, [projectId, publishModel]);
 
+  const undoRedo = useUndoRedoShortcuts({
+    projectId,
+    onApplied: () => {
+      // Undo/redo enters through the normal command pipeline (it fires operation.applied), but the
+      // refetch goes through the same path the page already uses so the refresh does not depend on
+      // SSE arrival timing.
+      void refreshModelFromEvent();
+    },
+    onError: (cause) => {
+      if (currentProjectIdRef.current === projectId) {
+        setError(messageFor(cause));
+      }
+    },
+    // Escape only clears when something is selected; the canvas keeps its own Delete/Backspace handling untouched.
+    onEscape: selection ? () => setSelection(null) : undefined,
+  });
+
   useEffect(() => {
     if (!projectId) {
       setPresence([]);
@@ -578,10 +596,28 @@ export default function ProjectEditorPage() {
                 <h1 id="project-title">{project.name}</h1>
                 {project.description && <p className="lede">{project.description}</p>}
               </div>
-              <div className="revision-chip" aria-live="polite">
-                <span className="status-dot" />
-                Revision {model.revision}
-                <span className="revision-status">{pendingCount > 0 ? 'Saving changes…' : 'Saved'}</span>
+              <div className="diagram-toolbar-actions" aria-label="Undo and redo">
+                <button
+                  className="button button-secondary button-compact"
+                  type="button"
+                  disabled={!undoRedo.canUndo || undoRedo.busy}
+                  onClick={() => undoRedo.undo()}
+                >
+                  Undo
+                </button>
+                <button
+                  className="button button-secondary button-compact"
+                  type="button"
+                  disabled={!undoRedo.canRedo || undoRedo.busy}
+                  onClick={() => undoRedo.redo()}
+                >
+                  Redo
+                </button>
+                <div className="revision-chip" aria-live="polite">
+                  <span className="status-dot" />
+                  Revision {model.revision}
+                  <span className="revision-status">{pendingCount > 0 ? 'Saving changes…' : 'Saved'}</span>
+                </div>
               </div>
             </section>
 
