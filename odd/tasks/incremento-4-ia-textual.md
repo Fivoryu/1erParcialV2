@@ -119,3 +119,15 @@ Regla de la guía §8: test-first donde exista escenario determinista (RED obser
 - `UndoService.redo(model)`: última entrada deshecha no rehecha (LIFO); re-aplica el payload ORIGINAL como comando nuevo (origin REDO, idempotencyKey NUEVO — replay con la misma clave devolvería el resultado viejo sin mutar); marca redone_at.
 - Endpoints `POST /api/projects/{projectId}/undo` y `/redo`, auth idéntica a commands (miembros; operador excluido por la lista blanca).
 - Pruebas test-first: inverso por tipo (8), undo de create con dependientes → CASCADE_REQUIRED, undo tras cambio ajeno intercalado no pierde el cambio ajeno, redo restaura, LIFO, xmi.import rechazado, auth.
+
+## 9. IA4-04 cerrada + diseño congelado de IA4-05
+
+**IA4-04 (b3752aa, review-dcca86811555d2c5 aprobada y quemada)**: undo/redo por comando inverso con captura de pre-estado en `undo_log` (V11); los pasos de la IA TAMBIÉN quedan capturados (desviación (b) cerrada con ROJO conductual: 3 tests que fallaban antes del arreglo); suite **403/0/0/0**. SchemaOwnershipTest: solo las dos entradas del mapa (grant acotado). Avisos informativos a la deuda: R3-null-attribute-restore (UndoService:174), R3-relationship-end-state (:229-230), R3-stale-redo-branch (:104). Deuda declarada: classifier.delete y relationship.delete no deshacibles; cascade-count calculado en 3 lugares; waypoints no restaurables.
+
+**IA4-05 — panel del asistente en la web (congelado)**:
+- `web/src/assistant/AssistantPanel.tsx` + `useAssistantPanel.ts`: estados observables listo/analizando/aclaración/vista previa/aplicando/completado/cancelado/error-recuperable (guía §5). Sin inferencia por frame: operaciones asincrónicas con `requestPlan`/`applyPlan` de `web/src/api/assistant.ts`.
+- Aclaración: la pregunta del modelo se muestra y re-consulta con la respuesta del usuario como nueva utterance. Preview: lista de operaciones con etiquetas humanas + destino resuelto; **Confirmar solo habilitado para intent PLAN con operaciones**; Cancelar descarta sin mutar (la petición en vuelo se reconcilia, no se repite a ciegas — guía §3.8).
+- Invalidación de preview obsoleto: si la revisión del modelo cambia (evento SSE `operation.applied` o dispatch propio) mientras hay preview, se marca STALE y obliga a re-planificar (guía §3.6). El conflicto 409 de la concesión se muestra con el contrato existente (`ApiTransportError.code`).
+- Guardas de desmontaje: `mountedRef` en TODOS los escritores de estado (lección C21 del incremento 3, 13/13).
+- Integración: montaje en `ProjectEditorPage.tsx` junto al panel de chat (edición acotada: el punto de montaje).
+- Pruebas: markup/estados estáticos según la convención del proyecto (sin navegador); mutación de no-vacuidad para la guarda de desmontaje.
