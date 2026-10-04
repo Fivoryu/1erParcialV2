@@ -1995,3 +1995,63 @@ resultado se asienta en §15.4 con `ruta:línea`: nada entra acá por memoria.
 
 Y una regla que rige toda la unidad: **cada prueba nueva tiene que poder fallar**. No alcanza con que pase; se
 comprueba rompiendo lo que afirma y viendo la prueba caer.
+
+### 15.4 Resultado medido
+
+**Los tres avisos, cerrados.** `R2-001` en `07ca09f`: la llamada del vocabulario ahora nombra su bandera y su
+evidencia como sus hermanas, y la prueba de que el cambio es de forma y no de conducta es que la salida completa
+del arnés es **byte-idéntica** antes y después —101 líneas, mismo `18 passed, 0 failed`, mismo JSON— con `pytest`
+en **54**. `R3-001` y `R4-001` en `9e5e2b4`, con rojo observado primero y con el texto de los tres mensajes y su
+orden intactos.
+
+**La corrección de una afirmación de este mismo plan.** §11.7 decía «los 9 constructos de §3 sin evidencia». La
+medición con `ruta:línea` mostró que **cuatro** de las nueve filas ya estaban ejercitadas, más las notas: la fila de
+«no medido» era más ancha que el hueco real. Lo que faltaba eran **seis**, y varios no eran la presencia del
+constructo sino su **forma**:
+
+| Constructo | Lector | Prueba que lo ejercita | Qué afirma |
+| --- | --- | --- | --- |
+| `ownedAttribute` | `XmiReader.java:234-247` | `XmiReaderTest.java:33` | 23 atributos y los 4 sin tipo como referencia sin resolver |
+| `ownedEnd` y `memberEnd` | `R:306-326` | `XmiReaderTest.java:44-48` | 6 asociaciones, todas con dos extremos |
+| `generalization` | `R:341-353` | `XmiReaderTest.java:49-50` | una generalización, con `general` al padre |
+| `realization` | `R:355-369` | `XmiReaderTest.java:51-52` | una realización de nivel superior |
+| Notas | `R:222-226` | `XmiReaderTest.java:74` | el texto de `documentation` |
+| Operaciones sin `xmi:type` | `R:250` | **`XmiReaderTest.java:213`** (nueva) | 11 operaciones y sus nombres |
+| Atributo `association` no usado | `R:306-326` | **`:227`** (nueva) | igualdad de lecturas tras quitar **todos** esos atributos |
+| Tipo como **elemento** | `R:671-672` | **`:238`** (nueva) | resuelto por `xmi:idref` del elemento y **no** por un atributo `type` |
+| Paquetes primitivos | `R:190-199` | **`:258`** (nueva) | el UUID exacto de un `EAnone_*` |
+| Parámetro sin `idref`, aislado | `R:678-684` | **`:268`** (nueva) | exactamente una pérdida, en un documento hecho para ese caso |
+| Id sintético del `uml:Model` | `R:75` con `R:744-748` | **`:292`** (nueva) | estable entre lecturas y distinto al cambiar el nombre |
+
+**Un hallazgo que la cobertura destapó, y que no se arregla en esta unidad.** El lector **no parsea `concurrency`**
+—cero ocurrencias en `XmiReader.java`— mientras el emisor **sí** lo escribe (`XmiSemanticEmitterTest.java:126`).
+Un archivo de EA con una concurrencia distinta a la secuencial pierde ese dato **en silencio**, y ni siquiera
+aparece como pérdida en el reporte. Queda declarado como **no representación**; implementarlo es una funcionalidad
+nueva y está fuera del alcance que el usuario aprobó.
+
+| Compuerta | Resultado |
+| --- | --- |
+| `mvn -o -B -f backend/pom.xml -Dtest=XmiReaderTest test` | **16 pruebas, 0 fallos, BUILD SUCCESS** (eran 10) |
+| `mvn -o -B -f backend/pom.xml -Dtest=XmiSemanticEmitterTest test` | **8 pruebas, 0 fallos** |
+| `mvn -o -B -f backend/pom.xml verify` | **355 pruebas, 0 fallos, 0 errores, 0 salteadas, BUILD SUCCESS** (eran 347) |
+| `python -m pytest tools -q` | **54 pasan** |
+| arnés de aceptación XMI | **18 pasan, 0 fallan** con el control positivo de EA |
+| sha256 de las cuatro fixtures pinchadas | **los cuatro intactos**, comparados contra los registrados en §11 |
+| líneas eliminadas en el diff del archivo de pruebas | **cero**: ninguna expectativa preexistente se ablandó |
+
+**Revisión nativa**: linaje **`review-1993afef5bf455f5`**, proyección del **espacio de trabajo** sobre los dos
+archivos (148 líneas), riesgo `medium` por el cambio ejecutable en `XmiReader.java`, una lente de confiabilidad,
+presupuesto de corrección 74, una corrida, **aprobada** al primer intento y autoridad **quemada**; el sobre no
+expuso avisos, y no se reconstruye ninguno.
+
+**Verificación independiente**: **9 de 9 HOLDS**, incluida una pasada adversarial sobre el método final que buscó
+alguna entrada capaz de hacerlo reportar un dialecto ajeno con el namespace propio declarado, o lo contrario: **no
+la encontró**. La única línea que queda como borde benigno —una declaración con el valor del propio namespace
+seguido de un fragmento— produce un mensaje correcto que nombra ese valor exacto.
+
+**Lo que esta unidad no mide, y se declara.** El verificador **no** reprodujo las seis mutaciones de no-vacuidad del
+escritor, porque estaban fuera de sus comandos autorizados; esta sesión reprodujo **una** —exigir `xmi:type` a las
+operaciones hace caer la prueba con `Expected size: 11 but was: 0`, y el archivo se restauró exacto desde el
+commit— y las **otras cinco quedan declaradas por el escritor, no re-medidas**. El arnés de colaboración del par
+**no** se volvió a correr: el diff son dos archivos del lector y su prueba, y ningún camino de concesión, presencia
+o chat cambia. Y la reparación de `concurrency` no se hizo.
