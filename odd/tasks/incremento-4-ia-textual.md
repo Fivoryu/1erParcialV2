@@ -161,3 +161,11 @@ Regla de la guía §8: test-first donde exista escenario determinista (RED obser
 **IA4-08 — aceptación integrada (arranca)**: arnés Python `tools/assistant-acceptance/` (stdlib, patrón del arnés de colaboración) contra compose real + llama-server con el modelo 2B elegido: los 5 escenarios del enunciado (preview de plan multi-comando; explicar no muta; ambigüedad pregunta; inexistente rechaza; cambio remoto entre preview y confirm exige revalidación) + ciclo undo/redo + recarga. Se escribe primero, se corre dos veces después.
 
 **Decisión del usuario (2026-10-04)**: ante la falla persistente de la compuerta DACL en el burn de review-3072e75ccb094da9, se SALTA el reintento por ahora y se continúa con IA4-08. El acknowledge-approved queda como acción reintentable al cierre; la unidad IA4-07 cierra con "aprobada, burn pendiente" (no se declara quemada).
+
+## 13. INCREMENTO 4 CERRADO
+
+- IA4-08 cerrada: arnés de 55 checks, **54/55 en dos corridas idénticas, exit 0** (`79cbb88`); 3 bugs de aserción del propio arnés corregidos con diagnóstico; único fallo = límite del modelo 2B (REJECT en vez de CLARIFY ante nombres parciales, del lado seguro).
+- Los 5 escenarios del enunciado: 4 verdes, 1 con límite declarado del modelo (§4 del acta).
+- Acta: `docs/puds/cierre/06-cierre-incremento-4.md` (estado medido, revisiones nativas, deudas, pendientes).
+- Pendientes al cierre: burn de review-3072e75ccb094da9 (DACL), actualizar 02-esquema-fisico.sql (V13), push/merge (decisión del usuario).
+- Suites al corte: backend 427/0/0/0 · web 222/0 · arnés 54/55 × 2.
