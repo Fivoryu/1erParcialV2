@@ -106,3 +106,16 @@ Regla de la guía §8: test-first donde exista escenario determinista (RED obser
 - `AssistantApplyResponse`: steps[{index, type, targetId, status, operationId, resultRevision, diagnostics}], finalRevision.
 - Endpoint `POST /api/projects/{projectId}/assistant/apply`, mismas convenciones de auth que el plan.
 - Web (transporte solamente): `web/src/api/assistant.ts` + `web/src/api/assistant.test.ts` con las convenciones de `client.ts`/`xmi.test.ts`. El panel completo es IA4-05.
+
+## 8. IA4-03 cerrada + diseño congelado de IA4-04
+
+**IA4-03 (7f7cab9, review-d5fbf8ccdabcd917 aprobada y quemada)**: apply por el ejecutor normal con revalidación servidora, corte al primer rechazo, cascade_count calculado; suite **381/0/0/0**, web 5/5 + tsc limpio; verificación independiente 7/7 HOLDS (incluye: el servicio no escribe repositorios, única escritura es commandService.execute). Avisos informativos a la deuda: R3-invalid-abstract-default (ApplyService:182-184), R3-stale-revision-rebase (:84-86).
+
+**IA4-04 — undo/redo colaborativo (congelado)**:
+- **Semántica**: deshacer = aplicar un COMANDO INVERSO nuevo (origin UNDO) por el pipeline normal de CommandService (revisión, membresía, idempotencia). Nunca snapshot: los cambios ajenos intercalados no se pierden porque el inverso se aplica hacia adelante sobre el estado actual.
+- **Captura del valor previo**: hook en `api/ProjectApiService.executeCommand` (única entrada HTTP de comandos) que ANTES de ejecutar toma un snapshot de los targets del sobre y lo guarda en `undo_log` junto al command aceptado. Sin tocar CommandService.
+- `undo_log` (migración nueva): id, model_id, user_id, command_id, type, pre_snapshot JSONB, undone_at nullable, redone_at nullable.
+- `UndoService.undo(model)`: última entrada no deshecha del usuario; construye inverso por tipo: create→delete (si cascada >1 → RECHAZO CASCADE_REQUIRED declarado, sin trabajar), rename/setAbstract/update→set valor previo del snapshot, add→remove, remove→add (payload del snapshot), relationship create→delete / delete→create (extremos del snapshot). `xmi.import`: NO deshacible, declarado. El inverso se ejecuta por CommandService; al aceptarse se marca undone_at.
+- `UndoService.redo(model)`: última entrada deshecha no rehecha (LIFO); re-aplica el payload ORIGINAL como comando nuevo (origin REDO, idempotencyKey NUEVO — replay con la misma clave devolvería el resultado viejo sin mutar); marca redone_at.
+- Endpoints `POST /api/projects/{projectId}/undo` y `/redo`, auth idéntica a commands (miembros; operador excluido por la lista blanca).
+- Pruebas test-first: inverso por tipo (8), undo de create con dependientes → CASCADE_REQUIRED, undo tras cambio ajeno intercalado no pierde el cambio ajeno, redo restaura, LIFO, xmi.import rechazado, auth.
