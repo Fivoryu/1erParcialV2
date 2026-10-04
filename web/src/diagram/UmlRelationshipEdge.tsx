@@ -8,6 +8,7 @@ import {
   type EdgeProps,
 } from '@xyflow/react';
 import type { RelationshipEndResource, RelationshipResource } from '../api/types';
+import { orthogonalWaypoints, roundedOrthogonalPath } from './orthogonal-routing';
 import { formatRelationshipEndLabel } from './uml-format';
 
 export type RelationshipMarker =
@@ -434,11 +435,27 @@ export function relationshipMarkerPresentation(
   }
 }
 
+export interface RelationshipEdgeStyle {
+  routing: 'STRAIGHT' | 'FREE' | 'ORTHOGONAL';
+  cornerRadius: number;
+  strokeWidth: number;
+  dashed: boolean;
+}
+
+export const DEFAULT_EDGE_STYLE: RelationshipEdgeStyle = {
+  routing: 'STRAIGHT',
+  cornerRadius: 0,
+  strokeWidth: 2,
+  dashed: false,
+};
+
 export interface RelationshipEdgeData extends Record<string, unknown> {
   relationship: RelationshipResource;
   sourceEnd: RelationshipEndResource;
   targetEnd: RelationshipEndResource;
   waypoints: Array<{ x: number; y: number }>;
+  /** IA4-07: per-view appearance; absent in older payloads. */
+  style?: RelationshipEdgeStyle;
   onWaypointsChange?: (
     relationshipId: string,
     waypoints: Array<{ x: number; y: number }>,
@@ -537,13 +554,22 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     ...waypoints,
     { x: props.targetX, y: props.targetY },
   ];
-  const path = buildRelationshipEdgePath(points);
+  const style = data.style ?? DEFAULT_EDGE_STYLE;
   const sourceRectangle = rectangleForInternalNode(sourceNode);
   const targetRectangle = rectangleForInternalNode(targetNode);
+  // Orthogonal routing regenerates the polyline client-side from the node rectangles;
+  // STRAIGHT and FREE render the persisted waypoint polyline (existing behavior).
+  const orthogonalPoints = style.routing === 'ORTHOGONAL' && sourceRectangle && targetRectangle
+    ? orthogonalWaypoints(sourceRectangle, targetRectangle)
+    : null;
+  const path = orthogonalPoints
+    ? roundedOrthogonalPath(orthogonalPoints, style.cornerRadius)
+    : buildRelationshipEdgePath(points);
+  const labelPoints: EdgePoint[] = orthogonalPoints ?? points;
   const sourceLabel = formatRelationshipEndLabel(orderedEnds[0]!);
   const targetLabel = formatRelationshipEndLabel(orderedEnds[1]!);
   const labelPlacements = sourceRectangle && targetRectangle
-    ? placeRelationshipLabels(points, sourceRectangle, targetRectangle, {
+    ? placeRelationshipLabels(labelPoints, sourceRectangle, targetRectangle, {
       source: sourceLabel,
       target: targetLabel,
       ...(markers.realizationLabelAtTarget ? { targetStereotype: '«realize»' } : {}),
@@ -617,7 +643,11 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
         {...(markers.sourceMarker ? { markerStart: markerUrl(markers.sourceMarker, markerIds)! } : {})}
         {...(markers.targetMarker ? { markerEnd: markerUrl(markers.targetMarker, markerIds)! } : {})}
         interactionWidth={20}
-        style={{ stroke: '#526b62', strokeWidth: EDGE_STROKE_WIDTH_PX, ...(markers.lineStyle === 'dashed' ? { strokeDasharray: '6 4' } : {}) }}
+        style={{
+          stroke: '#526b62',
+          strokeWidth: style.strokeWidth > 0 ? style.strokeWidth : EDGE_STROKE_WIDTH_PX,
+          ...((markers.lineStyle === 'dashed' || style.dashed) ? { strokeDasharray: '6 4' } : {}),
+        }}
       />
       <EdgeLabelRenderer>
         {sourceLabel && labelPlacements.source && (
@@ -643,7 +673,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             style={{ transform: `translate(-50%, -50%) translate(${labelPlacements.name.x}px, ${labelPlacements.name.y}px)` }}
           >{relationship.name}</div>
         )}
-        {props.selected && (
+        {props.selected && style.routing !== 'ORTHOGONAL' && (
           <>
             <button
               aria-label="Add connector bend"

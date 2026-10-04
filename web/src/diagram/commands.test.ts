@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApiClient } from '../api/client';
 import type { ModelResource } from '../api/types';
-import { buildClassifierCreateEnvelope } from './commands';
+import { buildClassifierCreateEnvelope, buildStyleSetRequest } from './commands';
 
 const model: ModelResource = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -83,5 +83,28 @@ describe('palette classifier command', () => {
     expect(request.type).toBe('classifier.create');
     expect(request.payload).toEqual({ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Package 1', kind: 'PACKAGE', namespaceId: null });
     expect(request.payload.id).not.toBe(envelope.operationId);
+  });
+});
+
+describe('style.set command builder', () => {
+  it('builds a style.set request with the whitelisted payload and no targets', () => {
+    const request = buildStyleSetRequest({
+      viewId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      targetId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      routing: 'ORTHOGONAL',
+      cornerRadius: 8,
+      strokeWidth: 3,
+      dashed: true,
+    });
+    expect(request.type).toBe('style.set');
+    expect(request.targets).toBeUndefined();
+    expect(request.payload).toEqual({
+      viewId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      targetId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      routing: 'ORTHOGONAL',
+      cornerRadius: 8,
+      strokeWidth: 3,
+      dashed: true,
+    });
   });
 });

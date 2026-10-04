@@ -14,16 +14,20 @@ import {
   buildConstraintAddRequest,
   buildConstraintRemoveRequest,
   buildConstraintUpdateRequest,
+  buildGeometrySetRequest,
   buildParameterAddRequest,
   buildParameterRemoveRequest,
   buildParameterUpdateRequest,
   buildRelationshipUpdateRequest,
+  buildStyleSetRequest,
   RELATIONSHIP_KINDS,
   type ConstraintOwnerType,
   type ModelCommandRequest,
   type ParameterDirection,
   type RelationshipKind,
+  type RoutingMode,
   type TypeReferenceInput,
+  type ViewStyleUpdate,
 } from './commands';
 import type { CanvasSelection } from './selection';
 
@@ -375,6 +379,40 @@ function RelationshipProperties({
   const [targetNavigability, setTargetNavigability] = useState(targetEnd?.navigability ?? 'UNSPECIFIED');
   const sourceClassifier = model.classifiers.find((classifier) => classifier.id === sourceEnd?.classifierId);
   const targetClassifier = model.classifiers.find((classifier) => classifier.id === targetEnd?.classifierId);
+  const defaultViewId = model.views.find((view) => view.is_default)?.id ?? model.views[0]?.id;
+  const styleRow = model.view_style?.find((row) => row.viewId === defaultViewId
+    && row.targetId === relationship.id);
+  const currentStyle = {
+    routing: styleRow?.routing ?? 'STRAIGHT',
+    cornerRadius: styleRow?.cornerRadius ?? 0,
+    strokeWidth: styleRow?.strokeWidth ?? 2,
+    dashed: styleRow?.dashed ?? false,
+  } as const;
+
+  function setStyle(override: Partial<ViewStyleUpdate>): void {
+    if (!defaultViewId) {
+      return;
+    }
+    onCommand(buildStyleSetRequest({
+      viewId: defaultViewId,
+      targetId: relationship.id,
+      ...currentStyle,
+      ...override,
+    }));
+  }
+
+  function resetRoute(): void {
+    if (!defaultViewId) {
+      return;
+    }
+    onCommand(buildGeometrySetRequest({
+      targetType: 'RELATIONSHIP',
+      viewId: defaultViewId,
+      targetId: relationship.id,
+      waypoints: [],
+    }));
+    setStyle({ routing: 'STRAIGHT' });
+  }
 
   useEffect(() => {
     setName(relationship.name ?? '');
@@ -477,6 +515,62 @@ function RelationshipProperties({
         <button className="button button-primary button-compact" type="submit">Save relationship</button>
       </form>
     </section>
+      <section className="property-section" aria-labelledby="relationship-style-title">
+        <div className="property-section-heading">
+          <div>
+            <h3 id="relationship-style-title">Route &amp; style</h3>
+            <p className="property-summary">Per-view appearance, saved with style.set</p>
+          </div>
+          <button className="text-button" onClick={resetRoute} type="button">Reset route</button>
+        </div>
+        <div className="property-form">
+          <label className="field-label" htmlFor="relationship-routing">Routing</label>
+          <select
+            id="relationship-routing"
+            onChange={(event) => setStyle({ routing: event.target.value as RoutingMode })}
+            value={currentStyle.routing}
+          >
+            <option value="STRAIGHT">Straight</option>
+            <option value="FREE">Free (waypoints)</option>
+            <option value="ORTHOGONAL">Orthogonal</option>
+          </select>
+          <label className="field-label" htmlFor="relationship-corner-radius">Corner radius</label>
+          <input
+            id="relationship-corner-radius"
+            min={0}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (Number.isFinite(value)) {
+                setStyle({ cornerRadius: Math.max(0, Math.floor(value)) });
+              }
+            }}
+            type="number"
+            value={currentStyle.cornerRadius}
+          />
+          <label className="field-label" htmlFor="relationship-stroke-width">Stroke width</label>
+          <input
+            id="relationship-stroke-width"
+            min={1}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (Number.isFinite(value)) {
+                setStyle({ strokeWidth: Math.max(1, Math.floor(value)) });
+              }
+            }}
+            type="number"
+            value={currentStyle.strokeWidth}
+          />
+          <label className="field-label" htmlFor="relationship-dashed">
+            <input
+              checked={currentStyle.dashed}
+              id="relationship-dashed"
+              onChange={(event) => setStyle({ dashed: event.target.checked })}
+              type="checkbox"
+            />
+            {' '}Dashed line
+          </label>
+        </div>
+      </section>
       <ConstraintSection
         constraints={relationship.constraints}
         onCommand={onCommand}

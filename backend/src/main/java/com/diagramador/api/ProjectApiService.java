@@ -10,6 +10,7 @@ import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.api.ModelResource.ViewResource;
+import com.diagramador.api.ModelResource.ViewStyleResource;
 import com.diagramador.command.Author;
 import com.diagramador.command.CommandOrigin;
 import com.diagramador.command.CommandResult;
@@ -50,6 +51,7 @@ import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import com.diagramador.persistence.UserAccountRepository;
+import com.diagramador.persistence.ViewStyleRepository;
 import com.diagramador.undo.UndoLogEntry;
 import com.diagramador.undo.UndoLogRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -88,6 +90,7 @@ public class ProjectApiService {
     private final DiagramViewRepository viewRepository;
     private final ElementGeometryRepository geometryRepository;
     private final ConnectorPathRepository connectorPathRepository;
+    private final ViewStyleRepository viewStyleRepository;
     private final com.diagramador.command.CommandService commandService;
     private final com.diagramador.undo.UndoCaptureService undoCaptureService;
 
@@ -98,6 +101,7 @@ public class ProjectApiService {
             UmlConstraintRepository constraintRepository, UmlRelationshipRepository relationshipRepository,
             RelationshipEndRepository relationshipEndRepository, DiagramViewRepository viewRepository,
             ElementGeometryRepository geometryRepository, ConnectorPathRepository connectorPathRepository,
+            ViewStyleRepository viewStyleRepository,
             ProjectMemberRepository projectMemberRepository, CurrentUserContext currentUserContext,
             ProjectAuthorizationService projectAuthorizationService,
             com.diagramador.command.CommandService commandService,
@@ -118,6 +122,7 @@ public class ProjectApiService {
         this.viewRepository = viewRepository;
         this.geometryRepository = geometryRepository;
         this.connectorPathRepository = connectorPathRepository;
+        this.viewStyleRepository = viewStyleRepository;
         this.commandService = commandService;
         this.undoCaptureService = undoCaptureService;
     }
@@ -229,8 +234,13 @@ public class ProjectApiService {
         UUID versionId = versionRepository.findTopByModelIdOrderByRevisionDesc(model.getId())
                 .map(version -> version.getId())
                 .orElseThrow(() -> notFound("Model version was not found."));
+        List<ViewStyleResource> viewStyles = views.stream()
+                .flatMap(view -> viewStyleRepository.findByViewId(view.id()).stream()
+                        .map(style -> new ViewStyleResource(view.id(), style.getTargetId(), style.getRouting(),
+                                style.getCornerRadius(), style.getStrokeWidth(), style.isDashed())))
+                .toList();
         return new ModelResource(model.getId(), projectId, model.getCurrentRevision(), versionId, views,
-                classifiers, relationships);
+                classifiers, relationships, viewStyles);
     }
 
     private Project requireProject(UUID projectId) {

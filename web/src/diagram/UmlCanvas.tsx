@@ -198,6 +198,7 @@ export function buildFlowEdges(
 ): RelationshipFlowEdge[] {
   const view = defaultView(model);
   const rectangles = classifierRectangles(model);
+  const viewStyles = model.view_style ?? [];
   return model.relationships.flatMap((relationship) => {
     const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
     const sourceEnd = ends[0];
@@ -214,6 +215,13 @@ export function buildFlowEdges(
       .filter((path) => path.relationshipId === relationship.id)
       .sort((left, right) => left.ordinal - right.ordinal)
       .map(({ x, y }) => ({ x, y })) ?? [];
+    const styleRow = viewStyles.find((row) => row.viewId === view?.id && row.targetId === relationship.id);
+    const style = {
+      routing: styleRow?.routing ?? 'STRAIGHT',
+      cornerRadius: styleRow?.cornerRadius ?? 0,
+      strokeWidth: styleRow?.strokeWidth ?? 2,
+      dashed: styleRow?.dashed ?? false,
+    } as const;
     return [{
       id: relationship.id,
       source: sourceEnd.classifierId,
@@ -225,6 +233,7 @@ export function buildFlowEdges(
         sourceEnd,
         targetEnd,
         waypoints,
+        style,
         ...(onWaypointsChange ? { onWaypointsChange } : {}),
       },
       selectable: true,
