@@ -1292,8 +1292,60 @@ browser ni lee SSE — la entrega en vivo del canal quedó probada en C14/C15).
 
 | # | Tarea | Evidencia que la cierra |
 | --- | --- | --- |
-| C25 | `tools/collaboration-acceptance/`: arnés de dos sesiones concurrentes que prueba login, invitación, presencia, chat, bloqueo y XMI, con teardown verificado | Corrida completa sin fallos y con conteo de contenedores restaurado |
+| C25 | `tools/collaboration-acceptance/`: arnés de dos sesiones concurrentes que prueba login, invitación, presencia, chat, bloqueo y XMI, con teardown verificado | Corrida completa sin fallos y con conteo de contenedores restaurado. **Cerrada** en `0f5b870` (ver *S7 progreso — C25*) |
 | C26 | Documentación (contratos §4 y §5, uso, capturas) y acta `docs/puds/cierre/05-cierre-incremento-3.md` | Documento y acta con límites declarados |
+
+### S7 progreso — C25 cerrada (2026-10-03)
+
+**Commit:** `0f5b870` — *test(tools): accept the two-session collaboration journey against a live stack* (2 archivos nuevos, +1297). El diseño se congeló en
+`6139d7c`, y **el escritor frenó una vez antes de escribir** por un conflicto real del congelamiento, medido con la fuente: **la presencia no tiene
+listado por HTTP** —`POST` responde 204 sin cuerpo y el roster sólo viaja por SSE—, así que el arnés lee **el snapshot inicial del canal y corta**, y el
+«no medido» quedó estrechado honestamente a la **entrega en vivo** (que es lo que C14/C15 ya cubren). El mismo hallazgo enmendó una suposición mía: en la
+descarga de artefactos, la validación del run va **antes** de la guarda de concesión (`GenerationApiService.java:180-186`), así que la prueba prepara un
+run **antes** de que A tome la concesión; su estado final no importa porque la guarda dispara antes del `RUN_NOT_COMPLETE`. Las dos enmiendas quedan
+registradas como correcciones de diseño autorizadas por el padre, con atribución a la medición del escritor.
+
+**Lo que construyó:** un solo archivo Python **stdlib nada más** (`urllib`, sin dependencias, 1188 líneas) en el estilo del arnés XMI. Levanta la pila
+real con `docker compose -p collaboration-acceptance up -d --build --wait` (imagen del `backend/Dockerfile` ya existente, puertos 18091/25433), corre el
+recorrido completo con **dos clientes HTTP de tokens separados** —registro, invitación, A toma la concesión, B choca contra las **tres guardas**
+(generación 200 con las cinco claves en `result`, descarga 409 con `details[0]`, **exportación XMI 409 nombrando a A**), chat persistido, presencia con
+roster por SSE, lectura del lease, suelta, B toma, B suelta— y baja la pila con `down -v` en semántica `finally`.
+
+**Las reglas que sostienen el conteo:** el conteo de contenedores es **siempre por etiqueta** `com.docker.compose.project=collaboration-acceptance`,
+nunca global — el daemon es compartido y hay Testcontainers ajenos corriendo (la sesión de XMI lo confirmó: su propia suite de backend usa el mismo
+daemon, y un conteo global haría fallar el arnés por culpa de la suite de otro)—. Si encuentra contenedores etiquetados **antes** de arrancar, **se niega
+a empezar** en vez de apilar restos huérfanos. Teardown verificado = conteo del proyecto en **0**.
+
+**Evidencia medida:** **dos corridas completas, 34 checks en verde, exit 0 cada una**, con conteo etiquetado **0/2/0** (inicio/durante/fin) en ambas — la
+segunda arranca en 0, que es exactamente la prueba del teardown que pide la fila. Dos corridas diagnósticas previas fallaron 2 checks por falta de un
+colaborador semilla (`classifier.create` siguiendo el fixture de `GenerationApiTest:110-179`): el arnés **las reportó y no las omitió**, que es la
+conducta congelada. Un hallazgo propio del entorno: **WSL no tiene Docker CLI**, así que la invocación documentada es `cmd.exe /c python ...`.
+
+**Revisión nativa:** linaje `review-2656a8f219489042`, tier **`high`** — el proveedor detectó `process_boundary` (el arnés arranca otros procesos) y exigió
+**cuatro lentes** (`review-risk`, `review-resilience`, `review-readability`, `review-reliability`), 2 caminos, **1297 líneas**, presupuesto 200.
+**Aprobada**, autoridad quemada (`gentle-ai.review-acknowledged/v1`). La colecta sufrió **tres fallos de transporte del relay** (`WebSocket error`,
+aleatorio: capturó dos lentes entre fallos) y salió adelante capturando de a un slot con binding exacta reofrecida por STATUS fresco, como manda el
+protocolo.
+
+**Cuatro hallazgos informativos** — uno por lente, todos no bloqueantes, ninguno abre corrección, el sobre no expuso texto:
+
+1. `R1-unchecked-volume-cleanup` (lente `risk`, **nombre propio del proveedor**) · `README.md:52-59`, WARNING. Lectura propia: el README declara que el
+   teardown verifica contenedores y volumen, **no la imagen** — la imagen `collaboration-acceptance-diagrammer` queda tras el `down -v`.
+2. `R2-001` (lente `readability`) · `collaboration_acceptance.py:283-286`, SUGGESTION.
+3. `R3-001` (lente `reliability`) · `collaboration_acceptance.py:87-88`, WARNING.
+4. `R4-001` (lente `resilience`) · `collaboration_acceptance.py:20`, WARNING.
+
+**Límites declarados de esta unidad:**
+
+1. **La imagen Docker no se borra** en el teardown (contenedores y volumen sí): queda declarada como limpieza manual.
+2. **Sin navegadores y sin SSE en vivo**: el corte §1 de dos navegadores lo cubre la web; el arnés lee un único snapshot inicial del canal.
+3. **No mide el timing del TTL** (territorio de C19 con reloj controlado) ni el round-trip de EA (GAP-07, de la sesión de XMI).
+4. **El conteo es por etiqueta y el arranque se niega ante restos etiquetados**: el arnés no protege contra un proyecto de Compose ajeno mal nombrado con
+   la misma etiqueta — la etiqueta fija es parte del contrato de corrida.
+5. **La corrida tarda minutos por el build de la imagen en Compose**; es deliberado: mide la pila real, no una simulación.
+
+**Sin desviación de ruteo:** escritor con superficies exactas, un freno legítimo resuelto con dos enmiendas atribuidas, doble corrida de evidencia,
+revisión nativa de cuatro lentes, y commits y registro en el padre.
 
 ## 5. Riesgos declarados
 
