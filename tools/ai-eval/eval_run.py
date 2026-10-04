@@ -415,6 +415,10 @@ def chat(port: int, context: dict, utterance: str, timeout_s: float) -> tuple[st
         "temperature": 0.0,
         "max_tokens": 512,
         "stream": False,
+        # AMENDMENT 2026-10-04: the Qwen3.5 family reasons before answering and an
+        # empty `content` was the effect, not a model capability result. Disabled
+        # for BOTH evaluated models so comparability holds.
+        "chat_template_kwargs": {"enable_thinking": False},
     }).encode("utf-8")
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}/v1/chat/completions", data=payload,
@@ -430,7 +434,8 @@ RAM_SAMPLER = (
     "while($true){"
     "$p=Get-Process -Id $pid -ErrorAction SilentlyContinue;"
     "$os=Get-CimInstance Win32_OperatingSystem;"
-    "if($p){ '{0},{1},{2}' -f $p.WorkingSet64,$os.FreePhysicalMemory,$os.TotalVisibleMemorySize"
+    "if($p){ '{0},{1},{2},{3}' -f $p.WorkingSet64,$p.PrivateMemorySize64,"
+    "$os.FreePhysicalMemory,$os.TotalVisibleMemorySize"
     " | Out-File -FilePath $f -Append -Encoding ascii };"
     "Start-Sleep -Milliseconds 500 }"
 )
@@ -459,10 +464,14 @@ def run_measurement(args: argparse.Namespace, corpus: dict) -> int:
     try:
         cold_load_s = wait_health(args.port, args.load_timeout)
         print(f"cold load: {cold_load_s:.1f}s")
-        # RAM sampler needs the Windows pid of the server process
+        # RAM sampler needs the Windows pid of the server process; match by the
+        # model file name in the command line, not by runtime path (precise even
+        # with several llama-server processes alive).
         win_pid = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command",
-             f"(Get-Process llama-server | Where-Object {{$_.Path -like '*{Path(args.runtime).name}*'}} | Select-Object -First 1).Id"],
+             "(Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\" | "
+             f"Where-Object {{ $_.CommandLine -like '*{model_path.name}*' }} | "
+             "Select-Object -First 1).ProcessId"],
             capture_output=True, text=True).stdout.strip()
         sampler = None
         if win_pid.isdigit():
@@ -481,22 +490,24 @@ def run_measurement(args: argparse.Namespace, corpus: dict) -> int:
             if case["id"] == "E01":
                 cold_e01 = secs
             print(f"  {case['id']}: {secs:.1f}s")
-        warm_e01, _ = chat(args.port, context, corpus["cases"][0]["utterance"], args.case_timeout)
+        _, warm_e01 = chat(args.port, context, corpus["cases"][0]["utterance"], args.case_timeout)
 
         judged = judge_corpus(corpus, answers)
         # warm answer replaces the cold one for judging? No: judge cold answers; warm is latency-only.
-        ram_peak, free_min = summarize_ram(ram_file)
-        report = build_report(args, corpus, model_path, judged, latencies,
-                              cold_load_s, cold_e01, warm_e01, ram_peak, free_min)
+        ram_peak_ws, ram_peak_priv, free_min = summarize_ram(ram_file)
+        # persist the measured data BEFORE building the report: a report bug must not lose a run
         (out_dir / "results.json").write_text(json.dumps(
             {"judged": judged, "latencies": latencies, "cold_load_s": cold_load_s,
              "cold_e01_s": cold_e01, "warm_e01_s": warm_e01,
-             "ram_peak_bytes": ram_peak, "free_min_bytes": free_min,
+             "ram_peak_ws_bytes": ram_peak_ws, "ram_peak_priv_bytes": ram_peak_priv,
+             "free_min_bytes": free_min,
              "prompt_version": PROMPT_VERSION, "model": str(model_path)}, ensure_ascii=False, indent=2),
             encoding="utf-8")
-        (out_dir / "report.md").write_text(report, encoding="utf-8")
         (out_dir / "raw_answers.json").write_text(
             json.dumps(answers, ensure_ascii=False, indent=2), encoding="utf-8")
+        report = build_report(args, corpus, model_path, judged, latencies,
+                              cold_load_s, cold_e01, warm_e01, ram_peak_ws, ram_peak_priv, free_min)
+        (out_dir / "report.md").write_text(report, encoding="utf-8")
         print(f"\n{judged['passed']}/{judged['total']} cases OK")
         print(f"report: {out_dir / 'report.md'}")
         return 0
@@ -507,35 +518,41 @@ def run_measurement(args: argparse.Namespace, corpus: dict) -> int:
         time.sleep(1)
 
 
-def summarize_ram(ram_file: Path) -> tuple[int, int]:
-    peak, free_min = 0, 0
+def summarize_ram(ram_file: Path) -> tuple[int, int, int]:
+    """Returns (peak working set, peak private commit, min free) in bytes.
+    FreePhysicalMemory arrives in KB and is converted here, once."""
+    peak_ws, peak_priv, free_min = 0, 0, 0
     if not ram_file.exists():
-        return peak, free_min
+        return peak_ws, peak_priv, free_min
     for line in ram_file.read_text().splitlines():
         parts = line.strip().split(",")
-        if len(parts) != 3:
+        if len(parts) != 4:
             continue
         try:
-            ws, free, _total = (int(float(p)) for p in parts)
+            ws, priv, free_kb, _total = (int(float(p)) for p in parts)
         except ValueError:
             continue
-        peak = max(peak, ws)
-        free_min = min(free_min, free) if free_min else free
-    return peak, free_min
+        peak_ws = max(peak_ws, ws)
+        peak_priv = max(peak_priv, priv)
+        free_b = free_kb * 1024
+        free_min = min(free_min, free_b) if free_min else free_b
+    return peak_ws, peak_priv, free_min
 
 
 def build_report(args, corpus, model_path, judged, latencies, cold_load, cold_e01,
-                 warm_e01, ram_peak, free_min) -> str:
+                 warm_e01, ram_peak_ws, ram_peak_priv, free_min) -> str:
     lats = list(latencies.values())
     lines = [
         f"# Corrida de evaluación — {model_path.name}",
         "",
         f"- Fecha: {dt.datetime.now().isoformat(timespec='seconds')}",
         f"- Artefacto: `{model_path}`",
-        f"- Runtime: `llama-server` ({args.runtime}), ctx={args.ctx}, temperatura 0.0",
+        f"- Runtime: `llama-server` ({args.runtime}), ctx={args.ctx}, temperatura 0.0, "
+        f"max_tokens 512, thinking deshabilitado (chat_template_kwargs)",
         f"- Contrato de prompt: `{PROMPT_VERSION}`",
-        f"- Hardware: host Windows, CPU (sin offload); RAM pico del proceso: "
-        f"{ram_peak / 1048576:.0f} MiB; RAM libre mínima del sistema: {free_min / 1048576:.0f} MiB",
+        f"- Hardware: host Windows, CPU (sin offload); RAM pico del proceso (commit privado): "
+        f"{ram_peak_priv / 1048576:.0f} MiB (working set pico: {ram_peak_ws / 1048576:.0f} MiB); "
+        f"RAM libre mínima del sistema: {free_min / 1048576:.0f} MiB",
         f"- Carga fría: {cold_load:.1f} s; E01 frío: {cold_e01:.1f} s; E01 tibio: {warm_e01:.1f} s",
         f"- Latencia por caso p50: {pct(lats, 50):.1f} s; p95: {pct(lats, 95):.1f} s",
         "",

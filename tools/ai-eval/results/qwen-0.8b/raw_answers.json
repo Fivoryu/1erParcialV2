@@ -1,0 +1,17 @@
+{
+  "E01": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"Pedido\"}, {\"type\": \"relationship.create\", \"targetName\": \"ClienteInternacional\"}]}",
+  "E02": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"relationship.create\", \"targetName\": \"Cliente->Pedido\"}]}",
+  "E03": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.delete\", \"targetName\": \"ClienteInternacional\"}]}",
+  "E04": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"La clase 'ClienteInternacional' no se encuentra en el catálogo de clases proporcionado.\"}",
+  "E05": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.rename\", \"targetName\": \"Producto\"}, {\"type\": \"relationship.update\", \"targetName\": \"ClienteInternacional\"}]}",
+  "E06": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.add\", \"targetName\": \"Cliente.nombre\"}, {\"type\": \"attribute.add\", \"targetName\": \"Cliente.email\"}]}",
+  "E07": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.setAbstract\", \"targetName\": \"ClienteInternacional\"}]}",
+  "E08": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"El objeto Pedido no existe en el catálogo de clases. Se requiere una explicación breve.\"}",
+  "E09": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"LineaDeFactura\"}, {\"type\": \"classifier.create\", \"targetName\": \"Factura\"}, {\"type\": \"relationship.create\", \"source\": \"LineaDeFactura\", \"target\": \"Factura\"}, {\"type\": \"relationship.create\", \"source\": \"Factura\", \"target\": \"LineaDeFactura\"}]}",
+  "E10": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"calcularTotal\"}]}",
+  "E11": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"relationship.create\", \"targetName\": \"ClienteInternacional.Pedido\"}, {\"type\": \"relationship.create\", \"targetName\": \"Cliente.Pedido\"}]}",
+  "E12": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.rename\", \"targetName\": \"ClienteInternacional\"}]}",
+  "E13": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"Cliente\"}, {\"type\": \"classifier.create\", \"targetName\": \"ClienteInternacional\"}, {\"type\": \"classifier.create\", \"targetName\": \"Producto\"}, {\"type\": \"classifier.create\", \"targetName\": \"Pedido\"}, {\"type\": \"relationship.create\", \"source\": \"Cliente\", \"target\": \"Pedido\"}, {\"type\": \"relationship.create\", \"source\": \"ClienteInternacional\", \"target\": \"Pedido\"}]}",
+  "E14": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.add\", \"targetName\": \"Cliente\"}]}",
+  "E15": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.remove\", \"targetName\": \"nombre\"}]}"
+}
