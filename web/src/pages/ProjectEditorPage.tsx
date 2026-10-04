@@ -27,6 +27,7 @@ import { subscribeProjectEvents } from '../collaboration/projectEvents';
 import { useEditingLease } from '../collaboration/useEditingLease';
 import UmlCanvas from '../diagram/UmlCanvas';
 import PropertiesPanel from '../diagram/PropertiesPanel';
+import AssistantPanel from '../assistant/AssistantPanel';
 import GenerationPanel from '../generation/GenerationPanel';
 import XmiImportPanel from '../xmi/XmiImportPanel';
 import MembersPanel from '../members/MembersPanel';
@@ -614,6 +615,7 @@ export default function ProjectEditorPage() {
 
             <XmiImportPanel projectId={project.id} />
             <PresencePanel entries={presence} userId={currentUserId} />
+            <AssistantPanel currentRevision={model.revision} projectId={project.id} />
             <ChatPanel
               busy={chatBusy}
               draft={chatDraft}
