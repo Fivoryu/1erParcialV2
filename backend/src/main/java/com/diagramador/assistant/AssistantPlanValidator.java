@@ -36,6 +36,9 @@ public class AssistantPlanValidator {
         boolean collisionSeen = false;
         boolean forcedReject = false;
         String ambiguityQuestion = null;
+        // Forward simulation: classifier.create operations accepted EARLIER in this same draft
+        // make their names resolvable targets for later attribute/relationship operations.
+        Map<String, String> plannedCreates = new LinkedHashMap<>();
 
         for (Map<String, Object> raw : input) {
             String type = text(raw == null ? null : raw.get("type"));
@@ -66,7 +69,8 @@ public class AssistantPlanValidator {
                     forcedReject = true;
                     continue;
                 }
-                if (model.classifiers().stream().anyMatch(classifier -> same(classifier.name(), targetName))) {
+                if (model.classifiers().stream().anyMatch(classifier -> same(classifier.name(), targetName))
+                        || plannedCreates.containsKey(normalize(targetName))) {
                     diagnostics.add(diagnostic(NAME_COLLISION, "Ya existe una clase con ese nombre."));
                     collisionSeen = true;
                     continue;
@@ -74,6 +78,7 @@ public class AssistantPlanValidator {
                 Map<String, Object> args = args(raw);
                 args.put("name", targetName);
                 accepted.add(new AssistantPlanOperation(type, null, args));
+                plannedCreates.put(normalize(targetName), targetName);
                 continue;
             }
 
@@ -81,6 +86,16 @@ public class AssistantPlanValidator {
                 OwnerAndName target = ownerAndName(targetName);
                 List<Candidate> owners = target == null ? List.of() : classifierMatches(target.owner(), model);
                 Candidate owner = uniqueTarget(owners, diagnostics);
+                if (owner == null && target != null && owners.isEmpty()
+                        && plannedCreates.containsKey(normalize(target.owner()))) {
+                    // Owner is created earlier in this plan: carry the planned name so apply
+                    // resolves the (by then existing) classifier by name at step time.
+                    Map<String, Object> args = args(raw);
+                    args.put("name", target.name());
+                    args.put("targetClassifierName", target.owner());
+                    accepted.add(new AssistantPlanOperation(type, null, args));
+                    continue;
+                }
                 if (owner == null) {
                     if (owners.isEmpty()) {
                         diagnostics.add(diagnostic(UNKNOWN_TARGET,
@@ -109,23 +124,29 @@ public class AssistantPlanValidator {
                 List<Candidate> targetMatches = classifierMatches(pair.second(), model);
                 Candidate source = uniqueTarget(sourceMatches, diagnostics);
                 Candidate target = uniqueTarget(targetMatches, diagnostics);
-                if (source == null || target == null) {
-                    if (sourceMatches.isEmpty() || targetMatches.isEmpty()) {
-                        diagnostics.add(diagnostic(UNKNOWN_TARGET,
-                                "No se encontró el objetivo indicado en el diagrama."));
-                        forcedReject = true;
-                    }
-                    if (sourceMatches.size() > 1) {
-                        ambiguityQuestion = ambiguityQuestion(sourceMatches);
-                    } else if (targetMatches.size() > 1) {
-                        ambiguityQuestion = ambiguityQuestion(targetMatches);
-                    }
+                boolean sourcePlanned = source == null && sourceMatches.isEmpty()
+                        && plannedCreates.containsKey(normalize(pair.first()));
+                boolean targetPlanned = target == null && targetMatches.isEmpty()
+                        && plannedCreates.containsKey(normalize(pair.second()));
+                if ((source != null || sourcePlanned) && (target != null || targetPlanned)) {
+                    Map<String, Object> args = args(raw);
+                    args.put("source", source != null ? Map.of("classifierId", source.id())
+                            : Map.of("classifierName", pair.first()));
+                    args.put("target", target != null ? Map.of("classifierId", target.id())
+                            : Map.of("classifierName", pair.second()));
+                    accepted.add(new AssistantPlanOperation(type, null, args));
                     continue;
                 }
-                Map<String, Object> args = args(raw);
-                args.put("source", Map.of("classifierId", source.id()));
-                args.put("target", Map.of("classifierId", target.id()));
-                accepted.add(new AssistantPlanOperation(type, null, args));
+                if ((sourceMatches.isEmpty() && !sourcePlanned) || (targetMatches.isEmpty() && !targetPlanned)) {
+                    diagnostics.add(diagnostic(UNKNOWN_TARGET,
+                            "No se encontró el objetivo indicado en el diagrama."));
+                    forcedReject = true;
+                }
+                if (sourceMatches.size() > 1) {
+                    ambiguityQuestion = ambiguityQuestion(sourceMatches);
+                } else if (targetMatches.size() > 1) {
+                    ambiguityQuestion = ambiguityQuestion(targetMatches);
+                }
                 continue;
             }
 

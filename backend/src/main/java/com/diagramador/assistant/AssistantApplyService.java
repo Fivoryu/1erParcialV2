@@ -23,14 +23,17 @@ import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.undo.UndoCaptureService;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 /**
@@ -95,7 +98,7 @@ public class AssistantApplyService {
                 stopIndex = index;
                 break;
             }
-            Mapped mapped = mapPayload(operation, model.id());
+            Mapped mapped = mapPayload(operation, model);
             if (mapped.diagnostic() != null) {
                 steps.add(rejected(operation, index, mapped.diagnostic()));
                 stopIndex = index;
@@ -157,7 +160,7 @@ public class AssistantApplyService {
 
     // --- Plan args -> command payload mapping -------------------------------------------
 
-    private Mapped mapPayload(AssistantApplyOp operation, UUID modelId) {
+    private Mapped mapPayload(AssistantApplyOp operation, ModelResource model) {
         Map<String, Object> args = operation.args();
         return switch (operation.type()) {
             case "classifier.create" -> {
@@ -180,7 +183,7 @@ public class AssistantApplyService {
                 yield mapped(payload("name", name), targets("classifier", operation.targetId()), List.of());
             }
             case "classifier.delete" -> mapped(new LinkedHashMap<>(), targets("classifier", operation.targetId()),
-                    List.of(new Precondition("cascade_count", classifierCascadeCount(modelId, operation.targetId()),
+                    List.of(new Precondition("cascade_count", classifierCascadeCount(model.id(), operation.targetId()),
                             null)));
             case "classifier.setAbstract" -> {
                 Object raw = args.get("isAbstract") == null ? args.get("value") : args.get("isAbstract");
@@ -196,6 +199,10 @@ public class AssistantApplyService {
                 if (type == null) {
                     yield missing("type", operation.type());
                 }
+                UUID classifierId = resolveClassifierTarget(operation, args, model);
+                if (classifierId == null) {
+                    yield unresolvableTarget(operation.type());
+                }
                 Map<String, Object> payload = linkedPayload("id", UUID.randomUUID(), "name", name, "type", type,
                         "visibility", text(args.get("visibility")) == null ? "PUBLIC"
                                 : text(args.get("visibility")).toUpperCase());
@@ -205,7 +212,7 @@ public class AssistantApplyService {
                 if (text(args.get("defaultValue")) != null) {
                     payload.put("defaultValue", text(args.get("defaultValue")));
                 }
-                yield mapped(payload, targets("classifier", operation.targetId()), List.of());
+                yield mapped(payload, targets("classifier", classifierId), List.of());
             }
             case "attribute.update" -> {
                 Map<String, Object> payload = new LinkedHashMap<>();
@@ -237,6 +244,10 @@ public class AssistantApplyService {
                 if (name == null) {
                     yield missing("name", operation.type());
                 }
+                UUID classifierId = resolveClassifierTarget(operation, args, model);
+                if (classifierId == null) {
+                    yield unresolvableTarget(operation.type());
+                }
                 Map<String, Object> payload = linkedPayload("id", UUID.randomUUID(), "name", name);
                 Object returnType = mappedType(args.get("returnType"));
                 if (returnType != null) {
@@ -244,13 +255,16 @@ public class AssistantApplyService {
                 }
                 payload.put("visibility", text(args.get("visibility")) == null ? "PUBLIC"
                         : text(args.get("visibility")).toUpperCase());
-                yield mapped(payload, targets("classifier", operation.targetId()), List.of());
+                yield mapped(payload, targets("classifier", classifierId), List.of());
             }
             case "relationship.create" -> {
-                UUID source = classifierIdArg(args.get("source"));
-                UUID target = classifierIdArg(args.get("target"));
-                if (source == null || target == null) {
+                UUID source = classifierEndArg(args.get("source"), model);
+                UUID target = classifierEndArg(args.get("target"), model);
+                if (args.get("source") == null || args.get("target") == null) {
                     yield missing("source|target", operation.type());
+                }
+                if (source == null || target == null) {
+                    yield unresolvableTarget(operation.type());
                 }
                 Map<String, Object> payload = linkedPayload("id", UUID.randomUUID(),
                         "kind", text(args.get("kind")) == null ? "ASSOCIATION"
@@ -284,7 +298,7 @@ public class AssistantApplyService {
             case "relationship.delete" -> mapped(new LinkedHashMap<>(),
                     targets("relationship", operation.targetId()),
                     List.of(new Precondition("cascade_count",
-                            relationshipCascadeCount(modelId, operation.targetId()), null)));
+                            relationshipCascadeCount(model.id(), operation.targetId()), null)));
             default -> mapped(new LinkedHashMap<>(), List.of(), List.of());
         };
     }
@@ -305,15 +319,67 @@ public class AssistantApplyService {
         }
     }
 
-    private static UUID classifierIdArg(Object raw) {
-        if (raw instanceof Map<?, ?> end && end.get("classifierId") != null) {
+    /**
+     * Resolves the owner classifier of an attribute/operation add. Plans validated with forward
+     * simulation carry {@code targetClassifierName} for owners created earlier in the same plan;
+     * the apply loop re-reads the model before each step, so the planned classifier exists by then
+     * and is resolved by (accent/case-insensitive) name.
+     */
+    private static UUID resolveClassifierTarget(AssistantApplyOp operation, Map<String, Object> args,
+            ModelResource model) {
+        if (operation.targetId() != null) {
+            return operation.targetId();
+        }
+        return classifierIdByName(model, text(args.get("targetClassifierName")));
+    }
+
+    private static UUID classifierEndArg(Object raw, ModelResource model) {
+        if (!(raw instanceof Map<?, ?> end)) {
+            return null;
+        }
+        if (end.get("classifierId") != null) {
             try {
                 return UUID.fromString(String.valueOf(end.get("classifierId")));
             } catch (IllegalArgumentException ignored) {
                 return null;
             }
         }
+        if (end.get("classifierName") instanceof String name) {
+            return classifierIdByName(model, name);
+        }
         return null;
+    }
+
+    private static UUID classifierIdByName(ModelResource model, String name) {
+        if (name == null) {
+            return null;
+        }
+        UUID match = null;
+        for (ClassifierResource classifier : model.classifiers()) {
+            if (sameName(classifier.name(), name)) {
+                if (match != null) {
+                    return null;
+                }
+                match = classifier.id();
+            }
+        }
+        return match;
+    }
+
+    private static Mapped unresolvableTarget(String type) {
+        return new Mapped(null, List.of(), List.of(),
+                diagnostic("UNKNOWN_TARGET",
+                        "El destino de la operación " + type + " ya no existe en el diagrama."));
+    }
+
+    private static boolean sameName(String left, String right) {
+        return left != null && right != null
+                && normalizeName(left).equals(normalizeName(right));
+    }
+
+    private static String normalizeName(String value) {
+        String decomposed = Normalizer.normalize(value.trim().toLowerCase(Locale.ROOT), Normalizer.Form.NFD);
+        return Pattern.compile("\\p{M}+").matcher(decomposed).replaceAll("");
     }
 
     private static Object mappedType(Object raw) {

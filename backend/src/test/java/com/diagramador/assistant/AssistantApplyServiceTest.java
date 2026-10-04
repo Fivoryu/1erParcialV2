@@ -257,6 +257,37 @@ class AssistantApplyServiceTest {
         assertThat(response.finalRevision()).isEqualTo(7L);
     }
 
+    @Test
+    void attributeAddReferencingAPlanLocalCreateResolvesByNameAtStepTime() {
+        UUID createdClassifierId = UUID.randomUUID();
+        ModelResource before = model(7L);
+        ModelResource after = model(8L, new ClassifierResource(createdClassifierId, "Pedido",
+                ClassifierKind.CLASS, false, null, List.of(), List.of(), List.of()));
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(before, after);
+        when(commandService.execute(any())).thenReturn(accepted(8L), accepted(9L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("classifier.create", null, Map.of("name", "Pedido")),
+                new AssistantApplyOp("attribute.add", null,
+                        Map.of("name", "fecha", "type", "Date", "targetClassifierName", "Pedido"))), 7L));
+
+        ArgumentCaptor<OperationEnvelope> envelopes = ArgumentCaptor.forClass(OperationEnvelope.class);
+        verify(commandService, times(2)).execute(envelopes.capture());
+        OperationEnvelope attribute = envelopes.getAllValues().get(1);
+        assertThat(attribute.targets()).singleElement().satisfies(target -> {
+            assertThat(target.scope()).isEqualTo("classifier");
+            assertThat(target.id()).isEqualTo(createdClassifierId);
+        });
+        @SuppressWarnings("unchecked")
+        Map<String, Object> attributePayload = (Map<String, Object>) attribute.payload();
+        assertThat(attributePayload).containsEntry("name", "fecha");
+        assertThat(response.steps()).hasSize(2);
+        assertThat(response.steps().get(0).status()).isEqualTo("ACCEPTED");
+        assertThat(response.steps().get(1).status()).isEqualTo("ACCEPTED");
+        assertThat(response.finalRevision()).isEqualTo(9L);
+    }
+
     private AssistantApplyService service() {
         return new AssistantApplyService(projectApiService, authorizationService, currentUserContext, commandService,
                 attributeRepository, operationRepository, parameterRepository, constraintRepository,

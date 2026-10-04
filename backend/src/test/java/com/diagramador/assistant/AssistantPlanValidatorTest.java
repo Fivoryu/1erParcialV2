@@ -102,6 +102,74 @@ class AssistantPlanValidatorTest {
         assertThat(response.diagnostics()).isEmpty();
     }
 
+    @Test
+    void sameDraftCreateAttributeAndRelationshipResolvesAgainstThePlannedCreate() {
+        List<Map<String, Object>> draft = List.of(
+                operation("classifier.create", "Pedido", "kind", "CLASS"),
+                operation("attribute.add", "Pedido.fecha", "args", Map.of("type", "Date")),
+                operation("relationship.create", "Pedido->Cliente", "kind", "ASSOCIATION"));
+
+        AssistantPlanResponse response = validate("plan", draft,
+                model(classifier(PERSON_ID, "Persona"), classifier(ACCOUNT_ID, "Cliente")));
+
+        assertThat(response.intent()).isEqualTo("PLAN");
+        assertThat(response.operations()).hasSize(3);
+        assertThat(response.operations().get(0).targetId()).isNull();
+        assertThat(response.operations().get(0).args()).containsEntry("name", "Pedido");
+        assertThat(response.operations().get(1).targetId()).isNull();
+        assertThat(response.operations().get(1).args())
+                .containsEntry("name", "fecha")
+                .containsEntry("targetClassifierName", "Pedido");
+        assertThat(response.operations().get(2).args())
+                .containsEntry("source", Map.of("classifierName", "Pedido"))
+                .containsEntry("target", Map.of("classifierId", ACCOUNT_ID));
+        assertThat(response.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void attributeAddOnALaterOperationResolvesAPlanLocalCreate() {
+        List<Map<String, Object>> draft = List.of(
+                operation("classifier.create", "Factura", "kind", "CLASS"),
+                operation("attribute.add", "Factura.fecha", "args", Map.of("type", "Date")));
+
+        AssistantPlanResponse response = validate("plan", draft, model());
+
+        assertThat(response.intent()).isEqualTo("PLAN");
+        assertThat(response.operations()).hasSize(2);
+        assertThat(response.operations().get(1).targetId()).isNull();
+        assertThat(response.operations().get(1).args())
+                .containsEntry("name", "fecha")
+                .containsEntry("targetClassifierName", "Factura");
+        assertThat(response.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void duplicatePlanLocalCreateNameCollides() {
+        AssistantPlanResponse response = validate("plan", List.of(
+                operation("classifier.create", "Pedido"),
+                operation("classifier.create", "pedido")), model());
+
+        assertThat(diagnosticCodes(response)).contains("NAME_COLLISION");
+        assertThat(response.operations()).hasSize(1);
+        assertThat(response.operations().get(0).args()).containsEntry("name", "Pedido");
+    }
+
+    @Test
+    void relationshipBetweenAPlanLocalCreateAndAnExistingClassifierResolves() {
+        List<Map<String, Object>> draft = List.of(
+                operation("classifier.create", "Factura"),
+                operation("relationship.create", "Factura->Persona", "kind", "ASSOCIATION"));
+
+        AssistantPlanResponse response = validate("plan", draft, model());
+
+        assertThat(response.intent()).isEqualTo("PLAN");
+        assertThat(response.operations()).hasSize(2);
+        assertThat(response.operations().get(1).args())
+                .containsEntry("source", Map.of("classifierName", "Factura"))
+                .containsEntry("target", Map.of("classifierId", PERSON_ID));
+        assertThat(response.diagnostics()).isEmpty();
+    }
+
     private AssistantPlanResponse validate(String intent, List<Map<String, Object>> operations, ModelResource model) {
         return validator.validate(intent, operations, model, null, "");
     }
