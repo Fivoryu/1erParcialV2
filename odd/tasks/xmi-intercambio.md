@@ -46,6 +46,7 @@ Se actualiza en cada transición. Una etapa solo dice **cerrada** cuando sus pru
 | F — Lo que el oráculo no medía | **Cerrada en §13** | Las seis filas X3–X8 reconciliadas contra §5.2; el control positivo con el artefacto de EA en los dos casilleros **refutó dos de los tres «defectos» de §7.5**; el diagnóstico del dialecto mira las declaraciones de namespace, no el prefijo; arnés **18/0** en los dos corpus y las suites verdes (`mvn verify` **308 pruebas, 0 fallos**; `pytest` **54**); revisión nativa `review-5fceca1cdf2aad8c` = **approved**, autoridad quemada, tres avisos no bloqueantes en §13.6 |
 | G — La guarda de exportación, conectada | **Cerrada en §14** | Fusión de `feat/incremento-3-colaboracion` (`38882b4`) en `f2fd947`, sin conflictos y con auditoría semántica contra el diff del par; la guarda declarada quedó conectada en `XmiExportService.java:61` con su prueba **primero en rojo** (5/1 → 5/0) y su control positivo; la fusión trajo **2 fallas reales** en la web, reparadas en `2b47c66`; `mvn verify` = **332 pruebas, 0 fallos, 0 salteadas, BUILD SUCCESS**; `pytest tools` = **54**; web **158 pasan, 4 omitidas, 0 fallan** con lint, tipos y build limpios; arnés XMI **18/0** |
 | H — La edición con concesión en la web (C21 del par) | **Cerrada en §14.11** | Fusión real de `feat/incremento-3-colaboracion` (`2b87028`) en **`0fac48e`**, sin conflictos y predicha limpia con `git merge-tree`; **12 archivos, +761/−6**, ningún archivo de `backend/` y mis regiones XMI medidas **byte-idénticas**; web **169 pasan, 4 omitidas, 0 fallan** con lint, tipos y build limpios; `mvn verify` **347 pruebas, 0 fallos**; `pytest` **54**; arnés XMI **18/0**; revisión nativa `review-779a63dd31675724` = **approved**, autoridad quemada, más la del par `review-0451a261a69d4f06` como evidencia independiente |
+| I — El arnés de aceptación y el cierre del incremento | **Cerrada en §14.13** | Fusión real del C25 del par (`0f5b870`) en **`723c90c`** y del acta de cierre (C26, `8f28a81`) en **`bff0952`**, con `git merge-tree` prediciendo limpio antes de correr; el arnés del par **ejecutado dos veces por esta sesión sobre el árbol fusionado**: **34 verificaciones, 0 fallas, exit 0** cada una, con la segunda arrancando en conteo etiquetado **0** (prueba del teardown), y las tres guardas incluyendo la exportación XMI; `mvn verify` **347 pruebas, 0 fallos**; web **169 pasan, 4 omitidas, 0 fallan**; `pytest` **54**; arnés XMI **18/0** |
 
 ## 1. Corte visible que define la unidad
 
@@ -1892,3 +1893,52 @@ medida, no como opinión.
 exacto, puertos, la cláusula de rechazo al arranque si encuentra contenedores etiquetados huérfanos y el conteo por
 etiqueta— y esta unidad lo toma con el procedimiento de siempre: fusión, compuertas medidas, revisión nativa y
 `main`. Nada de eso se hizo todavía, y **no se declara cerrado**: se declara **con dueño**.
+
+### 14.13 El arnés de aceptación y el cierre del incremento, en `main`
+
+Dos movimientos más, y con el primero termina la deuda de verificación que este documento arrastraba desde §13.6.
+
+**El arnés (C25), y la verificación que le corresponde.** El par entregó `0f5b870` —*accept the two-session
+collaboration journey against a live stack*, 2 archivos, +1297— más su congelamiento de diseño (`6139d7c`) y el
+registro de su revisión (`5574fb7`). La fusión fue real —divergencia contra mis commits de documentación—, predicha
+limpia con `git merge-tree` y limpia de verdad: **3 archivos, +1370/−1**. Y acá la verificación **no fue leer**:
+ejecuté su arnés, dos veces, sobre el árbol fusionado.
+
+| Lo que se midió | Comando | Resultado |
+| --- | --- | --- |
+| Primera corrida | `cmd.exe /c python tools\collaboration-acceptance\collaboration_acceptance.py` | **34 verificaciones, 0 fallas**, exit **0** |
+| Segunda corrida, que es la que prueba el teardown | el mismo comando | **34 verificaciones, 0 fallas**, exit **0**, arrancando en conteo etiquetado **0** |
+| Guardas del recorrido | salida del propio arnés | generación con las cinco claves en `result`, descarga con 409, y **exportación XMI con 409 nombrando al editor** |
+| Teardown | `docker compose -p collaboration-acceptance … down -v` | exit 0 y conteo etiquetado final en **0** |
+| Compuertas restantes sobre ese árbol | las cuatro de §14.4 | backend **347/0/0/0 BUILD SUCCESS**; web **169 pasan, 4 omitidas, 0 fallan** con lint, tipos y build limpios; `pytest tools -q` **54**; arnés XMI **18/0** |
+
+La invocación fue la que el par documentó —**por Windows**—: en este entorno WSL no hay CLI de Docker, y el arnés
+lo detecta, se niega a arrancar y no deja nada. Verifiqué además que su cláusula de rechazo hace lo que dice: el
+conteo es **por etiqueta**, así que los Testcontainers que levanta mi propia suite en el mismo daemon no lo afectan.
+
+**Sobre la revisión de C25: no la dupliqué, y el motivo se declara.** Su autoridad es del par —
+`review-2656a8f219489042`, tier **alto**, **cuatro lentes** (risk, resilience, readability, reliability), 1297
+líneas, aprobada y quemada, con cuatro avisos informativos—. Correr una segunda revisión de cuatro lentes sobre **el
+mismo contenido** habría sido gasto sin evidencia nueva, y para un **arnés** la evidencia fuerte no es leerlo: es
+**ejecutarlo**, que es lo que hice, dos veces, sobre el árbol que entra a `main`. No es una omisión: es una decisión
+con motivo escrito. Si el usuario quiere además una autoridad de esta sesión sobre el arnés, se corre y se asienta.
+
+**El cierre del incremento (C26).** Su punta `8f28a81` trae el acta de cierre y su §4.4 de la concesión de edición
+dentro del archivo de contratos transversales, que es **compartido**. La fusión fue limpia y el diff staged son
+**2 archivos de documentación, +143/−0**: su cambio en el contrato es **adición pura** —28 líneas insertadas, cero
+borradas— y **mis §6 (XMI), §7 (IA) y §8 (generación) sobreviven intactos**, verificado leyendo los encabezados del
+archivo después del staged. El código queda **byte-idéntico** a `723c90c` —`git diff --stat` sobre `backend`, `web`
+y `tools` devuelve vacío—, así que las compuertas ya ejecutadas describen este mismo árbol de código; `pytest` y el
+arnés XMI volvieron a correr igual: **54** y **18/0**.
+
+**La revisión nativa de estos dos commits de fusión no se corrió, y es la excepción declarada**: el segundo es
+documentación pasiva pura, y el primero trae el arnés cuya autoridad ya existe y cuya verificación fue ejecutarlo.
+
+**Dos cosas que el par declaró y se asientan como suyas**: el arnés **deja la imagen**
+(`collaboration-acceptance-diagrammer`) para limpieza manual, y la colecta de su revisión sufrió **tres fallos del
+relay** (`WebSocket error`), que resolvió capturando de a un slot con la binding exacta recomendada. El relay
+intermitente es un hecho de este entorno que esta sesión también midió por su lado (§13.6, §14.7).
+
+**Lo único del cierre que no está medido, y se declara**: el acta del par se escribió **sin capturas de pantalla**,
+porque este flujo no tiene entorno de navegador. Está declarado por él y no se tapa; si el usuario las quiere, es
+trabajo aparte.
