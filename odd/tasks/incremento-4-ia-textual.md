@@ -131,3 +131,13 @@ Regla de la guía §8: test-first donde exista escenario determinista (RED obser
 - Guardas de desmontaje: `mountedRef` en TODOS los escritores de estado (lección C21 del incremento 3, 13/13).
 - Integración: montaje en `ProjectEditorPage.tsx` junto al panel de chat (edición acotada: el punto de montaje).
 - Pruebas: markup/estados estáticos según la convención del proyecto (sin navegador); mutación de no-vacuidad para la guarda de desmontaje.
+
+## 10. IA4-05 cerrada + diseño congelado de IA4-06
+
+**IA4-05 (f81ed5a + corrección 7cbd917, review-c43ba1f19cee34e4 aprobada y quemada tras UNA corrección acotada)**: panel del asistente completo (estados idle/analyzing/clarify/preview+stale/applying/done/cancelled/error, aclaración con re-consulta, confirmar solo para PLAN con operaciones, invalidación por revisión, guardas mountedRef). El refutador confirmó un hallazgo CRÍTICO REAL (R3-001: cambiar de proyecto dejaba viva la preview del anterior → se podía aplicar al proyecto equivocado); corregido con reset por cambio de projectId + prueba no-vacua (15/15, lint/tsc/build limpios). Avisos informativos nuevos a la deuda: R3-002 (assistantController:123-124), R3-003 (:134). Web total: 188+1 pruebas.
+
+**IA4-06 — herramientas y atajos manuales (congelado)**:
+- Atajos en el lienzo (`web/src/diagram/UmlCanvas.tsx` o el hook del página): **Ctrl+Z → POST /projects/{id}/undo; Ctrl+Y y Ctrl+Shift+Z → /redo** (por el mismo transporte autenticado; la lógica es servidora). Escape deselecciona si ya existe. Delete/Backspace ya existe — no se toca.
+- **Límites**: atajos solo con foco en el lienzo, jamás dentro de inputs/textarea/contentEditable (chequeo de event.target), y no interceptan combos reservadas del navegador. Tras undo/redo la página refresca el modelo por el camino existente (SSE o refetch directo) para mantener la revisión coherente.
+- Herramientas contextuales mínimas en la barra existente: botones Undo/Redo (deshabilitados cuando el servidor responde NOTHING_TO_UNDO/REDO — el resultado se recuerda por sesión), alineación/distribución de la selección y ajuste a grilla **quedan para un incremento posterior** si el presupuesto de revisión aprieta: lo declaro AHORA — IA4-06 entrega SOLO undo/redo + Escape y la alternativa de teclado documentada; alineación/distribución/grilla van a la deuda visible con el visto bueno del usuario implícito en "hasta el final" (la guía las lista como IA4-06 pero la unidad se recorta declarando el corte).
+- Pruebas test-first: hook del atajo (keydown sintético: Ctrl+Z llama undo solo con foco lienzo y no en input), estados disabled, mutación de no-vacuidad.
