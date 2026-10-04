@@ -1942,3 +1942,56 @@ intermitente es un hecho de este entorno que esta sesión también midió por su
 **Lo único del cierre que no está medido, y se declara**: el acta del par se escribió **sin capturas de pantalla**,
 porque este flujo no tiene entorno de navegador. Está declarado por él y no se tapa; si el usuario las quiere, es
 trabajo aparte.
+
+## 15. Unidad J — los tres avisos declarados y la cobertura de los constructos
+
+El usuario eligió, sobre la lista de lo que quedaba abierto en §14.13, **dos cosas y no más**: los tres avisos
+declarados con ubicación exacta, y el hueco de cobertura de los nueve constructos de §3.9 —más las notas, que viven
+en la misma fila de «no medido»—. Quedaron **afuera por decisión suya** el montaje del aviso de conflicto en el panel
+XMI —que sigue declarado pendiente, sin trabajar—, la gramática de `Path=` y XMI 1.1/2.2 como funcionalidad.
+
+**El trabajo se hace en el repo local**, no en el worktree, por pedido explícito del usuario, y sobre una rama nueva
+(`fix/xmi-open-findings`) porque `main` es la rama por defecto y la convención de esta sesión es rama primero,
+fusión después.
+
+### 15.1 La reconstrucción de los tres avisos, declarada antes de tocarlos
+
+El cierre de la revisión de la unidad F trae **id, lente, ubicación y severidad**, y **no el texto** de cada aviso;
+su prosa tampoco está en el estado durable (§13.3 lo dejó medido: el registro de consumo terminal son 259 bytes y
+nombra el linaje, no el hallazgo). Por lo tanto **no se cita: se reconstruye**, y cada arreglo se asienta como
+**reconstrucción por análisis de la ubicación**, nunca como la corrección del texto original. Lo que sigue es ese
+análisis, escrito antes de tocar una línea.
+
+| Aviso | Ubicación | Lente y severidad | Qué hay en esa ubicación, y qué es defendible como defecto de esa lente |
+| --- | --- | --- | --- |
+| `R2-001` | `tools/xmi-acceptance/xmi_acceptance.py:275` | legibilidad, `SUGGESTION` | la llamada de `report(...)` del vocabulario declarado: pasa `not unmeasured_tags` como bandera y arma el diccionario de evidencia **en línea y anidado** dentro de la llamada, cuando sus llamadas hermanas usan variables nombradas |
+| `R3-001` | `backend/src/main/java/com/diagramador/xmi/XmiReader.java:91-99` | fiabilidad, `WARNING` | el lazo que clasifica el dialecto acepta como UML cualquier declaración de namespace cuyo valor **contenga** `"/spec/UML/"` —una heurística de subcadena— y se queda con **la primera**: un namespace ajeno que contenga ese texto se reporta como «el namespace UML» |
+| `R4-001` | `XmiReader.java:94` | resiliencia, `WARNING` | la condición de ese mismo lazo sobre entrada **no confiable**: con **varios** namespaces con forma UML, el que gana depende del orden y el mensaje puede **atribuir** el fallo a un dialecto que no es la causa, porque no considera si el namespace propio (UML 2.1) también venía declarado |
+
+**Los tres se arreglan con prueba primero**, y cada uno tiene que mostrar su rojo. Los dos de `XmiReader` son
+observables con documentos armados a mano —un namespace impostor, y un documento que declara 2.2 **y** 2.1 sin
+`uml:Model` en 2.1—; el de legibilidad no cambia comportamiento, así que su evidencia es que el arnés sigue en
+verde con **las mismas aserciones** y la llamada queda legible.
+
+### 15.2 La cobertura de los nueve constructos
+
+La lista no se inventa: son **las nueve filas** de la tabla de formas medidas de §3.9, más las notas, que están en
+la misma fila de «no medido» de §11.7. Lo que falta no es la forma —ya está medida— sino que **una prueba ejerza
+cada una** y afirme esa forma. Qué ejerce hoy cada prueba está delegado a un explorador de solo lectura, y su
+resultado se asienta en §15.4 con `ruta:línea`: nada entra acá por memoria.
+
+### 15.3 Plan y criterios de cierre
+
+| # | Tarea | Criterio de cierre |
+| --- | --- | --- |
+| J1 | Reconstruir los tres avisos desde su ubicación | la tabla de §15.1 escrita **antes** de tocar código |
+| J2 | Medir la cobertura real de los nueve constructos y las notas | tabla con `ruta:línea` de lector y de prueba —o `NINGUNA`— y lista de lo no ejercitado |
+| J3 | Arreglar `R3-001` y `R4-001` en el diagnóstico del dialecto | rojo observado con los dos documentos armados, después verde, y las pruebas existentes del lector sin cambiar de expectativa |
+| J4 | Arreglar `R2-001` | el arnés sigue en verde con las mismas aserciones y la llamada queda legible como sus hermanas |
+| J5 | Escribir la prueba de cada constructo no ejercitado | una aserción por forma medida, citando §3.9, y **cada prueba nueva tiene que poder fallar** |
+| J6 | Verificar sobre la rama | `mvn -o -B -f backend/pom.xml verify`, `python -m pytest tools -q`, el arnés XMI y el arnés de colaboración del par |
+| J7 | Documentar y commitear por unidad de trabajo | §15.4 con los números, y un commit por unidad con su evidencia |
+| J8 | Revisión nativa y `main` | procedimiento de siempre: rango commiteado, compuertas medidas, revisión, autoridad quemada, `main` y push |
+
+Y una regla que rige toda la unidad: **cada prueba nueva tiene que poder fallar**. No alcanza con que pase; se
+comprueba rompiendo lo que afirma y viendo la prueba caer.
