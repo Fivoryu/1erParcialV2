@@ -554,6 +554,11 @@ class AssistantJourney:
         self.project_path = ""
         self.model_id = ZERO_UUID
         self.revisions: list[int] = []
+        # (mutation label, accepted?) pairs for EVERY attempted mutation, plus revision samples taken
+        # ONLY from mutations the harness verified as ACCEPTED. The monotonic check samples only the
+        # accepted ones, so rejected/model-behavior branches never poison the bookkeeping.
+        self.mutations: list[tuple[str, bool]] = []
+        self.revision_samples: list[tuple[str, int]] = []
 
     # -- shared helpers --
 
@@ -565,6 +570,16 @@ class AssistantJourney:
         if isinstance(revision, int):
             self.revisions.append(revision)
         return revision
+
+    def record_mutation(self, label: str, accepted: bool, model_body: object) -> None:
+        """Record a (mutation, accepted?) pair; only verified-ACCEPTED mutations feed the monotonic
+        revision sample, taken from the model read immediately after the mutation."""
+        self.mutations.append((label, bool(accepted)))
+        if not accepted:
+            return
+        revision = model_revision(json_object(model_body))
+        if isinstance(revision, int):
+            self.revision_samples.append((label, revision))
 
     def plan(self, client: HttpClient, utterance: str) -> tuple[dict[str, object], int | None]:
         """POST /assistant/plan with the fresh baseRevision the endpoint requires; returns (response, revision)."""
@@ -727,13 +742,14 @@ class AssistantJourney:
                 "resultRevision": None if value is None else value.get("resultRevision"),
             }
 
-        check_http(results, scenario, "A seeds the Cliente classifier with a manual command", seed_response, 200,
+        seed_ok = check_http(results, scenario, "A seeds the Cliente classifier with a manual command", seed_response, 200,
                    command_accepted, {"status": "ACCEPTED"}, "POST /projects/{id}/commands")
 
         seeded_model = self.read_model(self.client_a)
         model_body = json_object(seeded_model.get("body"))
         self.model_id = get_string(model_body, "id")
         self.record_revision(seeded_model.get("body"))
+        self.record_mutation("setup: manual seed Cliente", seed_ok, seeded_model.get("body"))
 
         def seeded_model_ready(body: object):
             value = json_object(body)
@@ -810,7 +826,10 @@ class AssistantJourney:
 
         plan_body = json_object(plan_response.get("body"))
         intent = None if plan_body is None else plan_body.get("intent")
+        apply_ok = False
+        primary_applied = False
         if plan_ok and intent == "PLAN":
+            primary_applied = True
             apply_response = self.apply(self.client_a, plan_body, base_revision)
 
             def applied(body: object):
@@ -821,7 +840,7 @@ class AssistantJourney:
                 )
                 return ok, summary
 
-            check_http(results, scenario, "Apply of the Factura plan accepts every step",
+            apply_ok = check_http(results, scenario, "Apply of the Factura plan accepts every step",
                        apply_response, 200, applied,
                        {"stepStatuses": ["ACCEPTED", "ACCEPTED", "ACCEPTED"]},
                        "POST /projects/{id}/assistant/apply")
@@ -855,6 +874,8 @@ class AssistantJourney:
 
         model = self.read_model(self.client_a)
         self.record_revision(model.get("body"))
+        if primary_applied:
+            self.record_mutation("escenario-1: apply plan Factura", apply_ok, model.get("body"))
         factura = find_classifier(model.get("body"), "Factura")
         cliente = find_classifier(model.get("body"), "Cliente")
 
@@ -925,10 +946,13 @@ class AssistantJourney:
                 )
                 return ok, summary
 
-            check_http(results, scenario, f"Fallback apply {index + 1}/3 ({expected_type})",
+            apply_ok = check_http(results, scenario, f"Fallback apply {index + 1}/3 ({expected_type})",
                        apply_response, 200, applied, {"stepStatuses": ["ACCEPTED"]},
                        "POST /projects/{id}/assistant/apply")
-            self.record_revision(self.read_model(self.client_a).get("body"))
+            model_after = self.read_model(self.client_a)
+            self.record_revision(model_after.get("body"))
+            self.record_mutation(f"escenario-1 fallback: apply {expected_type} {index + 1}/3", apply_ok,
+                                 model_after.get("body"))
 
     # -- scenario 2: explain does not mutate --
 
@@ -988,12 +1012,16 @@ class AssistantJourney:
                 "resultRevision": None if value is None else value.get("resultRevision"),
             }
 
-        check_http(results, scenario, "A creates ClienteInternacional with a manual command", seed_response, 200,
+        seed_ok = check_http(results, scenario, "A creates ClienteInternacional with a manual command", seed_response, 200,
                    command_accepted, {"status": "ACCEPTED"}, "POST /projects/{id}/commands")
         model_after_seed = self.read_model(self.client_a)
         self.record_revision(model_after_seed.get("body"))
+        self.record_mutation("escenario-3: manual seed ClienteInternacional", seed_ok,
+                             model_after_seed.get("body"))
 
-        plan_response, _ = self.plan(self.client_a, "Eliminá la clase ClienteIntern")
+        # The plan's own fresh model read is the revision anchor immediately before the "unchanged"
+        # assertion (a plan never mutates).
+        plan_response, revision_before = self.plan(self.client_a, "Eliminá la clase ClienteIntern")
 
         def clarify_plan(body: object):
             value = json_object(body)
@@ -1018,7 +1046,6 @@ class AssistantJourney:
                    "POST /projects/{id}/assistant/plan")
 
         model_after = self.read_model(self.client_a)
-        revision_before = self.revisions[-1] if self.revisions else None
 
         def unchanged(value: object):
             ok = value == revision_before
@@ -1032,7 +1059,7 @@ class AssistantJourney:
     def scenario_4(self) -> None:
         scenario = "escenario-4"
         results = self.results
-        plan_response, _ = self.plan(self.client_a, "Eliminá la clase Inexistente")
+        plan_response, revision_before = self.plan(self.client_a, "Eliminá la clase Inexistente")
 
         def reject_plan(body: object):
             value = json_object(body)
@@ -1049,7 +1076,6 @@ class AssistantJourney:
                    "POST /projects/{id}/assistant/plan")
 
         model_after = self.read_model(self.client_a)
-        revision_before = self.revisions[-1] if self.revisions else None
 
         def unchanged(value: object):
             ok = value == revision_before
@@ -1097,12 +1123,13 @@ class AssistantJourney:
                 "resultRevision": None if value is None else value.get("resultRevision"),
             }
 
-        check_http(results, scenario, "B (EDITOR) creates Pais with a manual command, bumping the revision",
+        pais_ok = check_http(results, scenario, "B (EDITOR) creates Pais with a manual command, bumping the revision",
                    pais_response, 200, command_accepted, {"status": "ACCEPTED"},
                    "POST /projects/{id}/commands")
 
         model_after_b = self.read_model(self.client_a)
         revision_after_b = self.record_revision(model_after_b.get("body"))
+        self.record_mutation("escenario-5: B manual create Pais", pais_ok, model_after_b.get("body"))
 
         def b_state(body: object):
             ok = find_classifier(body, "Pais") is not None and model_revision(body) == revision_after_b
@@ -1221,11 +1248,12 @@ class AssistantJourney:
             )
             return ok, summary
 
-        check_http(results, scenario, "Apply of the rename accepts its single step", apply_response, 200,
+        apply_ok = check_http(results, scenario, "Apply of the rename accepts its single step", apply_response, 200,
                    applied, {"stepStatuses": ["ACCEPTED"]}, "POST /projects/{id}/assistant/apply")
 
         renamed_model = self.read_model(self.client_a)
         self.record_revision(renamed_model.get("body"))
+        self.record_mutation("escenario-6: apply rename", apply_ok, renamed_model.get("body"))
 
         def shows_rename(body: object):
             ok = find_classifier(body, "ClientePrincipal") is not None and find_classifier(body, "Cliente") is None
@@ -1241,25 +1269,30 @@ class AssistantJourney:
                              "POST /projects/{projectId}/undo")
         restored_model = self.read_model(self.client_a)
         self.record_revision(restored_model.get("body"))
+        self.record_mutation("escenario-6: undo rename", undo_ok, restored_model.get("body"))
         check_http(results, scenario, "Model read shows the rename reverted",
                    restored_model, 200, shows_rename, {"hasClientePrincipal": False, "hasCliente": True},
                    "GET /projects/{id}/model")
 
         redo_response = self.redo(self.client_a)
-        check_http(results, scenario, "A redoes the rename", redo_response, 200,
+        redo_ok = check_http(results, scenario, "A redoes the rename", redo_response, 200,
                    lambda body: undo_accepted(body), {"status": "ACCEPTED"},
                    "POST /projects/{projectId}/redo")
         redone_model = self.read_model(self.client_a)
         self.record_revision(redone_model.get("body"))
+        self.record_mutation("escenario-6: redo rename", redo_ok, redone_model.get("body"))
         check_http(results, scenario, "Model read shows the rename restored",
                    redone_model, 200, shows_rename, {"hasClientePrincipal": True, "hasCliente": False},
                    "GET /projects/{id}/model")
 
         second_redo = self.redo(self.client_a)
-        check_http(results, scenario, "Redo with nothing undone is rejected with NOTHING_TO_REDO",
+        second_redo_ok = check_http(results, scenario, "Redo with nothing undone is rejected with NOTHING_TO_REDO",
                    second_redo, 200, lambda body: undo_rejected(body, "NOTHING_TO_REDO"),
                    {"status": "REJECTED", "code": "NOTHING_TO_REDO"},
                    "POST /projects/{projectId}/redo")
+        # Rejected mutation: recorded as (mutation, accepted=False) only; no monotonic sample.
+        self.record_mutation("escenario-6: second redo (expected NOTHING_TO_REDO)", second_redo_ok,
+                             redone_model.get("body"))
 
         # The undo log is per-user and LIFO, so removing the assistant-created Factura requires undoing
         # A's later entries first (rename, ClienteInternacional.create, then the Factura steps).
@@ -1276,11 +1309,13 @@ class AssistantJourney:
                 accepted, _ = undo_accepted(body)
                 return accepted, {"attempt": attempt, "result": undo_summary(body)}
 
-            check_http(results, scenario, f"Undo #{attempt} accepted while unwinding to the Factura entries",
+            undo_attempt_ok = check_http(results, scenario, f"Undo #{attempt} accepted while unwinding to the Factura entries",
                        undo_response, 200, undo_step_ok, {"status": "ACCEPTED"},
                        "POST /projects/{projectId}/undo")
             after_model = self.read_model(self.client_a)
             self.record_revision(after_model.get("body"))
+            self.record_mutation(f"escenario-6: undo #{attempt} unwinding to Factura", undo_attempt_ok,
+                                 after_model.get("body"))
         if not removed:
             check_http(
                 results, scenario, "Factura removed through successive undos",
@@ -1294,11 +1329,12 @@ class AssistantJourney:
 
         # The seeded Cliente classifier is A's only remaining entry; undo it too so the log ends empty.
         undo_response = self.undo(self.client_a)
-        check_http(results, scenario, "A undoes the seeded Cliente classifier", undo_response, 200,
+        final_undo_ok = check_http(results, scenario, "A undoes the seeded Cliente classifier", undo_response, 200,
                    lambda body: undo_accepted(body), {"status": "ACCEPTED"},
                    "POST /projects/{projectId}/undo")
         final_undo_model = self.read_model(self.client_a)
         self.record_revision(final_undo_model.get("body"))
+        self.record_mutation("escenario-6: undo seeded Cliente", final_undo_ok, final_undo_model.get("body"))
 
         def cliente_removed(body: object):
             ok = find_classifier(body, "Cliente") is None
@@ -1309,10 +1345,13 @@ class AssistantJourney:
                    cliente_removed, {"hasCliente": False}, "GET /projects/{id}/model")
 
         final_undo = self.undo(self.client_a)
-        check_http(results, scenario, "Undo with an empty log is rejected with NOTHING_TO_UNDO",
+        final_nothing_ok = check_http(results, scenario, "Undo with an empty log is rejected with NOTHING_TO_UNDO",
                    final_undo, 200, lambda body: undo_rejected(body, "NOTHING_TO_UNDO"),
                    {"status": "REJECTED", "code": "NOTHING_TO_UNDO"},
                    "POST /projects/{projectId}/undo")
+        # Rejected mutation: recorded as (mutation, accepted=False) only; no monotonic sample.
+        self.record_mutation("escenario-6: undo with empty log (expected NOTHING_TO_UNDO)", final_nothing_ok,
+                             final_undo_model.get("body"))
 
     # -- coherence: full re-read and monotonic revisions --
 
@@ -1336,16 +1375,21 @@ class AssistantJourney:
                    re_read_coherent, {"classifierNames": ["Pais"], "revision": last_recorded},
                    "GET /projects/{id}/model")
 
+        # Monotonic sampling: ONLY mutations the harness verified as ACCEPTED (the (mutation, accepted?)
+        # pairs in self.mutations), each sampled from the model read immediately after the mutation.
+        # Model-behavior branches (fallback plans, expected rejections) are tolerated: rejected or
+        # not-attempted mutations never produce a sample.
+        sample_revisions = [revision for _, revision in self.revision_samples]
         strictly_increasing = all(
-            later > earlier for earlier, later in zip(self.revisions, self.revisions[1:])
+            later > earlier for earlier, later in zip(sample_revisions, sample_revisions[1:])
         )
         report(
             results,
             scenario,
-            "Recorded revisions are strictly monotonic across every accepted mutation",
-            strictly_increasing and len(self.revisions) >= 2,
-            {"strictlyIncreasing": True, "samples": len(self.revisions)},
-            {"revisions": self.revisions},
+            "Recorded revisions are strictly monotonic across every verified-accepted mutation",
+            strictly_increasing and len(sample_revisions) >= 2,
+            {"strictlyIncreasing": True, "acceptedSamples": len(sample_revisions)},
+            {"revisionSamples": self.revision_samples, "mutationLog": self.mutations},
         )
 
 
@@ -1440,7 +1484,7 @@ def print_not_measured() -> None:
     print("\n=== What was NOT measured ===", flush=True)
     print("- Assistant latency is informational only; no plan/apply duration is asserted.", flush=True)
     print("- SSE live delivery is not exercised (same convention as the collaboration harness).", flush=True)
-    print("- Prompt-contract quality (ia4-01-prompt-v2) belongs to tools/ai-eval; this harness asserts the "
+    print("- Prompt-contract quality (ia4-01-prompt-v3) belongs to tools/ai-eval; this harness asserts the "
           "backend plan/apply/undo contract.", flush=True)
     print("- No browsers are opened.", flush=True)
 

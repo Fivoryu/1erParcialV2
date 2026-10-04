@@ -173,12 +173,13 @@ public class AssistantApplyService {
                         List.of());
             }
             case "classifier.rename" -> {
-                String name = text(args.get("name"));
+                // Prompt v3 declares args {newName}; args.name stays a tolerated fallback.
+                String name = text(args.get("newName"));
                 if (name == null) {
-                    name = text(args.get("newName"));
+                    name = text(args.get("name"));
                 }
                 if (name == null) {
-                    yield missing("name", operation.type());
+                    yield missing("newName", operation.type());
                 }
                 yield mapped(payload("name", name), targets("classifier", operation.targetId()), List.of());
             }
@@ -192,12 +193,15 @@ public class AssistantApplyService {
             }
             case "attribute.add" -> {
                 String name = text(args.get("name"));
+                // DECLARED default: prompt v3 documents that attribute.add without an explicit type
+                // maps to "String" (the harness contract and README record this default); no other
+                // argument is guessed.
                 Object type = mappedType(args.get("type"));
+                if (type == null) {
+                    type = Map.of("primitiveName", "String");
+                }
                 if (name == null) {
                     yield missing("name", operation.type());
-                }
-                if (type == null) {
-                    yield missing("type", operation.type());
                 }
                 UUID classifierId = resolveClassifierTarget(operation, args, model);
                 if (classifierId == null) {
@@ -266,6 +270,8 @@ public class AssistantApplyService {
                 if (source == null || target == null) {
                     yield unresolvableTarget(operation.type());
                 }
+                // DECLARED default: prompt v3 documents kind ASSOCIATION when args carry no kind;
+                // no other argument is guessed.
                 Map<String, Object> payload = linkedPayload("id", UUID.randomUUID(),
                         "kind", text(args.get("kind")) == null ? "ASSOCIATION"
                                 : text(args.get("kind")).toUpperCase(),

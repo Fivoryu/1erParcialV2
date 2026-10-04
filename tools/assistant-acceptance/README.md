@@ -21,7 +21,8 @@ cmd.exe /c python tools/assistant-acceptance/assistant_acceptance.py
 
 - Docker Desktop corriendo, igual que el arnés de colaboración.
 - El binario `llama-server.exe` en `D:\ai-eval\runtime\` y el modelo `Qwen3.5-2B-Q4_K_M.gguf` en
-  `D:\ai-eval\models\` (el contrato vigente del prompt es `ia4-01-prompt-v2`, medido en
+  `D:\ai-eval\models\` (el contrato vigente del prompt es `ia4-01-prompt-v3`, la segunda y última
+  iteración declarada, que agrega el esquema explícito de `args`; medido en
   `docs/puds/verificacion/03-evaluacion-modelos-ia4-01.md`; el 2B es el modelo elegido para el asistente).
 - Alrededor de **2,5 GB de RAM libres** para cargar el modelo en el contexto de 2048 tokens.
 - Los tres puertos por defecto libres.
@@ -72,6 +73,14 @@ Preparación: registra e inicia sesión A y B; A crea el proyecto, siembra un cl
 endpoint exige; cada `POST /projects/{id}/assistant/apply` reenvía las operaciones **exactamente como el plan
 las devolvió** (`type`, `targetId`, `args`), como espera `AssistantApplyRequest`.
 
+**Contrato de argumentos (prompt v3 + defaults declarados en apply):** `attribute.add`/`attribute.update`
+deben llevar `args {name, type}` (si falta `type`, `AssistantApplyService` aplica el default declarado
+`"String"`); `classifier.rename` debe llevar `args {newName}` (con tolerancia a `args.name`; `args` vacío se
+rechaza con `MISSING_ARGUMENT`, sin adivinar); `classifier.create` lleva `args {name}`;
+`relationship.create` lleva `args {kind}` (default declarado `"ASSOCIATION"`) más `source`/`target`; la
+migración **V13** arregla el re-borrado de tombstones (`UNIQUE (cascade_id, target_type, target_id)`), de
+modo que deshacer un borrado y volver a borrar el elemento recreado ya no termina en `MODEL_INVALID`.
+
 - **Escenario 1 — preview multioperación:** A pide "Creá una clase Factura con el atributo fecha: Date y
   asociala con Cliente" y el arnés exige, como aserción primaria, un único plan con intent `PLAN` y exactamente
   `classifier.create Factura` + `attribute.add Factura.fecha` (con `targetClassifierName`) +
@@ -102,7 +111,12 @@ las devolvió** (`type`, `targetId`, `args`), como espera `AssistantApplyRequest
   y los pasos de Factura); el arnés deshace en bucle hasta que la lectura del modelo ya no muestra `Factura`,
   deshace el `Cliente` sembrado y verifica `NOTHING_TO_UNDO` con el log vacío.
 - **Coherencia de recarga:** relectura completa del modelo (estado final esperado: solo `Pais`, de B) y
-  verificación de que la revisión fue estrictamente monótona en cada mutación aceptada registrada.
+  verificación de que la revisión fue estrictamente monótona en cada mutación **aceptada y verificada**. El
+  arnés registra pares `(mutación, ¿aceptada?)` para cada mutación intentada y muestrea la revisión (leída
+  del modelo justo después de la mutación) solo de las aceptadas; las ramas de comportamiento del modelo
+  (fallbacks, rechazos esperados como `NOTHING_TO_REDO`) no generan muestra y no rompen la contabilidad.
+  Las aserciones de tipo "la revisión no cambió después de X" comparan contra la revisión leída del modelo
+  inmediatamente antes de X (nunca contra números hardcodeados).
 
 La salida imprime una tabla `escenario -> chequeos pasados` y conserva los límites bajo
 **What was NOT measured**. Cualquier aserción fallida, error de Docker/HTTP/llama o fallo de teardown termina
@@ -112,7 +126,7 @@ con estado distinto de cero.
 
 - La latencia del asistente es informativa: no se verifica ninguna duración de plan/apply.
 - No se ejercita la entrega SSE en vivo (misma convención que el arnés de colaboración).
-- La calidad del contrato de prompt `ia4-01-prompt-v2` pertenece a `tools/ai-eval`; este arnés mide el
+- La calidad del contrato de prompt `ia4-01-prompt-v3` pertenece a `tools/ai-eval`; este arnés mide el
   contrato plan/apply/undo del backend sobre esa pila real.
 - No abre navegadores.
 

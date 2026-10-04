@@ -288,6 +288,103 @@ class AssistantApplyServiceTest {
         assertThat(response.finalRevision()).isEqualTo(9L);
     }
 
+    @Test
+    void renameAcceptsTheDeclaredNewNameAndTheArgsNameFallbackAndRejectsEmptyArgs() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L), model(9L));
+        when(commandService.execute(any())).thenReturn(accepted(8L), accepted(9L));
+        AssistantApplyService service = service();
+
+        // Prompt v3 declares classifier.rename args {newName}; args.name remains a tolerated fallback.
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("classifier.rename", CLASSIFIER_ID, Map.of("newName", "Humana")),
+                new AssistantApplyOp("classifier.rename", CLASSIFIER_ID, Map.of("name", "HumanaFallback"))),
+                7L));
+
+        ArgumentCaptor<OperationEnvelope> envelopes = ArgumentCaptor.forClass(OperationEnvelope.class);
+        verify(commandService, times(2)).execute(envelopes.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstPayload = (Map<String, Object>) envelopes.getAllValues().get(0).payload();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> secondPayload = (Map<String, Object>) envelopes.getAllValues().get(1).payload();
+        assertThat(firstPayload).containsEntry("name", "Humana");
+        assertThat(secondPayload).containsEntry("name", "HumanaFallback");
+        assertThat(response.steps()).allSatisfy(step -> assertThat(step.status()).isEqualTo("ACCEPTED"));
+    }
+
+    @Test
+    void renameWithEmptyArgsStillRejectsWithMissingArgumentWithoutGuessing() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("classifier.rename", CLASSIFIER_ID, Map.of())), 7L));
+
+        verifyNoInteractions(commandService);
+        assertThat(response.steps()).singleElement().satisfies(step -> {
+            assertThat(step.status()).isEqualTo("REJECTED");
+            assertThat(step.diagnostics())
+                    .extracting(AssistantPlanResponse.Diagnostic::code)
+                    .containsExactly("MISSING_ARGUMENT");
+        });
+    }
+
+    @Test
+    void attributeAddDefaultsTheDeclaredStringTypeWhenArgsCarryNoType() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+
+        // The 2B model dropped the type ("fecha" with no type); prompt v3 declares the
+        // "String" default and the apply side enforces the same declared default.
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("attribute.add", CLASSIFIER_ID, Map.of("name", "fecha"))), 7L));
+
+        ArgumentCaptor<OperationEnvelope> envelopes = ArgumentCaptor.forClass(OperationEnvelope.class);
+        verify(commandService).execute(envelopes.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) envelopes.getValue().payload();
+        assertThat(payload).containsEntry("name", "fecha")
+                .containsEntry("type", Map.of("primitiveName", "String"))
+                .containsEntry("visibility", "PUBLIC");
+        assertThat(response.steps().get(0).status()).isEqualTo("ACCEPTED");
+    }
+
+    @Test
+    void attributeAddStillRequiresTheNameEvenWithTheDeclaredTypeDefault() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("attribute.add", CLASSIFIER_ID, Map.of("type", "Date"))), 7L));
+
+        verifyNoInteractions(commandService);
+        assertThat(response.steps()).singleElement().satisfies(step -> {
+            assertThat(step.status()).isEqualTo("REJECTED");
+            assertThat(step.diagnostics())
+                    .extracting(AssistantPlanResponse.Diagnostic::code)
+                    .containsExactly("MISSING_ARGUMENT");
+        });
+    }
+
+    @Test
+    void relationshipCreateDefaultsTheDeclaredAssociationKindWhenArgsCarryNoKind() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.create", null, Map.of(
+                        "source", Map.of("classifierName", "Persona"),
+                        "target", Map.of("classifierName", "Persona")))), 7L));
+
+        ArgumentCaptor<OperationEnvelope> envelopes = ArgumentCaptor.forClass(OperationEnvelope.class);
+        verify(commandService).execute(envelopes.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) envelopes.getValue().payload();
+        assertThat(payload).containsEntry("kind", "ASSOCIATION");
+        assertThat(response.steps().get(0).status()).isEqualTo("ACCEPTED");
+    }
+
     private AssistantApplyService service() {
         return new AssistantApplyService(projectApiService, authorizationService, currentUserContext, commandService,
                 attributeRepository, operationRepository, parameterRepository, constraintRepository,
