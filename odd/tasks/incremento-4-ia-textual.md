@@ -93,3 +93,16 @@ Regla de la guía §8: test-first donde exista escenario determinista (RED obser
 - Pruebas: validator (7 casos), service (parseo vallado/inválido/provider caído/disabled), controller (auth). RED observado antes de implementar cada grupo.
 
 **Fuera de alcance de IA4-02**: aplicar el plan (IA4-03), UI (IA4-05), streaming (innecesario: respuesta completa por petición).
+
+## 7. IA4-02 cerrada + diseño congelado de IA4-03
+
+**IA4-02 (73f9492, review-ca65fe77e0a5a736 aprobada y quemada)**: paquete `assistant` completo (9 archivos, 1.234 líneas), 15 pruebas nuevas, suite 370/0/0/0 con Docker arriba. Avisos informativos a la deuda visible: R3-001 (Validator:88), R3-002 (Validator:265), R3-003 (Catalog:25), R3-004 (Service:75-84). Provider deshabilitado por defecto (`diagrammer.assistant.enabled=false` → 503).
+
+**IA4-03 — aplicar planes por el ejecutor normal (congelado)**:
+- `AssistantApplyRequest`: lista de operaciones **tal como las devolvió el plan** (type, targetId, args) + baseRevision. Sin re-interpretación del texto: el apply es stateless.
+- Revalidación servidora ANTES de ejecutar: revisión vencida → `REVIEW_REQUIRED` sin ejecutar nada; destino que ya no existe → `UNKNOWN_TARGET`; borrados con cascada → precondición `cascade_count` calculada por el servicio (CommandService la exige).
+- `AssistantApplyService` construye `OperationEnvelope` por operación (origin=AI, idempotencyKey nuevo por paso, author del session, baseRevision re-leída tras cada paso) y ejecuta por `CommandService.execute`. **Política de atomicidad (cierra la guía §3.7): aplicación secuencial con corte al primer rechazo; la respuesta informa paso por paso (aceptado/rechazado + diagnostics); NUNCA se declara atómica.**
+- Mapeo de payload por tipo: el worker debe leer cada handler y mapear exactamente (defaults defensivos declarados; argumento requerido faltante → paso rechazado con `MISSING_ARGUMENT`, no 500).
+- `AssistantApplyResponse`: steps[{index, type, targetId, status, operationId, resultRevision, diagnostics}], finalRevision.
+- Endpoint `POST /api/projects/{projectId}/assistant/apply`, mismas convenciones de auth que el plan.
+- Web (transporte solamente): `web/src/api/assistant.ts` + `web/src/api/assistant.test.ts` con las convenciones de `client.ts`/`xmi.test.ts`. El panel completo es IA4-05.
