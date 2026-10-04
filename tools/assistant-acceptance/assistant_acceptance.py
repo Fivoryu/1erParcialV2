@@ -986,8 +986,8 @@ class AssistantJourney:
         revision_after = model_revision(model_after.get("body"))
 
         def unchanged(value: object):
-            ok = value == revision_before
-            return ok, {"revisionBefore": revision_before, "revisionAfter": value}
+            ok = model_revision(value) == revision_before
+            return ok, {"revisionBefore": revision_before, "revisionAfter": model_revision(value)}
 
         check_http(results, scenario, "Model revision unchanged after the explain plan (apply is never invoked)",
                    model_after, 200, unchanged, {"revisionAfter": revision_before},
@@ -1048,8 +1048,8 @@ class AssistantJourney:
         model_after = self.read_model(self.client_a)
 
         def unchanged(value: object):
-            ok = value == revision_before
-            return ok, {"revisionBefore": revision_before, "revisionAfter": value}
+            ok = model_revision(value) == revision_before
+            return ok, {"revisionBefore": revision_before, "revisionAfter": model_revision(value)}
 
         check_http(results, scenario, "Model revision unchanged after the clarify plan", model_after, 200,
                    unchanged, {"revisionAfter": revision_before}, "GET /projects/{id}/model")
@@ -1078,8 +1078,8 @@ class AssistantJourney:
         model_after = self.read_model(self.client_a)
 
         def unchanged(value: object):
-            ok = value == revision_before
-            return ok, {"revisionBefore": revision_before, "revisionAfter": value}
+            ok = model_revision(value) == revision_before
+            return ok, {"revisionBefore": revision_before, "revisionAfter": model_revision(value)}
 
         check_http(results, scenario, "Model revision unchanged after the rejected plan", model_after, 200,
                    unchanged, {"revisionAfter": revision_before}, "GET /projects/{id}/model")
@@ -1260,6 +1260,11 @@ class AssistantJourney:
             return ok, {"hasClientePrincipal": find_classifier(body, "ClientePrincipal") is not None,
                         "hasCliente": find_classifier(body, "Cliente") is not None}
 
+        def shows_revert(body: object):
+            ok = find_classifier(body, "ClientePrincipal") is None and find_classifier(body, "Cliente") is not None
+            return ok, {"hasClientePrincipal": find_classifier(body, "ClientePrincipal") is not None,
+                        "hasCliente": find_classifier(body, "Cliente") is not None}
+
         check_http(results, scenario, "Model read shows the rename applied", renamed_model, 200, shows_rename,
                    {"hasClientePrincipal": True, "hasCliente": False}, "GET /projects/{id}/model")
 
@@ -1271,7 +1276,7 @@ class AssistantJourney:
         self.record_revision(restored_model.get("body"))
         self.record_mutation("escenario-6: undo rename", undo_ok, restored_model.get("body"))
         check_http(results, scenario, "Model read shows the rename reverted",
-                   restored_model, 200, shows_rename, {"hasClientePrincipal": False, "hasCliente": True},
+                   restored_model, 200, shows_revert, {"hasClientePrincipal": False, "hasCliente": True},
                    "GET /projects/{id}/model")
 
         redo_response = self.redo(self.client_a)
@@ -1291,7 +1296,10 @@ class AssistantJourney:
                    {"status": "REJECTED", "code": "NOTHING_TO_REDO"},
                    "POST /projects/{projectId}/redo")
         # Rejected mutation: recorded as (mutation, accepted=False) only; no monotonic sample.
-        self.record_mutation("escenario-6: second redo (expected NOTHING_TO_REDO)", second_redo_ok,
+        # NOTE: second_redo_ok only proves the REJECTED response matched the expectation; acceptance
+        # for the bookkeeping must come from the response body itself.
+        second_redo_accepted, _ = undo_accepted(second_redo.get("body"))
+        self.record_mutation("escenario-6: second redo (expected NOTHING_TO_REDO)", second_redo_accepted,
                              redone_model.get("body"))
 
         # The undo log is per-user and LIFO, so removing the assistant-created Factura requires undoing
@@ -1350,7 +1358,10 @@ class AssistantJourney:
                    {"status": "REJECTED", "code": "NOTHING_TO_UNDO"},
                    "POST /projects/{projectId}/undo")
         # Rejected mutation: recorded as (mutation, accepted=False) only; no monotonic sample.
-        self.record_mutation("escenario-6: undo with empty log (expected NOTHING_TO_UNDO)", final_nothing_ok,
+        # NOTE: final_nothing_ok only proves the REJECTED response matched the expectation; acceptance
+        # for the bookkeeping must come from the response body itself.
+        final_undo_accepted, _ = undo_accepted(final_undo.get("body"))
+        self.record_mutation("escenario-6: undo with empty log (expected NOTHING_TO_UNDO)", final_undo_accepted,
                              final_undo_model.get("body"))
 
     # -- coherence: full re-read and monotonic revisions --
