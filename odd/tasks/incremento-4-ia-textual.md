@@ -48,6 +48,17 @@ Regla de la guía §8: test-first donde exista escenario determinista (RED obser
 - **Métricas por modelo:** exactitud de esquema/plan sobre el corpus, ambigüedad bien manejada (pregunta en vez de mutar), carga fría/caliente, RAM pico de proceso y de sistema, latencia p50/p95. Registro de hardware/runtime/artefacto/cuantización exactos.
 - **Salida:** informe en `docs/puds/verificacion/` + recomendación DEC-I4-01/02 para el usuario. La guía no fija umbral: DEC-I4-06 queda abierta hasta medir.
 
+### 3.1 Artefactos y runtime descargados (2026-10-04, con autorización del usuario)
+
+| Ítem | Valor medido |
+| --- | --- |
+| `Qwen3.5-0.8B-Q4_0.gguf` | 563.036.064 bytes; sha256 `57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf` (coincide con el LFS oid publicado) |
+| `Qwen3.5-2B-Q4_K_M.gguf` | 1.280.835.840 bytes; sha256 `aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223` (coincide con el LFS oid publicado) |
+| Ubicación | `D:\ai-eval\models\` (fuera del repo; futuro volumen del servicio IA) |
+| Runtime | `llama.cpp` build `b11388`, `llama-b11388-bin-win-cpu-x64.zip`, en `D:\ai-eval\runtime\` (`llama-server.exe`, `llama-cli.exe`) |
+| Elección CPU | GPU = Intel integrada (~2 GB compartidos, sin CUDA): el build CPU x64 elimina variables de offload y deja limpia la medición de RAM pico y latencia |
+| Estado | **No corrido todavía**: el host tenía 1,4 GB de RAM disponibles al momento de la descarga; las corridas esperan a que libere RAM (decisión del usuario) |
+
 ## 4. Restricciones de método (de incrementos previos, vigentes)
 
 - Docs en español rioplatense; código, commits y comentarios en inglés; sin atribución de IA.
@@ -61,4 +72,6 @@ Regla de la guía §8: test-first donde exista escenario determinista (RED obser
 
 | Fecha | Unidad | Evidencia | Commit |
 | --- | --- | --- | --- |
-| 2026-10-04 | — | Plan congelado; exploración de la capa de comandos con path:line; rama creada desde `4dac15e` | (este commit) |
+| 2026-10-04 | — | Plan congelado; exploración de la capa de comandos con path:line; rama creada desde `4dac15e` | c97f0d1 |
+| 2026-10-04 | IA4-01 | Corpus de 15 casos + protocolo versionados antes de correr modelos | bf58f0f |
+| 2026-10-04 | IA4-01 | GGUF 0.8B/2B descargados y verificados por sha256; runtime llama.cpp b11388 CPU en `D:\ai-eval\`; corridas diferidas por RAM del host | (este commit) |
