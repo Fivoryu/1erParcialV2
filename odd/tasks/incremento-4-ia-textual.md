@@ -74,4 +74,6 @@ Regla de la guía §8: test-first donde exista escenario determinista (RED obser
 | --- | --- | --- | --- |
 | 2026-10-04 | — | Plan congelado; exploración de la capa de comandos con path:line; rama creada desde `4dac15e` | c97f0d1 |
 | 2026-10-04 | IA4-01 | Corpus de 15 casos + protocolo versionados antes de correr modelos | bf58f0f |
-| 2026-10-04 | IA4-01 | GGUF 0.8B/2B descargados y verificados por sha256; runtime llama.cpp b11388 CPU en `D:\ai-eval\`; corridas diferidas por RAM del host | (este commit) |
+| 2026-10-04 | IA4-01 | GGUF 0.8B/2B descargados y verificados por sha256; runtime llama.cpp b11388 CPU en `D:\ai-eval\`; corridas diferidas por RAM del host | 359502d |
+| 2026-10-04 | IA4-01 | Corredor + juez con selftest sin RAM (27/27); corridas 0.8B y 2B con prompt v1; enmiendas de instrumento (thinking, sampler $pid) | 36534bc, d437c27, 824ce75 |
+| 2026-10-04 | IA4-01 | **CERRADA**: iteración única de prompt (v2, few-shot con elementos ajenos al corpus); veredictos 0.8B 6/15 y 2B 11/15; informe y recomendación DEC-I4-01 (2B Q4_K_M base) y DEC-I4-02 (llama.cpp) en docs/puds/verificacion/03 | (este commit) |
