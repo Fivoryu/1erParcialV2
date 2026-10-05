@@ -69,6 +69,53 @@ export function dragPosition(
   };
 }
 
+export type FloatingState = {
+  /** What the user last chose (or the default anchor). Never rewritten by a clamp. */
+  desired: FloatingPosition | null;
+  /** The viewport the button is rendered into. Null before hydration / during SSR. */
+  viewport: FloatingViewport | null;
+};
+
+/**
+ * The position actually rendered: the desired spot clamped to the current
+ * viewport. Returns null when either field is null, so server rendering keeps
+ * producing a button with no inline position.
+ */
+export function resolveRenderedPosition(state: FloatingState): FloatingPosition | null {
+  if (state.desired === null || state.viewport === null) {
+    return null;
+  }
+  return clampToViewport(state.desired, state.viewport);
+}
+
+/**
+ * Records a new viewport WITHOUT touching `desired`. Rewriting the clamped
+ * result back into the desired position is exactly what ratcheted the button
+ * to the top-left, so this function must leave `desired` alone for every
+ * input. Returns a new state object; the input is never mutated.
+ */
+export function withViewport(state: FloatingState, viewport: FloatingViewport): FloatingState {
+  return { desired: state.desired, viewport };
+}
+
+/**
+ * True only once the gesture should actually reposition the button: either it
+ * already passed the click threshold, or this move passes it. Below the
+ * threshold the button must not move at all, so a jittery click cannot nudge
+ * it by a pixel or two and leave it shifted.
+ */
+export function shouldReposition(
+  alreadyDragging: boolean,
+  startPointer: FloatingPosition,
+  currentPointer: FloatingPosition,
+  threshold: number,
+): boolean {
+  if (alreadyDragging) {
+    return true;
+  }
+  return isDragGesture(startPointer, currentPointer, threshold);
+}
+
 /**
  * Reads a stored position, returning null for anything that is not a valid
  * `{ x, y }` pair of finite numbers. A corrupt entry must never break the

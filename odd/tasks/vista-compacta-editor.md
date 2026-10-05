@@ -141,6 +141,27 @@ Regla test-first: en VC-01, VC-02 y VC-04 existe escenario determinista (helpers
 
 **Datos de prueba dejados en la base de desarrollo.** El verificador creó usuarios y proyectos descartables vía API (`vce-verify-<sufijo>`, proyectos `VCE verify <sufijo>`). **No se pueden limpiar por API**: los únicos `DELETE` del cliente son `removeProjectMember` y `releaseEditingLease` (`web/src/api/client.ts:330, 451`); no existe borrado de proyecto. Se reporta en vez de mutar la base del usuario a mano.
 
+### 3.2 Correcciones posteriores al cierre (reportadas por el usuario en uso real)
+
+El usuario probó la feature y reportó dos cosas. Una era un hueco preexistente de producto (RF-09 sin UI, ver `odd/tasks/export-xmi-ui.md`); la otra era un defecto real introducido por esta feature.
+
+**Defecto: el botón flotante se clavaba arriba a la izquierda y no volvía.** Reporte textual del usuario: *"después de darle click el botón se mueve a la parte izquierda superior en vez de estar en la esquina derecha inferior"*.
+
+Causa raíz, encontrada por análisis estático y confirmada por lectura del código:
+
+- `clampToViewport` **degenera** cuando el viewport es menor que `botón + 2*inset`: su piso se vuelve `0` para no devolver negativos, así que retorna `{x:0,y:0}` (`web/src/ui/floatingPosition.ts`).
+- El manejador de `resize` **escribía ese resultado clampeado de vuelta como posición actual**. Eso es un **trinquete de una sola dirección**: una sola vez que el viewport reporte un valor diminuto —minimizar la ventana, o cambiar de dispositivo en DevTools, que encaja con la captura `Nest Hub Max` que el usuario aportó al inicio— el botón queda clavado arriba a la izquierda **para siempre**, porque clampear `{0,0}` contra un viewport restaurado da `{24,24}`, no la esquina inferior derecha. Y el siguiente arrastre lo persistía en `localStorage` bajo `uml-editor.floating-assistant.position`.
+
+**Arreglo, por modelo y no por línea.** Se separó el estado en **posición deseada** (la intención del usuario, nunca reescrita por un clamp) y **viewport**, y **la posición renderizada se deriva** de ambos con `resolveRenderedPosition`. El resize escribe **solo** el viewport con `withViewport`, que copia `desired` verbatim; el arrastre escribe `desired`; la persistencia escribe `desired`. Así el camino del resize **no tiene ninguna vía por la que un resultado clampeado pueda llegar a `desired`**: el trinquete es imposible por construcción, no por cuidado.
+
+**Segundo defecto en la misma revisión:** `handlePointerMove` reposicionaba con **cualquier** movimiento, incluso 1 px, aunque el gesto no pasara el umbral de 4 px, así que un click tembloroso corría el botón. Se cerró con `shouldReposition`, que devuelve `false` por debajo del umbral y `true` para un gesto ya iniciado aun con 0 px de desplazamiento.
+
+**Evidencia:** RED observado con 14 tests fallando (`resolveRenderedPosition/withViewport/shouldReposition is not a function`). GREEN: `src/ui` → 62/62 (47 + 15). Suite completa: **297 passed / 4 skipped / 0 failed** (282 + 15). `lint` limpio. `FloatingAssistantButton.test.tsx` pasó **sin cambios**: el contrato renderizado no se tocó.
+
+**El test que prueba el trinquete es el de regresión:** `desired {1360,820}` a 1440×900 → `withViewport` a 80×80 → renderizado `{0,0}` (colapso degenerado, fijado además por su propio test) → `withViewport` de vuelta a 1440×900 → renderizado **`{1360,820}` otra vez, explícitamente NO `{24,24}`**. Esa diferencia de 1336 px es el bug entero.
+
+**Rama empujada.** `origin/feat/vista-compacta-editor` existe. Desde WSL el push **no autentica** (`could not read Username for 'https://github.com'`); desde Windows **sí**, vía Git Credential Manager (`cmd.exe /c "git push -u origin feat/vista-compacta-editor"`). No hay `gh` ni `glab` en la máquina, así que la creación del PR queda en manos del usuario. URL de compare entregada: `main...feat/vista-compacta-editor` → 29 commits, 110 archivos, +14405/−36, porque la rama arrastra el incremento 4 completo.
+
 ## 4. Decisiones de implementación tomadas durante la ejecución
 
 Se registran porque desvían del diseño inicial y deben sobrevivir a una interrupción.
