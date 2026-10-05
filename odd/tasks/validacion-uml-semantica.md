@@ -54,9 +54,12 @@ solo cuando el generador falla.
   - `ModelValidator` con reglas como métodos puros sobre un read-model inmutable del snapshot
     del modelo (estilo `InputSnapshotFactory`), sin acceso directo a repos dentro de las reglas.
   - `ModelValidationApiService` que carga el modelo por id y lo valida.
-- Endpoint: `GET /api/projects/{projectId}/model/validation` en `api/ProjectController`.
-- 404 si el proyecto no existe; modelo sin modelo definido ⇒ lista vacía (o diagnostic propio si
-  el contrato del `ProjectController` ya lo maneja así — verificar en T3).
+- Endpoint: `GET /projects/{projectId}/model/validation` en `api/ProjectController` (el controlador
+  no usa prefijo `/api` en el código; corregido el 2026-10-05 al verificar la convención real).
+- 404 si el proyecto no existe; modelo sin modelo definido ⇒ lista vacía.
+- El test de API vive en `com.diagramador` (no `com.diagramador.api`): los `*ApiTest` del repo
+  viven todos ahí porque `AbstractPostgresIntegrationTest` y `AuthenticatedApiTest` son
+  package-private (resolución de T3, 2026-10-05).
 
 ## 5. Unidades
 
@@ -80,7 +83,7 @@ solo cuando el generador falla.
 | --- | --- | --- |
 | T1 | **cerrado** | commit `feat(validation)` (ver §7 evidencia); RED observado (compile failure sin clases), GREEN 12/12, suite completa 367/0; convención de ends (ordinal 1=subtype, 2=supertype) verificada contra `XmiSemanticEmitter.appendGeneralization` (ends.get(0)=specific, get(1)=general) |
 | T2 | **cerrado** | commit `feat(validation)` (ver evidencia abajo); RED observado (4 reglas + overload faltantes), GREEN 26/26 en `ModelValidatorTest`, suite completa 383/0 (367+16). Desviación R4 registrada en §3.1; R6 espeja el catálogo de primitivos del perfil (javadoc del constante) |
-| T3 | pendiente | — |
+| T3 | **cerrado** | commit `feat(validation)` (ver evidencia abajo); RED observado (4 tests, 3 fallos 404 por endpoint ausente), GREEN 4/4, suite completa 387/0. Contrato: `GET /projects/{id}/model/validation`, 200 con `{"diagnostics":[…]}` (lista vacía si el modelo está bien formado o aún no existe `UmlModel`), 404 `NOT_FOUND` si el proyecto no existe; requiere miembro autenticado (`requireMember`, igual que `getModel`) |
 | T4 | pendiente | — |
 
 Evidencia T1: `ModelValidationReadModel.java`, `ModelValidationDiagnostic.java`, `ModelValidator.java` (Kosaraju SCC para R1), 12 tests puros; `mvn -o -B test` completa: 367 pruebas, 0 fallos. Nota: id de entidades en tests se fija con helper de reflexión (sin overloads con id en factories).

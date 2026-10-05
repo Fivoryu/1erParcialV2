@@ -2,6 +2,8 @@ package com.diagramador.api;
 
 import com.diagramador.command.CommandResult;
 import com.diagramador.command.OperationEnvelope;
+import com.diagramador.validation.ModelValidationApiService;
+import com.diagramador.validation.ModelValidationReport;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
@@ -20,9 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProjectController {
 
     private final ProjectApiService projectApiService;
+    private final ModelValidationApiService modelValidationApiService;
 
-    public ProjectController(ProjectApiService projectApiService) {
+    public ProjectController(ProjectApiService projectApiService,
+            ModelValidationApiService modelValidationApiService) {
         this.projectApiService = projectApiService;
+        this.modelValidationApiService = modelValidationApiService;
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -44,6 +49,11 @@ public class ProjectController {
     @GetMapping("/{id}/model")
     public ModelResource getModel(@PathVariable("id") UUID id) {
         return projectApiService.getModel(id);
+    }
+
+    @GetMapping("/{id}/model/validation")
+    public ModelValidationReport getModelValidation(@PathVariable("id") UUID id) {
+        return modelValidationApiService.validateModel(id);
     }
 
     @PostMapping(path = "/{id}/commands", consumes = MediaType.APPLICATION_JSON_VALUE)
