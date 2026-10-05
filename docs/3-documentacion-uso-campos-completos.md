@@ -306,30 +306,66 @@ aplica, sobrevive al cierre de la aplicación, sincroniza y **no duplica: una so
 
 ## 12. Importar y exportar XMI con Enterprise Architect
 
-1. **Importar:** menú **File → Import model file…**. Se abre el panel **Import XMI**, que declara
+Importar y exportar viven en el **mismo diálogo** del editor. En la **barra de opciones** del espacio
+de trabajo, el botón **XMI interchange** abre un diálogo con dos secciones: importar y exportar.
+Ninguna de las dos modifica el modelo, y cada sección lo declara.
+
+> **Corrección respecto de versiones anteriores de este documento.** Hasta el 2026-10-05 este
+> apartado describía un menú **File** con las entradas *Import model file…* y *Export model file…*.
+> **Ese menú no existe en este editor**: la barra superior solo tiene el nombre del producto y el
+> enlace a la lista de proyectos. El texto describía otra interfaz, y sus capturas también. La
+> exportación XMI existía en el backend pero **no tenía ninguna superficie en la interfaz** hasta que
+> se agregó el panel descrito abajo.
+
+### Importar
+
+1. Pulsar **XMI interchange** en la barra de opciones. Se abre la sección **Import an XMI file**, que
+   declara *"Preview only: reviewing this file does not change the project. The model changes only
+   after you confirm import."*
+2. En **Choose a file**, pulsar **Choose a file** y elegir el archivo. El propio control declara
    *"The backend detects and normalizes XMI. The editor changes only after confirmation."*
-2. Pulsar **Choose XMI file** y elegir el archivo; revisar la sección **Preview** con los elementos
-   soportados, las advertencias y las **pérdidas** detectadas.
-3. Pulsar **Confirm import** (o **Cancel**). Solo entonces el editor cambia; un archivo inválido se
-   rechaza sin tocar el proyecto.
-4. **Exportar:** menú **File → Export model file…**. El panel **Export XMI** declara
-   *"The export does not modify the model. The server provides the XMI profile, revision, and
-   report."*
-5. El sistema genera el XMI del perfil primario (**EA 15.0.1514 · XMI 2.1 · UML 2.1 · extensiones
-   EA 6.5**), informa las pérdidas o extensiones no representables y asocia el archivo a la versión
-   de origen. Un modelo inválido bloquea la exportación.
-6. Para el ida y vuelta con Enterprise Architect se abre el XMI exportado en EA y se vuelve a
-   exportar desde EA; el comparador verifica que se preservan identificadores, semántica soportada,
-   relaciones y geometría representable.
+3. Revisar **Recognized content** con los elementos soportados, las advertencias y las **pérdidas**
+   detectadas.
+4. En **Choose how to import**, elegir el modo: **REEMPLAZAR — replace the existing model** o
+   **AGREGAR — add alongside existing content**. **REEMPLAZAR** avisa que borra todo el contenido
+   existente del modelo y que la acción no se puede deshacer.
+5. Pulsar **Confirm import and replace existing model** o **Confirm import and add to existing
+   model** (o **Cancel**). Solo entonces el editor cambia; un archivo inválido se rechaza sin tocar el
+   proyecto, y el resultado queda en **Import result**.
 
-![Panel de importación de XMI](capturas/uso/12-importar-xmi.png)
+### Exportar
 
-*Figura. Panel `Import XMI` con `Choose XMI file`, el aviso de que el editor solo cambia tras la
-confirmación y el botón `Cancel`.*
+6. En el mismo diálogo, bajar a la sección **Export the model as XMI**, que declara *"Download only:
+   exporting this file does not modify the project. The model changes only through the editor or an
+   import."*
+7. Pulsar **Export XMI**. El archivo se **descarga** en el acto con el nombre derivado del nombre del
+   proyecto y extensión `.xmi`, y el panel informa el **checksum SHA-256** que devuelve el servidor y
+   las pérdidas en **Reported losses**.
+8. El servidor emite el XMI del perfil **`Enterprise Architect 15.0.1514 / XMI 2.1`** y **registra el
+   intercambio** asociado a la **revisión** de origen, marcándolo **PARTIAL** cuando hubo pérdidas.
+   La exportación **se rechaza** si la versión del modelo no está en estado `VALID`, si hay colisiones
+   de nombres o si el modelo no tiene una vista de diagrama por defecto.
 
-![Panel de exportación de XMI](capturas/uso/12-exportar-xmi.png)
+### Ida y vuelta con Enterprise Architect
 
-*Figura. Panel `Export XMI` con el perfil, la revisión y el reporte que devuelve el servidor.*
+9. Se abre el XMI exportado en EA y se vuelve a exportar desde EA; el comparador verifica que se
+   preservan identificadores, semántica soportada, relaciones y geometría representable.
+
+![Diálogo de intercambio XMI con las dos secciones](capturas/xmi-export/dialog-xmi-1440x900.png)
+
+*Figura. El diálogo `XMI interchange` con sus dos secciones: `Import an XMI file` y `Export the model
+as XMI`, separadas por una línea. Ambas se abren desde el botón **XMI interchange** de la barra de
+opciones.*
+
+![Diálogo después de exportar, con checksum y pérdidas](capturas/xmi-export/dialog-xmi-after-export.png)
+
+*Figura. Después de pulsar `Export XMI`: el archivo se descargó y el panel informa el checksum
+**SHA-256** y las pérdidas que reportó el servidor.*
+
+**Muestra real del artefacto:** `docs/capturas/xmi-export/XMI export UI 7ba26695.xmi` — los **1662
+bytes** que el navegador descargó, **idénticos byte por byte** al documento que devuelve el servidor.
+El nombre del archivo lo deriva el cliente del nombre del proyecto, porque el servidor no devuelve
+nombre de archivo; eso está declarado a propósito y no se presenta como un dato del servidor.
 
 **Fixture canónico:** `docs/fixtures/xmi/Prueba3.xml`.
 

@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildOperationEnvelope, type UuidFactory } from './envelope';
 import { ApiTransportError, createApiClient } from './client';
 import { clearSession, loadSession, saveSession, SESSION_STORAGE_KEY } from './session';
-import type { ChatMessageResource, ModelResource, OperationEnvelope, UserResource } from './types';
+import type {
+  ChatMessageResource,
+  ModelResource,
+  OperationEnvelope,
+  UserResource,
+  XmiExportResource,
+} from './types';
 import recordedModelFixture from './fixtures/model-response.json';
 
 // Captured from GET /projects/{id}/model during the Increment 1 acceptance run. The `versionId`
@@ -565,5 +571,59 @@ describe('editing lease API client', () => {
       'POST',
       'DELETE',
     ]);
+  });
+});
+
+describe('XMI export API client', () => {
+  it('posts without a body to the export route and returns the parsed resource', async () => {
+    const resource: XmiExportResource = {
+      fileBase64: 'PD94bWwgdmVyc2lvbj0iMS4wIj8+',
+      checksum: 'a'.repeat(64),
+      exchangeId: '55555555-5555-4555-8555-555555555551',
+      losses: [{ name: 'connector_path_not_exported', count: 2 }],
+    };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(resource), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    saveSession({
+      token: 'opaque-session-token',
+      userId: '00000000-0000-0000-0000-000000000001',
+      username: 'diagram.user',
+      displayName: 'Diagram User',
+      expiresAt: '2026-10-01T12:00:00Z',
+    });
+
+    expect(await client.exportXmi(projectId)).toEqual(resource);
+
+    expect(fetcher).toHaveBeenCalledOnce();
+    const [input, init] = fetcher.mock.calls[0] ?? [];
+    expect(String(input)).toBe(`https://diagram.test/projects/${projectId}/xmi/export`);
+    expect(init?.method).toBe('POST');
+    // The backend declares no @RequestBody, so the request carries no body at all.
+    expect(init?.body).toBeUndefined();
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
+  });
+
+  it('surfaces a server rejection (such as an editing-lease conflict) as a transport error', async () => {
+    const errorBody = {
+      code: 'PRECONDITION_FAILED',
+      message: 'Another editor holds the editing lease for this project.',
+      details: [],
+      operationId: null,
+    };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(errorBody), {
+      status: 409,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const client = createApiClient('https://diagram.test', fetcher);
+
+    await expect(client.exportXmi(projectId)).rejects.toMatchObject({
+      kind: 'transport',
+      code: 'PRECONDITION_FAILED',
+      message: 'Another editor holds the editing lease for this project.',
+      status: 409,
+    });
   });
 });

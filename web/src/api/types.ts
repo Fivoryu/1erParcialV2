@@ -137,6 +137,13 @@ export interface XmiLossResource {
   count: number;
 }
 
+export interface XmiExportResource {
+  fileBase64: string;
+  checksum: string;
+  exchangeId: string;
+  losses: XmiLossResource[];
+}
+
 export interface XmiDisagreementResource {
   kind: string;
   subjectId: string;

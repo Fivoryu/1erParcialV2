@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Produced by UML Class Diagrammer 0.1.0. exporter/exporterVersion declare the XMI dialect Enterprise Architect reads, not the tool that wrote the file. --><xmi:XMI xmlns:uml="http://schema.omg.org/spec/UML/2.1" xmlns:xmi="http://schema.omg.org/spec/XMI/2.1" xmi:version="2.1">
+  <xmi:Documentation exporter="Enterprise Architect" exporterVersion="6.5"/>
+  <uml:Model name="EA_Model" visibility="public" xmi:id="EAPK_2B776938_6CB3_4D53_86E0_C6D0F9CF64BB" xmi:type="uml:Model">
+    <packagedElement name="Customer" xmi:id="EAID_4653AB3B_BE03_4C8F_ADE4_03BFA6C0D0B1" xmi:type="uml:Class" xmlns="http://schema.omg.org/spec/UML/2.1"/>
+  </uml:Model>
+  <xmi:Extension extender="Enterprise Architect" extenderID="6.5">
+    <elements/>
+    <connectors/>
+    <primitivetypes>
+      <packagedElement name="EA_PrimitiveTypes_Package" visibility="public" xmi:id="EAPrimitiveTypesPackage" xmi:type="uml:Package">
+        <packagedElement name="EA_Java_Types_Package" visibility="public" xmi:id="EAJavaTypesPackage" xmi:type="uml:Package"/>
+      </packagedElement>
+    </primitivetypes>
+    <profiles/>
+    <diagrams>
+      <diagram xmi:id="EAID_57C07E2B_D5F2_4AE8_AA84_C6C4F6279F0F">
+        <model localID="1586588936" owner="EAPK_2B776938_6CB3_4D53_86E0_C6D0F9CF64BB" package="EAPK_2B776938_6CB3_4D53_86E0_C6D0F9CF64BB" tpos="0"/>
+        <properties name="Class Diagram" type="Logical"/>
+        <project version="2"/>
+        <style1/>
+        <style2/>
+        <swimlanes/>
+        <matrixitems/>
+        <extendedProperties/>
+        <elements/>
+      </diagram>
+    </diagrams>
+  </xmi:Extension>
+</xmi:XMI>

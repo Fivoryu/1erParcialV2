@@ -2252,3 +2252,11 @@ h3 {
 .editor-modal-body .section-heading {
   margin-bottom: 16px;
 }
+
+/* Two stacked interchange panels (import + export) inside the XMI dialog read
+   as one dialog with two sections, mirroring the collaboration separator. */
+.editor-modal-body .generation-panel + .generation-panel {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}

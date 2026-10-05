@@ -31,6 +31,7 @@ import PropertiesPanel from '../diagram/PropertiesPanel';
 import AssistantPanel from '../assistant/AssistantPanel';
 import GenerationPanel from '../generation/GenerationPanel';
 import XmiImportPanel from '../xmi/XmiImportPanel';
+import XmiExportPanel from '../xmi/XmiExportPanel';
 import MembersPanel from '../members/MembersPanel';
 import {
   applyOptimisticCommand,
@@ -682,6 +683,7 @@ export default function ProjectEditorPage() {
               onClose={closeSection}
             >
               <XmiImportPanel projectId={project.id} />
+              <XmiExportPanel projectId={project.id} projectName={project.name} />
             </Modal>
 
             <Modal
