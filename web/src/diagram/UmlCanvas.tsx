@@ -24,6 +24,14 @@ import { createGeometryCoalescer } from './geometry-coalescer';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
 import UmlRelationshipEdge, { type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
+import ContextMenu from './ContextMenu';
+import {
+  buildContextMenuItems,
+  contextMenuStateFor,
+  selectionFromTarget,
+  type ContextMenuState,
+  type ContextMenuTarget,
+} from './contextMenuBehavior';
 import RemoteCursors from '../collaboration/RemoteCursors.tsx';
 import type { RemoteCursorMarker } from '../collaboration/remoteCursors';
 import type { TouchedElement } from './touch-highlight';
@@ -294,6 +302,7 @@ function CanvasFrame(props: UmlCanvasProps) {
   }), [props.onCommand]);
   const [connectionDraft, setConnectionDraft] = useState<{ sourceId: string; targetId: string } | null>(null);
   const [connectionKind, setConnectionKind] = useState<RelationshipKind>('ASSOCIATION');
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const initialNodes = useMemo(
     () => buildFlowNodes(props.model, [], props.onCommand, props.onSelect, undefined, props.touchedElements),
     [],
@@ -434,6 +443,17 @@ function CanvasFrame(props: UmlCanvasProps) {
     }
   }
 
+  function openContextMenu(event: { clientX: number; clientY: number; preventDefault: () => void }, target: ContextMenuTarget): void {
+    // The canvas menu replaces the browser menu, and the anchor is the cursor.
+    event.preventDefault();
+    // Right-clicking an element also selects it, so the properties panel follows the menu.
+    const selection = selectionFromTarget(target);
+    if (selection) {
+      props.onSelect(selection);
+    }
+    setContextMenu(contextMenuStateFor(target, { x: event.clientX, y: event.clientY }));
+  }
+
   function handleConnect(connection: Connection): void {
     if (connection.source && connection.target) {
       setConnectionDraft({ sourceId: connection.source, targetId: connection.target });
@@ -457,6 +477,11 @@ function CanvasFrame(props: UmlCanvasProps) {
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const target = event.target;
     if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) {
+      return;
+    }
+    if (event.key === 'Escape' && contextMenu) {
+      event.preventDefault();
+      setContextMenu(null);
       return;
     }
     if ((event.key === 'Delete' || event.key === 'Backspace') && props.selection) {
@@ -547,10 +572,13 @@ function CanvasFrame(props: UmlCanvasProps) {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={(_, node) => props.onSelect({ kind: 'classifier', classifierId: node.id })}
+          onNodeContextMenu={(event, node) => openContextMenu(event, { kind: 'classifier', classifierId: node.id })}
           onNodeDragStop={(_, node) => settleNodeGeometry(node)}
           onConnect={handleConnect}
           onEdgeClick={(_, edge) => props.onSelect({ kind: 'relationship', relationshipId: edge.id })}
+          onEdgeContextMenu={(event, edge) => openContextMenu(event, { kind: 'relationship', relationshipId: edge.id })}
           onPaneClick={() => props.onSelect(null)}
+          onPaneContextMenu={(event) => openContextMenu(event, { kind: 'pane' })}
           snapToGrid
           snapGrid={[GRID_SIZE, GRID_SIZE]}
           fitView
@@ -570,6 +598,28 @@ function CanvasFrame(props: UmlCanvasProps) {
           <RemoteCursors markers={screenCursors} />
         </ReactFlow>
       </div>
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.position.x}
+          y={contextMenu.position.y}
+          items={buildContextMenuItems(contextMenu.target, {
+            onEdit: () => {
+              const selection = selectionFromTarget(contextMenu.target);
+              if (selection) {
+                props.onSelect(selection);
+              }
+            },
+            onDelete: () => {
+              const selection = selectionFromTarget(contextMenu.target);
+              if (selection) {
+                props.onDelete(selection);
+              }
+            },
+            onAddClassifier: props.onAddClassifier,
+          })}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </section>
   );
 }
