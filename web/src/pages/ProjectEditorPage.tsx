@@ -44,6 +44,10 @@ import {
 import type { CanvasSelection } from '../diagram/selection';
 import { groupTouchesByElement } from '../diagram/touch-highlight';
 import { loginErrorMessage } from './LoginPage';
+import { findEditorSection, nextActiveSection, type EditorSectionId } from './editorSections';
+import EditorOptionsBar from './EditorOptionsBar';
+import FloatingAssistantButton from '../ui/FloatingAssistantButton';
+import Modal from '../ui/Modal';
 
 const api = createApiClient();
 
@@ -155,6 +159,8 @@ export default function ProjectEditorPage() {
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [openSection, setOpenSection] = useState<EditorSectionId | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const modelRef = useRef<ModelResource | null>(null);
   const canonicalModelRef = useRef<ModelResource | null>(null);
   const revisionRef = useRef<number | null>(null);
@@ -484,6 +490,19 @@ export default function ProjectEditorPage() {
   }, [dispatchEnvelope]);
 
   const targetElementId = selectedTargetElementId(selection);
+  const activeSection = openSection === null ? null : findEditorSection(openSection);
+  const handleOpenSection = useCallback((id: EditorSectionId) => {
+    setOpenSection((current) => nextActiveSection(current, id));
+  }, []);
+  const closeSection = useCallback(() => setOpenSection(null), []);
+
+  // `openSection` and `assistantOpen` are independent, so opening the assistant
+  // from the floating button must close any open section dialog first: two open
+  // dialogs would mean two backdrops, two focus traps and two scroll locks.
+  const handleOpenAssistant = useCallback(() => {
+    setOpenSection(null);
+    setAssistantOpen(true);
+  }, []);
   const touchedElements = useMemo(() => groupTouchesByElement(presence), [presence]);
   const remoteCursorMarkers = useMemo(
     () => buildRemoteCursorMarkers(presence, remoteCursorPositions, currentUserId),
@@ -628,6 +647,12 @@ export default function ProjectEditorPage() {
               </div>
             )}
 
+            <EditorOptionsBar
+              activeSection={openSection}
+              onOpenSection={handleOpenSection}
+              badges={{ collaboration: presence.length }}
+            />
+
             <div className="editor-workspace">
               <UmlCanvas
                 model={model}
@@ -649,28 +674,73 @@ export default function ProjectEditorPage() {
               />
             </div>
 
-            <XmiImportPanel projectId={project.id} />
-            <PresencePanel entries={presence} userId={currentUserId} />
-            <AssistantPanel currentRevision={model.revision} projectId={project.id} />
-            <ChatPanel
-              busy={chatBusy}
-              draft={chatDraft}
-              error={chatError}
-              history={chatHistory}
-              loading={chatLoading}
-              onDraftChange={setChatDraft}
-              onSend={(body) => void sendMessage(body)}
-              userId={currentUserId}
-            />
-            <MembersPanel key={project.id} projectId={project.id} />
+            <Modal
+              open={activeSection?.id === 'xmi'}
+              title={findEditorSection('xmi').title}
+              size={findEditorSection('xmi').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <XmiImportPanel projectId={project.id} />
+            </Modal>
 
-            <GenerationPanel
-              projectId={project.id}
-              modelId={model.id}
-              versionId={model.versionId}
-              modelRevision={model.revision}
-              editingLease={editingLease}
-            />
+            <Modal
+              open={activeSection?.id === 'collaboration'}
+              title={findEditorSection('collaboration').title}
+              size={findEditorSection('collaboration').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <PresencePanel entries={presence} userId={currentUserId} />
+              <ChatPanel
+                busy={chatBusy}
+                draft={chatDraft}
+                error={chatError}
+                history={chatHistory}
+                loading={chatLoading}
+                onDraftChange={setChatDraft}
+                onSend={(body) => void sendMessage(body)}
+                userId={currentUserId}
+              />
+            </Modal>
+
+            <Modal
+              open={activeSection?.id === 'members'}
+              title={findEditorSection('members').title}
+              size={findEditorSection('members').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <MembersPanel key={project.id} projectId={project.id} />
+            </Modal>
+
+            <Modal
+              open={activeSection?.id === 'generation'}
+              title={findEditorSection('generation').title}
+              size={findEditorSection('generation').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <GenerationPanel
+                projectId={project.id}
+                modelId={model.id}
+                versionId={model.versionId}
+                modelRevision={model.revision}
+                editingLease={editingLease}
+              />
+            </Modal>
+
+            <Modal
+              open={assistantOpen}
+              title="Asistente de modelo"
+              size="md"
+              titleVisible={false}
+              onClose={() => setAssistantOpen(false)}
+            >
+              <AssistantPanel currentRevision={model.revision} projectId={project.id} />
+            </Modal>
+
+            <FloatingAssistantButton open={assistantOpen} onOpen={handleOpenAssistant} />
           </>
         ) : null}
       </div>
