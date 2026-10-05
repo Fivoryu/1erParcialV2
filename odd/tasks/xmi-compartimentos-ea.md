@@ -51,3 +51,15 @@ Pipeline: EA Trial de 32 bits por COM desde `SysWOW64\WindowsPowerShell\v1.0\pow
 ## 4. Evidencia de la medición (archivos temporales)
 
 `C:\Users\HP\AppData\Local\Temp\ea-probe\`: `probe*.ps1` (pipeline), `z10-baseline.png` (síntoma), `v4-min2.png` (fix mínimo verificado), `control-Prueba___Diagrama_de_Clases_Completo.png` (control positivo de EA), `probe4.eapx`/`probeA.eapx`/`probeC.eapx`/`probeD.eapx` (repos de prueba).
+
+## 5. Cierre
+
+**Commits** en `feat/vista-compacta-editor`: `436efd9` (el fix con su prueba) y `b778527` (estos documentos). El árbol queda limpio salvo `docs/CUENTAS-DE-ACCESO.md`, que ya estaba sin trackear y no es de esta unidad.
+
+**Compuertas medidas:** prueba focalizada rojo → verde (`8/1` → `8/0`); `mvn -o -B -f backend/pom.xml verify` (Maven de Windows: WSL no tiene JDK) **427 pruebas, 0 fallos, 0 errores, 0 salteadas**; `python -m pytest tools -q` **54**; arnés de aceptación XMI **18/0**; importación en vivo con la sonda de la skill con `AttPub/AttPri/AttPro` pasando de `False/False/False` a **`True/True/True`** y el render mostrando las tres features.
+
+**Revisión nativa (RDD encendido, decidida por el humano).** ASSESS devolvió `risk: unassessable` y el plan `writerSelfVerification + independentVerifier`, cumplido por la evidencia del escritor y por las compuertas del verificador. El preflight abrió el linaje **`review-2e33d09fd5542378`**: tier `medium`, una lente (`review-reliability`), 14 paths / 590 líneas, presupuesto de corrección 200, **aprobada al primer intento** y autoridad **quemada** (`gentle-ai.review-acknowledged/v1`, revisión consumida `sha256:a4d04a8b…`).
+
+**El alcance de esa revisión es más ancho que esta unidad, y conviene que se lea así.** El proveedor derivó la proyección del rango de la **rama** (`a293c6d..HEAD`), así que 12 de los 14 paths son el trabajo web previo de la rama; los archivos de esta unidad son 2 de esos 14. Por eso el único hallazgo —**`R3-overlapping-canvas-fits`**, lente de confiabilidad, `WARNING`, disposición `informational`, en `web/src/diagram/UmlCanvas.tsx:361`— **no pertenece a esta unidad**: el propio cierre del proveedor lo declara no bloqueante, sin corrección abierta, y pide tratarlo como trabajo posterior separado, **nunca** como motivo para repetir la revisión de este candidato. Queda anotado acá y no se toca.
+
+**Higiene pendiente.** El cierre difirió la limpieza de la vista de candidato (`candidate-view-cleanup-failed`): quedan directorios en `.git/gentle-ai/candidate-views/`. El proveedor indica reintentar la limpieza o quitarla fuera de banda; **no se tocó**.

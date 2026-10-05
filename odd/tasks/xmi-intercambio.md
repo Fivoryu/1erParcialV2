@@ -2128,3 +2128,18 @@ para las features (M7).
 - **Otros caminos de importación de EA** (XEA nativo, XMI 1.1/2.2). La medición es del camino XMI 2.1.
 - **La app no modela preferencias de visualización del diagrama**, así que el valor emitido es una constante medida y
 no una preferencia del usuario: si algún día se quiere exponer, es funcionalidad nueva.
+
+### 16.6 Revisión nativa
+
+Linaje **`review-2e33d09fd5542378`**: tier `medium`, una lente (`review-reliability`), 14 paths / 590 líneas, presupuesto
+de corrección 200, **aprobada al primer intento** y autoridad **quemada** (`gentle-ai.review-acknowledged/v1`), revisión
+consumida `sha256:a4d04a8bf82474d23ed763446d2a7bf83cc7709c8d12a9f545f7d4e38af6afb5`.
+
+Dos cosas que se leen mal si no se declaran. La primera: el proveedor derivó la proyección del **rango de la rama**
+(`a293c6d..HEAD`), así que la revisión cubrió también el trabajo web previo de la rama y los archivos de esta unidad
+son 2 de los 14. La segunda: el único hallazgo, **`R3-overlapping-canvas-fits`** (`WARNING`, `informational`, en
+`web/src/diagram/UmlCanvas.tsx:361`), **no es de esta unidad**; su propio cierre lo declara no bloqueante, sin
+corrección abierta, y pide tratarlo como trabajo posterior separado y nunca como motivo para repetir la revisión.
+
+Queda declarado, además, que el cierre difirió la limpieza de la vista de candidato
+(`candidate-view-cleanup-failed`): hay directorios en `.git/gentle-ai/candidate-views/` sin retirar.
