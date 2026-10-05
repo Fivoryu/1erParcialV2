@@ -31,8 +31,7 @@ solo cuando el generador falla.
 - **R3 — Valididad de ends de generalización:** exactamente 2 ends, sin rol duplicado, sin
   multiplicidad to-many en un end de generalización (UML 2.5: los ends de Generalization no
   tienen multiplicidad).
-- **R4 — Bien-formación de multiplicidades en atributos:** bounds coherentes (lower ≤ upper,
-  upper no negativo, `*` solo como upper).
+- **R4 — Multiplicidad `RANGE` en atributos (reformulada 2026-10-05, decisión del usuario):** el modelo canónico no guarda bounds numéricos de `RANGE` (enum pelado, sin lower/upper en dominio/DB; XMI los descarta por diseño). Regla vigente: `RANGE` en atributo ⇒ `INCOMPLETE_MULTIPLICITY_SPECIFICATION`, WARNING (multiplicidad no completamente especificada). Sin comparaciones de bounds.
 - **R5 — Nombres de miembros únicos por namespace:** atributos y operaciones no colisionan en
   nombre dentro de un clasificador.
 - **R6 — Tipos resolvibles a nivel modelo:** cada `typeReference` de atributo/parámetro resuelve
@@ -80,7 +79,7 @@ solo cuando el generador falla.
 | Unidad | Estado | Evidencia |
 | --- | --- | --- |
 | T1 | **cerrado** | commit `feat(validation)` (ver §7 evidencia); RED observado (compile failure sin clases), GREEN 12/12, suite completa 367/0; convención de ends (ordinal 1=subtype, 2=supertype) verificada contra `XmiSemanticEmitter.appendGeneralization` (ends.get(0)=specific, get(1)=general) |
-| T2 | pendiente | — |
+| T2 | **cerrado** | commit `feat(validation)` (ver evidencia abajo); RED observado (4 reglas + overload faltantes), GREEN 26/26 en `ModelValidatorTest`, suite completa 383/0 (367+16). Desviación R4 registrada en §3.1; R6 espeja el catálogo de primitivos del perfil (javadoc del constante) |
 | T3 | pendiente | — |
 | T4 | pendiente | — |
 

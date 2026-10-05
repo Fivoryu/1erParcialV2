@@ -3,6 +3,7 @@ package com.diagramador.validation;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
+import com.diagramador.domain.OperationParameter;
 import com.diagramador.domain.RelationshipEnd;
 import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.TypeReference;
@@ -25,6 +26,7 @@ public record ModelValidationReadModel(
         List<RelationshipEndElement> relationshipEnds,
         List<AttributeElement> attributes,
         List<OperationElement> operations,
+        List<ParameterElement> parameters,
         List<TypeReferenceElement> typeReferences) {
 
     public ModelValidationReadModel {
@@ -33,14 +35,24 @@ public record ModelValidationReadModel(
         relationshipEnds = List.copyOf(relationshipEnds);
         attributes = List.copyOf(attributes);
         operations = List.copyOf(operations);
+        parameters = List.copyOf(parameters);
         typeReferences = List.copyOf(typeReferences);
+    }
+
+    /** Projects loaded domain entity rows into the validation read-model without operation parameters. */
+    public static ModelValidationReadModel from(List<Classifier> classifierRows,
+            List<UmlRelationship> relationshipRows, List<RelationshipEnd> relationshipEndRows,
+            List<UmlAttribute> attributeRows, List<UmlOperation> operationRows,
+            List<TypeReference> typeReferenceRows) {
+        return from(classifierRows, relationshipRows, relationshipEndRows, attributeRows, operationRows, List.of(),
+                typeReferenceRows);
     }
 
     /** Projects loaded domain entity rows into the validation read-model, deterministically ordered by id. */
     public static ModelValidationReadModel from(List<Classifier> classifierRows,
             List<UmlRelationship> relationshipRows, List<RelationshipEnd> relationshipEndRows,
             List<UmlAttribute> attributeRows, List<UmlOperation> operationRows,
-            List<TypeReference> typeReferenceRows) {
+            List<OperationParameter> parameterRows, List<TypeReference> typeReferenceRows) {
         List<ClassifierElement> classifiers = classifierRows.stream()
                 .sorted(byId(Classifier::getId))
                 .map(classifier -> new ClassifierElement(classifier.getId(), id(classifier.getNamespace()),
@@ -67,13 +79,18 @@ public record ModelValidationReadModel(
                 .map(operation -> new OperationElement(operation.getId(), id(operation.getClassifier()),
                         id(operation.getReturnTypeReference()), operation.getName(), operation.getOrdinal()))
                 .toList();
+        List<ParameterElement> parameters = parameterRows.stream()
+                .sorted(byId(OperationParameter::getId))
+                .map(parameter -> new ParameterElement(parameter.getId(), id(parameter.getOperation()),
+                        id(parameter.getTypeReference()), parameter.getName(), parameter.getOrdinal()))
+                .toList();
         List<TypeReferenceElement> typeReferences = typeReferenceRows.stream()
                 .sorted(byId(TypeReference::getId))
                 .map(reference -> new TypeReferenceElement(reference.getId(), id(reference.getClassifier()),
                         reference.getPrimitiveName()))
                 .toList();
         return new ModelValidationReadModel(classifiers, relationships, relationshipEnds, attributes, operations,
-                typeReferences);
+                parameters, typeReferences);
     }
 
     public record ClassifierElement(UUID id, UUID namespaceId, ClassifierKind kind, String name) {
@@ -108,6 +125,14 @@ public record ModelValidationReadModel(
             int ordinal) {
     }
 
+    public record ParameterElement(
+            UUID id,
+            UUID operationId,
+            UUID typeReferenceId,
+            String name,
+            int ordinal) {
+    }
+
     public record TypeReferenceElement(UUID id, UUID classifierId, String primitiveName) {
     }
 
@@ -125,6 +150,14 @@ public record ModelValidationReadModel(
 
     private static UUID id(UmlRelationship relationship) {
         return relationship == null ? null : relationship.getId();
+    }
+
+    private static UUID id(UmlOperation operation) {
+        return operation == null ? null : operation.getId();
+    }
+
+    private static UUID id(OperationParameter parameter) {
+        return parameter == null ? null : parameter.getId();
     }
 
     private static UUID id(RelationshipEnd end) {
