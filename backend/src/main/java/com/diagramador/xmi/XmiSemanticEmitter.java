@@ -59,6 +59,15 @@ public final class XmiSemanticEmitter {
     private static final String PROVENANCE = "UML Class Diagrammer 0.1.0";
     private static final String MODEL_NAME = "EA_Model";
     private static final String EA_CLASS_DIAGRAM_TYPE = "Logical";
+    /**
+     * Measured minimal diagram-level feature visibility keys. Without this block EA imports the diagram with feature
+     * visibility off (t_diagram AttPub/AttPri/AttPro = False) and draws no attributes or operations at all. This is
+     * the measured minimal sufficient subset: copying the full 50-key block of EA's own export would import foreign
+     * DocSize, PaperSize and Zoom page preferences this application does not model. Evidence:
+     * {@code odd/tasks/xmi-compartimentos-ea.md} (measurement M1-M8, decision XCE-03).
+     */
+    private static final String EA_DIAGRAM_FEATURE_VISIBILITY =
+            "ShowPrivate=1;ShowProtected=1;ShowPublic=1;OpParams=1;";
     private static final String EA_PRIMITIVES_PACKAGE_ID = "EAPrimitiveTypesPackage";
     private static final String EA_JAVA_TYPES_PACKAGE_ID = "EAJavaTypesPackage";
 
@@ -704,8 +713,11 @@ public final class XmiSemanticEmitter {
         diagram.appendChild(project);
         // Author and timestamps are absent from ModelResource; never synthesize them from ambient state.
         context.loss("extension_diagram_project_metadata", 3);
-        diagram.appendChild(document.createElement("style1"));
-        context.loss("extension_diagram_style1_metadata");
+        // Diagram-level visibility keys, not optional decoration: without them EA imports the diagram with feature
+        // visibility off and renders neither attributes nor operations, even though the semantic model carries them.
+        Element style1 = document.createElement("style1");
+        style1.setAttribute("value", EA_DIAGRAM_FEATURE_VISIBILITY);
+        diagram.appendChild(style1);
         diagram.appendChild(document.createElement("style2"));
         context.loss("extension_diagram_style2_metadata");
         diagram.appendChild(document.createElement("swimlanes"));
