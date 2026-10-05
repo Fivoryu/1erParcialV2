@@ -8,6 +8,7 @@ import {
 import { isDismissKey } from '../ui/modalBehavior';
 import {
   CONTEXT_MENU_FALLBACK_SIZE,
+  activateContextMenuItem,
   clampMenuPosition,
   isSeparator,
   type ContextMenuEntry,
@@ -91,21 +92,30 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps):
 
   function handleItemSelect(item: ContextMenuEntry, event: ReactMouseEvent<HTMLButtonElement>): void {
     event.stopPropagation();
-    if (isSeparator(item) || item.disabled) {
+    const activation = activateContextMenuItem(item, openSubmenuId);
+    if (activation.kind === 'none') {
       return;
     }
-    if (item.submenu) {
+    if (activation.kind === 'submenu') {
       // Parent entry of a submenu: hover opens it, click just toggles for keyboard/touch users.
-      setOpenSubmenuId((current) => (current === item.id ? null : item.id));
+      setOpenSubmenuId(activation.openSubmenuId);
       return;
     }
-    item.onSelect?.();
+    // Dispatch activations close the menu; nothing stays open after a choice.
+    activation.onSelect();
     onClose();
   }
 
   function renderEntry(entry: ContextMenuEntry, nested: boolean): ReactElement {
     if (isSeparator(entry)) {
       return <li key={`separator-${nested ? 'sub' : 'main'}`} role="separator" className="context-menu-separator" />;
+    }
+    if (entry.heading) {
+      return (
+        <li key={entry.id} className="context-menu-submenu-header" role="presentation">
+          {entry.label}
+        </li>
+      );
     }
     const hasSubmenu = entry.submenu !== undefined;
     const submenuOpen = hasSubmenu && openSubmenuId === entry.id;
@@ -117,12 +127,14 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps):
           className="context-menu-item"
           disabled={entry.disabled}
           aria-disabled={entry.disabled ? true : undefined}
+          aria-current={entry.checked ? true : undefined}
           aria-haspopup={hasSubmenu ? true : undefined}
           title={entry.disabled ? entry.disabledReason : undefined}
           onClick={(event) => handleItemSelect(entry, event)}
           onMouseEnter={hasSubmenu && !entry.disabled ? () => setOpenSubmenuId(entry.id) : undefined}
         >
           <span className="context-menu-item-label">{entry.label}</span>
+          {entry.checked ? <span className="context-menu-item-check" aria-hidden="true">✓</span> : null}
           {hasSubmenu ? <span className="context-menu-submenu-arrow" aria-hidden="true">▸</span> : null}
         </button>
         {hasSubmenu ? (

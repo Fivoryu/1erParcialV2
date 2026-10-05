@@ -26,8 +26,10 @@ import UmlRelationshipEdge, { type RelationshipFlowEdge } from './UmlRelationshi
 import type { CanvasSelection } from './selection';
 import ContextMenu from './ContextMenu';
 import {
+  CONTEXT_MENU_DEFAULT_END_ORDINAL,
   buildContextMenuItems,
   contextMenuStateFor,
+  multiplicityUpdateRequest,
   selectionFromTarget,
   type ContextMenuState,
   type ContextMenuTarget,
@@ -490,6 +492,51 @@ function CanvasFrame(props: UmlCanvasProps) {
     }
   }
 
+  function contextMenuItemsFor(state: ContextMenuState) {
+    // The Multiplicidad submenu is derived from the relationship's current ends;
+    // until T3 adds preselection it always edits the source end (ordinal 1).
+    const target = state.target;
+    const relationship = target.kind === 'relationship'
+      ? props.model.relationships.find((candidate) => candidate.id === target.relationshipId)
+      : undefined;
+    return buildContextMenuItems(state.target, {
+      onEdit: () => {
+        const selection = selectionFromTarget(state.target);
+        if (selection) {
+          props.onSelect(selection);
+        }
+      },
+      onDelete: () => {
+        const selection = selectionFromTarget(state.target);
+        if (selection) {
+          props.onDelete(selection);
+        }
+      },
+      onAddClassifier: props.onAddClassifier,
+      onSetMultiplicity: (multiplicity) => {
+        if (target.kind !== 'relationship') {
+          return;
+        }
+        const relationshipId = target.relationshipId;
+        const current = props.model.relationships.find((candidate) => candidate.id === relationshipId);
+        const request = current
+          ? multiplicityUpdateRequest(current, CONTEXT_MENU_DEFAULT_END_ORDINAL, multiplicity)
+          : null;
+        if (!request) {
+          return;
+        }
+        // Same dispatch path as the properties panel: full positional payload
+        // through props.onCommand, so the optimistic apply case covers it.
+        props.onCommand(request);
+      },
+    }, relationship
+      ? {
+        relationship,
+        classifierName: (classifierId: string) => props.model.classifiers.find((candidate) => candidate.id === classifierId)?.name,
+      }
+      : undefined);
+  }
+
   const sourceName = connectionDraft
     ? props.model.classifiers.find((classifier) => classifier.id === connectionDraft.sourceId)?.name
     : null;
@@ -602,21 +649,7 @@ function CanvasFrame(props: UmlCanvasProps) {
         <ContextMenu
           x={contextMenu.position.x}
           y={contextMenu.position.y}
-          items={buildContextMenuItems(contextMenu.target, {
-            onEdit: () => {
-              const selection = selectionFromTarget(contextMenu.target);
-              if (selection) {
-                props.onSelect(selection);
-              }
-            },
-            onDelete: () => {
-              const selection = selectionFromTarget(contextMenu.target);
-              if (selection) {
-                props.onDelete(selection);
-              }
-            },
-            onAddClassifier: props.onAddClassifier,
-          })}
+          items={contextMenuItemsFor(contextMenu)}
           onClose={() => setContextMenu(null)}
         />
       )}

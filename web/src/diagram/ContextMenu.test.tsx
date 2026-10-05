@@ -2,12 +2,24 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import ContextMenu from './ContextMenu';
-import { type ContextMenuEntry, type ContextMenuItem } from './contextMenuBehavior';
+import { buildMultiplicitySubmenu, type ContextMenuEntry, type ContextMenuItem } from './contextMenuBehavior';
+import type { RelationshipResource } from '../api/types';
 
 const items: ContextMenuItem[] = [
   { id: 'edit', label: 'Editar', onSelect: () => undefined },
   { id: 'duplicate', label: 'Duplicar', disabled: true, disabledReason: 'No existe un comando de duplicado en el modelo' },
 ];
+
+const relationship: RelationshipResource = {
+  id: 'r1',
+  kind: 'ASSOCIATION',
+  name: null,
+  constraints: [],
+  ends: [
+    { id: 'e1', classifierId: 'c1', role: null, multiplicity: 'ZERO_OR_ONE', navigability: 'UNSPECIFIED', aggregationKind: 'NONE', ordinal: 1 },
+    { id: 'e2', classifierId: 'c2', role: null, multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED', aggregationKind: 'NONE', ordinal: 2 },
+  ],
+};
 
 function render(overrides: { x?: number; y?: number; items?: ContextMenuEntry[] } = {}): string {
   return renderToStaticMarkup(createElement(ContextMenu, {
@@ -73,5 +85,25 @@ describe('ContextMenu', () => {
       ],
     });
     expect(markup).toContain('role="separator"');
+  });
+
+  it('renders the Multiplicidad submenu with the four notation options and a check on the current value', () => {
+    const markup = render({
+      items: [
+        {
+          id: 'multiplicity',
+          label: 'Multiplicidad',
+          submenu: buildMultiplicitySubmenu(relationship, 1, (id) => (id === 'c1' ? 'Desarrollo' : 'Persona'), () => undefined),
+        },
+      ],
+    });
+    expect(markup).toContain('Extremo A — Desarrollo');
+    expect(markup).toContain('context-menu-submenu-header');
+    for (const notation of ['0..1', '1..*', '0..*']) {
+      expect(markup).toContain(notation);
+    }
+    expect(markup).toMatch(/context-menu-item-check[^<]*✓/);
+    // Only the currently set end multiplicity (0..1) carries the check.
+    expect(markup.match(/context-menu-item-check/g)).toHaveLength(1);
   });
 });

@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import type { ClassifierKind } from './commands';
+import type { RelationshipResource } from '../api/types';
 import {
   CONTEXT_MENU_UNSUPPORTED_REASON,
+  activateContextMenuItem,
   buildContextMenuItems,
+  buildMultiplicitySubmenu,
   clampMenuPosition,
   contextMenuStateFor,
   isSeparator,
+  multiplicityUpdateRequest,
   selectionFromTarget,
   type ContextMenuActions,
   type ContextMenuEntry,
   type ContextMenuItem,
+  type ContextMenuRelationshipContext,
 } from './contextMenuBehavior';
 
 describe('clampMenuPosition', () => {
@@ -67,11 +72,43 @@ describe('contextMenuStateFor', () => {
   });
 });
 
+const classifierNames = new Map([
+  ['c1', 'Desarrollo'],
+  ['c2', 'Persona'],
+]);
+
+function relationshipFixture(overrides: Partial<RelationshipResource> = {}): RelationshipResource {
+  return {
+    id: 'r1',
+    kind: 'ASSOCIATION',
+    name: 'posee',
+    constraints: [],
+    ends: [
+      { id: 'e1', classifierId: 'c1', role: 'dueño', multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED', aggregationKind: 'NONE', ordinal: 1 },
+      { id: 'e2', classifierId: 'c2', role: null, multiplicity: 'ZERO_OR_MANY', navigability: 'NAVIGABLE', aggregationKind: 'NONE', ordinal: 2 },
+    ],
+    ...overrides,
+  };
+}
+
+function relationshipContext(relationship: RelationshipResource, endOrdinal?: number): ContextMenuRelationshipContext {
+  return {
+    relationship,
+    ...(endOrdinal === undefined ? {} : { endOrdinal }),
+    classifierName: (classifierId: string) => classifierNames.get(classifierId),
+  };
+}
+
+function multiplicityOptions(entries: ContextMenuItem[]): ContextMenuItem[] {
+  return (entries[0]?.submenu ?? []).filter((entry) => entry.id !== 'multiplicity-end-header');
+}
+
 describe('buildContextMenuItems', () => {
   const actions: ContextMenuActions = {
     onEdit: () => undefined,
     onDelete: () => undefined,
     onAddClassifier: (_kind: ClassifierKind) => undefined,
+    onSetMultiplicity: (_multiplicity: string) => undefined,
   };
 
   function findItem(items: ContextMenuEntry[], id: string): ContextMenuItem {
@@ -135,12 +172,25 @@ describe('buildContextMenuItems', () => {
     expect(menuItems(items).some((item) => item.id === 'duplicate')).toBe(false);
   });
 
-  it('keeps a present-but-empty Multiplicidad submenu placeholder for T2', () => {
-    const items = buildContextMenuItems({ kind: 'relationship', relationshipId: 'r1' }, actions);
+  it('fills the Multiplicidad submenu with the header plus the four mappable options', () => {
+    const items = buildContextMenuItems(
+      { kind: 'relationship', relationshipId: 'r1' },
+      actions,
+      relationshipContext(relationshipFixture()),
+    );
     const multiplicity = findItem(items, 'multiplicity');
-    expect(multiplicity.submenu).toEqual([]);
-    expect(multiplicity.disabled).toBe(true);
-    expect(multiplicity.disabledReason).toBeTruthy();
+    expect(multiplicity.disabled).toBeFalsy();
+    expect(multiplicity.submenu).toHaveLength(5);
+  });
+
+  it('defaults the submenu to the source end (ordinal 1) until T3 preselects an end', () => {
+    const items = buildContextMenuItems(
+      { kind: 'relationship', relationshipId: 'r1' },
+      actions,
+      relationshipContext(relationshipFixture()),
+    );
+    const options = multiplicityOptions([findItem(items, 'multiplicity')]);
+    expect(options.filter((option) => option.checked).map((option) => option.label)).toEqual(['1']);
   });
 
   it('offers classifier creation actions on the pane', () => {
@@ -151,5 +201,114 @@ describe('buildContextMenuItems', () => {
       expect(item.disabled).toBeFalsy();
       expect(item.onSelect).toBeTypeOf('function');
     }
+  });
+});
+
+describe('buildMultiplicitySubmenu', () => {
+  const onSetMultiplicity = (_multiplicity: string) => undefined;
+
+  it('offers exactly the four mappable multiplicities with their notation labels, in order', () => {
+    const submenu = buildMultiplicitySubmenu(relationshipFixture(), 1, () => undefined, onSetMultiplicity);
+    const options = submenu.filter((entry) => entry.id !== 'multiplicity-end-header');
+    expect(options.map((option) => option.label)).toEqual(['1', '0..1', '1..*', '0..*']);
+    for (const option of options) {
+      expect(option.disabled).toBeFalsy();
+      expect(option.onSelect).toBeTypeOf('function');
+    }
+  });
+
+  it('names the edited end in a non-interactive header using its role', () => {
+    const [header] = buildMultiplicitySubmenu(relationshipFixture(), 1, () => undefined, onSetMultiplicity);
+    expect(header?.heading).toBe(true);
+    expect(header?.disabled).toBe(true);
+    expect(header?.label).toBe('Extremo A — dueño');
+  });
+
+  it('falls back to the classifier name when the edited end has no role', () => {
+    const [header] = buildMultiplicitySubmenu(relationshipFixture(), 2, (id) => (id === 'c2' ? 'Persona' : undefined), onSetMultiplicity);
+    expect(header?.heading).toBe(true);
+    expect(header?.label).toBe('Extremo B — Persona');
+  });
+
+  it('marks the currently set multiplicity of the edited end and only that one', () => {
+    const options = multiplicityOptions([
+      { id: 'wrapper', label: '', submenu: buildMultiplicitySubmenu(relationshipFixture(), 2, () => undefined, onSetMultiplicity) },
+    ]);
+    const marked = options.filter((option) => option.checked);
+    expect(marked.map((option) => option.label)).toEqual(['0..*']);
+  });
+
+  it('marks the target end instead when ordinal 2 is passed for T3 preselection', () => {
+    const options = multiplicityOptions([
+      { id: 'wrapper', label: '', submenu: buildMultiplicitySubmenu(relationshipFixture(), 2, () => undefined, onSetMultiplicity) },
+    ]);
+    expect(options.filter((option) => option.checked).map((option) => option.label)).toEqual(['0..*']);
+  });
+
+  it('dispatches the chosen multiplicity value through the callback', () => {
+    const seen: string[] = [];
+    const submenu = buildMultiplicitySubmenu(relationshipFixture(), 1, () => undefined, (multiplicity) => seen.push(multiplicity));
+    const option = submenu.find((entry) => entry.label === '1..*');
+    option?.onSelect?.();
+    expect(seen).toEqual(['ONE_OR_MANY']);
+  });
+});
+
+describe('multiplicityUpdateRequest', () => {
+  function requestFor(relationship: RelationshipResource, endOrdinal: number, multiplicity: string) {
+    const request = multiplicityUpdateRequest(relationship, endOrdinal, multiplicity);
+    expect(request, 'a two-ended relationship always dispatches').not.toBeNull();
+    return request as NonNullable<ReturnType<typeof multiplicityUpdateRequest>>;
+  }
+
+  it('sends a relationship.update targeting the relationship with a full positional payload', () => {
+    const request = requestFor(relationshipFixture(), 1, 'ZERO_OR_ONE');
+    expect(request.type).toBe('relationship.update');
+    expect(request.targets).toEqual([{ scope: 'relationship', id: 'r1' }]);
+    expect(Object.keys(request.payload ?? {}).sort()).toEqual(['kind', 'name', 'source', 'target']);
+  });
+
+  it('replaces the chosen end multiplicity and preserves every other field byte-identically', () => {
+    const relationship = relationshipFixture();
+    const payload = requestFor(relationship, 1, 'ZERO_OR_ONE').payload ?? {};
+    expect(payload.name).toBe('posee');
+    expect(payload.kind).toBe('ASSOCIATION');
+    expect(JSON.stringify(payload.source)).toBe(JSON.stringify({ role: 'dueño', multiplicity: 'ZERO_OR_ONE', navigability: 'UNSPECIFIED' }));
+    expect(JSON.stringify(payload.target)).toBe(JSON.stringify({ role: null, multiplicity: 'ZERO_OR_MANY', navigability: 'NAVIGABLE' }));
+  });
+
+  it('replaces the target end when ordinal 2 is given, preserving the source end', () => {
+    const relationship = relationshipFixture();
+    const payload = requestFor(relationship, 2, '1..*').payload ?? {};
+    expect(JSON.stringify(payload.source)).toBe(JSON.stringify({ role: 'dueño', multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED' }));
+    expect(JSON.stringify(payload.target)).toBe(JSON.stringify({ role: null, multiplicity: '1..*', navigability: 'NAVIGABLE' }));
+  });
+
+  it('preserves a null relationship name exactly as the relationship holds it', () => {
+    const relationship = relationshipFixture({ name: null });
+    const payload = requestFor(relationship, 1, '0..*').payload ?? {};
+    expect(payload.name).toBeNull();
+  });
+});
+
+describe('activateContextMenuItem', () => {
+  it('produces a dispatch activation for a submenu option, the path that closes the menu', () => {
+    const onSetMultiplicity = () => undefined;
+    const submenu = buildMultiplicitySubmenu(relationshipFixture(), 1, () => undefined, onSetMultiplicity);
+    const option = submenu.find((entry) => entry.label === '0..1');
+    const activation = activateContextMenuItem(option as ContextMenuItem, null);
+    expect(activation).toEqual({ kind: 'dispatch', onSelect: option?.onSelect });
+  });
+
+  it('toggles a submenu parent open instead of dispatching', () => {
+    const parent: ContextMenuItem = { id: 'multiplicity', label: 'Multiplicidad', submenu: [] };
+    expect(activateContextMenuItem(parent, null)).toEqual({ kind: 'submenu', openSubmenuId: 'multiplicity' });
+    expect(activateContextMenuItem(parent, 'multiplicity')).toEqual({ kind: 'submenu', openSubmenuId: null });
+  });
+
+  it('ignores separators, disabled items, and entries without a handler', () => {
+    expect(activateContextMenuItem({ separator: true }, null)).toEqual({ kind: 'none' });
+    expect(activateContextMenuItem({ id: 'copy', label: 'Copiar', disabled: true }, null)).toEqual({ kind: 'none' });
+    expect(activateContextMenuItem({ id: 'header', label: 'x', disabled: true, heading: true }, null)).toEqual({ kind: 'none' });
   });
 });

@@ -89,6 +89,6 @@ modelo" — el menú se ve completo pero no miente. Lista registrada en esta act
 | Unidad | Estado | Evidencia |
 | --- | --- | --- |
 | T1 | **cerrado** | commit `feat(editor)` (ver evidencia abajo); RED observado (imports no resueltos), GREEN 24/24 nuevos, suite completa 339 passed / 4 skipped (base 315/4), lint y tsc limpios. Desviaciones: sin entorno DOM en el repo, tests como lógica pura + markup (convención modalBehavior); Duplicar deshabilitado (classifier.create no copia atributos/operaciones); Copiar como SVG/Imagen deshabilitado (canvas HTML+SVG no serializable client-side); módulo puro renombrado a contextMenuBehavior.ts por colisión case-insensitive en Windows con ContextMenu.tsx |
-| T2 | pendiente | — |
+| T2 | **cerrado** | commit `feat(editor)` (ver evidencia abajo); RED observado (16 fallos por exports/placeholder inválido), GREEN 39/39 enfocado, suite 354 passed / 4 skipped (+15), lint limpio. Payload posicional completo verificado por tests de byte-preservation (JSON.stringify); valor actual marcado; menú se cierra tras dispatch vía `activateContextMenuItem` puro |
 | T3 | pendiente | — |
 | T4 | pendiente | — |
