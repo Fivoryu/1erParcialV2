@@ -25,7 +25,8 @@ sin red y se levanta con su propia base PostgreSQL.
 
 | Superficie | Evidencia |
 | --- | --- |
-| Backend | `mvn -o -B verify` = **198 pruebas**, 0 fallos, sin red |
+| Backend | `mvn -o -B verify` = **387 pruebas**, 0 fallos, sin red |
+| Validación semántica UML 2.5 | `GET /projects/{id}/model/validation` = 6 reglas a nivel modelo (ciclos de generalización/realización, auto-generalización, validez de ends, multiplicidad RANGE incompleta, nombres de miembros únicos, tipos resolvibles); 4 pruebas de integración con Postgres; suite completa 387/0 en `feat/validacion-uml-semantica` |
 | Arnés del corte visible | `python tools/acceptance/acceptance.py` = **33 pasos OK**, 0 fallos, con teardown verificado |
 | Arnés de generación | `python tools/generation-acceptance/acceptance_generation.py` = **69 aserciones**, 0 fallos, con teardown verificado |
 | Arnés de despliegue | `python tools/generation-acceptance/acceptance_deployment.py` = **32 aserciones**, 0 fallos: ordena por la API, deja que el operador despliegue, comprueba `health` **desde la dirección de red**, hace el CRUD contra ese backend, ordena detener y verifica que no quedó nada |
