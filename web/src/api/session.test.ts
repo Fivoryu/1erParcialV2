@@ -48,8 +48,11 @@ const session = {
   userId: '11111111-1111-4111-8111-111111111111',
   username: 'diagram.user',
   displayName: 'Diagram User',
-  expiresAt: '2026-10-01T12:00:00Z',
+  expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
 };
+
+const expiresInSeconds = (seconds: number): string =>
+  new Date(Date.now() + seconds * 1000).toISOString();
 
 describe('browser session store', () => {
   it('round-trips a session under its named storage key', () => {
@@ -89,5 +92,58 @@ describe('browser session store', () => {
     saveSession(session);
 
     expect(getAuthorizationHeaderValue()).toBe('Bearer opaque-session-token');
+  });
+});
+
+describe('expired stored sessions', () => {
+  const storeSession = (expiresAt: string): void => {
+    globalThis.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({ ...session, expiresAt }),
+    );
+  };
+
+  it('returns a session that expires in the future unchanged', () => {
+    const futureExpiry = expiresInSeconds(60 * 60);
+    storeSession(futureExpiry);
+
+    expect(loadSession()).toEqual({ ...session, expiresAt: futureExpiry });
+  });
+
+  it('treats a session that expired an hour ago as absent and removes it', () => {
+    storeSession(expiresInSeconds(-60 * 60));
+
+    expect(loadSession()).toBeNull();
+    expect(globalThis.localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
+  });
+
+  it('still accepts a session that expired within the clock-skew tolerance', () => {
+    const recentExpiry = expiresInSeconds(-30);
+    storeSession(recentExpiry);
+
+    expect(loadSession()).toEqual({ ...session, expiresAt: recentExpiry });
+  });
+
+  it('rejects a session that expired just outside the clock-skew tolerance', () => {
+    storeSession(expiresInSeconds(-90));
+
+    expect(loadSession()).toBeNull();
+  });
+
+  it('fails closed on an unparseable expiresAt and clears it', () => {
+    storeSession('not-a-timestamp');
+
+    expect(loadSession()).toBeNull();
+    expect(globalThis.localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
+  });
+
+  it('keeps rejecting a shape-invalid stored session', () => {
+    globalThis.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({ token: '', userId: 'x', username: 'x', displayName: 'x', expiresAt: expiresInSeconds(60) }),
+    );
+
+    expect(loadSession()).toBeNull();
+    expect(globalThis.localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
   });
 });

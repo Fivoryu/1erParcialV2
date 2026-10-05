@@ -225,7 +225,7 @@ describe('project member and invitation API client', () => {
       userId,
       username: 'diagram.user',
       displayName: 'Diagram User',
-      expiresAt: '2026-10-01T12:00:00Z',
+      expiresAt: '2999-01-01T00:00:00Z',
     });
 
     await client.listProjectMembers(projectId);
@@ -325,7 +325,7 @@ describe('project chat API client', () => {
       userId: authorUserId,
       username: 'diagram.user',
       displayName: 'Diagram User',
-      expiresAt: '2026-10-01T12:00:00Z',
+      expiresAt: '2999-01-01T00:00:00Z',
     });
 
     expect(await client.listProjectMessages(projectId)).toEqual([message]);
@@ -412,7 +412,7 @@ describe('session-aware API client', () => {
   };
   const loginResponse = {
     token: 'opaque-session-token',
-    expiresAt: '2026-10-01T12:00:00Z',
+    expiresAt: '2999-01-01T00:00:00Z',
     user,
   };
 
@@ -592,7 +592,7 @@ describe('XMI export API client', () => {
       userId: '00000000-0000-0000-0000-000000000001',
       username: 'diagram.user',
       displayName: 'Diagram User',
-      expiresAt: '2026-10-01T12:00:00Z',
+      expiresAt: '2999-01-01T00:00:00Z',
     });
 
     expect(await client.exportXmi(projectId)).toEqual(resource);

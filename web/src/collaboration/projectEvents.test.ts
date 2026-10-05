@@ -155,7 +155,7 @@ describe('project event transport', () => {
       userId: '11111111-1111-4111-8111-111111111111',
       username: 'diagram.user',
       displayName: 'Diagram User',
-      expiresAt: '2026-10-01T12:00:00Z',
+      expiresAt: '2999-01-01T00:00:00Z',
     });
     expect(globalThis.localStorage.getItem(SESSION_STORAGE_KEY)).not.toBeNull();
 
