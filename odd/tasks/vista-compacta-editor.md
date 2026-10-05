@@ -162,6 +162,42 @@ Causa raíz, encontrada por análisis estático y confirmada por lectura del có
 
 **Rama empujada.** `origin/feat/vista-compacta-editor` existe. Desde WSL el push **no autentica** (`could not read Username for 'https://github.com'`); desde Windows **sí**, vía Git Credential Manager (`cmd.exe /c "git push -u origin feat/vista-compacta-editor"`). No hay `gh` ni `glab` en la máquina, así que la creación del PR queda en manos del usuario. URL de compare entregada: `main...feat/vista-compacta-editor` → 29 commits, 110 archivos, +14405/−36, porque la rama arrastra el incremento 4 completo.
 
+### 3.3 La clase creada por el asistente no se veía (reportado en uso real)
+
+Reporte textual: *"Me creó los atributos y clase. Pero no se me mostró, me salí del diagrama y volví a entrar y recién se mostró."*
+
+**El refresco nunca estuvo roto, y eso se midió antes de tocar nada.** Un cliente SSE crudo contra el backend demostró que el frame `operation.applied` sale por el camino del asistente igual que por un comando normal. Y una medición en navegador con un comando emitido desde afuera mostró la cadena completa sana: frame → `GET /model` → **nodo en el DOM en menos de 1 s**, idéntico incluso después de abrir y cerrar el diálogo del asistente. Con eso quedó descartado, con evidencia y no con argumentos, que el rediseño de la vista compacta hubiera causado el problema.
+
+**La causa real eran dos piezas que se combinan:**
+
+1. Un clasificador **sin geometría y sin nodo previo** recibe `{ x: 56 + column*340, y: 56 + row*260 }` derivado de su **índice** en `model.classifiers`. El servidor **no** devuelve ese arreglo en orden de creación: en una prueba devolvió `['PruebaComandoNormal', 'PruebaAsistente']` habiendo creado la segunda antes. El slot es impredecible. Y el asistente manda `{name, kind, namespaceId}` **sin geometría**, así que toda clase suya cae ahí.
+2. `fitView` **solo se aplica en el montaje inicial**. React Flow no vuelve a encuadrar cuando se agregan nodos. Por eso salir y volver (remonta + `fitView`) la mostraba.
+
+Alcance real: **preexistente**, y afecta a cualquier creación que venga del servidor — el asistente, otro colaborador, o un undo/redo que recree un elemento. También al botón "+ Class" local, que no calcula posición desde el viewport (`ProjectEditorPage.tsx:480-491`).
+
+**Decisión del usuario (VCE-13):** **encuadrar todo el diagrama** cuando llega una clase sin posición, en lugar de colocarla en el centro de la vista actual. Consecuencia declarada y aceptada: si la clase nueva cae lejos del resto, el encuadre aleja el zoom.
+
+**Arreglo, y los dos defectos que tuvo que corregir la revisión del padre.**
+
+- Predicado puro `unplacedClassifierIds(model, existing)` test-first (6 casos: con geometría, sin geometría pero con nodo en pantalla, sin ninguno de los dos, mezcla en orden del modelo, modelo vacío, y vista por defecto ausente).
+- **Defecto 1, encontrado leyendo y no por tests:** el `cleanup` del efecto de sincronización cancelaba el `fitView` encolado **en cada re-ejecución**, no solo al desmontar. Como ese efecto se re-ejecuta por `props.touchedElements` —que se actualiza con **el mismo evento SSE** que cambió el modelo—, el frame se cancelaba dentro de la ventana de ~16 ms y el cuerpo no lo reprogramaba (a esa altura el nodo ya está en pantalla, así que el predicado da vacío). El encuadre se perdía **de forma intermitente**. Se eliminó esa cancelación: el `fitFrameRef` ya impide encolar dos veces, y la cancelación quedó **solo al desmontar**.
+- **Defecto 2, medido:** el `requestAnimationFrame` de un solo disparo es una **apuesta al tiempo**. Verificado en navegador: **13 de 15** llegadas encuadraron bien y **las 2 fallas fueron en la primera llegada después de montar el editor** — que es justo el flujo del usuario (abre el proyecto, después usa la asistente). En las fallas el nodo entró al DOM pero el transform del viewport **nunca cambió**: el `fitView` no hizo nada.
+- **Corrección del defecto 2**: se reemplazó el tiempo por una **condición observable**. `isNodeMeasured(node)` exige `measured.width && measured.height`, y la fit effect espera esa condición con un bucle de rAF **acotado a 120 frames** (~2 s), tras lo cual abandona limpiando el estado para no bloquear llegadas futuras. El único cambio de estado converge, así que no puede haber bucle de re-render, y la cancelación sigue siendo solo al desmontar.
+
+**Verificación en navegador del caso que fallaba: 3 de 3, cero fallas.** Cada ensayo fue un **montaje limpio** del editor (la ventana que antes fallaba) con la precondition enforceada —zona `(56,56)` a más de 100 px fuera de la vista—, y disparando **una sola** llegada desde fuera del navegador:
+
+| Ensayo | Ventana de flujo visible | Nodo en DOM | ¿Dentro del viewport? | Cambios de transform |
+| --- | --- | --- | --- | --- |
+| 1 | x[843, 2142] y[402, 1133] | 432 ms | **sí** | **1** |
+| 2 | x[593, 2531] y[−9, 1081] | 654 ms | **sí** | **1** |
+| 3 | x[−3711, −488] y[−3090, −1277] | 602 ms | **sí** | **1** |
+
+Ningún ensayo cayó en el abandono de 120 frames. Suite: **325 passed / 4 skipped / 0 failed**. `lint` limpio.
+
+**Dato de React Flow que sostiene el arreglo** (leído en el código instalado, no supuesto): `getFitViewNodes` de `@xyflow/system` usa `isVisible = Boolean(n.measured.width && n.measured.height && !n.hidden)`. Los `width`/`height` de **nivel superior** —que `buildFlowNodes` sí setea a partir de la geometría— **no cuentan** para `fitView`. Un gate basado en esas propiedades habría pasado siempre y no habría medido nada.
+
+**Nota de entorno que explica tres fallas de verificación consecutivas:** WSL **no** alcanza el `localhost:5173` de Windows (`curl` devuelve 000). Toda verificación de navegador tiene que correr por el `node.exe` de Windows vía `cmd.exe` **con `timeout` en cada comando**; un comando sin cota se colgó 30 minutos. Este dato conviene al que retome cualquier verificación de navegador en este repo.
+
 ## 4. Decisiones de implementación tomadas durante la ejecución
 
 Se registran porque desvían del diseño inicial y deben sobrevivir a una interrupción.

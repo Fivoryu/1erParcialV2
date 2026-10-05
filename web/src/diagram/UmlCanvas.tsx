@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -30,6 +30,13 @@ import type { TouchedElement } from './touch-highlight';
 
 const DEFAULT_NODE_WIDTH = 260;
 const GRID_SIZE = 24;
+// Bounded re-check for the deferred fit: React Flow measures a node's DOM size with a
+// ResizeObserver after commit, which lands within a frame or two on a healthy machine.
+// The instrumented verification measured DOM entry at 157-389 ms, so 120 frames (~2 s at
+// 60 Hz) covers it with a >4x margin even on a slow machine, while guaranteeing the
+// loop can never spin forever: past the limit the fit is abandoned instead of yanking
+// the viewport at an arbitrary time.
+const MAX_FIT_FRAMES = 120;
 const nodeTypes: NodeTypes = { umlClass: UmlClassNode };
 const edgeTypes: EdgeTypes = { umlRelationship: UmlRelationshipEdge };
 
@@ -79,6 +86,36 @@ function defaultView(model: ModelResource) {
 function geometryFor(model: ModelResource, classifierId: string) {
   return defaultView(model)?.element_geometry.find((geometry) =>
     geometry.targetType === 'CLASSIFIER' && geometry.targetId === classifierId);
+}
+
+/**
+ * Ids of classifiers that have no saved geometry in the default view AND no node on
+ * screen yet: exactly the elements that would land on the index-based fallback grid and
+ * can therefore appear outside the current view. Drives when the canvas must re-fit.
+ */
+export function unplacedClassifierIds(
+  model: ModelResource,
+  existing: readonly { id: string }[],
+): string[] {
+  const onScreen = new Set(existing.map((node) => node.id));
+  return model.classifiers
+    .filter((candidate) => !geometryFor(model, candidate.id) && !onScreen.has(candidate.id))
+    .map((candidate) => candidate.id);
+}
+
+/**
+ * True when React Flow has measured the node's DOM size. In @xyflow/react v12 the
+ * measurement is stored on `node.measured.width/height` (populated when a `dimensions`
+ * change is applied after the ResizeObserver fires), NOT on the top-level `width`/
+ * `height`, which this codebase sets from saved geometry or defaults. `fitView` drops
+ * nodes without measured dimensions from its bounds (`getFitViewNodes` checks exactly
+ * `n.measured.width && n.measured.height`), so this predicate is the precise condition
+ * under which a fitView can actually include the arriving node.
+ */
+export function isNodeMeasured(
+  node: { measured?: { width?: number; height?: number } | undefined } | undefined,
+): boolean {
+  return Boolean(node?.measured?.width && node.measured?.height);
 }
 
 function geometryPayload(model: ModelResource, classifierId: string, rectangle: NodeRectangle, zOrder = 0): GeometryUpdate | null {
@@ -264,6 +301,22 @@ function CanvasFrame(props: UmlCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<ClassFlowNode>(initialNodes);
   const initialEdges = useMemo(() => buildFlowEdges(props.model), []);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RelationshipFlowEdge>(initialEdges);
+  // Latest committed nodes, read by the model-sync and fit effects. Neither effect takes
+  // `nodes` itself as a dependency: buildFlowNodes always returns a fresh array, so every
+  // setNodes inside the sync effect would change the `nodes` identity, re-run the effect,
+  // and loop forever. The fit effect must still observe measurement, which it does through
+  // this ref: React Flow reports the DOM measurement as a `dimensions` change routed
+  // through onNodesChange -> setNodes -> render, and nodesRef.current is refreshed on every
+  // render, so the next animation frame of the fit loop sees it.
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  // Pending fit intent, kept in state so a dedicated effect can react to it, plus a ref
+  // mirror used as the one-per-arrival guard and readable from the frame loop without
+  // re-arming the effect. Repeated runs of the sync effect for one arrival (e.g. when
+  // props.touchedElements changes with the same SSE event) cannot queue a second fit.
+  const [pendingFitId, setPendingFitId] = useState<string | null>(null);
+  const pendingFitRef = useRef<string | null>(null);
+  const fitFrameRef = useRef<number | null>(null);
 
   const persistResize = useCallback((classifierId: string, rectangle: NodeRectangle, zOrder: number) => {
     const payload = geometryPayload(props.model, classifierId, rectangle, zOrder);
@@ -289,6 +342,9 @@ function CanvasFrame(props: UmlCanvasProps) {
   }, [coalescer, setEdges, viewId]);
 
   useEffect(() => {
+    // nodesRef holds the nodes committed before this model update, i.e. exactly the
+    // elements already on screen; the new classifier is not among them.
+    const unplaced = unplacedClassifierIds(props.model, nodesRef.current);
     setNodes((current) => buildFlowNodes(
       props.model,
       current,
@@ -298,7 +354,65 @@ function CanvasFrame(props: UmlCanvasProps) {
       props.touchedElements,
     ));
     setEdges(buildFlowEdges(props.model, updateWaypoints));
-  }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, updateWaypoints, setNodes, setEdges]);
+    if (unplaced.length > 0 && pendingFitRef.current === null) {
+      // A node handed over in this render is not yet measured by React Flow, so a
+      // synchronous fitView would silently drop it from the fit bounds. Record the
+      // intent instead of guessing when the measurement lands: the fit effect below
+      // fires only once the node is actually measurable.
+      pendingFitRef.current = unplaced[0]!;
+      setPendingFitId(pendingFitRef.current);
+    }
+  }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, updateWaypoints, setNodes, setEdges, fitView]);
+
+  useEffect(() => {
+    if (pendingFitId === null) {
+      return;
+    }
+    let attempts = 0;
+    const tick = () => {
+      fitFrameRef.current = null;
+      const pending = pendingFitRef.current;
+      if (pending === null) {
+        return;
+      }
+      const target = nodesRef.current.find((node) => node.id === pending);
+      if (isNodeMeasured(target)) {
+        // Clear the intent BEFORE fitting so this can only ever fire once per arrival,
+        // then move the camera. fitView reads React Flow's internal store and only
+        // changes the viewport; it never touches node/edge state.
+        pendingFitRef.current = null;
+        setPendingFitId(null);
+        void fitView({ padding: 0.2 });
+        return;
+      }
+      attempts += 1;
+      if (attempts >= MAX_FIT_FRAMES) {
+        // Bounded: give up rather than re-check forever. A fit this late would be more
+        // surprising than none, and the bound guarantees termination.
+        pendingFitRef.current = null;
+        setPendingFitId(null);
+        return;
+      }
+      fitFrameRef.current = requestAnimationFrame(tick);
+    };
+    fitFrameRef.current = requestAnimationFrame(tick);
+  }, [pendingFitId, fitView]);
+
+  // A queued fit is cancelled only on unmount, never when the sync effect merely re-runs.
+  // Cancelling it there silently dropped the fit: that effect re-runs on dependency changes
+  // belonging to the SAME arrival (`props.touchedElements` is driven by the very SSE event
+  // that changed the model), and by the time it re-runs the new node is already on screen,
+  // so `unplacedClassifierIds` returns nothing and nothing re-queues the fit. The
+  // `pendingFitRef` guard, not a cleanup, is what keeps one arrival from queueing two fits.
+  // The fit effect above deliberately has no cleanup of its own: its only dependencies are
+  // `pendingFitId` (which this component alone transitions) and the stable `fitView` helper.
+  useEffect(() => () => {
+    if (fitFrameRef.current !== null) {
+      cancelAnimationFrame(fitFrameRef.current);
+      fitFrameRef.current = null;
+    }
+    pendingFitRef.current = null;
+  }, []);
 
   useEffect(() => () => coalescer.cancelAll(), [coalescer]);
 
