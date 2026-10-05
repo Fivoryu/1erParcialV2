@@ -26,9 +26,12 @@ import { buildRemoteCursorMarkers } from '../collaboration/remoteCursors';
 import { subscribeProjectEvents } from '../collaboration/projectEvents';
 import { useEditingLease } from '../collaboration/useEditingLease';
 import UmlCanvas from '../diagram/UmlCanvas';
+import { useUndoRedoShortcuts } from '../diagram/useUndoRedoShortcuts';
 import PropertiesPanel from '../diagram/PropertiesPanel';
+import AssistantPanel from '../assistant/AssistantPanel';
 import GenerationPanel from '../generation/GenerationPanel';
 import XmiImportPanel from '../xmi/XmiImportPanel';
+import XmiExportPanel from '../xmi/XmiExportPanel';
 import MembersPanel from '../members/MembersPanel';
 import {
   applyOptimisticCommand,
@@ -42,6 +45,10 @@ import {
 import type { CanvasSelection } from '../diagram/selection';
 import { groupTouchesByElement } from '../diagram/touch-highlight';
 import { loginErrorMessage } from './LoginPage';
+import { findEditorSection, nextActiveSection, type EditorSectionId } from './editorSections';
+import EditorOptionsBar from './EditorOptionsBar';
+import FloatingAssistantButton from '../ui/FloatingAssistantButton';
+import Modal from '../ui/Modal';
 
 const api = createApiClient();
 
@@ -153,6 +160,8 @@ export default function ProjectEditorPage() {
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [openSection, setOpenSection] = useState<EditorSectionId | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const modelRef = useRef<ModelResource | null>(null);
   const canonicalModelRef = useRef<ModelResource | null>(null);
   const revisionRef = useRef<number | null>(null);
@@ -344,6 +353,23 @@ export default function ProjectEditorPage() {
     }
   }, [projectId, publishModel]);
 
+  const undoRedo = useUndoRedoShortcuts({
+    projectId,
+    onApplied: () => {
+      // Undo/redo enters through the normal command pipeline (it fires operation.applied), but the
+      // refetch goes through the same path the page already uses so the refresh does not depend on
+      // SSE arrival timing.
+      void refreshModelFromEvent();
+    },
+    onError: (cause) => {
+      if (currentProjectIdRef.current === projectId) {
+        setError(messageFor(cause));
+      }
+    },
+    // Escape only clears when something is selected; the canvas keeps its own Delete/Backspace handling untouched.
+    onEscape: selection ? () => setSelection(null) : undefined,
+  });
+
   useEffect(() => {
     if (!projectId) {
       setPresence([]);
@@ -465,6 +491,19 @@ export default function ProjectEditorPage() {
   }, [dispatchEnvelope]);
 
   const targetElementId = selectedTargetElementId(selection);
+  const activeSection = openSection === null ? null : findEditorSection(openSection);
+  const handleOpenSection = useCallback((id: EditorSectionId) => {
+    setOpenSection((current) => nextActiveSection(current, id));
+  }, []);
+  const closeSection = useCallback(() => setOpenSection(null), []);
+
+  // `openSection` and `assistantOpen` are independent, so opening the assistant
+  // from the floating button must close any open section dialog first: two open
+  // dialogs would mean two backdrops, two focus traps and two scroll locks.
+  const handleOpenAssistant = useCallback(() => {
+    setOpenSection(null);
+    setAssistantOpen(true);
+  }, []);
   const touchedElements = useMemo(() => groupTouchesByElement(presence), [presence]);
   const remoteCursorMarkers = useMemo(
     () => buildRemoteCursorMarkers(presence, remoteCursorPositions, currentUserId),
@@ -577,10 +616,28 @@ export default function ProjectEditorPage() {
                 <h1 id="project-title">{project.name}</h1>
                 {project.description && <p className="lede">{project.description}</p>}
               </div>
-              <div className="revision-chip" aria-live="polite">
-                <span className="status-dot" />
-                Revision {model.revision}
-                <span className="revision-status">{pendingCount > 0 ? 'Saving changes…' : 'Saved'}</span>
+              <div className="diagram-toolbar-actions" aria-label="Undo and redo">
+                <button
+                  className="button button-secondary button-compact"
+                  type="button"
+                  disabled={!undoRedo.canUndo || undoRedo.busy}
+                  onClick={() => undoRedo.undo()}
+                >
+                  Undo
+                </button>
+                <button
+                  className="button button-secondary button-compact"
+                  type="button"
+                  disabled={!undoRedo.canRedo || undoRedo.busy}
+                  onClick={() => undoRedo.redo()}
+                >
+                  Redo
+                </button>
+                <div className="revision-chip" aria-live="polite">
+                  <span className="status-dot" />
+                  Revision {model.revision}
+                  <span className="revision-status">{pendingCount > 0 ? 'Saving changes…' : 'Saved'}</span>
+                </div>
               </div>
             </section>
 
@@ -590,6 +647,12 @@ export default function ProjectEditorPage() {
                 <button className="text-button" onClick={() => setError(null)} type="button">Dismiss</button>
               </div>
             )}
+
+            <EditorOptionsBar
+              activeSection={openSection}
+              onOpenSection={handleOpenSection}
+              badges={{ collaboration: presence.length }}
+            />
 
             <div className="editor-workspace">
               <UmlCanvas
@@ -612,27 +675,74 @@ export default function ProjectEditorPage() {
               />
             </div>
 
-            <XmiImportPanel projectId={project.id} />
-            <PresencePanel entries={presence} userId={currentUserId} />
-            <ChatPanel
-              busy={chatBusy}
-              draft={chatDraft}
-              error={chatError}
-              history={chatHistory}
-              loading={chatLoading}
-              onDraftChange={setChatDraft}
-              onSend={(body) => void sendMessage(body)}
-              userId={currentUserId}
-            />
-            <MembersPanel key={project.id} projectId={project.id} />
+            <Modal
+              open={activeSection?.id === 'xmi'}
+              title={findEditorSection('xmi').title}
+              size={findEditorSection('xmi').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <XmiImportPanel projectId={project.id} />
+              <XmiExportPanel projectId={project.id} projectName={project.name} />
+            </Modal>
 
-            <GenerationPanel
-              projectId={project.id}
-              modelId={model.id}
-              versionId={model.versionId}
-              modelRevision={model.revision}
-              editingLease={editingLease}
-            />
+            <Modal
+              open={activeSection?.id === 'collaboration'}
+              title={findEditorSection('collaboration').title}
+              size={findEditorSection('collaboration').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <PresencePanel entries={presence} userId={currentUserId} />
+              <ChatPanel
+                busy={chatBusy}
+                draft={chatDraft}
+                error={chatError}
+                history={chatHistory}
+                loading={chatLoading}
+                onDraftChange={setChatDraft}
+                onSend={(body) => void sendMessage(body)}
+                userId={currentUserId}
+              />
+            </Modal>
+
+            <Modal
+              open={activeSection?.id === 'members'}
+              title={findEditorSection('members').title}
+              size={findEditorSection('members').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <MembersPanel key={project.id} projectId={project.id} />
+            </Modal>
+
+            <Modal
+              open={activeSection?.id === 'generation'}
+              title={findEditorSection('generation').title}
+              size={findEditorSection('generation').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <GenerationPanel
+                projectId={project.id}
+                modelId={model.id}
+                versionId={model.versionId}
+                modelRevision={model.revision}
+                editingLease={editingLease}
+              />
+            </Modal>
+
+            <Modal
+              open={assistantOpen}
+              title="Asistente de modelo"
+              size="md"
+              titleVisible={false}
+              onClose={() => setAssistantOpen(false)}
+            >
+              <AssistantPanel currentRevision={model.revision} projectId={project.id} />
+            </Modal>
+
+            <FloatingAssistantButton open={assistantOpen} onOpen={handleOpenAssistant} />
           </>
         ) : null}
       </div>

@@ -1,0 +1,133 @@
+{
+  "$comment": "Fixed Spanish evaluation corpus for increment 4 (IA4-01). Versioned BEFORE any model run. Each case declares the shared fixture it runs against and the expected intent. Expected operations are matched as {type, targetName} pairs, never full payload equality: the model proposes, this corpus only pins intent-level behavior.",
+  "fixture": {
+    "model": "ecommerce-base",
+    "description": "Small e-commerce model with one near-name trap (ClienteInternacional), one class with cascade baggage (Pedido), and two relationships.",
+    "classifiers": [
+      { "name": "Cliente", "attributes": ["nombre: String", "email: String"], "operations": ["calcularDescuento(): Decimal"] },
+      { "name": "ClienteInternacional", "attributes": ["pais: String"], "operations": [] },
+      { "name": "Producto", "attributes": ["nombre: String", "precio: Decimal"], "operations": [] },
+      { "name": "Pedido", "attributes": ["fecha: Date", "total: Decimal"], "operations": ["confirmar(): void"] }
+    ],
+    "relationships": [
+      { "kind": "ASSOCIATION", "source": "Cliente", "target": "Pedido", "multiplicity": "1 a *" },
+      { "kind": "ASSOCIATION", "source": "ClienteInternacional", "target": "Pedido", "multiplicity": "0..1 a *" }
+    ]
+  },
+  "cases": [
+    {
+      "id": "E01",
+      "utterance": "Creá una clase Pedido con el atributo fecha: Date y asociala con Cliente.",
+      "expectedIntent": "plan",
+      "expectedOps": [
+        { "type": "classifier.create", "targetName": "Pedido" },
+        { "type": "attribute.add", "targetName": "Pedido.fecha" },
+        { "type": "relationship.create", "targetName": "Pedido->Cliente" }
+      ],
+      "note": "Escenario de aceptación 1 de la guía (IA4-08). Plan multi-comando ordenado."
+    },
+    {
+      "id": "E02",
+      "utterance": "Explicá la relación seleccionada entre Cliente y Pedido.",
+      "expectedIntent": "explain",
+      "expectedOps": [],
+      "note": "Escenario de aceptación 2. Explicación sin mutación: el plan debe venir vacío."
+    },
+    {
+      "id": "E03",
+      "utterance": "Eliminá la clase ClienteIntern.",
+      "expectedIntent": "clarify",
+      "expectedOps": [],
+      "note": "Referencia ambigua por nombre parcial: casa con Cliente y ClienteInternacional. Nunca aproximar un objetivo destructivo."
+    },
+    {
+      "id": "E04",
+      "utterance": "Eliminá la clase Inexistente.",
+      "expectedIntent": "reject",
+      "expectedOps": [],
+      "note": "Escenario de aceptación 4. Referencia a elemento que no existe: rechazo sin mutación."
+    },
+    {
+      "id": "E05",
+      "utterance": "Renombrá la clase Producto a Articulo.",
+      "expectedIntent": "plan",
+      "expectedOps": [{ "type": "classifier.rename", "targetName": "Producto" }],
+      "note": "Cambio de propiedad sobre referencia existente inequívoca."
+    },
+    {
+      "id": "E06",
+      "utterance": "El email de Cliente pasa a ser obligatorio y de tipo String.",
+      "expectedIntent": "plan",
+      "expectedOps": [{ "type": "attribute.update", "targetName": "Cliente.email" }],
+      "note": "Actualización de atributo referido por nombre del dueño + nombre del atributo."
+    },
+    {
+      "id": "E07",
+      "utterance": "Hacé que Cliente sea abstracta.",
+      "expectedIntent": "plan",
+      "expectedOps": [{ "type": "classifier.setAbstract", "targetName": "Cliente" }],
+      "note": "Cambio de propiedad simple dentro del catálogo."
+    },
+    {
+      "id": "E08",
+      "utterance": "Eliminá la clase Pedido.",
+      "expectedIntent": "plan",
+      "expectedOps": [{ "type": "classifier.delete", "targetName": "Pedido" }],
+      "note": "Escenario de aceptación 3. Borrado con efectos en cascada (atributos, operaciones, relación): el preview debe declarar el efecto lateral y la intención de borrado no puede quedar ambigua."
+    },
+    {
+      "id": "E09",
+      "utterance": "Creá las clases Factura y LineaDeFactura, con una composición de Factura a LineaDeFactura y el atributo cantidad: Integer en LineaDeFactura.",
+      "expectedIntent": "plan",
+      "expectedOps": [
+        { "type": "classifier.create", "targetName": "Factura" },
+        { "type": "classifier.create", "targetName": "LineaDeFactura" },
+        { "type": "relationship.create", "targetName": "Factura->LineaDeFactura" },
+        { "type": "attribute.add", "targetName": "LineaDeFactura.cantidad" }
+      ],
+      "note": "Plan de varios pasos con dependencia de orden (la relación necesita ambas clases creadas)."
+    },
+    {
+      "id": "E10",
+      "utterance": "Agregale a Cliente la operación calcularTotal que devuelve Decimal.",
+      "expectedIntent": "plan",
+      "expectedOps": [{ "type": "operation.add", "targetName": "Cliente.calcularTotal" }],
+      "note": "Alta de operación con tipo de retorno."
+    },
+    {
+      "id": "E11",
+      "utterance": "La asociación entre Cliente y Pedido pasa a ser una composición.",
+      "expectedIntent": "plan",
+      "expectedOps": [{ "type": "relationship.update", "targetName": "Cliente->Pedido" }],
+      "note": "Cambio de kind sobre relación referida por sus extremos."
+    },
+    {
+      "id": "E12",
+      "utterance": "Renombrá la clase.",
+      "expectedIntent": "clarify",
+      "expectedOps": [],
+      "note": "Instrucción sin objetivo y sin selección declarada en el contexto: preguntar, nunca elegir uno."
+    },
+    {
+      "id": "E13",
+      "utterance": "Exportá el diagrama a XMI.",
+      "expectedIntent": "reject",
+      "expectedOps": [],
+      "note": "Fuera del catálogo del incremento (XMI no está en el subconjunto del dominio decidido): rechazo o explicación sin plan mutador."
+    },
+    {
+      "id": "E14",
+      "utterance": "Agregale algo a la clase Cliente.",
+      "expectedIntent": "clarify",
+      "expectedOps": [],
+      "note": "Instrucción subespecificada: 'algo' no es un tipo del catálogo. Debe preguntar qué quiere agregar."
+    },
+    {
+      "id": "E15",
+      "utterance": "Eliminá el atributo telefono de Producto.",
+      "expectedIntent": "reject",
+      "expectedOps": [],
+      "note": "El atributo existe en Cliente, no en Producto: rechazo, no reencaminamiento silencioso a otro dueño."
+    }
+  ]
+}

@@ -38,6 +38,10 @@ sin red y se levanta con su propia base PostgreSQL.
 
 **Evidencia visual:** las capturas del lienzo están en `docs/capturas/incremento-1/` y las del Incremento 2 en
 `docs/capturas/incremento-2/`, junto con las transcripciones de la corrida de Postman y del arnés de generación.
+La vista compacta del editor (barra de opciones superior con las secciones secundarias en diálogos y el asistente
+de IA como botón flotante) está medida y capturada en `docs/capturas/vista-compacta/`; el plan y las mediciones
+están en [`odd/tasks/vista-compacta-editor.md`](odd/tasks/vista-compacta-editor.md), y el script que las produce
+es `web/scripts/verify-vista-compacta.mjs`.
 
 **Ojo con los límites:** el Incremento 2 cierra con **siete puntos abiertos** y con **lo que no se verificó**
 declarado en el [acta](docs/puds/cierre/04-cierre-incremento-2.md) §5 y §7. Los tres que más importan: la subida

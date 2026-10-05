@@ -1,0 +1,168 @@
+{
+  "judged": {
+    "passed": 11,
+    "total": 15,
+    "cases": [
+      {
+        "id": "E01",
+        "utterance": "Creá una clase Pedido con el atributo fecha: Date y asociala con Cliente.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": true,
+        "detail": "all expected ops present",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"Pedido\"}, {\"type\": \"attribute.add\", \"targetName\": \"Pedido.fecha\"}, {\"type\": \"relationship.create\", \"targetName\": \"Cliente->Pedido\"}], \"question\": null, \"explanation\": \"Se creará la clase Pedido con el atributo fecha de tipo Date y se establecerá una relación de asociación de tipo 'A->B' desde Cliente hacia Pedido.\"}"
+      },
+      {
+        "id": "E02",
+        "utterance": "Explicá la relación seleccionada entre Cliente y Pedido.",
+        "expected": "explain",
+        "observed": "explain",
+        "ok": true,
+        "detail": "explanation without mutation",
+        "raw": "{\"intent\": \"explain\", \"operations\": [], \"question\": null, \"explanation\": \"La relación seleccionada es una asociación entre la clase Cliente y la clase Pedido. Esta relación indica que los clientes pueden realizar pedidos. En el diagrama, esta relación se representa como una línea con flecha de punta hacia abajo desde 'Cliente' hacia 'Pedido', lo que denota que los clientes son los emisoras de los pedidos. No se requieren operaciones de modificación, solo una explicación del significado de esta relación en el contexto del modelo.\"}"
+      },
+      {
+        "id": "E03",
+        "utterance": "Eliminá la clase ClienteIntern.",
+        "expected": "clarify",
+        "observed": "reject",
+        "ok": false,
+        "detail": "expected clarify with a question, got reject",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"La clase 'ClienteInternacional' no existe en el diagrama. Solo se encuentran 'Cliente' y 'Producto'. Además, no se especificó qué operación realizar (crear, renombrar, eliminar, etc.).\"}"
+      },
+      {
+        "id": "E04",
+        "utterance": "Eliminá la clase Inexistente.",
+        "expected": "reject",
+        "observed": "reject",
+        "ok": true,
+        "detail": "rejected without mutation",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"La clase Inexistente no existe en el diagrama de clases proporcionado. Solo se encuentran las clases Cliente, ClienteInternacional, Producto y Pedido.\"}"
+      },
+      {
+        "id": "E05",
+        "utterance": "Renombrá la clase Producto a Articulo.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": true,
+        "detail": "all expected ops present",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.rename\", \"targetName\": \"Producto\"}], \"question\": null, \"explanation\": \"La clase Producto existe y es única en el catálogo. Se procederá a renombrarla a Articulo.\"}"
+      },
+      {
+        "id": "E06",
+        "utterance": "El email de Cliente pasa a ser obligatorio y de tipo String.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": true,
+        "detail": "all expected ops present",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.update\", \"targetName\": \"Cliente.email\"}], \"question\": null, \"explanation\": \"El pedido solicita actualizar el atributo 'email' de la clase 'Cliente' para que sea obligatorio y de tipo String. Dado que el atributo ya existe en el diagrama y se especifica su nuevo tipo, solo se requiere la operación 'attribute.update'.\"}"
+      },
+      {
+        "id": "E07",
+        "utterance": "Hacé que Cliente sea abstracta.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": true,
+        "detail": "all expected ops present",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.setAbstract\", \"targetName\": \"Cliente\"}], \"question\": null, \"explanation\": \"La clase Cliente ya tiene el tipo 'CLASS', por lo que la operación setAbstract es válida y se aplicará para marcarla como abstracta.\"}"
+      },
+      {
+        "id": "E08",
+        "utterance": "Eliminá la clase Pedido.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": true,
+        "detail": "all expected ops present",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.delete\", \"targetName\": \"Pedido\"}], \"question\": null, \"explanation\": \"La clase Pedido existe en el diagrama y el pedido es inequívoco para su eliminación. Se procederá a borrarla.\"}"
+      },
+      {
+        "id": "E09",
+        "utterance": "Creá las clases Factura y LineaDeFactura, con una composición de Factura a LineaDeFactura y el atributo cantidad: Integer en LineaDeFactura.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": true,
+        "detail": "all expected ops present",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"LineaDeFactura\"}, {\"type\": \"classifier.create\", \"targetName\": \"Factura\"}, {\"type\": \"relationship.create\", \"targetName\": \"LineaDeFactura->Factura\"}, {\"type\": \"attribute.add\", \"targetName\": \"LineaDeFactura.cantidad\"}], \"question\": null, \"explanation\": \"Se crean dos nuevas clases (LineaDeFactura y Factura) y se establece una relación de composición de LineaDeFactura a Factura. Además, se agrega el atributo 'cantidad' de tipo Integer a la clase LineaDeFactura.\"}"
+      },
+      {
+        "id": "E10",
+        "utterance": "Agregale a Cliente la operación calcularTotal que devuelve Decimal.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": true,
+        "detail": "all expected ops present",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"operation.add\", \"targetName\": \"Cliente.calcularTotal\"}], \"question\": null, \"explanation\": \"Se agregará la operación 'calcularTotal' al atributo 'Cliente' para devolver un valor Decimal, como se solicitó.\"}"
+      },
+      {
+        "id": "E11",
+        "utterance": "La asociación entre Cliente y Pedido pasa a ser una composición.",
+        "expected": "plan",
+        "observed": "clarify",
+        "ok": false,
+        "detail": "missing expected ops: ['relationship.update:Cliente->Pedido']",
+        "raw": "{\"intent\": \"clarify\", \"operations\": [], \"question\": \"¿Qué clase querés renombrar?\", \"explanation\": \"El pedido menciona 'La asociación entre Cliente y Pedido pasa a ser una composición', pero no especifica cuál de las clases (Cliente o Pedido) se refiere para la renombración. Además, en el catálogo actual, la clase 'ClienteInternacional' no tiene operaciones ni atributos definidos, lo cual podría ser un error de entrada o un elemento que no debe modificarse.\"}"
+      },
+      {
+        "id": "E12",
+        "utterance": "Renombrá la clase.",
+        "expected": "clarify",
+        "observed": "clarify",
+        "ok": true,
+        "detail": "asked instead of mutating",
+        "raw": "{\"intent\": \"clarify\", \"operations\": [], \"question\": \"¿Qué clase querés renombrar?\", \"explanation\": \"El pedido menciona 'Renombrá la clase' pero no especifica cuál de las clases existentes (Cliente, ClienteInternacional, Producto, Pedido) deseas cambiar su nombre.\"}"
+      },
+      {
+        "id": "E13",
+        "utterance": "Exportá el diagrama a XMI.",
+        "expected": "reject",
+        "observed": "reject",
+        "ok": true,
+        "detail": "rejected without mutation",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"No existe ninguna operación en el catálogo de operaciones disponibles para exportar un diagrama a XMI. Las operaciones permitidas son solo de creación, renombre, eliminación, asignación de abstracto, adición de atributos, actualización de atributos, eliminación de atributos, adición de operaciones, creación y actualización de relaciones.\"}"
+      },
+      {
+        "id": "E14",
+        "utterance": "Agregale algo a la clase Cliente.",
+        "expected": "clarify",
+        "observed": "plan",
+        "ok": false,
+        "detail": "mutation outside a plan: 2 op(s)",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.add\", \"targetName\": \"Cliente.nombre\"}, {\"type\": \"attribute.add\", \"targetName\": \"Cliente.email\"}], \"question\": null, \"explanation\": \"Ya existen los atributos 'nombre' y 'email' en la clase Cliente, por lo que no es necesario agregarlos nuevamente. Sin embargo, si quisieras agregar otro atributo, por favor especifica qué dato deseas añadir.\"}"
+      },
+      {
+        "id": "E15",
+        "utterance": "Eliminá el atributo telefono de Producto.",
+        "expected": "reject",
+        "observed": "plan",
+        "ok": false,
+        "detail": "mutation outside a plan: 1 op(s) (includes destructive ['attribute.remove'])",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.remove\", \"targetName\": \"Producto.telefono\"}], \"question\": null, \"explanation\": \"El atributo 'telefono' existe en la clase 'Producto' y su eliminación es una operación válida dentro del catálogo.\"}"
+      }
+    ]
+  },
+  "latencies": {
+    "E01": 18.52034430007916,
+    "E02": 11.191175899934024,
+    "E03": 7.98002809996251,
+    "E04": 6.7996568999951705,
+    "E05": 11.335323099978268,
+    "E06": 19.215044099953957,
+    "E07": 13.749928100034595,
+    "E08": 12.21927240001969,
+    "E09": 15.031903599970974,
+    "E10": 10.266210699919611,
+    "E11": 18.415531700011343,
+    "E12": 8.310893699992448,
+    "E13": 9.464851700002328,
+    "E14": 10.235223400057293,
+    "E15": 7.904018300003372
+  },
+  "cold_load_s": 2.9120213999412954,
+  "cold_e01_s": 18.52034430007916,
+  "warm_e01_s": 10.397225099964999,
+  "ram_peak_ws_bytes": 2139754496,
+  "ram_peak_priv_bytes": 1304260608,
+  "free_min_bytes": 152248320,
+  "prompt_version": "ia4-01-prompt-v2",
+  "model": "D:\\ai-eval\\models\\Qwen3.5-2B-Q4_K_M.gguf"
+}

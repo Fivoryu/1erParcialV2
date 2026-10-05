@@ -26,6 +26,7 @@ import type {
   Uuid,
   XmiImportRequest,
   XmiImportResource,
+  XmiExportResource,
   XmiPreviewRequest,
   XmiPreviewResource,
 } from './types';
@@ -118,6 +119,7 @@ export interface ApiClient {
   getModel(projectId: Uuid): Promise<ModelResource>;
   previewXmi(projectId: Uuid, request: XmiPreviewRequest): Promise<XmiPreviewResource>;
   importXmi(projectId: Uuid, request: XmiImportRequest): Promise<XmiImportResource>;
+  exportXmi(projectId: Uuid): Promise<XmiExportResource>;
   reportProjectPresenceTouch(projectId: Uuid, targetElementId: Uuid | null): Promise<void>;
   reportProjectCursorPosition(projectId: Uuid, x: number, y: number): Promise<void>;
   executeCommand(projectId: Uuid, envelope: OperationEnvelope): Promise<CommandOutcome>;
@@ -346,6 +348,13 @@ export function createApiClient(
       return postJson<XmiImportResource>(
         `/projects/${encodeURIComponent(projectId)}/xmi/import`,
         request,
+      );
+    },
+    exportXmi(projectId) {
+      // The backend declares no @RequestBody, so the POST carries no body.
+      return requestJson<XmiExportResource>(
+        `/projects/${encodeURIComponent(projectId)}/xmi/export`,
+        { method: 'POST' },
       );
     },
     reportProjectPresenceTouch(projectId, targetElementId) {

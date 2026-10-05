@@ -494,3 +494,57 @@ describe('coalesced persisted geometry', () => {
     });
   });
 });
+
+describe('relationship route & style (IA4-07)', () => {
+  const styledModel: ModelResource = {
+    ...model,
+    view_style: [{
+      viewId,
+      targetId: relationshipId,
+      routing: 'ORTHOGONAL',
+      cornerRadius: 8,
+      strokeWidth: 3,
+      dashed: true,
+    }],
+  };
+
+  it('propagates the per-view style row into the flow edge data and defaults to straight', () => {
+    const connector = buildFlowEdges(styledModel).find((edge) => edge.id === relationshipId);
+    expect(connector?.data?.style).toEqual({ routing: 'ORTHOGONAL', cornerRadius: 8, strokeWidth: 3, dashed: true });
+
+    const plain = buildFlowEdges(model).find((edge) => edge.id === relationshipId);
+    expect(plain?.data?.style).toEqual({ routing: 'STRAIGHT', cornerRadius: 0, strokeWidth: 2, dashed: false });
+  });
+
+  it('renders the route & style controls reflecting the persisted view style row', () => {
+    const panel = renderToStaticMarkup(createElement(PropertiesPanel, {
+      model: styledModel,
+      selection: { kind: 'relationship', relationshipId },
+      onCommand: () => null,
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    expect(panel).toContain('Route &amp; style');
+    expect(panel).toContain('Reset route');
+    expect(panel).toMatch(/value="ORTHOGONAL"[^>]*selected/);
+    expect(panel).toMatch(/id="relationship-corner-radius"[^>]*value="8"/);
+    expect(panel).toMatch(/id="relationship-stroke-width"[^>]*value="3"/);
+    expect(panel).toMatch(/id="relationship-dashed"[^>]*checked/);
+  });
+
+  it('falls back to straight, solid defaults when no style row exists', () => {
+    const panel = renderToStaticMarkup(createElement(PropertiesPanel, {
+      model,
+      selection: { kind: 'relationship', relationshipId },
+      onCommand: () => null,
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    expect(panel).toMatch(/value="STRAIGHT"[^>]*selected/);
+    expect(panel).toMatch(/id="relationship-corner-radius"[^>]*value="0"/);
+    expect(panel).toMatch(/id="relationship-stroke-width"[^>]*value="2"/);
+    expect(panel).not.toMatch(/id="relationship-dashed"[^>]*checked/);
+  });
+});

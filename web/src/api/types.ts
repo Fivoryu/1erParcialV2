@@ -118,6 +118,8 @@ export interface ModelResource {
   views: ViewResource[];
   classifiers: ClassifierResource[];
   relationships: RelationshipResource[];
+  /** IA4-07: per-view relationship style rows (additive; absent in older payloads). */
+  view_style?: ViewStyleResource[];
 }
 
 export type XmiImportMode = 'REEMPLAZAR' | 'AGREGAR';
@@ -133,6 +135,13 @@ export interface XmiCountsResource {
 export interface XmiLossResource {
   name: string;
   count: number;
+}
+
+export interface XmiExportResource {
+  fileBase64: string;
+  checksum: string;
+  exchangeId: string;
+  losses: XmiLossResource[];
 }
 
 export interface XmiDisagreementResource {
@@ -166,6 +175,15 @@ export interface XmiImportResource {
   exchangeId: Uuid | null;
   losses: XmiLossResource[];
   disagreements: XmiDisagreementResource[];
+}
+
+export interface ViewStyleResource {
+  viewId: Uuid;
+  targetId: Uuid;
+  routing: 'STRAIGHT' | 'FREE' | 'ORTHOGONAL';
+  cornerRadius: number;
+  strokeWidth: number;
+  dashed: boolean;
 }
 
 export interface ViewResource {

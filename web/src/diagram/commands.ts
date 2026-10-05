@@ -231,6 +231,22 @@ export function buildGeometrySetRequest(payload: GeometryUpdate): ModelCommandRe
   return { type: 'geometry.set', payload: { ...payload } };
 }
 
+export type RoutingMode = 'STRAIGHT' | 'FREE' | 'ORTHOGONAL';
+
+/** IA4-07: per-view relationship style payload for the versioned style.set command. */
+export interface ViewStyleUpdate {
+  viewId: string;
+  targetId: string;
+  routing: RoutingMode;
+  cornerRadius: number;
+  strokeWidth: number;
+  dashed: boolean;
+}
+
+export function buildStyleSetRequest(payload: ViewStyleUpdate): ModelCommandRequest {
+  return { type: 'style.set', payload: { ...payload } };
+}
+
 export function buildModelCommandEnvelope(
   model: ModelResource,
   request: ModelCommandRequest,

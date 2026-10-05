@@ -1,0 +1,168 @@
+{
+  "judged": {
+    "passed": 2,
+    "total": 15,
+    "cases": [
+      {
+        "id": "E01",
+        "utterance": "Creá una clase Pedido con el atributo fecha: Date y asociala con Cliente.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": false,
+        "detail": "missing expected ops: ['attribute.add:Pedido.fecha', 'relationship.create:Pedido->Cliente']",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"Pedido\"}, {\"type\": \"relationship.create\", \"targetName\": \"ClienteInternacional\"}]}"
+      },
+      {
+        "id": "E02",
+        "utterance": "Explicá la relación seleccionada entre Cliente y Pedido.",
+        "expected": "explain",
+        "observed": "plan",
+        "ok": false,
+        "detail": "mutation outside a plan: 1 op(s)",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"relationship.create\", \"targetName\": \"Cliente->Pedido\"}]}"
+      },
+      {
+        "id": "E03",
+        "utterance": "Eliminá la clase ClienteIntern.",
+        "expected": "clarify",
+        "observed": "plan",
+        "ok": false,
+        "detail": "mutation outside a plan: 1 op(s) (includes destructive ['classifier.delete'])",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.delete\", \"targetName\": \"ClienteInternacional\"}]}"
+      },
+      {
+        "id": "E04",
+        "utterance": "Eliminá la clase Inexistente.",
+        "expected": "reject",
+        "observed": "reject",
+        "ok": true,
+        "detail": "rejected without mutation",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"La clase 'ClienteInternacional' no se encuentra en el catálogo de clases proporcionado.\"}"
+      },
+      {
+        "id": "E05",
+        "utterance": "Renombrá la clase Producto a Articulo.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": true,
+        "detail": "all expected ops present",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.rename\", \"targetName\": \"Producto\"}, {\"type\": \"relationship.update\", \"targetName\": \"ClienteInternacional\"}]}"
+      },
+      {
+        "id": "E06",
+        "utterance": "El email de Cliente pasa a ser obligatorio y de tipo String.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": false,
+        "detail": "missing expected ops: ['attribute.update:Cliente.email']",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.add\", \"targetName\": \"Cliente.nombre\"}, {\"type\": \"attribute.add\", \"targetName\": \"Cliente.email\"}]}"
+      },
+      {
+        "id": "E07",
+        "utterance": "Hacé que Cliente sea abstracta.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": false,
+        "detail": "missing expected ops: ['classifier.setAbstract:Cliente']",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.setAbstract\", \"targetName\": \"ClienteInternacional\"}]}"
+      },
+      {
+        "id": "E08",
+        "utterance": "Eliminá la clase Pedido.",
+        "expected": "plan",
+        "observed": "reject",
+        "ok": false,
+        "detail": "missing expected ops: ['classifier.delete:Pedido']",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"El objeto Pedido no existe en el catálogo de clases. Se requiere una explicación breve.\"}"
+      },
+      {
+        "id": "E09",
+        "utterance": "Creá las clases Factura y LineaDeFactura, con una composición de Factura a LineaDeFactura y el atributo cantidad: Integer en LineaDeFactura.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": false,
+        "detail": "missing expected ops: ['relationship.create:Factura->LineaDeFactura', 'attribute.add:LineaDeFactura.cantidad']",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"LineaDeFactura\"}, {\"type\": \"classifier.create\", \"targetName\": \"Factura\"}, {\"type\": \"relationship.create\", \"source\": \"LineaDeFactura\", \"target\": \"Factura\"}, {\"type\": \"relationship.create\", \"source\": \"Factura\", \"target\": \"LineaDeFactura\"}]}"
+      },
+      {
+        "id": "E10",
+        "utterance": "Agregale a Cliente la operación calcularTotal que devuelve Decimal.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": false,
+        "detail": "missing expected ops: ['operation.add:Cliente.calcularTotal']",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"calcularTotal\"}]}"
+      },
+      {
+        "id": "E11",
+        "utterance": "La asociación entre Cliente y Pedido pasa a ser una composición.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": false,
+        "detail": "missing expected ops: ['relationship.update:Cliente->Pedido']",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"relationship.create\", \"targetName\": \"ClienteInternacional.Pedido\"}, {\"type\": \"relationship.create\", \"targetName\": \"Cliente.Pedido\"}]}"
+      },
+      {
+        "id": "E12",
+        "utterance": "Renombrá la clase.",
+        "expected": "clarify",
+        "observed": "plan",
+        "ok": false,
+        "detail": "mutation outside a plan: 1 op(s)",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.rename\", \"targetName\": \"ClienteInternacional\"}]}"
+      },
+      {
+        "id": "E13",
+        "utterance": "Exportá el diagrama a XMI.",
+        "expected": "reject",
+        "observed": "plan",
+        "ok": false,
+        "detail": "mutation outside a plan: 6 op(s)",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"Cliente\"}, {\"type\": \"classifier.create\", \"targetName\": \"ClienteInternacional\"}, {\"type\": \"classifier.create\", \"targetName\": \"Producto\"}, {\"type\": \"classifier.create\", \"targetName\": \"Pedido\"}, {\"type\": \"relationship.create\", \"source\": \"Cliente\", \"target\": \"Pedido\"}, {\"type\": \"relationship.create\", \"source\": \"ClienteInternacional\", \"target\": \"Pedido\"}]}"
+      },
+      {
+        "id": "E14",
+        "utterance": "Agregale algo a la clase Cliente.",
+        "expected": "clarify",
+        "observed": "plan",
+        "ok": false,
+        "detail": "mutation outside a plan: 1 op(s)",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.add\", \"targetName\": \"Cliente\"}]}"
+      },
+      {
+        "id": "E15",
+        "utterance": "Eliminá el atributo telefono de Producto.",
+        "expected": "reject",
+        "observed": "plan",
+        "ok": false,
+        "detail": "mutation outside a plan: 1 op(s) (includes destructive ['attribute.remove'])",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.remove\", \"targetName\": \"nombre\"}]}"
+      }
+    ]
+  },
+  "latencies": {
+    "E01": 4.448082100017928,
+    "E02": 2.231885700020939,
+    "E03": 2.258593300008215,
+    "E04": 2.76940739993006,
+    "E05": 2.8683360000140965,
+    "E06": 3.072515200008638,
+    "E07": 2.4640699999872595,
+    "E08": 3.060110899969004,
+    "E09": 5.064342299941927,
+    "E10": 3.2209847999038175,
+    "E11": 3.142203600029461,
+    "E12": 2.5125799999805167,
+    "E13": 5.482586899888702,
+    "E14": 2.6017652000300586,
+    "E15": 2.429111500037834
+  },
+  "cold_load_s": 2.6191485999152064,
+  "cold_e01_s": 4.448082100017928,
+  "warm_e01_s": 3.4602783999871463,
+  "ram_peak_ws_bytes": 94740480,
+  "ram_peak_priv_bytes": 75427840,
+  "free_min_bytes": 432627712,
+  "prompt_version": "ia4-01-prompt-v1",
+  "model": "D:\\ai-eval\\models\\Qwen3.5-0.8B-Q4_0.gguf"
+}

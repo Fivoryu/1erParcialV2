@@ -10,6 +10,7 @@ import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.api.ModelResource.ViewResource;
+import com.diagramador.api.ModelResource.ViewStyleResource;
 import com.diagramador.command.Author;
 import com.diagramador.command.CommandOrigin;
 import com.diagramador.command.CommandResult;
@@ -22,6 +23,7 @@ import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ConnectorPath;
 import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.ElementGeometry;
+import com.diagramador.domain.ModelCommand;
 import com.diagramador.domain.OperationParameter;
 import com.diagramador.domain.Project;
 import com.diagramador.domain.ProjectMember;
@@ -38,6 +40,7 @@ import com.diagramador.persistence.ConnectorPathRepository;
 import com.diagramador.persistence.DiagramViewRepository;
 import com.diagramador.persistence.ElementGeometryRepository;
 import com.diagramador.persistence.ModelVersionRepository;
+import com.diagramador.persistence.ModelCommandRepository;
 import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.ProjectMemberRepository;
 import com.diagramador.persistence.ProjectRepository;
@@ -47,10 +50,18 @@ import com.diagramador.persistence.UmlConstraintRepository;
 import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
+import com.diagramador.persistence.UserAccountRepository;
+import com.diagramador.persistence.ViewStyleRepository;
+import com.diagramador.undo.UndoLogEntry;
+import com.diagramador.undo.UndoLogRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -79,7 +90,9 @@ public class ProjectApiService {
     private final DiagramViewRepository viewRepository;
     private final ElementGeometryRepository geometryRepository;
     private final ConnectorPathRepository connectorPathRepository;
+    private final ViewStyleRepository viewStyleRepository;
     private final com.diagramador.command.CommandService commandService;
+    private final com.diagramador.undo.UndoCaptureService undoCaptureService;
 
     public ProjectApiService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
             ModelVersionRepository versionRepository, ClassifierRepository classifierRepository,
@@ -88,9 +101,11 @@ public class ProjectApiService {
             UmlConstraintRepository constraintRepository, UmlRelationshipRepository relationshipRepository,
             RelationshipEndRepository relationshipEndRepository, DiagramViewRepository viewRepository,
             ElementGeometryRepository geometryRepository, ConnectorPathRepository connectorPathRepository,
+            ViewStyleRepository viewStyleRepository,
             ProjectMemberRepository projectMemberRepository, CurrentUserContext currentUserContext,
             ProjectAuthorizationService projectAuthorizationService,
-            com.diagramador.command.CommandService commandService) {
+            com.diagramador.command.CommandService commandService,
+            com.diagramador.undo.UndoCaptureService undoCaptureService) {
         this.projectRepository = projectRepository;
         this.projectMemberRepository = projectMemberRepository;
         this.currentUserContext = currentUserContext;
@@ -107,7 +122,9 @@ public class ProjectApiService {
         this.viewRepository = viewRepository;
         this.geometryRepository = geometryRepository;
         this.connectorPathRepository = connectorPathRepository;
+        this.viewStyleRepository = viewStyleRepository;
         this.commandService = commandService;
+        this.undoCaptureService = undoCaptureService;
     }
 
     public ProjectResource createProject(CreateProjectRequest request) {
@@ -175,7 +192,14 @@ public class ProjectApiService {
                 new Author(currentUser.userId(), currentUser.username()), envelope.projectId(), envelope.modelId(),
                 envelope.baseRevision(), envelope.targets(), envelope.preconditions(), envelope.payload(),
                 envelope.origin(), envelope.causalParentOperationId(), envelope.idempotencyKey());
-        return commandService.execute(authenticatedEnvelope);
+        // IA4-04 capture hook: the pre-value snapshot of the envelope targets is taken BEFORE
+        // the command runs and stored next to the accepted command; CommandService is untouched.
+        JsonNode preSnapshot = undoCaptureService.snapshotTargets(authenticatedEnvelope);
+        CommandResult result = commandService.execute(authenticatedEnvelope);
+        if (result.status() == CommandStatus.ACCEPTED) {
+            undoCaptureService.recordAccepted(authenticatedEnvelope, result, currentUser.userId(), preSnapshot);
+        }
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -210,8 +234,13 @@ public class ProjectApiService {
         UUID versionId = versionRepository.findTopByModelIdOrderByRevisionDesc(model.getId())
                 .map(version -> version.getId())
                 .orElseThrow(() -> notFound("Model version was not found."));
+        List<ViewStyleResource> viewStyles = views.stream()
+                .flatMap(view -> viewStyleRepository.findByViewId(view.id()).stream()
+                        .map(style -> new ViewStyleResource(view.id(), style.getTargetId(), style.getRouting(),
+                                style.getCornerRadius(), style.getStrokeWidth(), style.isDashed())))
+                .toList();
         return new ModelResource(model.getId(), projectId, model.getCurrentRevision(), versionId, views,
-                classifiers, relationships);
+                classifiers, relationships, viewStyles);
     }
 
     private Project requireProject(UUID projectId) {

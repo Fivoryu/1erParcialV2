@@ -15,12 +15,20 @@ public record ModelResource(
         UUID versionId,
         List<ViewResource> views,
         List<ClassifierResource> classifiers,
-        List<RelationshipResource> relationships) {
+        List<RelationshipResource> relationships,
+        @JsonProperty("view_style") List<ViewStyleResource> viewStyle) {
+
+    /** Legacy shape used by the XMI emitter/reader path: styles stay out of the exchange. */
+    public ModelResource(UUID id, UUID projectId, long revision, UUID versionId, List<ViewResource> views,
+            List<ClassifierResource> classifiers, List<RelationshipResource> relationships) {
+        this(id, projectId, revision, versionId, views, classifiers, relationships, List.of());
+    }
 
     public ModelResource {
         views = views == null ? List.of() : List.copyOf(views);
         classifiers = classifiers == null ? List.of() : List.copyOf(classifiers);
         relationships = relationships == null ? List.of() : List.copyOf(relationships);
+        viewStyle = viewStyle == null ? List.of() : List.copyOf(viewStyle);
     }
 
     public record ViewResource(
@@ -48,6 +56,16 @@ public record ModelResource(
     }
 
     public record ConnectorPathResource(UUID id, UUID relationshipId, int ordinal, int x, int y) {
+    }
+
+    /** IA4-07: per-view appearance of a relationship, read by the canvas but never exported to XMI. */
+    public record ViewStyleResource(
+            UUID viewId,
+            UUID targetId,
+            String routing,
+            int cornerRadius,
+            int strokeWidth,
+            boolean dashed) {
     }
 
     public record ClassifierResource(

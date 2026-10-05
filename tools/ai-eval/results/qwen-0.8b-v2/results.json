@@ -1,0 +1,168 @@
+{
+  "judged": {
+    "passed": 6,
+    "total": 15,
+    "cases": [
+      {
+        "id": "E01",
+        "utterance": "Creá una clase Pedido con el atributo fecha: Date y asociala con Cliente.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": false,
+        "detail": "missing expected ops: ['attribute.add:Pedido.fecha']",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"Pedido\"}, {\"type\": \"relationship.create\", \"targetName\": \"Cliente->Pedido\"}, {\"type\": \"attribute.add\", \"targetName\": \"Pedido.fecha\", \"type\": \"Date\"}, {\"type\": \"attribute.add\", \"targetName\": \"Pedido.total\", \"type\": \"Decimal\"}]}"
+      },
+      {
+        "id": "E02",
+        "utterance": "Explicá la relación seleccionada entre Cliente y Pedido.",
+        "expected": "explain",
+        "observed": "explain",
+        "ok": true,
+        "detail": "explanation without mutation",
+        "raw": "{\"intent\": \"explain\", \"operations\": [], \"question\": null, \"explanation\": \"La relación entre Cliente y Pedido se define en el diagrama como una asociación (ASSOCIATION) que conecta a la clase Cliente con la clase Pedido. Sin embargo, no se especificó en el pedido qué relación específica se desea explicar (por ejemplo, la relación de compra, la relación de venta, etc.). Por lo tanto, no se puede determinar qué relación se desea explicar.\"}"
+      },
+      {
+        "id": "E03",
+        "utterance": "Eliminá la clase ClienteIntern.",
+        "expected": "clarify",
+        "observed": "reject",
+        "ok": false,
+        "detail": "expected clarify with a question, got reject",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"La clase ClienteIntern no existe en el diagrama.\"}"
+      },
+      {
+        "id": "E04",
+        "utterance": "Eliminá la clase Inexistente.",
+        "expected": "reject",
+        "observed": "reject",
+        "ok": true,
+        "detail": "rejected without mutation",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"La clase Inexistente no existe en el diagrama.\"}"
+      },
+      {
+        "id": "E05",
+        "utterance": "Renombrá la clase Producto a Articulo.",
+        "expected": "plan",
+        "observed": "clarify",
+        "ok": false,
+        "detail": "missing expected ops: ['classifier.rename:Producto']",
+        "raw": "{\"intent\": \"clarify\", \"operations\": [], \"question\": \"¿Qué clase querés renombrar?\", \"explanation\": \"No se especificó la nueva nombre de la clase en el pedido.\"}"
+      },
+      {
+        "id": "E06",
+        "utterance": "El email de Cliente pasa a ser obligatorio y de tipo String.",
+        "expected": "plan",
+        "observed": "clarify",
+        "ok": false,
+        "detail": "missing expected ops: ['attribute.update:Cliente.email']",
+        "raw": "{\"intent\": \"clarify\", \"operations\": [], \"question\": \"¿El atributo 'email' en la clase 'Cliente' ya existe en el diagrama o se está añadiendo?\", \"explanation\": \"El pedido solicita una modificación a un atributo existente. Sin embargo, no se especificó si el atributo ya existe en el diagrama o si se está añadiendo. Por lo tanto, no se puede determinar si el pedido es válido o no.\"}"
+      },
+      {
+        "id": "E07",
+        "utterance": "Hacé que Cliente sea abstracta.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": true,
+        "detail": "all expected ops present",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.setAbstract\", \"targetName\": \"Cliente\"}], \"question\": null, \"explanation\": \"La clase Cliente se define como abstracta en el contexto de UML. Esto significa que no puede ser instancia de ningún tipo de objeto, pero puede ser una entidad conceptual que se puede usar como base para relaciones o operaciones, aunque no puede existir en la realidad.\"}"
+      },
+      {
+        "id": "E08",
+        "utterance": "Eliminá la clase Pedido.",
+        "expected": "plan",
+        "observed": "reject",
+        "ok": false,
+        "detail": "missing expected ops: ['classifier.delete:Pedido']",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"La clase Pedido no existe en el diagrama.\"}"
+      },
+      {
+        "id": "E09",
+        "utterance": "Creá las clases Factura y LineaDeFactura, con una composición de Factura a LineaDeFactura y el atributo cantidad: Integer en LineaDeFactura.",
+        "expected": "plan",
+        "observed": "plan",
+        "ok": false,
+        "detail": "missing expected ops: ['attribute.add:LineaDeFactura.cantidad']",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"classifier.create\", \"targetName\": \"Factura\"}, {\"type\": \"classifier.create\", \"targetName\": \"LineaDeFactura\"}, {\"type\": \"relationship.create\", \"targetName\": \"LineaDeFactura->Factura\"}, {\"type\": \"attribute.add\", \"targetName\": \"LineaDeFactura.cantidad\", \"type\": \"Integer\"}]}"
+      },
+      {
+        "id": "E10",
+        "utterance": "Agregale a Cliente la operación calcularTotal que devuelve Decimal.",
+        "expected": "plan",
+        "observed": "invalid_json",
+        "ok": false,
+        "detail": "no parseable JSON object in the answer",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente"
+      },
+      {
+        "id": "E11",
+        "utterance": "La asociación entre Cliente y Pedido pasa a ser una composición.",
+        "expected": "plan",
+        "observed": "invalid_json",
+        "ok": false,
+        "detail": "no parseable JSON object in the answer",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"relationship.create\", \"targetName\": \"Cliente->Pedido\"}, {\"type\": \"relationship.update\", \"targetName\": \"Cliente->Pedido\", \"targetName\": \"ClienteInternacional->Pedido\"}], \"question\": null, \"explanation\": \"La relación entre Cliente y Pedido debe ser una asociación de composición (multa) para que el Cliente pueda asociarse con múltiples Pedidos.\""
+      },
+      {
+        "id": "E12",
+        "utterance": "Renombrá la clase.",
+        "expected": "clarify",
+        "observed": "clarify",
+        "ok": true,
+        "detail": "asked instead of mutating",
+        "raw": "{\"intent\": \"clarify\", \"operations\": [], \"question\": \"¿Qué clase querés renombrar?\", \"explanation\": \"No se especificó una clase en el pedido.\"}"
+      },
+      {
+        "id": "E13",
+        "utterance": "Exportá el diagrama a XMI.",
+        "expected": "reject",
+        "observed": "reject",
+        "ok": true,
+        "detail": "rejected without mutation",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"La operación exportar a XMI no está en el catálogo cerrado de operaciones para este asistente.\"}"
+      },
+      {
+        "id": "E14",
+        "utterance": "Agregale algo a la clase Cliente.",
+        "expected": "clarify",
+        "observed": "plan",
+        "ok": false,
+        "detail": "mutation outside a plan: 3 op(s)",
+        "raw": "{\"intent\": \"plan\", \"operations\": [{\"type\": \"attribute.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}, {\"type\": \"operation.add\", \"targetName\": \"Cliente\"}]}"
+      },
+      {
+        "id": "E15",
+        "utterance": "Eliminá el atributo telefono de Producto.",
+        "expected": "reject",
+        "observed": "reject",
+        "ok": true,
+        "detail": "rejected without mutation",
+        "raw": "{\"intent\": \"reject\", \"operations\": [], \"question\": null, \"explanation\": \"El atributo 'telefono' no existe en la clase Producto.\"}"
+      }
+    ]
+  },
+  "latencies": {
+    "E01": 10.290602400084026,
+    "E02": 5.072757299989462,
+    "E03": 2.6348994999425486,
+    "E04": 3.7443577999947593,
+    "E05": 3.5369415999157354,
+    "E06": 5.093531200080179,
+    "E07": 4.639899999951012,
+    "E08": 2.699877299950458,
+    "E09": 5.149327200022526,
+    "E10": 21.088701599976048,
+    "E11": 5.207298099994659,
+    "E12": 3.203968600020744,
+    "E13": 3.1433277999749407,
+    "E14": 3.9128104000119492,
+    "E15": 3.0292634000070393
+  },
+  "cold_load_s": 2.3613322000019252,
+  "cold_e01_s": 10.290602400084026,
+  "warm_e01_s": 5.300054799998179,
+  "ram_peak_ws_bytes": 1178857472,
+  "ram_peak_priv_bytes": 1055686656,
+  "free_min_bytes": 740618240,
+  "prompt_version": "ia4-01-prompt-v2",
+  "model": "D:\\ai-eval\\models\\Qwen3.5-0.8B-Q4_0.gguf"
+}

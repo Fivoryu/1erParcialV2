@@ -97,7 +97,11 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("xmi_exchange", Set.of("exchange_id", "model_id", "direction", "profile", "model_revision",
                     "checksum", "status", "artifact_ref", "created_at")),
             Map.entry("xmi_loss_item", Set.of("loss_id", "exchange_id", "severity", "external_path", "message",
-                    "created_at")));
+                    "created_at")),
+            Map.entry("undo_log", Set.of("id", "model_id", "user_id", "command_id", "type", "pre_snapshot",
+                    "undone_at", "redone_at", "created_at")),
+            Map.entry("view_style", Set.of("style_id", "view_id", "target_type", "target_id", "routing",
+                    "corner_radius", "stroke_width", "dashed", "created_at", "updated_at")));
 
     private static final Set<String> TABLES_RESERVED_FOR_LATER_TASKS = Set.of(
             "model_conflict",
@@ -137,7 +141,9 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
                     "uq_deployment_active_target", "uq_deployment_active_http_port",
                     "uq_deployment_active_postgres_port")),
             Map.entry("xmi_exchange", Set.of("idx_exchange_model")),
-            Map.entry("xmi_loss_item", Set.of()));
+            Map.entry("xmi_loss_item", Set.of()),
+            Map.entry("undo_log", Set.of("idx_undo_log_model_user")),
+            Map.entry("view_style", Set.of("idx_view_style_view")));
 
     private final JdbcTemplate jdbcTemplate;
 
