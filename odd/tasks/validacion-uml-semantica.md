@@ -79,7 +79,9 @@ solo cuando el generador falla.
 
 | Unidad | Estado | Evidencia |
 | --- | --- | --- |
-| T1 | pendiente | — |
+| T1 | **cerrado** | commit `feat(validation)` (ver §7 evidencia); RED observado (compile failure sin clases), GREEN 12/12, suite completa 367/0; convención de ends (ordinal 1=subtype, 2=supertype) verificada contra `XmiSemanticEmitter.appendGeneralization` (ends.get(0)=specific, get(1)=general) |
 | T2 | pendiente | — |
 | T3 | pendiente | — |
 | T4 | pendiente | — |
+
+Evidencia T1: `ModelValidationReadModel.java`, `ModelValidationDiagnostic.java`, `ModelValidator.java` (Kosaraju SCC para R1), 12 tests puros; `mvn -o -B test` completa: 367 pruebas, 0 fallos. Nota: id de entidades en tests se fija con helper de reflexión (sin overloads con id en factories).
