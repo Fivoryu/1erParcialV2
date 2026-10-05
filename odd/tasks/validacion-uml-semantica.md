@@ -1,6 +1,6 @@
 # Validación semántica UML 2.5 (modelo canónico)
 
-> **Estado:** plan creado tras exploración con evidencia (`gentle-ai-explore`, task `muum7brx-1-fapb`). Rama `feat/validacion-uml-semantica` desde `main` = `4dac15e`, en el worktree `1erParcialV2-validacion`.
+> **Estado:** incremento ejecutado y verificado (2026-10-05). T1–T4 cerradas; evidencia final `mvn -o -B verify` = 387 pruebas, 0 fallos, sin red. Exploración previa con evidencia (`gentle-ai-explore`, task `muum7brx-1-fapb`). Rama `feat/validacion-uml-semantica` desde `main` = `4dac15e`, en el worktree `1erParcialV2-validacion`.
 
 ## 1. Corte visible que define el incremento
 
@@ -84,6 +84,8 @@ solo cuando el generador falla.
 | T1 | **cerrado** | commit `feat(validation)` (ver §7 evidencia); RED observado (compile failure sin clases), GREEN 12/12, suite completa 367/0; convención de ends (ordinal 1=subtype, 2=supertype) verificada contra `XmiSemanticEmitter.appendGeneralization` (ends.get(0)=specific, get(1)=general) |
 | T2 | **cerrado** | commit `feat(validation)` (ver evidencia abajo); RED observado (4 reglas + overload faltantes), GREEN 26/26 en `ModelValidatorTest`, suite completa 383/0 (367+16). Desviación R4 registrada en §3.1; R6 espeja el catálogo de primitivos del perfil (javadoc del constante) |
 | T3 | **cerrado** | commit `feat(validation)` (ver evidencia abajo); RED observado (4 tests, 3 fallos 404 por endpoint ausente), GREEN 4/4, suite completa 387/0. Contrato: `GET /projects/{id}/model/validation`, 200 con `{"diagnostics":[…]}` (lista vacía si el modelo está bien formado o aún no existe `UmlModel`), 404 `NOT_FOUND` si el proyecto no existe; requiere miembro autenticado (`requireMember`, igual que `getModel`) |
-| T4 | pendiente | — |
+| T4 | **cerrado** | acta finalizada; README actualizado (fila de validación semántica + backend 387); commit de cierre. Evidencia final: `mvn -o -B verify` = 387 pruebas, 0 fallos, BUILD SUCCESS, sin red (2026-10-04 23:44) |
+
+Commits de unidad: `2752b78` (plan), `1e4e87b` (T1), `4674bb7` (T2), `1c5ea17` (T3), cierre en el commit final. Desviación registrada: R4 reformulada (§3.1); endpoint sin prefijo `/api` y test en `com.diagramador` (§4).
 
 Evidencia T1: `ModelValidationReadModel.java`, `ModelValidationDiagnostic.java`, `ModelValidator.java` (Kosaraju SCC para R1), 12 tests puros; `mvn -o -B test` completa: 367 pruebas, 0 fallos. Nota: id de entidades en tests se fija con helper de reflexión (sin overloads con id en factories).
