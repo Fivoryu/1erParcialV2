@@ -1,7 +1,10 @@
+import { useEffect } from 'react';
 import type { FormEvent } from 'react';
 import type { Uuid } from '../api/types';
+import type { SpeechRecognitionErrorReason } from './speechRecognition';
 import { describeAssistantOperation, STEP_STATUS_LABELS, type AssistantState } from './assistantState';
 import { useAssistantPanel } from './useAssistantPanel';
+import { useSpeechRecognition } from './useSpeechRecognition';
 
 export interface AssistantPanelViewProps {
   state: AssistantState;
@@ -14,6 +17,96 @@ export interface AssistantPanelViewProps {
   onCancel(): void;
   onRetry(): void;
   onDismiss(): void;
+  /** Voice dictation state; omit (or supported: false) to hide the mic button. */
+  voice?: AssistantVoiceProps | undefined;
+}
+
+/**
+ * Appends a dictation final transcript to the text the user already typed:
+ * space-separated, trimmed on both sides, and a no-op on an empty transcript
+ * so nothing the user wrote is ever discarded.
+ */
+export function appendTranscript(existing: string, final: string): string {
+  const appended = final.trim();
+  if (appended.length === 0) {
+    return existing;
+  }
+  const current = existing.trim();
+  return current.length === 0 ? appended : `${current} ${appended}`;
+}
+
+/**
+ * Spanish UI copy per frozen reason code (voz-asistente-ia.md §3 V2). The
+ * silent reasons (no-speech/aborted) never persist in the machine, but the
+ * mapping stays exhaustive so every reason has a human-readable message.
+ */
+const VOICE_ERROR_MESSAGES: Record<SpeechRecognitionErrorReason, string> = {
+  'not-supported': 'El dictado por voz no está disponible en este navegador.',
+  'not-allowed': 'Permiso de micrófono denegado.',
+  'no-speech': 'No se detectó voz; intentá de nuevo.',
+  aborted: 'El dictado se detuvo.',
+  network: 'Error de red durante el dictado.',
+  unknown: 'No se pudo completar el dictado.',
+};
+
+export function voiceErrorMessage(reason: SpeechRecognitionErrorReason): string {
+  return VOICE_ERROR_MESSAGES[reason];
+}
+
+/** Voice dictation props consumed by the view; undefined hides the mic. */
+export interface AssistantVoiceProps {
+  supported: boolean;
+  listening: boolean;
+  interim: string;
+  error: SpeechRecognitionErrorReason | null;
+  onToggle(): void;
+}
+
+function MicButton({ listening, error, onToggle }: {
+  listening: boolean;
+  error: SpeechRecognitionErrorReason | null;
+  onToggle(): void;
+}) {
+  const label = listening ? 'Detener dictado' : 'Dictar por voz';
+  return (
+    <button
+      aria-label={label}
+      aria-pressed={listening}
+      className={listening ? 'voice-mic-button voice-mic-listening' : 'voice-mic-button'}
+      onClick={onToggle}
+      title={error ? voiceErrorMessage(error) : label}
+      type="button"
+    >
+      <svg aria-hidden="true" fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" viewBox="0 0 24 24" width="15">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+        <path d="M19 11v1a7 7 0 0 1-14 0v-1" />
+        <path d="M12 19v3" />
+      </svg>
+      {listening && <span aria-hidden="true" className="voice-mic-dot" />}
+    </button>
+  );
+}
+
+/**
+ * Least-intrusive hint under the input: interim dictation while listening,
+ * the human-readable error otherwise; doubles as the live announcement.
+ */
+function VoiceHint({ listening, interim, error }: {
+  listening: boolean;
+  interim: string;
+  error: SpeechRecognitionErrorReason | null;
+}) {
+  if (!listening && error === null) {
+    return null;
+  }
+  const message = error
+    ? voiceErrorMessage(error)
+    : (interim.length > 0 ? interim : 'Escuchando…');
+  return (
+    <p aria-live="polite" className={error ? 'voice-hint voice-hint-error' : 'voice-hint'} role="status">
+      {message}
+    </p>
+  );
 }
 
 function CancelButton({ onCancel }: { onCancel(): void }) {
@@ -64,6 +157,7 @@ export function AssistantPanelView({
   onCancel,
   onRetry,
   onDismiss,
+  voice,
 }: AssistantPanelViewProps) {
   const requestInFlight = state.phase === 'analyzing' || state.phase === 'applying';
   const cancellable = requestInFlight || state.phase === 'preview' || state.phase === 'clarify';
@@ -104,7 +198,14 @@ export function AssistantPanelView({
         <button className="button button-primary" disabled={requestInFlight || !utterance.trim()} type="submit">
           {state.phase === 'analyzing' ? 'Analizando…' : 'Consultar'}
         </button>
+        {voice?.supported && (
+          <MicButton error={voice.error} listening={voice.listening} onToggle={voice.onToggle} />
+        )}
       </form>
+
+      {voice?.supported && (
+        <VoiceHint error={voice.error} interim={voice.interim} listening={voice.listening} />
+      )}
 
       {state.phase === 'analyzing' && (
         <p className="quiet-state" role="status">Analizando la consigna…</p>
@@ -131,7 +232,13 @@ export function AssistantPanelView({
             <button className="button button-primary" disabled={!utterance.trim()} type="submit">
               Responder
             </button>
+            {voice?.supported && (
+              <MicButton error={voice.error} listening={voice.listening} onToggle={voice.onToggle} />
+            )}
           </form>
+          {voice?.supported && (
+            <VoiceHint error={voice.error} interim={voice.interim} listening={voice.listening} />
+          )}
         </div>
       )}
 
@@ -196,6 +303,32 @@ export interface AssistantPanelProps {
 
 export default function AssistantPanel({ projectId, currentRevision }: AssistantPanelProps) {
   const assistant = useAssistantPanel({ projectId, currentRevision });
+  const speech = useSpeechRecognition();
+
+  // When the dictation ends (stop clicked or the browser ended on its own),
+  // the accumulated final transcript is appended to what the user already
+  // typed and cleared. reset() is a no-op while listening, so this only runs
+  // after a real stop; no auto-send, the user sends it through the form.
+  useEffect(() => {
+    if (!speech.listening && speech.transcript.length > 0) {
+      assistant.setUtterance(appendTranscript(assistant.utterance, speech.transcript));
+      speech.reset();
+    }
+  }, [assistant, speech]);
+
+  const voice: AssistantVoiceProps = {
+    supported: speech.supported,
+    listening: speech.listening,
+    interim: speech.interim,
+    error: speech.error,
+    onToggle: () => {
+      if (speech.listening) {
+        speech.stop();
+      } else {
+        speech.start();
+      }
+    },
+  };
 
   return (
     <AssistantPanelView
@@ -209,6 +342,7 @@ export default function AssistantPanel({ projectId, currentRevision }: Assistant
       onUtteranceChange={assistant.setUtterance}
       state={assistant.state}
       utterance={assistant.utterance}
+      voice={voice}
     />
   );
 }

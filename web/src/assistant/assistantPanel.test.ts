@@ -1,3 +1,5 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ApiTransportError } from '../api/client';
 import type {
@@ -11,7 +13,14 @@ import {
   transitionAssistantState,
   type AssistantState,
 } from './assistantState';
+import type { SpeechRecognitionErrorReason } from './speechRecognition';
 import { createAssistantController, type AssistantControllerDeps } from './assistantController';
+import {
+  appendTranscript,
+  AssistantPanelView,
+  voiceErrorMessage,
+  type AssistantVoiceProps,
+} from './AssistantPanel';
 
 const projectId = '22222222-2222-4222-8222-222222222222';
 
@@ -114,6 +123,33 @@ function createHarness(initialRevision: number | null = 7): Harness {
     resolveApply: (result) => resolveApply(result),
     rejectApply: (error) => rejectApply(error),
     controller: createAssistantController(deps),
+  };
+}
+
+function renderPanel(voice: AssistantVoiceProps | undefined): string {
+  return renderToStaticMarkup(createElement(AssistantPanelView, {
+    state: { phase: 'idle' } as AssistantState,
+    utterance: '',
+    canConfirm: false,
+    onUtteranceChange: () => undefined,
+    onAsk: () => undefined,
+    onAnswerClarification: () => undefined,
+    onConfirm: () => undefined,
+    onCancel: () => undefined,
+    onRetry: () => undefined,
+    onDismiss: () => undefined,
+    voice,
+  }));
+}
+
+function makeVoice(overrides: Partial<AssistantVoiceProps> = {}): AssistantVoiceProps {
+  return {
+    supported: true,
+    listening: false,
+    interim: '',
+    error: null,
+    onToggle: () => undefined,
+    ...overrides,
   };
 }
 
@@ -350,6 +386,71 @@ describe('assistant controller (React-free)', () => {
 
     expect(harness.writeCount()).toBe(writesAfterAsk);
     expect(harness.state().phase).toBe('analyzing');
+  });
+});
+
+describe('assistant panel mic button (markup)', () => {
+  it('renders the mic button with the idle a11y state when speech is supported', () => {
+    const markup = renderPanel(makeVoice());
+    expect(markup).toContain('voice-mic-button');
+    expect(markup).toContain('aria-pressed="false"');
+    expect(markup).toContain('aria-label="Dictar por voz"');
+  });
+
+  it('hides the mic button entirely when speech recognition is not supported', () => {
+    expect(renderPanel(makeVoice({ supported: false }))).not.toContain('voice-mic-button');
+    expect(renderPanel(undefined)).not.toContain('voice-mic-button');
+  });
+
+  it('marks the listening state with aria-pressed, the stop label, and the active style', () => {
+    const markup = renderPanel(makeVoice({ listening: true }));
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain('aria-label="Detener dictado"');
+    expect(markup).toContain('voice-mic-listening');
+  });
+
+  it('shows the interim dictation as a live hint line under the input while listening', () => {
+    const markup = renderPanel(makeVoice({ listening: true, interim: 'creá una clase' }));
+    expect(markup).toContain('voice-hint');
+    expect(markup).toContain('aria-live="polite"');
+    expect(markup).toContain('creá una clase');
+  });
+
+  it('surfaces the human-readable dictation error as a tooltip and hint', () => {
+    const denied = renderPanel(makeVoice({ error: 'not-allowed' as SpeechRecognitionErrorReason }));
+    expect(denied).toContain('title="Permiso de micrófono denegado."');
+    expect(denied).toContain('Permiso de micrófono denegado.');
+
+    const network = renderPanel(makeVoice({ error: 'network' as SpeechRecognitionErrorReason }));
+    expect(network).toContain('Error de red durante el dictado.');
+  });
+
+  it('reports no error copy while there is no dictation error', () => {
+    expect(renderPanel(makeVoice())).not.toContain('voice-hint-error');
+  });
+});
+
+describe('appendTranscript', () => {
+  it('appends the final transcript space-separated, trimmed on both sides', () => {
+    expect(appendTranscript('creá la clase', 'Cliente'))
+      .toBe('creá la clase Cliente');
+    expect(appendTranscript('  creá la clase ', ' Cliente '))
+      .toBe('creá la clase Cliente');
+  });
+
+  it('preserves what the user already typed when the transcript is empty', () => {
+    expect(appendTranscript('creá la clase', '')).toBe('creá la clase');
+    expect(appendTranscript('creá la clase', '   ')).toBe('creá la clase');
+  });
+
+  it('starts the utterance from the transcript when the input was empty', () => {
+    expect(appendTranscript('', 'creá la clase Cliente')).toBe('creá la clase Cliente');
+  });
+
+  it('maps each persistent reason to a human-readable Spanish message', () => {
+    expect(voiceErrorMessage('not-allowed')).toBe('Permiso de micrófono denegado.');
+    expect(voiceErrorMessage('network')).toBe('Error de red durante el dictado.');
+    expect(voiceErrorMessage('not-supported')).toContain('navegador');
   });
 });
 
