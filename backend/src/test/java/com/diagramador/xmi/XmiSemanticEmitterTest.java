@@ -118,8 +118,14 @@ class XmiSemanticEmitterTest {
         assertThat(childNames(nickname)).containsExactly("lowerValue", "upperValue", "type");
         assertThat(directChildren(nickname, UML_NAMESPACE, "type").get(0).getAttributeNS(XMI_NAMESPACE, "idref"))
                 .isEqualTo(primitiveTypeId("String"));
-        assertThat(List.of("isStatic", "isReadOnly", "isDerived", "isOrdered", "isUnique", "isDerivedUnion"))
-                .allSatisfy(flag -> assertThat(nickname.hasAttribute(flag)).isFalse());
+        // The property flags EA's own export writes (docs/fixtures/xmi/Prueba3.xml): without them EA reads the
+        // property as non-unique and renders every imported attribute as {bag}.
+        assertThat(nickname.getAttribute("isStatic")).as("nickname isStatic").isEqualTo("false");
+        assertThat(nickname.getAttribute("isReadOnly")).as("nickname isReadOnly").isEqualTo("false");
+        assertThat(nickname.getAttribute("isDerived")).as("nickname isDerived").isEqualTo("false");
+        assertThat(nickname.getAttribute("isOrdered")).as("nickname isOrdered").isEqualTo("false");
+        assertThat(nickname.getAttribute("isUnique")).as("nickname isUnique").isEqualTo("true");
+        assertThat(nickname.getAttribute("isDerivedUnion")).as("nickname isDerivedUnion").isEqualTo("false");
 
         Element operation = byId(document, XmiIdCodec.classifierId(id(30)));
         assertThat(operation.hasAttributeNS(XMI_NAMESPACE, "type")).isFalse();
@@ -145,6 +151,20 @@ class XmiSemanticEmitterTest {
         assertThat(directChildren(enumeration, UML_NAMESPACE, "ownedAttribute"))
                 .extracting(element -> element.getAttribute("name"))
                 .containsExactly("ACTIVE");
+        // The enumeration-literal path shares appendAttribute, so it carries the same measured flags.
+        Element enumerationConstant = directChildren(enumeration, UML_NAMESPACE, "ownedAttribute").get(0);
+        assertThat(enumerationConstant.getAttribute("isStatic"))
+                .as("enumeration literal isStatic").isEqualTo("false");
+        assertThat(enumerationConstant.getAttribute("isReadOnly"))
+                .as("enumeration literal isReadOnly").isEqualTo("false");
+        assertThat(enumerationConstant.getAttribute("isDerived"))
+                .as("enumeration literal isDerived").isEqualTo("false");
+        assertThat(enumerationConstant.getAttribute("isOrdered"))
+                .as("enumeration literal isOrdered").isEqualTo("false");
+        assertThat(enumerationConstant.getAttribute("isUnique"))
+                .as("enumeration literal isUnique").isEqualTo("true");
+        assertThat(enumerationConstant.getAttribute("isDerivedUnion"))
+                .as("enumeration literal isDerivedUnion").isEqualTo("false");
         assertThat(enumeration.getElementsByTagNameNS(UML_NAMESPACE, "ownedLiteral").getLength()).isZero();
 
         Element abstractClass = byId(document, XmiIdCodec.classifierId(id(17)));
@@ -398,6 +418,7 @@ class XmiSemanticEmitterTest {
                 new XmiEmissionResult.Loss("attribute_layout_coordinates", 2),
                 new XmiEmissionResult.Loss("attribute_layout_position_approximation", 2),
                 new XmiEmissionResult.Loss("constraint_severity", 1),
+                new XmiEmissionResult.Loss("extension_connector_unplaced_end", 3),
                 new XmiEmissionResult.Loss("extension_connector_vendor_metadata", 6),
                 new XmiEmissionResult.Loss("extension_connector_waypoints", 2),
                 new XmiEmissionResult.Loss("extension_diagram_matrixitems_metadata", 1),
@@ -457,6 +478,62 @@ class XmiSemanticEmitterTest {
                 new XmiEmissionResult.Loss("extension_connector_vendor_metadata", 3),
                 new XmiEmissionResult.Loss("extension_primitive_type_catalog", 1),
                 new XmiEmissionResult.Loss("unsupported_relationship_navigability", 2));
+        assertAllReferencesResolve(document);
+    }
+
+    @Test
+    void unplacedConnectorEndIsDeclaredAsLossAndPlacedConnectorIsEmitted() throws Exception {
+        ClassifierResource placed = new ClassifierResource(id(600), "Placed", ClassifierKind.CLASS, false,
+                null, List.of(), List.of(), List.of());
+        ClassifierResource unplaced = new ClassifierResource(id(601), "Unplaced", ClassifierKind.CLASS, false,
+                null, List.of(), List.of(), List.of());
+        RelationshipResource toUnplaced = new RelationshipResource(id(610), "ASSOCIATION", "joins",
+                List.of(end(id(611), id(600), "from", MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
+                        end(id(612), id(601), "to", MultiplicityKind.ZERO_OR_MANY, "none", (short) 2)), List.of());
+        RelationshipResource betweenPlaced = new RelationshipResource(id(620), "ASSOCIATION", "links",
+                List.of(end(id(621), id(600), "left", MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
+                        end(id(622), id(600), "right", MultiplicityKind.EXACTLY_ONE, "none", (short) 2)), List.of());
+        ViewResource view = new ViewResource(id(630), "Default", true,
+                List.of(new GeometryResource(id(631), TargetType.CLASSIFIER, id(600), 10, 20, 100, 80, 0)),
+                List.of());
+        ModelResource model = new ModelResource(id(1), id(2), 3, id(3), List.of(view),
+                List.of(placed, unplaced), List.of(toUnplaced, betweenPlaced));
+
+        XmiEmissionResult result = emitter.emit(model);
+        Document document = parse(result.document());
+        Element diagram = findDirectNoNamespace(
+                directChildrenNoNamespace(find(document, XMI_NAMESPACE, "Extension"), "diagrams").get(0),
+                "diagram");
+        List<Element> placements = directChildrenNoNamespace(findDirectNoNamespace(diagram, "elements"), "element");
+        List<Element> figurePlacements = placements.stream()
+                .filter(placement -> placement.getAttribute("geometry").startsWith("Left="))
+                .toList();
+        List<Element> connectorPlacements = placements.stream()
+                .filter(placement -> placement.getAttribute("geometry").startsWith("SX="))
+                .toList();
+
+        // A connector whose end has no figure cannot be placed on the diagram; the loss must be declared
+        // rather than silently dropped, like every other feature this emitter cannot transport.
+        assertThat(result.losses()).as("the unplaced connector is declared exactly once").containsExactly(
+                new XmiEmissionResult.Loss("extension_connector_unplaced_end", 1),
+                new XmiEmissionResult.Loss("extension_connector_vendor_metadata", 2),
+                new XmiEmissionResult.Loss("extension_diagram_matrixitems_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_project_metadata", 3),
+                new XmiEmissionResult.Loss("extension_diagram_properties_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_style2_metadata", 1),
+                new XmiEmissionResult.Loss("extension_diagram_swimlanes_metadata", 1),
+                new XmiEmissionResult.Loss("extension_element_vendor_metadata", 1));
+        assertThat(figurePlacements).as("only the classifier with geometry has a figure").hasSize(1);
+        assertThat(connectorPlacements).as("only the connector between two placed ends is emitted").hasSize(1);
+        assertThat(connectorPlacements.get(0).getAttribute("subject"))
+                .as("the emitted connector joins two placed classifiers")
+                .isEqualTo(XmiIdCodec.classifierId(id(620)));
+        assertThat(styleValue(connectorPlacements.get(0), "SOID"))
+                .as("source anchor binds to the placed figure")
+                .isEqualTo(styleValue(figurePlacements.get(0), "DUID"));
+        assertThat(styleValue(connectorPlacements.get(0), "EOID"))
+                .as("target anchor binds to the placed figure")
+                .isEqualTo(styleValue(figurePlacements.get(0), "DUID"));
         assertAllReferencesResolve(document);
     }
 

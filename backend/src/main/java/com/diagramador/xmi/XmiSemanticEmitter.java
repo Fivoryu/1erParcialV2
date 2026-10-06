@@ -160,6 +160,14 @@ public final class XmiSemanticEmitter {
         if (visibility != null) {
             element.setAttribute("visibility", visibility);
         }
+        // The property flags EA's own export writes (docs/fixtures/xmi/Prueba3.xml): without them EA reads the
+        // property as non-unique and renders every imported attribute as {bag}.
+        element.setAttribute("isStatic", "false");
+        element.setAttribute("isReadOnly", "false");
+        element.setAttribute("isDerived", "false");
+        element.setAttribute("isOrdered", "false");
+        element.setAttribute("isUnique", "true");
+        element.setAttribute("isDerivedUnion", "false");
         owner.appendChild(element);
 
         appendMultiplicity(document, element, attribute.multiplicity(), context);
@@ -785,9 +793,15 @@ public final class XmiSemanticEmitter {
             }
             String sourceDuid = duidByClassifier.get(ends.get(0).classifierId());
             String targetDuid = duidByClassifier.get(ends.get(1).classifierId());
-            if (sourceDuid == null || targetDuid == null
-                    || !context.emittableClassifierIds.contains(ends.get(0).classifierId())
+            if (!context.emittableClassifierIds.contains(ends.get(0).classifierId())
                     || !context.emittableClassifierIds.contains(ends.get(1).classifierId())) {
+                // Already declared as relationship_unresolved_end while emitting the semantic model.
+                continue;
+            }
+            // A connector whose end has no figure cannot be placed on the diagram; the loss must be declared
+            // here rather than silently dropped, like every other feature this emitter cannot transport.
+            if (sourceDuid == null || targetDuid == null) {
+                context.loss("extension_connector_unplaced_end");
                 continue;
             }
             Element placement = document.createElement("element");

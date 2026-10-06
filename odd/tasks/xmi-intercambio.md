@@ -2143,3 +2143,21 @@ corrección abierta, y pide tratarlo como trabajo posterior separado y nunca com
 
 Queda declarado, además, que el cierre difirió la limpieza de la vista de candidato
 (`candidate-view-cleanup-failed`): hay directorios en `.git/gentle-ai/candidate-views/` sin retirar.
+
+## 17. Unidad PPL — lo que se ve es lo que se exporta
+
+**Origen:** el usuario seguía sin ver las relaciones después de §16. La medición mostró que el XMI no era la causa: en `Diagrama01` la vista por defecto tenía geometría para **3 de las 4 clases**, la cuarta (`Dueño`, creada por el asistente) la dibujaba el lienzo en una **grilla de respaldo** que **nunca se persistía**, y la única asociación (`Dueño—Animal`) unía una clase colocada con una sin colocar. Con un extremo sin figura el emisor **no colocaba el conector y no declaraba nada**: el export perdía una línea en silencio. El usuario lo resolvió arrastrando la clase —«Si se ve»— y esa observación fijó las dos cosas que había que arreglar. Unidad completa en `odd/tasks/posicion-persistida-y-perdidas-declaradas.md`.
+
+| Cambio | Dónde | Medición |
+| --- | --- | --- |
+| El conector no colocable se declara como pérdida `extension_connector_unplaced_end` | `XmiSemanticEmitter.java:793-806` | rojo observado → verde `9/0`, con triangulación contra una relación entre dos clases colocadas |
+| Los atributos llevan los seis flags de propiedad medidos del export de EA | `XmiSemanticEmitter.java:164-171` | rojo observado → verde `9/0`; y en EA el `{bag}` **desaparece** del render del sample regenerado |
+| El lienzo persiste la posición que ya muestra (helper puro + efecto aparte) | `web/src/diagram/unplaced-geometry.ts`, `UmlCanvas.tsx:374-395` | rojo observado → verde `8/8` del helper, `339/4` en la suite web, `lint` limpio |
+
+**Compuertas:** `mvn -o -B -f backend/pom.xml verify` = **460 pruebas, 0 fallos** (la base es `main`, con el paquete de validación); `npm test` = **339 pasan / 4 salteadas**; `npm run lint` = limpio; arnés de aceptación XMI = **18 pasan, 0 fallan** con sha256 `0133b9620d06115b169f89597491f8881cb002b141a5462f74a998ffdc7e4235`. El sample **no** contiene `extension_connector_unplaced_end`, que es lo correcto: su fixture tiene figura en todos los extremos, así que ese camino lo ejercita la prueba determinista, no el sample.
+
+**Rectificación de §16.5.** Ahí el `{bag}` quedaba declarado como fuera de alcance; esta unidad lo cierra. La afirmación de §16.5 se conserva como registro de lo que se sabía entonces.
+
+**Lo que esta unidad no resuelve, declarado:** la colocación automática viaja con origen `MANUAL` (el backend tiene `CommandOrigin.AI`, pero el pedido web no tiene campo `origin`: `web/src/api/envelope.ts` cae en el default y el armado está en `ProjectEditorPage.tsx:475`), así que entra al historial de undo y marca el elemento como tocado; y el cableado no tiene prueba de componente porque el repositorio no tiene jsdom y `canvas.live.test.ts` es opt-in y no ejecuta efectos.
+
+**Revisión nativa:** linaje `review-7d7fe534161a2a76`, tier `medium`, una lente de confiabilidad, 7 archivos / 455 líneas, **aprobada al primer intento** y autoridad quemada. Dejó un aviso no bloqueante (`R3-001`, `WARNING`, `informational`) en `UmlCanvas.tsx:384-389`: la guarda marca la clase como persistida antes de enviar el comando, así que un rechazo no se reintenta en ese montaje. El texto del hallazgo no viaja en el cierre —solo el linaje y la ubicación—, así que se reconstruye desde la ubicación y se declara como reconstrucción. Queda como trabajo posterior separado, nunca como motivo para repetir esta revisión.
