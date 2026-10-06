@@ -14,10 +14,12 @@ import {
   type NodeTypes,
 } from '@xyflow/react';
 import type { ClassifierResource, ModelResource } from '../api/types';
-import type { GeometryUpdate, ModelCommandRequest, ClassifierKind, RelationshipKind } from './commands';
+import type { GeometryUpdate, ModelCommandRequest, ClassifierKind, RelationshipKind, ViewStyleUpdate } from './commands';
 import {
   buildGeometrySetRequest,
   buildRelationshipCreateRequest,
+  buildStyleSetRequest,
+  mergeViewStyleUpdate,
   RELATIONSHIP_KINDS,
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
@@ -248,6 +250,7 @@ export function buildFlowEdges(
   interactionHandlers?: {
     onRelationshipContextMenu?: RelationshipEdgeData['onRelationshipContextMenu'];
     onEdgeEndpointsChange?: RelationshipEdgeData['onEdgeEndpointsChange'];
+    onRouteAdjustmentChange?: RelationshipEdgeData['onRouteAdjustmentChange'];
   },
 ): RelationshipFlowEdge[] {
   const view = defaultView(model);
@@ -275,6 +278,7 @@ export function buildFlowEdges(
       cornerRadius: styleRow?.cornerRadius ?? 0,
       strokeWidth: styleRow?.strokeWidth ?? 2,
       dashed: styleRow?.dashed ?? false,
+      routeAdjustment: styleRow?.routeAdjustment ?? null,
     } as const;
     return [{
       id: relationship.id,
@@ -294,6 +298,9 @@ export function buildFlowEdges(
           : {}),
         ...(interactionHandlers?.onEdgeEndpointsChange
           ? { onEdgeEndpointsChange: interactionHandlers.onEdgeEndpointsChange }
+          : {}),
+        ...(interactionHandlers?.onRouteAdjustmentChange
+          ? { onRouteAdjustmentChange: interactionHandlers.onRouteAdjustmentChange }
           : {}),
       },
       selectable: true,
@@ -315,6 +322,11 @@ function CanvasFrame(props: UmlCanvasProps) {
   const coalescer = useMemo(() => createGeometryCoalescer<GeometryUpdate>((_elementId, payload) => {
     props.onCommand(buildGeometrySetRequest(payload));
   }), [props.onCommand]);
+  // Dedicated coalescer for relationship view styles (its own key namespace), so a
+  // style.set can never swallow or be swallowed by a geometry.set for the same id.
+  const styleCoalescer = useMemo(() => createGeometryCoalescer<ViewStyleUpdate>((_elementId, payload) => {
+    props.onCommand(buildStyleSetRequest(payload));
+  }), [props.onCommand]);
   const [connectionDraft, setConnectionDraft] = useState<{ sourceId: string; targetId: string } | null>(null);
   const [connectionKind, setConnectionKind] = useState<RelationshipKind>('ASSOCIATION');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -328,6 +340,10 @@ function CanvasFrame(props: UmlCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<ClassFlowNode>(initialNodes);
   const initialEdges = useMemo(() => buildFlowEdges(props.model), []);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RelationshipFlowEdge>(initialEdges);
+  // Latest committed edges, read by the settled route-adjustment callback to build the
+  // style.set from the edge's own stored style values (same pattern as nodesRef).
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
   // Latest committed nodes, read by the model-sync and fit effects. Neither effect takes
   // `nodes` itself as a dependency: buildFlowNodes always returns a fresh array, so every
   // setNodes inside the sync effect would change the `nodes` identity, re-run the effect,
@@ -377,6 +393,34 @@ function CanvasFrame(props: UmlCanvasProps) {
     }
   }, [coalescer, setEdges, viewId]);
 
+  const updateRouteAdjustment = useCallback<NonNullable<RelationshipEdgeData['onRouteAdjustmentChange']>>(
+    (relationshipId, adjustment, settled) => {
+      // Optimistic: the stored edge style follows the drag so the render never waits for
+      // the command round trip; the settle then persists the whole style row.
+      setEdges((current) => current.map((edge) => edge.id === relationshipId && edge.data?.style
+        ? { ...edge, data: { ...edge.data, style: { ...edge.data.style, routeAdjustment: adjustment } } }
+        : edge));
+      if (!settled || !viewId) {
+        return;
+      }
+      const edge = edgesRef.current.find((candidate) => candidate.id === relationshipId);
+      const style = edge?.data?.style;
+      if (!style) {
+        return;
+      }
+      const key = `relationship-style:${relationshipId}`;
+      styleCoalescer.schedule(key, mergeViewStyleUpdate(viewId, relationshipId, {
+        routing: style.routing,
+        cornerRadius: style.cornerRadius,
+        strokeWidth: style.strokeWidth,
+        dashed: style.dashed,
+        routeAdjustment: style.routeAdjustment ?? null,
+      }, { routeAdjustment: adjustment }));
+      styleCoalescer.flush(key);
+    },
+    [setEdges, styleCoalescer, viewId],
+  );
+
   const rememberEdgeEndpoints = useCallback<NonNullable<RelationshipEdgeData['onEdgeEndpointsChange']>>(
     (relationshipId, source, target) => {
       edgeEndpointsRef.current.set(relationshipId, { source, target });
@@ -407,6 +451,7 @@ function CanvasFrame(props: UmlCanvasProps) {
     setEdges(buildFlowEdges(props.model, updateWaypoints, {
       onRelationshipContextMenu: openRelationshipEndContextMenu,
       onEdgeEndpointsChange: rememberEdgeEndpoints,
+      onRouteAdjustmentChange: updateRouteAdjustment,
     }));
     if (unplaced.length > 0 && pendingFitRef.current === null) {
       // A node handed over in this render is not yet measured by React Flow, so a
@@ -416,7 +461,7 @@ function CanvasFrame(props: UmlCanvasProps) {
       pendingFitRef.current = unplaced[0]!;
       setPendingFitId(pendingFitRef.current);
     }
-  }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, updateWaypoints, setNodes, setEdges, fitView, openRelationshipEndContextMenu, rememberEdgeEndpoints]);
+  }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, updateWaypoints, setNodes, setEdges, fitView, openRelationshipEndContextMenu, rememberEdgeEndpoints, updateRouteAdjustment]);
 
   // Persist the position the canvas is already showing for classifiers that arrive
   // without saved geometry (they sit on the fallback grid). A position that exists only
@@ -493,6 +538,8 @@ function CanvasFrame(props: UmlCanvasProps) {
 
 
   useEffect(() => () => coalescer.cancelAll(), [coalescer]);
+
+  useEffect(() => () => styleCoalescer.cancelAll(), [styleCoalescer]);
 
   function rectangleForNode(node: ClassFlowNode): NodeRectangle {
     return {

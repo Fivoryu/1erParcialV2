@@ -37,6 +37,8 @@ export interface OrthoHandle {
   y: number;
   dragAxis: 'x' | 'y';
   coordinate: number;
+  /** Which route element this handle moves; picks slideCorridor vs slideLevel on drag. */
+  kind: 'corridor' | 'level';
 }
 
 export interface OrthoRoute {
@@ -55,6 +57,13 @@ export interface OrthoRoute {
 }
 
 export const DEFAULT_BEND_SPACING = 48;
+
+/** Shared snap grid: FREE waypoints and orthogonal handles land on the same lattice. */
+export const ORTHO_GRID = 24;
+
+export function roundToOrthoGrid(value: number): number {
+  return Math.round(value / ORTHO_GRID) * ORTHO_GRID;
+}
 
 /**
  * An adjustment applies only when structurally valid (ROR-05 shape rules) and
@@ -187,6 +196,7 @@ export function orthogonalRoute(
       ...(axis === 'H' ? { x: u, y: midV } : { x: midV, y: u }),
       dragAxis: axis === 'H' ? 'x' : 'y',
       coordinate: u,
+      kind: 'corridor',
     });
   }
 
@@ -197,6 +207,7 @@ export function orthogonalRoute(
       ...(axis === 'H' ? { x: midU, y: v } : { x: v, y: midU }),
       dragAxis: axis === 'H' ? 'y' : 'x',
       coordinate: v,
+      kind: 'level' as const,
     };
   });
 
@@ -212,6 +223,31 @@ export function orthogonalRoute(
     addBendAnchor: pointAtHalfArcLength(points),
     ignoredAdjustment: adjustment != null && !applied,
   };
+}
+
+/**
+ * Applies one handle drag as an auto-route-relative adjustment (ROR-06). A drag on
+ * the untouched auto route materializes the first hand adjustment; a null, other-axis,
+ * or malformed input does the same (the auto route IS the one-corridor shape). The
+ * pointer coordinate along the handle's drag axis is snapped to ORTHO_GRID FIRST and
+ * the reference (autoCorridor/levelMid) is subtracted afterwards, so the rendered
+ * absolute corridor/level lands exactly on the grid even though the references are
+ * midpoints that need not be. Out-of-range indices are a no-op (slideCorridor/
+ * slideLevel skip them); the inputs are never mutated.
+ */
+export function dragOrthoHandle(
+  route: OrthoRoute,
+  adjustment: OrthoAdjustment | null,
+  handle: OrthoHandle,
+  position: OrthoPoint,
+): OrthoAdjustment {
+  const base: OrthoAdjustment = adjustment && isAdjustmentApplicable(adjustment, route.axis)
+    ? { axis: adjustment.axis, corridors: [...adjustment.corridors], levels: [...adjustment.levels] }
+    : { axis: route.axis, corridors: [0], levels: [] };
+  const absolute = roundToOrthoGrid(handle.dragAxis === 'x' ? position.x : position.y);
+  return handle.kind === 'corridor'
+    ? slideCorridor(base, handle.index, absolute, route.autoCorridor)
+    : slideLevel(base, handle.index, absolute, route.levelMid);
 }
 
 /** Appends a jog (corridor + level). Null or other-axis input starts a fresh same-axis adjustment. */

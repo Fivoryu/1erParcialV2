@@ -101,5 +101,49 @@ describe('buildFlowEdges interaction threading', () => {
     const edge = buildFlowEdges(model).find((candidate) => candidate.id === relationshipId);
     expect(edge?.data?.onRelationshipContextMenu).toBeUndefined();
     expect(edge?.data?.onEdgeEndpointsChange).toBeUndefined();
+    expect(edge?.data?.onRouteAdjustmentChange).toBeUndefined();
+  });
+
+  it('threads the route-adjustment callback like the other interaction callbacks', () => {
+    const onRouteAdjustmentChange = () => undefined;
+    const edge = buildFlowEdges(model, undefined, { onRouteAdjustmentChange })
+      .find((candidate) => candidate.id === relationshipId);
+    expect(edge?.data?.onRouteAdjustmentChange).toBe(onRouteAdjustmentChange);
+  });
+
+  it('threads the stored routeAdjustment from the view_style row into the edge style', () => {
+    const adjustment = { axis: 'H' as const, corridors: [24], levels: [-24] };
+    const styledModel: ModelResource = {
+      ...model,
+      view_style: [{
+        viewId,
+        targetId: relationshipId,
+        routing: 'ORTHOGONAL',
+        cornerRadius: 6,
+        strokeWidth: 2,
+        dashed: false,
+        routeAdjustment: adjustment,
+      }],
+    };
+    const edge = buildFlowEdges(styledModel).find((candidate) => candidate.id === relationshipId);
+    expect(edge?.data?.style?.routeAdjustment).toEqual(adjustment);
+  });
+
+  it('defaults routeAdjustment to null when the row has none or there is no row', () => {
+    const rowWithoutAdjustment: ModelResource = {
+      ...model,
+      view_style: [{
+        viewId,
+        targetId: relationshipId,
+        routing: 'FREE',
+        cornerRadius: 0,
+        strokeWidth: 2,
+        dashed: false,
+      }],
+    };
+    const fromRow = buildFlowEdges(rowWithoutAdjustment).find((candidate) => candidate.id === relationshipId);
+    expect(fromRow?.data?.style?.routeAdjustment).toBeNull();
+    const plain = buildFlowEdges(model).find((candidate) => candidate.id === relationshipId);
+    expect(plain?.data?.style?.routeAdjustment).toBeNull();
   });
 });

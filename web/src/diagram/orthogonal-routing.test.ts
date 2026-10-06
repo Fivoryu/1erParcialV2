@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BEND_SPACING,
+  ORTHO_GRID,
   addJog,
   defaultJogLevelOffset,
+  dragOrthoHandle,
   isAdjustmentApplicable,
   orthogonalRoute,
   orthogonalWaypoints,
   removeJog,
   roundedOrthogonalPath,
+  roundToOrthoGrid,
   slideCorridor,
   slideLevel,
 } from './orthogonal-routing';
@@ -238,6 +241,87 @@ describe('adjustable orthogonal route model (pure, no rendering)', () => {
       const adjusted = orthogonalRoute(a, b, { axis: 'H', corridors: [12], levels: [] });
       expect(orthogonalRoute(a, b, { axis: 'H', corridors: [12], levels: [] })).toEqual(adjusted);
     }
+  });
+});
+
+describe('orthogonal handle drag (pure, no rendering)', () => {
+  const auto = orthogonalRoute(source, staggeredRight); // H axis, autoCorridor 200
+  const corridorHandle = auto.corridorHandles[0]!;
+
+  it('exposes the shared grid constant and helper', () => {
+    expect(ORTHO_GRID).toBe(24);
+    expect(roundToOrthoGrid(212.5)).toBe(216);
+  });
+
+  it('materializes the first hand adjustment from a drag on the untouched auto route', () => {
+    const pointer = { x: 240, y: corridorHandle.y };
+    const next = dragOrthoHandle(auto, null, corridorHandle, pointer);
+    expect(next).toEqual({ axis: 'H', corridors: [40], levels: [] });
+    const routed = orthogonalRoute(source, staggeredRight, next);
+    expect(routed.corridors[0]).toBe(240);
+    expect(routed.points[1]).toEqual({ x: 240, y: 50 });
+  });
+
+  it('moves only the dragged level when a level handle is dragged', () => {
+    const adjustment = { axis: 'H' as const, corridors: [0, 48], levels: [0] };
+    const jogged = orthogonalRoute(source, staggeredRight, adjustment);
+    const levelHandle = jogged.levelHandles[0]!;
+    expect(levelHandle.kind).toBe('level');
+    expect(levelHandle.dragAxis).toBe('y');
+    const pointer = { x: 999, y: 174 }; // x must be ignored for a level in an H frame
+    const next = dragOrthoHandle(jogged, adjustment, levelHandle, pointer);
+    expect(next.corridors).toEqual([0, 48]);
+    expect(next.levels).toEqual([Math.round(roundToOrthoGrid(pointer.y) - jogged.levelMid)]);
+    const routed = orthogonalRoute(source, staggeredRight, next);
+    expect(routed.levels).toEqual([roundToOrthoGrid(pointer.y)]);
+    expect(routed.levels[0]! % ORTHO_GRID).toBe(0);
+    expect(routed.corridors).toEqual([200, 248]);
+  });
+
+  it('lands the dragged coordinate exactly on the grid', () => {
+    const next = dragOrthoHandle(auto, null, corridorHandle, { x: 230, y: 50 });
+    const routed = orthogonalRoute(source, staggeredRight, next);
+    expect(routed.corridors[0]! % ORTHO_GRID).toBe(0);
+    expect(routed.corridors[0]).toBe(240);
+  });
+
+  it('is a no-op for an out-of-range handle index instead of throwing', () => {
+    const adjustment = { axis: 'H' as const, corridors: [24], levels: [] };
+    const handle = { index: 5, x: 0, y: 0, dragAxis: 'x' as const, coordinate: 0, kind: 'corridor' as const };
+    expect(dragOrthoHandle(auto, adjustment, handle, { x: 240, y: 50 })).toEqual(adjustment);
+  });
+
+  it('never mutates the route or the adjustment it is given', () => {
+    const adjustment = { axis: 'H' as const, corridors: [0, 48], levels: [10] };
+    const adjustmentSnapshot = JSON.parse(JSON.stringify(adjustment));
+    const routeSnapshot = JSON.parse(JSON.stringify(auto));
+    dragOrthoHandle(auto, adjustment, corridorHandle, { x: 240, y: 50 });
+    expect(adjustment).toEqual(adjustmentSnapshot);
+    expect(auto).toEqual(routeSnapshot);
+  });
+
+  it('starts a fresh same-axis adjustment from a null, wrong-axis, or malformed one', () => {
+    const pointer = { x: 240, y: 50 };
+    const expected = { axis: 'H', corridors: [40], levels: [] };
+    const wrongAxis = { axis: 'V' as const, corridors: [10], levels: [] };
+    const malformed = { axis: 'H' as const, corridors: [0.5], levels: [] };
+    for (const bad of [null, wrongAxis, malformed]) {
+      expect(dragOrthoHandle(auto, bad, corridorHandle, pointer)).toEqual(expected);
+    }
+  });
+
+  it('maps the vertical frame so corridor drags follow y and level drags follow x', () => {
+    const staggeredBelow = { x: 150, y: 300, width: 100, height: 100 }; // V axis, autoCorridor 200
+    const vertical = orthogonalRoute(source, staggeredBelow);
+    const handle = vertical.corridorHandles[0]!;
+    expect(handle.kind).toBe('corridor');
+    expect(handle.dragAxis).toBe('y');
+    const next = dragOrthoHandle(vertical, null, handle, { x: 999, y: 216 });
+    expect(next.axis).toBe('V');
+    expect(next.corridors).toEqual([16]);
+    expect(next.levels).toEqual([]);
+    const routed = orthogonalRoute(source, staggeredBelow, next);
+    expect(routed.points[1]).toEqual({ x: 50, y: 216 });
   });
 });
 

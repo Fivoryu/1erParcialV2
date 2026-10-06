@@ -511,10 +511,22 @@ describe('relationship route & style (IA4-07)', () => {
 
   it('propagates the per-view style row into the flow edge data and defaults to straight', () => {
     const connector = buildFlowEdges(styledModel).find((edge) => edge.id === relationshipId);
-    expect(connector?.data?.style).toEqual({ routing: 'ORTHOGONAL', cornerRadius: 8, strokeWidth: 3, dashed: true });
+    expect(connector?.data?.style).toEqual({
+      routing: 'ORTHOGONAL',
+      cornerRadius: 8,
+      strokeWidth: 3,
+      dashed: true,
+      routeAdjustment: { axis: 'H', corridors: [40], levels: [-12] },
+    });
 
     const plain = buildFlowEdges(model).find((edge) => edge.id === relationshipId);
-    expect(plain?.data?.style).toEqual({ routing: 'STRAIGHT', cornerRadius: 0, strokeWidth: 2, dashed: false });
+    expect(plain?.data?.style).toEqual({
+      routing: 'STRAIGHT',
+      cornerRadius: 0,
+      strokeWidth: 2,
+      dashed: false,
+      routeAdjustment: null,
+    });
   });
 
   it('renders the route & style controls reflecting the persisted view style row', () => {
