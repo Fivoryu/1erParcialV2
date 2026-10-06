@@ -2368,3 +2368,70 @@ h3 {
   color: var(--muted);
   font-size: 11px;
 }
+
+/* voice input ------------------------------------------------------------ */
+
+.voice-mic-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.voice-mic-button:hover,
+.voice-mic-button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+.voice-mic-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(33 107 97 / 9%);
+}
+
+.voice-mic-listening {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent-dark);
+}
+
+.voice-mic-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-dark);
+  animation: voice-mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-mic-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.4;
+    transform: scale(1.4);
+  }
+}
+
+.voice-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.voice-hint-error {
+  color: var(--danger);
+}
