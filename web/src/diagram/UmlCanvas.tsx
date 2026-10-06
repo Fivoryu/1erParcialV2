@@ -21,7 +21,7 @@ import {
   RELATIONSHIP_KINDS,
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
-import { buildUnplacedGeometryRequests } from './unplaced-geometry';
+import { buildUnplacedGeometryRequests, type UnplacedGeometryAttempt } from './unplaced-geometry';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
 import UmlRelationshipEdge, { type EdgePoint, type RelationshipEdgeData, type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
@@ -344,10 +344,15 @@ function CanvasFrame(props: UmlCanvasProps) {
   const [pendingFitId, setPendingFitId] = useState<string | null>(null);
   const pendingFitRef = useRef<string | null>(null);
   const fitFrameRef = useRef<number | null>(null);
-  // Classifiers whose shown position has already been persisted in this mount. Guarding
-  // with this ref means a rejected command cannot produce a loop and a model refetch
-  // cannot re-send the same geometry request.
-  const persistedUnplacedRef = useRef(new Set<string>());
+  // Per-classifier attempt bookkeeping for the unplaced-geometry effect, produced and
+  // updated only by the pure policy in unplaced-geometry.ts: at most one request per
+  // classifier per model revision (the effect re-runs on node churn when React Flow
+  // re-measures, so the revision stamp is what keeps duplicate identical commands out),
+  // retried only when a NEW model revision still shows no saved geometry (the "command
+  // was not accepted" signal) up to the bounded limit, stopped by a command that lands,
+  // and released when the classifier gains geometry or leaves the model so a later
+  // re-arrival can request again.
+  const unplacedAttemptsRef = useRef(new Map<string, UnplacedGeometryAttempt>());
 
   const persistResize = useCallback((classifierId: string, rectangle: NodeRectangle, zOrder: number) => {
     const payload = geometryPayload(props.model, classifierId, rectangle, zOrder);
@@ -417,21 +422,19 @@ function CanvasFrame(props: UmlCanvasProps) {
   // without saved geometry (they sit on the fallback grid). A position that exists only
   // in the render is invisible to every other consumer, including the XMI export, so
   // "what you see" and "what the model has" would otherwise diverge until a manual drag.
-  // Kept as its own effect, away from the model-sync effect above, and guarded by
-  // persistedUnplacedRef so it fires at most once per classifier per mount.
+  // Kept as its own effect, away from the model-sync effect above. This effect re-runs
+  // on node identity churn (React Flow re-measures and replaces node objects a frame or
+  // two after mount, before any server round trip), so the cadence lives entirely in the
+  // pure decision: at most one request per classifier per model revision, retried only
+  // when a new revision still shows no saved geometry, up to the bounded limit.
   useEffect(() => {
-    const requests = buildUnplacedGeometryRequests(
+    const decision = buildUnplacedGeometryRequests(
       props.model,
       nodesRef.current,
-      persistedUnplacedRef.current,
+      unplacedAttemptsRef.current,
     );
-    if (requests.length === 0) {
-      return;
-    }
-    for (const request of requests) {
-      persistedUnplacedRef.current.add(request.targetId);
-    }
-    for (const request of requests) {
+    unplacedAttemptsRef.current = decision.attempts;
+    for (const request of decision.requests) {
       const key = `classifier:${request.targetId}`;
       coalescer.schedule(key, request);
       coalescer.flush(key);

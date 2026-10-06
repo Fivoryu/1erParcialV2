@@ -61,11 +61,37 @@ function node(classifier: ClassifierResource, position: { x: number; y: number }
   };
 }
 
+/** A copy of the model where the given classifier has saved geometry in the default view. */
+function modelWithGeometryFor(classifier: ClassifierResource): ModelResource {
+  const [view] = model.views;
+  return {
+    ...model,
+    classifiers: [classifier],
+    views: [{
+      ...view!,
+      element_geometry: [{
+        id: '88888888-8888-4888-8888-888888888888',
+        targetType: 'CLASSIFIER',
+        targetId: classifier.id,
+        x: 120,
+        y: 80,
+        w: 260,
+        h: 180,
+        zOrder: 1,
+      }],
+    }],
+  };
+}
+
 describe('buildUnplacedGeometryRequests', () => {
   it('yields exactly one request with the rendered rectangle for a classifier without saved geometry', () => {
-    const requests = buildUnplacedGeometryRequests(model, [node(placed, { x: 120, y: 80 }), node(unplaced, { x: 56, y: 56 })], new Set());
+    const decision = buildUnplacedGeometryRequests(
+      model,
+      [node(placed, { x: 120, y: 80 }), node(unplaced, { x: 56, y: 56 })],
+      new Map(),
+    );
 
-    expect(requests).toEqual([{
+    expect(decision.requests).toEqual([{
       targetType: 'CLASSIFIER',
       viewId: '77777777-7777-4777-8777-777777777777',
       targetId: unplaced.id,
@@ -83,7 +109,7 @@ describe('buildUnplacedGeometryRequests', () => {
       measured: { width: 248.4, height: 171.2 },
     };
 
-    expect(buildUnplacedGeometryRequests(model, [measured], new Set())).toEqual([{
+    expect(buildUnplacedGeometryRequests(model, [measured], new Map()).requests).toEqual([{
       targetType: 'CLASSIFIER',
       viewId: '77777777-7777-4777-8777-777777777777',
       targetId: unplaced.id,
@@ -95,20 +121,14 @@ describe('buildUnplacedGeometryRequests', () => {
     }]);
   });
 
-  it('yields none for a classifier already requested', () => {
-    const requests = buildUnplacedGeometryRequests(
+  it('yields none for a classifier that already has saved geometry in the default view', () => {
+    const decision = buildUnplacedGeometryRequests(
       model,
-      [node(placed, { x: 120, y: 80 }), node(unplaced, { x: 56, y: 56 })],
-      new Set([unplaced.id]),
+      [node(placed, { x: 120, y: 80 })],
+      new Map(),
     );
 
-    expect(requests).toEqual([]);
-  });
-
-  it('yields none for a classifier that already has saved geometry in the default view', () => {
-    const requests = buildUnplacedGeometryRequests(model, [node(placed, { x: 120, y: 80 })], new Set());
-
-    expect(requests).toEqual([]);
+    expect(decision.requests).toEqual([]);
   });
 
   it('yields two requests in model order for two unplaced classifiers', () => {
@@ -117,13 +137,13 @@ describe('buildUnplacedGeometryRequests', () => {
       classifiers: [unplaced, placed, unplacedToo],
     };
 
-    const requests = buildUnplacedGeometryRequests(
+    const decision = buildUnplacedGeometryRequests(
       mixed,
       [node(unplaced, { x: 56, y: 56 }), node(unplacedToo, { x: 396, y: 56 })],
-      new Set(),
+      new Map(),
     );
 
-    expect(requests.map((request) => request.targetId)).toEqual([unplaced.id, unplacedToo.id]);
+    expect(decision.requests.map((request) => request.targetId)).toEqual([unplaced.id, unplacedToo.id]);
   });
 
   it('clamps degenerate sizes to at least one pixel like the drag path', () => {
@@ -134,7 +154,7 @@ describe('buildUnplacedGeometryRequests', () => {
       zIndex: 3.7,
     };
 
-    expect(buildUnplacedGeometryRequests(model, [degenerate], new Set())).toEqual([{
+    expect(buildUnplacedGeometryRequests(model, [degenerate], new Map()).requests).toEqual([{
       targetType: 'CLASSIFIER',
       viewId: '77777777-7777-4777-8777-777777777777',
       targetId: unplaced.id,
@@ -149,10 +169,136 @@ describe('buildUnplacedGeometryRequests', () => {
   it('yields an empty array when there is no default view to persist into', () => {
     const viewless = { ...model, views: [] };
 
-    expect(buildUnplacedGeometryRequests(viewless, [node(unplaced, { x: 56, y: 56 })], new Set())).toEqual([]);
+    expect(buildUnplacedGeometryRequests(viewless, [node(unplaced, { x: 56, y: 56 })], new Map()).requests).toEqual([]);
   });
 
-  it('yields an empty array when every classifier is placed or already requested', () => {
-    expect(buildUnplacedGeometryRequests(model, [], new Set())).toEqual([]);
+  it('yields nothing and keeps the bookkeeping unchanged when every classifier is placed', () => {
+    const attempts = new Map([[unplaced.id, { count: 1, revision: model.revision }]]);
+    const decision = buildUnplacedGeometryRequests(model, [], attempts);
+
+    expect(decision.requests).toEqual([]);
+    expect(decision.attempts.get(unplaced.id)).toEqual({ count: 1, revision: model.revision });
+  });
+});
+
+describe('buildUnplacedGeometryRequests retry policy', () => {
+  it('records the first attempt in the returned bookkeeping', () => {
+    const decision = buildUnplacedGeometryRequests(model, [node(unplaced, { x: 56, y: 56 })], new Map());
+
+    expect(decision.requests).toHaveLength(1);
+    expect(decision.attempts.get(unplaced.id)).toEqual({ count: 1, revision: model.revision });
+  });
+
+  it('requests a classifier only once per model revision even when node churn re-runs the effect', () => {
+    const first = buildUnplacedGeometryRequests(model, [node(unplaced, { x: 56, y: 56 })], new Map());
+    expect(first.requests).toHaveLength(1);
+
+    // React Flow re-measures and replaces node objects a frame or two after mount,
+    // before any server round trip: the effect runs again with the SAME model revision
+    // and must not send the identical geometry.set command a second time.
+    const remeasured = {
+      ...node(unplaced, { x: 56, y: 56 }),
+      measured: { width: 250, height: 170 },
+    };
+    const second = buildUnplacedGeometryRequests(model, [remeasured], first.attempts);
+
+    expect(second.requests).toEqual([]);
+    expect(second.attempts.get(unplaced.id)).toEqual({ count: 1, revision: model.revision });
+  });
+
+  it('sends exactly one retry per new model revision no matter how often the effect re-runs', () => {
+    const first = buildUnplacedGeometryRequests(model, [node(unplaced, { x: 56, y: 56 })], new Map());
+    const refetched = { ...model, revision: model.revision + 1 };
+
+    const retry = buildUnplacedGeometryRequests(refetched, [node(unplaced, { x: 56, y: 56 })], first.attempts);
+    expect(retry.requests).toHaveLength(1);
+    expect(retry.attempts.get(unplaced.id)).toEqual({ count: 2, revision: refetched.revision });
+
+    // A second run on the SAME revision (node churn again) must not duplicate the retry.
+    const rerun = buildUnplacedGeometryRequests(refetched, [node(unplaced, { x: 40, y: 40 })], retry.attempts);
+    expect(rerun.requests).toEqual([]);
+    expect(rerun.attempts.get(unplaced.id)).toEqual({ count: 2, revision: refetched.revision });
+  });
+
+  it('retries a classifier whose refetched model still shows no saved geometry', () => {
+    const first = buildUnplacedGeometryRequests(model, [node(unplaced, { x: 56, y: 56 })], new Map());
+
+    // Rejection signal: the model came back refetched (new revision) and the classifier
+    // still has no saved geometry in the default view.
+    const refetched = { ...model, revision: model.revision + 1 };
+    const second = buildUnplacedGeometryRequests(refetched, [node(unplaced, { x: 56, y: 56 })], first.attempts);
+
+    expect(second.requests).toHaveLength(1);
+    expect(second.requests[0]!.targetId).toBe(unplaced.id);
+    expect(second.attempts.get(unplaced.id)).toEqual({ count: 2, revision: refetched.revision });
+  });
+
+  it('stops requesting once the attempt limit is exhausted', () => {
+    const exhausted = new Map([[unplaced.id, { count: 3, revision: model.revision }]]);
+
+    const decision = buildUnplacedGeometryRequests(model, [node(unplaced, { x: 56, y: 56 })], exhausted);
+
+    expect(decision.requests).toEqual([]);
+    expect(decision.attempts.get(unplaced.id)).toEqual({ count: 3, revision: model.revision });
+  });
+
+  it('honours a smaller explicit limit across revisions before giving up', () => {
+    const first = buildUnplacedGeometryRequests(model, [node(unplaced, { x: 56, y: 56 })], new Map(), 2);
+    expect(first.requests).toHaveLength(1);
+
+    const refetched = { ...model, revision: model.revision + 1 };
+    const second = buildUnplacedGeometryRequests(refetched, [node(unplaced, { x: 56, y: 56 })], first.attempts, 2);
+    expect(second.requests).toHaveLength(1);
+
+    const exhausted = { ...model, revision: model.revision + 2 };
+    const third = buildUnplacedGeometryRequests(exhausted, [node(unplaced, { x: 56, y: 56 })], second.attempts, 2);
+    expect(third.requests).toEqual([]);
+  });
+
+  it('releases the bookkeeping when the model gains geometry and does not re-request it', () => {
+    const gained = modelWithGeometryFor(unplaced);
+
+    const decision = buildUnplacedGeometryRequests(
+      gained,
+      [node(unplaced, { x: 120, y: 80 })],
+      new Map([[unplaced.id, { count: 1, revision: model.revision }]]),
+    );
+
+    expect(decision.requests).toEqual([]);
+    expect(decision.attempts.has(unplaced.id)).toBe(false);
+  });
+
+  it('requests a classifier again after it gained and later lost geometry', () => {
+    const gained = modelWithGeometryFor(unplaced);
+    const released = buildUnplacedGeometryRequests(
+      gained,
+      [node(unplaced, { x: 120, y: 80 })],
+      new Map([[unplaced.id, { count: 1, revision: model.revision }]]),
+    );
+    expect(released.attempts.has(unplaced.id)).toBe(false);
+
+    // The geometry is gone again (removed and re-arrived without saved geometry).
+    const lost = buildUnplacedGeometryRequests(model, [node(unplaced, { x: 56, y: 56 })], released.attempts);
+
+    expect(lost.requests).toHaveLength(1);
+    expect(lost.requests[0]!.targetId).toBe(unplaced.id);
+    expect(lost.attempts.get(unplaced.id)).toEqual({ count: 1, revision: model.revision });
+  });
+
+  it('requests nothing when nothing is unplaced', () => {
+    const decision = buildUnplacedGeometryRequests(
+      modelWithGeometryFor(placed),
+      [node(placed, { x: 120, y: 80 })],
+      new Map(),
+    );
+
+    expect(decision.requests).toEqual([]);
+  });
+
+  it('does not count an attempt for a node without usable dimensions', () => {
+    const decision = buildUnplacedGeometryRequests(model, [], new Map());
+
+    expect(decision.requests).toEqual([]);
+    expect(decision.attempts.has(unplaced.id)).toBe(false);
   });
 });
