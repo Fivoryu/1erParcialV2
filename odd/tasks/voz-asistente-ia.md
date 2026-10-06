@@ -46,5 +46,5 @@ En navegadores sin Web Speech API el botón no se muestra (degradación honesta,
 
 | Unidad | Estado | Evidencia |
 | --- | --- | --- |
-| V1 | pendiente | — |
+| V1 | **cerrado** | commit `feat(assistant)` (ver evidencia abajo); RED observado (módulos inexistentes), GREEN 41/41, suite 428 passed / 4 skipped (+41), lint y tsc limpios. API pública: `useSpeechRecognition()` → `{ supported, listening, transcript, interim, error, start, stop, reset }` + `createSpeechRecognitionController`, `mapSpeechRecognitionError`, `transitionSpeechRecognitionState`, `isSpeechRecognitionSupported()`, `SPEECH_RECOGNITION_LANG = 'es-AR'`. Nota UX para V2: `reset()` es no-op mientras escucha (hay que parar primero) |
 | V2 | pendiente | — |
