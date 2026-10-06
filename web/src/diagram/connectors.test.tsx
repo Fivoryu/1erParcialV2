@@ -505,6 +505,7 @@ describe('relationship route & style (IA4-07)', () => {
       cornerRadius: 8,
       strokeWidth: 3,
       dashed: true,
+      routeAdjustment: { axis: 'H', corridors: [40], levels: [-12] },
     }],
   };
 

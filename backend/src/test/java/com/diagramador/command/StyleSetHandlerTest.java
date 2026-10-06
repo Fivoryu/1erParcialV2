@@ -240,6 +240,107 @@ class StyleSetHandlerTest {
                 fixture.view().getId());
     }
 
+    /** One field of the persisted ROR-02 adjustment, read as jsonb text; null when the column is null. */
+    private String styleAdjustment(Fixture fixture, String field) {
+        String extraction = field.equals("axis") ? "->>" : "->";
+        return jdbcTemplate.queryForObject(
+                "SELECT route_adjustment" + extraction + "'" + field + "' FROM diagrammer.view_style WHERE view_id = ?",
+                String.class, fixture.view().getId());
+    }
+
+    @Test
+    void styleSetPersistsTheOrthogonalRouteAdjustmentAndReplaysItThroughTheRow() {
+        Fixture fixture = fixture("style-adjustment");
+        UUID relationshipId = createRelationship(fixture);
+
+        assertAccepted(command(fixture, 3, Map.of(
+                "viewId", fixture.view().getId().toString(),
+                "targetId", relationshipId.toString(),
+                "routing", "ORTHOGONAL",
+                "routeAdjustment", Map.of(
+                        "axis", "H",
+                        "corridors", List.of(40, -30),
+                        "levels", List.of(-12)))));
+
+        assertThat(styleRows(fixture)).singleElement().satisfies(row -> {
+            assertThat(row.get("routing")).isEqualTo("ORTHOGONAL");
+            assertThat(row.get("route_adjustment")).isNotNull();
+        });
+        assertThat(styleAdjustment(fixture, "axis")).isEqualTo("H");
+        assertThat(styleAdjustment(fixture, "corridors")).isEqualTo("[40, -30]");
+        assertThat(styleAdjustment(fixture, "levels")).isEqualTo("[-12]");
+    }
+
+    @Test
+    void styleSetClearsTheRouteAdjustmentWhenTheFieldIsJsonNull() {
+        Fixture fixture = fixture("style-adjustment-clear");
+        UUID relationshipId = createRelationship(fixture);
+        Map<String, Object> withAdjustment = new java.util.HashMap<>();
+        withAdjustment.put("viewId", fixture.view().getId().toString());
+        withAdjustment.put("targetId", relationshipId.toString());
+        withAdjustment.put("routing", "ORTHOGONAL");
+        withAdjustment.put("routeAdjustment", Map.of(
+                "axis", "H", "corridors", List.of(40, -30), "levels", List.of(-12)));
+        assertAccepted(command(fixture, 3, withAdjustment));
+        assertThat(styleAdjustment(fixture, "axis")).isEqualTo("H");
+
+        Map<String, Object> cleared = new java.util.HashMap<>(withAdjustment);
+        cleared.put("routeAdjustment", null);
+        assertAccepted(command(fixture, 4, cleared));
+
+        assertThat(styleAdjustment(fixture, "axis")).isNull();
+        assertThat(styleAdjustment(fixture, "corridors")).isNull();
+        assertThat(styleAdjustment(fixture, "levels")).isNull();
+    }
+
+    @Test
+    void styleSetRejectsMalformedRouteAdjustments() {
+        Fixture fixture = fixture("style-adjustment-shape");
+        UUID relationshipId = createRelationship(fixture);
+        Map<String, Object> base = new java.util.HashMap<>();
+        base.put("viewId", fixture.view().getId().toString());
+        base.put("targetId", relationshipId.toString());
+        base.put("routing", "ORTHOGONAL");
+
+        Map<String, Object> unknownKey = new java.util.HashMap<>(base);
+        unknownKey.put("routeAdjustment", Map.of(
+                "axis", "H", "corridors", List.of(40, -30), "levels", List.of(-12), "offset", 5));
+        Map<String, Object> badAxis = new java.util.HashMap<>(base);
+        badAxis.put("routeAdjustment", Map.of(
+                "axis", "X", "corridors", List.of(40, -30), "levels", List.of(-12)));
+        Map<String, Object> levelMismatch = new java.util.HashMap<>(base);
+        levelMismatch.put("routeAdjustment", Map.of(
+                "axis", "H", "corridors", List.of(40, -30), "levels", List.of()));
+        Map<String, Object> nonInteger = new java.util.HashMap<>(base);
+        nonInteger.put("routeAdjustment", Map.of(
+                "axis", "H", "corridors", List.of(40.5, -30), "levels", List.of(-12)));
+        Map<String, Object> outOfRange = new java.util.HashMap<>(base);
+        outOfRange.put("routeAdjustment", Map.of(
+                "axis", "H", "corridors", List.of(100001, -30), "levels", List.of(-12)));
+
+        for (Map<String, Object> payload : List.of(unknownKey, badAxis, levelMismatch, nonInteger, outOfRange)) {
+            assertRejected(command(fixture, 3, payload), ErrorCode.INVALID_PAYLOAD, "routeAdjustment");
+        }
+        assertThat(styleRows(fixture)).isEmpty();
+        assertThat(currentRevision(fixture)).isEqualTo(3L);
+    }
+
+    @Test
+    void styleSetRejectsARouteAdjustmentWithoutOrthogonalRouting() {
+        Fixture fixture = fixture("style-adjustment-routing");
+        UUID relationshipId = createRelationship(fixture);
+
+        CommandResult result = command(fixture, 3, Map.of(
+                "viewId", fixture.view().getId().toString(),
+                "targetId", relationshipId.toString(),
+                "routing", "FREE",
+                "routeAdjustment", Map.of(
+                        "axis", "H", "corridors", List.of(40, -30), "levels", List.of(-12))));
+
+        assertRejected(result, ErrorCode.INVALID_PAYLOAD, "routeAdjustment");
+        assertThat(styleRows(fixture)).isEmpty();
+    }
+
     private long currentRevision(Fixture fixture) {
         return modelRepository.findById(fixture.model().getId()).orElseThrow().getCurrentRevision();
     }

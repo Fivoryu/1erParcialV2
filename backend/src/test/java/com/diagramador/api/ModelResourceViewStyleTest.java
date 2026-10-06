@@ -113,6 +113,7 @@ class ModelResourceViewStyleTest {
         assertThat(style.cornerRadius()).isEqualTo(8);
         assertThat(style.strokeWidth()).isEqualTo(2);
         assertThat(style.dashed()).isTrue();
+        assertThat(style.routeAdjustment()).isNull();
         // Semantic resources stay untouched: the style list is additive.
         assertThat(model.relationships()).hasSize(1);
 
@@ -123,6 +124,48 @@ class ModelResourceViewStyleTest {
         ModelResource upserted = projectApiService.getModel(fixture.project().getId());
         assertThat(upserted.viewStyle()).hasSize(1);
         assertThat(upserted.viewStyle().get(0).routing()).isEqualTo("FREE");
+    }
+
+    @Test
+    void modelResourceExposesTheRouteAdjustmentWithItsExactShapeAndClearsItBackToNull() {
+        Fixture fixture = fixture("route-adjustment-resource");
+        UUID sourceId = createClassifier(fixture, 0, "Source");
+        UUID targetId = createClassifier(fixture, 1, "Target");
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> relationshipPayload = new java.util.HashMap<>();
+        relationshipPayload.put("id", relationshipId.toString());
+        relationshipPayload.put("kind", "ASSOCIATION");
+        relationshipPayload.put("name", null);
+        relationshipPayload.put("source", end(sourceId));
+        relationshipPayload.put("target", end(targetId));
+        relationshipPayload.put("waypoints", List.of());
+        accept(command(fixture, 2, "relationship.create", List.of(
+                new Target("classifier", sourceId), new Target("classifier", targetId)), relationshipPayload));
+
+        currentUserContext.set(new CurrentUser(fixture.author().userId(), "routeadj", "RouteAdjustment"));
+        accept(command(fixture, 3, "style.set", List.of(), Map.of(
+                "viewId", fixture.view().getId().toString(),
+                "targetId", relationshipId.toString(),
+                "routing", "ORTHOGONAL",
+                "routeAdjustment", Map.of(
+                        "axis", "H",
+                        "corridors", List.of(40, -30, 60),
+                        "levels", List.of(-12, 0)))));
+
+        ModelResource model = projectApiService.getModel(fixture.project().getId());
+        assertThat(model.viewStyle()).hasSize(1);
+        assertThat(model.viewStyle().get(0).routeAdjustment()).isEqualTo(
+                new ModelResource.RouteAdjustmentResource("H", List.of(40, -30, 60), List.of(-12, 0)));
+
+        Map<String, Object> cleared = new java.util.HashMap<>();
+        cleared.put("viewId", fixture.view().getId().toString());
+        cleared.put("targetId", relationshipId.toString());
+        cleared.put("routing", "ORTHOGONAL");
+        cleared.put("routeAdjustment", null);
+        accept(command(fixture, 4, "style.set", List.of(), cleared));
+
+        ModelResource afterClear = projectApiService.getModel(fixture.project().getId());
+        assertThat(afterClear.viewStyle().get(0).routeAdjustment()).isNull();
     }
 
     @Test

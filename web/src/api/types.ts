@@ -177,6 +177,12 @@ export interface XmiImportResource {
   disagreements: XmiDisagreementResource[];
 }
 
+export interface RouteAdjustmentResource {
+  axis: 'H' | 'V';
+  corridors: number[];
+  levels: number[];
+}
+
 export interface ViewStyleResource {
   viewId: Uuid;
   targetId: Uuid;
@@ -184,6 +190,8 @@ export interface ViewStyleResource {
   cornerRadius: number;
   strokeWidth: number;
   dashed: boolean;
+  /** Optional so an older backend or a fixture without the field still reads as undefined/null. */
+  routeAdjustment?: RouteAdjustmentResource | null;
 }
 
 export interface ViewResource {

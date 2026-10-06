@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApiClient } from '../api/client';
 import type { ModelResource } from '../api/types';
-import { buildClassifierCreateEnvelope, buildStyleSetRequest } from './commands';
+import {
+  buildClassifierCreateEnvelope,
+  buildStyleSetRequest,
+  mergeViewStyleUpdate,
+  type RoutingMode,
+  type ViewStyleValues,
+} from './commands';
 
 const model: ModelResource = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -95,6 +101,7 @@ describe('style.set command builder', () => {
       cornerRadius: 8,
       strokeWidth: 3,
       dashed: true,
+      routeAdjustment: { axis: 'H', corridors: [40], levels: [-12] },
     });
     expect(request.type).toBe('style.set');
     expect(request.targets).toBeUndefined();
@@ -105,6 +112,68 @@ describe('style.set command builder', () => {
       cornerRadius: 8,
       strokeWidth: 3,
       dashed: true,
+      routeAdjustment: { axis: 'H', corridors: [40], levels: [-12] },
     });
+  });
+
+  it('carries the explicit null routeAdjustment so the panel can clear it', () => {
+    const request = buildStyleSetRequest({
+      viewId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      targetId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      routing: 'ORTHOGONAL',
+      cornerRadius: 0,
+      strokeWidth: 2,
+      dashed: false,
+      routeAdjustment: null,
+    });
+    expect(request.payload?.routeAdjustment).toBeNull();
+  });
+});
+
+describe('mergeViewStyleUpdate', () => {
+  const viewId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const targetId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const adjustment = { axis: 'H' as const, corridors: [40], levels: [-12] };
+  const current: ViewStyleValues = {
+    routing: 'ORTHOGONAL',
+    cornerRadius: 0,
+    strokeWidth: 2,
+    dashed: false,
+    routeAdjustment: adjustment,
+  };
+
+  it('keeps the stored adjustment when the override does not mention it', () => {
+    const merged = mergeViewStyleUpdate(viewId, targetId, current, { cornerRadius: 8 });
+    expect(merged).toEqual({
+      viewId,
+      targetId,
+      routing: 'ORTHOGONAL',
+      cornerRadius: 8,
+      strokeWidth: 2,
+      dashed: false,
+      routeAdjustment: { axis: 'H', corridors: [40], levels: [-12] },
+    });
+    expect(merged.routeAdjustment).toEqual(adjustment);
+  });
+
+  it('clears the adjustment when the override carries an explicit null', () => {
+    const merged = mergeViewStyleUpdate(viewId, targetId, current, { routeAdjustment: null });
+    expect(merged.routing).toBe('ORTHOGONAL');
+    expect(merged.routeAdjustment).toBeNull();
+  });
+
+  it('nulls the adjustment in the same payload when the routing leaves ORTHOGONAL', () => {
+    for (const routing of ['FREE', 'STRAIGHT'] as const) {
+      const merged = mergeViewStyleUpdate(viewId, targetId, current, { routing });
+      expect(merged.routing).toBe(routing satisfies RoutingMode);
+      expect(merged.routeAdjustment).toBeNull();
+    }
+  });
+
+  it('keeps the passed viewId/targetId even if current tries to override them', () => {
+    const impostor = { ...current, viewId: 'hack-view', targetId: 'hack-rel' } as ViewStyleValues;
+    const merged = mergeViewStyleUpdate(viewId, targetId, impostor, {});
+    expect(merged.viewId).toBe(viewId);
+    expect(merged.targetId).toBe(targetId);
   });
 });

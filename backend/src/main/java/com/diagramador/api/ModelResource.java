@@ -65,7 +65,17 @@ public record ModelResource(
             String routing,
             int cornerRadius,
             int strokeWidth,
-            boolean dashed) {
+            boolean dashed,
+            RouteAdjustmentResource routeAdjustment) {
+    }
+
+    /** ROR-02: frame-relative orthogonal route adjustment, null when the row has none. */
+    public record RouteAdjustmentResource(String axis, List<Integer> corridors, List<Integer> levels) {
+
+        public RouteAdjustmentResource {
+            corridors = corridors == null ? List.of() : List.copyOf(corridors);
+            levels = levels == null ? List.of() : List.copyOf(levels);
+        }
     }
 
     public record ClassifierResource(

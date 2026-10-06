@@ -101,7 +101,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("undo_log", Set.of("id", "model_id", "user_id", "command_id", "type", "pre_snapshot",
                     "undone_at", "redone_at", "created_at")),
             Map.entry("view_style", Set.of("style_id", "view_id", "target_type", "target_id", "routing",
-                    "corner_radius", "stroke_width", "dashed", "created_at", "updated_at")));
+                    "corner_radius", "stroke_width", "dashed", "route_adjustment", "created_at", "updated_at")));
 
     private static final Set<String> TABLES_RESERVED_FOR_LATER_TASKS = Set.of(
             "model_conflict",

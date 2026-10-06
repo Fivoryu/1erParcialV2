@@ -10,6 +10,7 @@ import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.api.ModelResource.ViewResource;
+import com.diagramador.api.ModelResource.RouteAdjustmentResource;
 import com.diagramador.api.ModelResource.ViewStyleResource;
 import com.diagramador.command.Author;
 import com.diagramador.command.CommandOrigin;
@@ -237,10 +238,31 @@ public class ProjectApiService {
         List<ViewStyleResource> viewStyles = views.stream()
                 .flatMap(view -> viewStyleRepository.findByViewId(view.id()).stream()
                         .map(style -> new ViewStyleResource(view.id(), style.getTargetId(), style.getRouting(),
-                                style.getCornerRadius(), style.getStrokeWidth(), style.isDashed())))
+                                style.getCornerRadius(), style.getStrokeWidth(), style.isDashed(),
+                                routeAdjustment(style))))
                 .toList();
         return new ModelResource(model.getId(), projectId, model.getCurrentRevision(), versionId, views,
                 classifiers, relationships, viewStyles);
+    }
+
+    /** ROR-02: null-safe read of the persisted frame-relative orthogonal adjustment. */
+    private RouteAdjustmentResource routeAdjustment(com.diagramador.persistence.ViewStyle style) {
+        JsonNode adjustment = style.getRouteAdjustment();
+        if (adjustment == null || adjustment.isNull() || !adjustment.isObject()) {
+            return null;
+        }
+        return new RouteAdjustmentResource(
+                adjustment.path("axis").asText(null),
+                integersOf(adjustment.path("corridors")),
+                integersOf(adjustment.path("levels")));
+    }
+
+    private List<Integer> integersOf(JsonNode values) {
+        List<Integer> integers = new java.util.ArrayList<>();
+        if (values.isArray()) {
+            values.forEach(value -> integers.add(value.asInt()));
+        }
+        return integers;
     }
 
     private Project requireProject(UUID projectId) {
