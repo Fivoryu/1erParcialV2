@@ -21,6 +21,7 @@ import {
   RELATIONSHIP_KINDS,
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
+import { buildUnplacedGeometryRequests } from './unplaced-geometry';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
 import UmlRelationshipEdge, { type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
@@ -317,6 +318,10 @@ function CanvasFrame(props: UmlCanvasProps) {
   const [pendingFitId, setPendingFitId] = useState<string | null>(null);
   const pendingFitRef = useRef<string | null>(null);
   const fitFrameRef = useRef<number | null>(null);
+  // Classifiers whose shown position has already been persisted in this mount. Guarding
+  // with this ref means a rejected command cannot produce a loop and a model refetch
+  // cannot re-send the same geometry request.
+  const persistedUnplacedRef = useRef(new Set<string>());
 
   const persistResize = useCallback((classifierId: string, rectangle: NodeRectangle, zOrder: number) => {
     const payload = geometryPayload(props.model, classifierId, rectangle, zOrder);
@@ -363,6 +368,31 @@ function CanvasFrame(props: UmlCanvasProps) {
       setPendingFitId(pendingFitRef.current);
     }
   }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, updateWaypoints, setNodes, setEdges, fitView]);
+
+  // Persist the position the canvas is already showing for classifiers that arrive
+  // without saved geometry (they sit on the fallback grid). A position that exists only
+  // in the render is invisible to every other consumer, including the XMI export, so
+  // "what you see" and "what the model has" would otherwise diverge until a manual drag.
+  // Kept as its own effect, away from the model-sync effect above, and guarded by
+  // persistedUnplacedRef so it fires at most once per classifier per mount.
+  useEffect(() => {
+    const requests = buildUnplacedGeometryRequests(
+      props.model,
+      nodesRef.current,
+      persistedUnplacedRef.current,
+    );
+    if (requests.length === 0) {
+      return;
+    }
+    for (const request of requests) {
+      persistedUnplacedRef.current.add(request.targetId);
+    }
+    for (const request of requests) {
+      const key = `classifier:${request.targetId}`;
+      coalescer.schedule(key, request);
+      coalescer.flush(key);
+    }
+  }, [props.model, nodes, coalescer]);
 
   useEffect(() => {
     if (pendingFitId === null) {
