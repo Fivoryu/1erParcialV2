@@ -16,6 +16,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
+      // Pinned on purpose: the editor is documented on 5173, and drifting to 5174 when a leftover
+      // process holds the port makes the printed URL disagree with every doc, script and habit.
+      // strictPort fails loudly instead of moving to the next free port.
+      port: 5173,
+      strictPort: true,
       proxy: {
         // Every top-level API path needs its own entry here, because the editor talks to the backend with
         // relative URLs when VITE_API_BASE_URL is unset. A path that is missing silently 404s in development
