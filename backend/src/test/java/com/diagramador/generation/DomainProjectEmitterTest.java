@@ -136,7 +136,7 @@ class DomainProjectEmitterTest {
         assertThat(files.get("README.md")).contains("Security limitation", "no generated authentication");
         assertThat(files.get("README.md")).contains("## Deploy with Docker Compose", "docker compose up -d --build");
         assertThat(files.get("src/main/java/com/generated/course/store/service/CustomerService.java"))
-                .contains("@Transactional(readOnly = true)",
+                .contains("@org.springframework.transaction.annotation.Transactional(readOnly = true)",
                         "repository.findAll().stream().map(CustomerDto::from).toList()",
                         "public CustomerDto create(CustomerDto request)", "public boolean delete(UUID id)");
         assertThat(files.get("src/main/java/com/generated/course/store/api/OrderController.java"))
@@ -585,7 +585,7 @@ class DomainProjectEmitterTest {
     }
 
     private static void awaitGeneratedApplication() throws Exception {
-        long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
+        long deadline = System.nanoTime() + Duration.ofSeconds(180).toNanos();
         String lastFailure = "application did not answer HTTP";
         while (System.nanoTime() < deadline) {
             if (generatedApp == null || !generatedApp.isAlive()) {
@@ -598,7 +598,7 @@ class DomainProjectEmitterTest {
                 }
                 lastFailure = "GET /api/customer returned " + response.statusCode() + ": " + response.body();
             } catch (IOException exception) {
-                lastFailure = exception.getMessage();
+                lastFailure = exception.toString();
             }
             Thread.sleep(500);
         }

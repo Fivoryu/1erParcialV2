@@ -495,13 +495,11 @@ public final class DomainProjectEmitter {
                 .append("import java.util.Map;\n")
                 .append("import java.util.Optional;\n")
                 .append("import java.util.UUID;\n")
-                .append("import org.springframework.data.domain.PageRequest;\n")
-                .append("import org.springframework.stereotype.Service;\n")
-                .append("import org.springframework.transaction.annotation.Transactional;\n");
+                .append("import org.springframework.data.domain.PageRequest;\n");
         if (hasReferences) {
             source.append("import ").append(rootPackage).append(".api.GeneratedApiException;\n");
         }
-        source.append("\n@Service\n@Transactional(readOnly = true)\npublic class ")
+        source.append("\n@org.springframework.stereotype.Service\n@org.springframework.transaction.annotation.Transactional(readOnly = true)\npublic class ")
                 .append(plan.type.javaName()).append("Service {\n")
                 .append("    private static final Map<String, QuerySupport.Field> QUERY_FIELDS = QuerySupport.index(");
         for (int index = 0; index < queryFields.size(); index++) {
@@ -540,17 +538,17 @@ public final class DomainProjectEmitter {
                 .append("\n    public Optional<").append(dtoName).append("> findById(UUID id) {\n")
                 .append("        return repository.findById(id).map(").append(dtoName).append("::from);\n")
                 .append("    }\n")
-                .append("\n    @Transactional\n    public ").append(dtoName).append(" create(").append(dtoName)
+                .append("\n    @org.springframework.transaction.annotation.Transactional\n    public ").append(dtoName).append(" create(").append(dtoName)
                 .append(" request) {\n        ").append(plan.type.javaName()).append(" entity = new ")
                 .append(plan.type.javaName()).append("();\n        applyRequest(entity, request);\n")
                 .append("        return ").append(dtoName).append(".from(repository.saveAndFlush(entity));\n    }\n")
-                .append("\n    @Transactional\n    public Optional<").append(dtoName).append("> update(UUID id, ")
+                .append("\n    @org.springframework.transaction.annotation.Transactional\n    public Optional<").append(dtoName).append("> update(UUID id, ")
                 .append(dtoName).append(" request) {\n")
                 .append("        return repository.findById(id).map(entity -> {\n")
                 .append("            applyRequest(entity, request);\n")
                 .append("            return ").append(dtoName).append(".from(repository.saveAndFlush(entity));\n")
                 .append("        });\n    }\n")
-                .append("\n    @Transactional\n    public boolean delete(UUID id) {\n")
+                .append("\n    @org.springframework.transaction.annotation.Transactional\n    public boolean delete(UUID id) {\n")
                 .append("        if (!repository.existsById(id)) {\n            return false;\n        }\n")
                 .append("        repository.deleteById(id);\n        return true;\n    }\n")
                 .append("\n    private void applyRequest(").append(plan.type.javaName()).append(" entity, ")
