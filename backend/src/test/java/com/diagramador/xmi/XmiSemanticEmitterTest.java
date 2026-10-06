@@ -275,7 +275,12 @@ class XmiSemanticEmitterTest {
         assertThat(diagramProject.hasAttribute("author")).isFalse();
         assertThat(diagramProject.hasAttribute("created")).isFalse();
         assertThat(diagramProject.hasAttribute("modified")).isFalse();
-        for (String styleBlock : List.of("style1", "style2", "swimlanes", "matrixitems")) {
+        // style1 is not invented vendor decoration: its measured value turns on EA's diagram-level feature
+        // visibility, so imported diagrams render attributes and operations on the class shapes.
+        assertThat(findDirectNoNamespace(emittedDiagram, "style1").getAttribute("value"))
+                .as("style1 carries the measured EA feature visibility keys")
+                .isEqualTo("ShowPrivate=1;ShowProtected=1;ShowPublic=1;OpParams=1;");
+        for (String styleBlock : List.of("style2", "swimlanes", "matrixitems")) {
             Element style = findDirectNoNamespace(emittedDiagram, styleBlock);
             assertThat(style.getAttributes().getLength()).as("%s has no invented vendor settings", styleBlock)
                     .isZero();
@@ -398,7 +403,6 @@ class XmiSemanticEmitterTest {
                 new XmiEmissionResult.Loss("extension_diagram_matrixitems_metadata", 1),
                 new XmiEmissionResult.Loss("extension_diagram_project_metadata", 3),
                 new XmiEmissionResult.Loss("extension_diagram_properties_metadata", 1),
-                new XmiEmissionResult.Loss("extension_diagram_style1_metadata", 1),
                 new XmiEmissionResult.Loss("extension_diagram_style2_metadata", 1),
                 new XmiEmissionResult.Loss("extension_diagram_swimlanes_metadata", 1),
                 new XmiEmissionResult.Loss("extension_element_vendor_metadata", 4),

@@ -2055,3 +2055,91 @@ operaciones hace caer la prueba con `Expected size: 11 but was: 0`, y el archivo
 commit— y las **otras cinco quedan declaradas por el escritor, no re-medidas**. El arnés de colaboración del par
 **no** se volvió a correr: el diff son dos archivos del lector y su prueba, y ningún camino de concesión, presencia
 o chat cambia. Y la reparación de `concurrency` no se hizo.
+
+## 16. Unidad XCE — los compartimentos del diagrama: el `<style1>` no era decoración
+
+**Origen:** reporte del usuario con captura (`pi-clipboard-68d348f4-0d42-4406-91a7-17f4bcb3633f.png`): «Al exportar de la app y
+luego importar a EA, el diagrama se dibuja bien, pero no se ven los atributos». Unidad documentada en
+`odd/tasks/xmi-compartimentos-ea.md`.
+
+**Cómo se midió, sin abrir la GUI.** COM de 32 bits (`SysWOW64\WindowsPowerShell\v1.0\powershell.exe`) sobre **copias**
+de `EABase.eapx`; la instancia del usuario (`sw1_p2`, identificada por `MainWindowTitle`) nunca se tocó. El pipeline
+quedó como skill operativa: `C:\Users\HP\.pi\agent\skills\enterprise-architect-headless\`.
+
+### 16.1 La medición que separa semántica de dibujo
+
+| # | Medición | Resultado |
+| --- | --- | --- |
+| M1 | Importar `backend/target/xmi-sample.xml` y leer el modelo por la API | La semántica **llega**: `Feature` con `label : String [1..1]` y `nickname : String [0..1]`, `Status` con `ACTIVE` |
+| M2 | Control positivo: importar el export propio de EA (`docs/fixtures/xmi/Prueba3.xml`) y renderizarlo | **Muestra atributos**, incluidos los privados (`- correo: String`): el pipeline no es la causa |
+| M3 | Renderizar nuestra emisión (`PutDiagramImageToFile`, 3 argumentos) | Reproduce el síntoma: figuras en su geometría, **cero features** |
+| M4 | Columnas de `t_diagram` por Jet/OLEDB | Nuestro import: `AttPub=False, AttPri=False, AttPro=False`. Export propio de EA: `True/True/True` |
+| M5 | Setear `AttPub/AttPri/AttPro=True` **sin reimportar** y renderizar de nuevo | Aparecen atributos **y** operación: la causa es directa, no correlación |
+| M6 | Escribir `StyleEx`/`ExtendedStyle` **después** del import | No cambia el render: EA consume `style1` **en la importación** |
+| M7 | Emitir con `<style1 value="ShowPrivate=1;ShowProtected=1;ShowPublic=1;OpParams=1;"/>` | `AttPub/AttPri/AttPro=True/True/True` y el render muestra `- label: String = guest`, `~ nickname: String [0..1]` y `# transform(String)` |
+| M8 | Igual que M7 sin `OpParams=1` | Los parámetros de operación desaparecen: `# transform()` |
+
+**Causa raíz:** `XmiSemanticEmitter.appendExtensionDiagram` emitía `<style1/>` vacío. EA deriva de ese bloque la
+visibilidad de features del diagrama (`ShowPrivate/ShowProtected/ShowPublic` → `t_diagram.AttPri/AttPro/AttPub`); sin
+él crea el diagrama con las tres columnas en falso y **no dibuja ninguna feature**, aunque el modelo las tenga.
+
+### 16.2 La reversión, declarada
+
+Este documento sostenía dos cosas que la medición en vivo invierte. §3.4 trataba el bloque de estilo del diagrama como
+metadata de proveedor no representable, y el emisor lo declaraba como pérdida (`extension_diagram_style1_metadata`);
+la prueba del emisor incluso **afirmaba** que `style1`, `style2`, `swimlanes` y `matrixitems` no llevaran atributos
+(«has no invented vendor settings», `XmiSemanticEmitterTest.java:278-282`). Medido: `style1` no es decoración, es el
+canal que decide si el diagrama dibuja features. La reversión es de la misma forma que la de X-5 en §10.2
+—una decisión declarada como supuesto y revertida por medición viva—, y por eso queda asentada acá y no solo en el
+commit.
+
+| Decisión | Valor | Fundamento |
+| --- | --- | --- |
+| XCE-01 | Se emite `ShowPrivate=1;ShowProtected=1;ShowPublic=1;OpParams=1;` | Subconjunto **medido** suficiente (M5/M7/M8) |
+| XCE-02 | **No** se copian las 50 claves del bloque de EA | Importaría `DocSize`, `PaperSize` y `Zoom` ajenos: preferencias de página que la app no modela |
+| XCE-03 | La pérdida `extension_diagram_style1_metadata` se retira | Ya no hay nada no representado que declarar |
+| XCE-04 | `style2`, `swimlanes` y `matrixitems` siguen vacíos | Sin medición que los requiera: el render de M7 se logra sin ellos |
+
+### 16.3 El arreglo
+
+`XmiSemanticEmitter.java:62-72` (constante con la medición citada) y `:713-721` (emisión del bloque);
+`XmiSemanticEmitterTest.java:278-283` (el bloque pasa a estar pinneado por valor y el bucle de «sin inventar» cubre
+solo `style2`, `swimlanes` y `matrixitems`) y `:403` (se retira la pérdida de la lista esperada). Prueba primero:
+rojo observado antes de tocar el emisor.
+
+### 16.4 Compuertas
+
+| Compuerta | Resultado |
+| --- | --- |
+| `mvn -o -B -f backend/pom.xml -Dtest=XmiSemanticEmitterTest test` | rojo observado antes de tocar el emisor: `AssertionFailedError: [style1 carries the measured EA feature visibility keys] expected: "ShowPrivate=1;ShowProtected=1;ShowPublic=1;OpParams=1;" but was: ""` con `Tests run: 8, Failures: 1`; verde después: **8 pruebas, 0 fallos, 0 errores, 0 salteadas** |
+| `mvn -o -B -f backend/pom.xml verify` | **427 pruebas, 0 fallos, 0 errores, 0 salteadas, BUILD SUCCESS** (exit 0), corrido con el Maven de Windows (`cmd.exe /c "mvn -o -B -f backend/pom.xml verify"`) porque **WSL no tiene JDK** en esta máquina. La línea base que cita §15 era 355: esta rama tiene 72 pruebas más, así que la comparación honesta es contra el estado anterior de la misma rama, no contra aquel número |
+| `python -m pytest tools -q` | **54 pasan** |
+| `python tools/xmi-acceptance/xmi_acceptance.py` | **18 pasan, 0 fallan**, con los dos insumos presentes (`Prueba3.xml` 91.440 bytes, `xmi-sample.xml` 19.533 bytes) y sin convertir ninguna ausencia en omisión. sha256 de la emisión medida: `c40a6927c052020047e58fc0be6cb8738d7ac87a9c3cec43e3fdaca47db1f214` |
+| Barrido de expectativas viejas | `extension_diagram_style1_metadata` **sin ocurrencias** en `backend tools`; los únicos usos de `style1` son la emisión nueva, la aserción nueva y los vocabularios del arnés y del inventario. Ninguna prueba ni arnés afirma un `style1` vacío |
+| Importación en vivo del sample regenerado | `t_diagram` pasa de `AttPub/AttPri/AttPro = False/False/False` a **`True/True/True`**, y el render muestra `- label: String = guest`, `~ nickname: String [0..1]` y `# transform(String)`. Antes: `…\ea-probe\before\diagram-20261005-160934-Default.png`. Después: `…\ea-probe\after\diagram-20261005-161828-Default.png` |
+
+### 16.5 Lo que esta unidad no mide, y se declara
+
+- **El `{bag}` de cada atributo.** Nuestros `<ownedAttribute>` omiten `isStatic/isReadOnly/isDerived/isOrdered/
+isUnique/isDerivedUnion` que EA sí escribe (`isUnique="true"` en `Prueba3.xml`); EA lee la ausencia como no-único y lo
+marca. Es un hallazgo aparte, con su propia medición: **no se arregla acá**.
+- **El resto del bloque de estilo.** No se midió si `style2` cambia alguna otra cosa del render; solo que no hace falta
+para las features (M7).
+- **Otros caminos de importación de EA** (XEA nativo, XMI 1.1/2.2). La medición es del camino XMI 2.1.
+- **La app no modela preferencias de visualización del diagrama**, así que el valor emitido es una constante medida y
+no una preferencia del usuario: si algún día se quiere exponer, es funcionalidad nueva.
+
+### 16.6 Revisión nativa
+
+Linaje **`review-2e33d09fd5542378`**: tier `medium`, una lente (`review-reliability`), 14 paths / 590 líneas, presupuesto
+de corrección 200, **aprobada al primer intento** y autoridad **quemada** (`gentle-ai.review-acknowledged/v1`), revisión
+consumida `sha256:a4d04a8bf82474d23ed763446d2a7bf83cc7709c8d12a9f545f7d4e38af6afb5`.
+
+Dos cosas que se leen mal si no se declaran. La primera: el proveedor derivó la proyección del **rango de la rama**
+(`a293c6d..HEAD`), así que la revisión cubrió también el trabajo web previo de la rama y los archivos de esta unidad
+son 2 de los 14. La segunda: el único hallazgo, **`R3-overlapping-canvas-fits`** (`WARNING`, `informational`, en
+`web/src/diagram/UmlCanvas.tsx:361`), **no es de esta unidad**; su propio cierre lo declara no bloqueante, sin
+corrección abierta, y pide tratarlo como trabajo posterior separado y nunca como motivo para repetir la revisión.
+
+Queda declarado, además, que el cierre difirió la limpieza de la vista de candidato
+(`candidate-view-cleanup-failed`): hay directorios en `.git/gentle-ai/candidate-views/` sin retirar.

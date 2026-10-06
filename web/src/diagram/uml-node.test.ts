@@ -8,6 +8,10 @@ import { UmlClassCard } from './UmlClassNode';
 import PropertiesPanel from './PropertiesPanel';
 import { formatMultiplicity } from './uml-format';
 import type { TouchedBy } from './touch-highlight';
+import {
+  isNodeMeasured,
+  unplacedClassifierIds,
+} from './UmlCanvas';
 
 const classifier: ClassifierResource = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -99,6 +103,78 @@ const modelFixture: ModelResource = {
     constraints: [],
   }],
 };
+
+describe('unplaced classifier detection', () => {
+  const withoutGeometry = { ...classifier, id: '1a1a1a1a-1a1a-4a1a-8a1a-1a1a1a1a1a1a', name: 'Fresh' };
+  const withoutGeometryToo = { ...classifier, id: '2b2b2b2b-2b2b-4b2b-8b2b-2b2b2b2b2b2b', name: 'Later' };
+
+  it('never lists a classifier that has saved geometry in the default view', () => {
+    const listed = unplacedClassifierIds(modelFixture, []);
+
+    expect(listed).not.toContain(classifier.id);
+  });
+
+  it('skips a classifier without geometry that already has a node on screen', () => {
+    const listed = unplacedClassifierIds(modelFixture, [{ id: interfaceClassifier.id }]);
+
+    expect(listed).toEqual([]);
+  });
+
+  it('lists a classifier without geometry and without a node on screen', () => {
+    expect(unplacedClassifierIds(modelFixture, [])).toEqual([interfaceClassifier.id]);
+  });
+
+  it('lists only the unplaced classifiers of a mixed model, in model order', () => {
+    const mixed = {
+      ...modelFixture,
+      classifiers: [classifier, withoutGeometry, interfaceClassifier, withoutGeometryToo],
+    };
+
+    expect(unplacedClassifierIds(mixed, [{ id: interfaceClassifier.id }]))
+      .toEqual([withoutGeometry.id, withoutGeometryToo.id]);
+  });
+
+  it('returns an empty list for an empty model', () => {
+    expect(unplacedClassifierIds({ ...modelFixture, classifiers: [] }, [])).toEqual([]);
+  });
+
+  it('treats a classifier without a previous node as unplaced when the model has no default view', () => {
+    // geometryFor depends on defaultView(model), so a viewless model can never show saved geometry:
+    // every classifier is certain to land on the index-based fallback grid. Listing it (fitting) is the
+    // safe choice, because a wrong fit only zooms out, while a missed fit hides the new class again.
+    const viewless = { ...modelFixture, views: [] };
+
+    expect(unplacedClassifierIds(viewless, [])).toEqual([classifier.id, interfaceClassifier.id]);
+  });
+});
+
+describe('isNodeMeasured gate for the deferred fitView', () => {
+  // React Flow v12 only includes nodes with measured dimensions in fitView bounds
+  // (getFitViewNodes checks n.measured.width && n.measured.height). The top-level
+  // width/height that buildFlowNodes sets from saved geometry or defaults do not
+  // count, so the gate must reject them.
+  it('rejects a node that does not exist yet', () => {
+    expect(isNodeMeasured(undefined)).toBe(false);
+  });
+
+  it('rejects a node that only has declared dimensions and no measurement', () => {
+    // `measured: undefined` satisfies tsc's weak-type check; at runtime this is exactly
+    // what an unmeasured node looks like (no measurement reported yet).
+    const declaredOnly = { id: 'fresh-node', width: 260, height: 180, measured: undefined };
+
+    expect(isNodeMeasured(declaredOnly)).toBe(false);
+    expect(isNodeMeasured({ measured: {} })).toBe(false);
+    expect(isNodeMeasured({ measured: { width: 260 } })).toBe(false);
+  });
+
+  it('accepts a node with a non-zero measured width and height', () => {
+    expect(isNodeMeasured({ measured: { width: 260, height: 180 } })).toBe(true);
+  });
+
+  it('rejects zero measured dimensions', () => {
+    expect(isNodeMeasured({ measured: { width: 0, height: 0 } })).toBe(false);
+  });
+});
 
 function renderClassifier(value: ClassifierResource, touchedBy?: TouchedBy[]): string {
   return renderToStaticMarkup(createElement(UmlClassCard, {

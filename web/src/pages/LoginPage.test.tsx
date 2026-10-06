@@ -96,7 +96,7 @@ describe('login page', () => {
   it('saves the session from a successful login response', () => {
     const response: LoginResponse = {
       token: 'opaque-session-token',
-      expiresAt: '2026-10-01T12:00:00Z',
+      expiresAt: '2999-01-01T00:00:00Z',
       user: {
         id: '22222222-2222-4222-8222-222222222222',
         username: 'diagram.user',
@@ -112,7 +112,7 @@ describe('login page', () => {
       userId: '22222222-2222-4222-8222-222222222222',
       username: 'diagram.user',
       displayName: 'Diagram User',
-      expiresAt: '2026-10-01T12:00:00Z',
+      expiresAt: '2999-01-01T00:00:00Z',
     });
   });
 });
