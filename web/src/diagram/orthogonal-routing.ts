@@ -4,6 +4,11 @@
  * Pure geometry only: no node-avoidance is promised. The route exits the source
  * rectangle on the axis of the greater center-to-center delta, crosses at the
  * midpoint of the remaining axis, and enters the target rectangle straight on.
+ *
+ * Relationship ends may carry explicit anchors (ANC-02..05): a side plus a signed
+ * offset from that side's centre. Same-axis anchor pairs keep the staircase with
+ * the endpoints pinned to the anchor points; perpendicular pairs collapse to a
+ * single forced corner (no degrees of freedom).
  */
 export interface OrthoPoint {
   x: number;
@@ -24,11 +29,140 @@ export function orthogonalWaypoints(source: OrthoRectangle, target: OrthoRectang
 
 export type OrthoAxis = 'H' | 'V';
 
-/** Persisted, auto-route-relative adjustment: K corridors and K-1 levels (ROR-02). */
+/** Side of a rectangle a relationship end attaches to (N=top, E=right, S=bottom, W=left). */
+export type AnchorSide = 'N' | 'E' | 'S' | 'W';
+
+/**
+ * A stored anchor: side plus a signed integer offset in px measured from the
+ * CENTRE of that side (positive toward +x for N/S and toward +y for E/W; ANC-02).
+ */
+export interface RelationshipAnchor {
+  side: AnchorSide;
+  offset: number;
+}
+
+/** Kept clear of the corners so the side of a border point stays unambiguous (ANC-03). */
+export const ANCHOR_CORNER_MARGIN = 12;
+
+const ANCHOR_SIDES: readonly AnchorSide[] = ['N', 'E', 'S', 'W'];
+
+function isAnchorSide(value: unknown): value is AnchorSide {
+  return typeof value === 'string' && (ANCHOR_SIDES as readonly string[]).includes(value);
+}
+
+function isValidAnchor(value: unknown): value is RelationshipAnchor {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    isAnchorSide((value as RelationshipAnchor).side) &&
+    Number.isInteger((value as RelationshipAnchor).offset)
+  );
+}
+
+/** Per-end extraction: a missing or malformed end simply means the auto side. */
+function resolveAnchorEnd(anchors: unknown, end: 'source' | 'target'): RelationshipAnchor | null {
+  if (!anchors || typeof anchors !== 'object') {
+    return null;
+  }
+  const value = (anchors as Record<string, unknown>)[end];
+  return isValidAnchor(value) ? value : null;
+}
+
+/**
+ * The side each end uses when no anchor is stored: the historical choice, i.e. the
+ * dominant axis between the two centres with the direction of travel applied.
+ */
+export function autoAnchorSide(source: OrthoRectangle, target: OrthoRectangle, end: 'source' | 'target'): AnchorSide {
+  const sourceCenter = { x: source.x + source.width / 2, y: source.y + source.height / 2 };
+  const targetCenter = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
+  const deltaX = targetCenter.x - sourceCenter.x;
+  const deltaY = targetCenter.y - sourceCenter.y;
+  const horizontal = Math.abs(deltaX) >= Math.abs(deltaY);
+  if (end === 'source') {
+    return horizontal ? (deltaX >= 0 ? 'E' : 'W') : deltaY >= 0 ? 'S' : 'N';
+  }
+  return horizontal ? (deltaX >= 0 ? 'W' : 'E') : deltaY >= 0 ? 'N' : 'S';
+}
+
+/** Clamps a raw travel-axis coordinate into the margin window of a side; a side too
+ * short to hold the margin degrades to its centre (never NaN, never a negative bound). */
+function clampToSide(raw: number, start: number, length: number): number {
+  const centre = start + length / 2;
+  const min = start + ANCHOR_CORNER_MARGIN;
+  const max = start + length - ANCHOR_CORNER_MARGIN;
+  if (max < min) {
+    return centre;
+  }
+  return Math.min(max, Math.max(min, raw));
+}
+
+/**
+ * Absolute border point for one end: the stored anchor when present and valid,
+ * otherwise the auto side's centre. Returns the effective side (which may differ
+ * from a malformed anchor's side) and the clamped point.
+ */
+export function anchorPoint(
+  rectangle: OrthoRectangle,
+  anchor: RelationshipAnchor | null | undefined,
+  autoSide: AnchorSide,
+): { side: AnchorSide; x: number; y: number } {
+  const valid = isValidAnchor(anchor);
+  const side = valid ? anchor!.side : autoSide;
+  const offset = valid ? anchor!.offset : 0;
+  switch (side) {
+    case 'N':
+      return { side, x: clampToSide(rectangle.x + rectangle.width / 2 + offset, rectangle.x, rectangle.width), y: rectangle.y };
+    case 'S':
+      return { side, x: clampToSide(rectangle.x + rectangle.width / 2 + offset, rectangle.x, rectangle.width), y: rectangle.y + rectangle.height };
+    case 'E':
+      return { side, x: rectangle.x + rectangle.width, y: clampToSide(rectangle.y + rectangle.height / 2 + offset, rectangle.y, rectangle.height) };
+    case 'W':
+      return { side, x: rectangle.x, y: clampToSide(rectangle.y + rectangle.height / 2 + offset, rectangle.y, rectangle.height) };
+  }
+}
+
+/**
+ * Nearest point of the rectangle border to a pointer position, expressed as a
+ * stored anchor with the same clamp and margin as anchorPoint (ANC-03). Total:
+ * any position yields a valid anchor; near a corner the closer side wins, which
+ * is the "slip along the side and hop to the neighbour" behaviour.
+ */
+export function projectAnchorOnBorder(rectangle: OrthoRectangle, position: OrthoPoint): RelationshipAnchor {
+  const right = rectangle.x + rectangle.width;
+  const bottom = rectangle.y + rectangle.height;
+  const within = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+  const candidates: { side: AnchorSide; x: number; y: number }[] = [
+    { side: 'N', x: within(position.x, rectangle.x, right), y: rectangle.y },
+    { side: 'E', x: right, y: within(position.y, rectangle.y, bottom) },
+    { side: 'S', x: within(position.x, rectangle.x, right), y: bottom },
+    { side: 'W', x: rectangle.x, y: within(position.y, rectangle.y, bottom) },
+  ];
+  let best = candidates[0]!;
+  let bestDistance = Math.hypot(position.x - best.x, position.y - best.y);
+  for (const candidate of candidates.slice(1)) {
+    const distance = Math.hypot(position.x - candidate.x, position.y - candidate.y);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  const raw = best.side === 'N' || best.side === 'S'
+    ? best.x - (rectangle.x + rectangle.width / 2)
+    : best.y - (rectangle.y + rectangle.height / 2);
+  const halfLength = (best.side === 'N' || best.side === 'S' ? rectangle.width : rectangle.height) / 2;
+  const bound = halfLength - ANCHOR_CORNER_MARGIN;
+  const offset = bound < 0 ? 0 : Math.min(bound, Math.max(-bound, raw));
+  return { side: best.side, offset };
+}
+
+/** Persisted, auto-route-relative adjustment: K corridors and K-1 levels (ROR-02),
+ * plus the optional relationship-end anchors (ANC-01). */
 export interface OrthoAdjustment {
   axis: OrthoAxis;
   corridors: number[];
   levels: number[];
+  /** Optional: a missing or partial value means the auto side (the side centre). */
+  anchors?: { source: RelationshipAnchor; target: RelationshipAnchor } | null;
 }
 
 export interface OrthoHandle {
@@ -54,6 +188,12 @@ export interface OrthoRoute {
   levelHandles: OrthoHandle[];
   addBendAnchor: OrthoPoint;
   ignoredAdjustment: boolean;
+  /** Whether both resolved sides share an axis (staircase) or force a single corner. */
+  pair: 'same-axis' | 'perpendicular';
+  /** Resolved absolute border point where the route leaves the source rectangle. */
+  sourceAnchor: { side: AnchorSide; x: number; y: number };
+  /** Resolved absolute border point where the route enters the target rectangle. */
+  targetAnchor: { side: AnchorSide; x: number; y: number };
 }
 
 export const DEFAULT_BEND_SPACING = 48;
@@ -147,20 +287,48 @@ export function orthogonalRoute(
   target: OrthoRectangle,
   adjustment?: OrthoAdjustment | null,
 ): OrthoRoute {
-  const sourceCenter = { x: source.x + source.width / 2, y: source.y + source.height / 2 };
-  const targetCenter = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
-  const deltaX = targetCenter.x - sourceCenter.x;
-  const deltaY = targetCenter.y - sourceCenter.y;
-  const axis: OrthoAxis = Math.abs(deltaX) >= Math.abs(deltaY) ? 'H' : 'V';
+  const resolvedSource = anchorPoint(source, resolveAnchorEnd(adjustment?.anchors, 'source'), autoAnchorSide(source, target, 'source'));
+  const resolvedTarget = anchorPoint(target, resolveAnchorEnd(adjustment?.anchors, 'target'), autoAnchorSide(source, target, 'target'));
+  const sourceVertical = resolvedSource.side === 'N' || resolvedSource.side === 'S';
+  const targetVertical = resolvedTarget.side === 'N' || resolvedTarget.side === 'S';
 
-  const uS = axis === 'H'
-    ? (deltaX >= 0 ? source.x + source.width : source.x)
-    : (deltaY >= 0 ? source.y + source.height : source.y);
-  const uT = axis === 'H'
-    ? (deltaX >= 0 ? target.x : target.x + target.width)
-    : (deltaY >= 0 ? target.y : target.y + target.height);
-  const vS = axis === 'H' ? sourceCenter.y : sourceCenter.x;
-  const vT = axis === 'H' ? targetCenter.y : targetCenter.x;
+  // Perpendicular pair (ANC-04): no orthogonal degrees of freedom, one forced
+  // corner where the two anchor lines cross. Corridors/levels never apply here.
+  if (sourceVertical !== targetVertical) {
+    const axis: OrthoAxis = sourceVertical ? 'V' : 'H';
+    const corner = {
+      x: sourceVertical ? resolvedSource.x : resolvedTarget.x,
+      y: sourceVertical ? resolvedTarget.y : resolvedSource.y,
+    };
+    const points = collapseOrthoPoints([
+      { x: resolvedSource.x, y: resolvedSource.y },
+      corner,
+      { x: resolvedTarget.x, y: resolvedTarget.y },
+    ]);
+    return {
+      axis,
+      points,
+      autoCorridor: axis === 'H' ? (resolvedSource.x + resolvedTarget.x) / 2 : (resolvedSource.y + resolvedTarget.y) / 2,
+      levelMid: axis === 'H' ? (resolvedSource.y + resolvedTarget.y) / 2 : (resolvedSource.x + resolvedTarget.x) / 2,
+      corridors: [],
+      levels: [],
+      corridorHandles: [],
+      levelHandles: [],
+      addBendAnchor: pointAtHalfArcLength(points),
+      ignoredAdjustment: adjustment != null,
+      pair: 'perpendicular',
+      sourceAnchor: resolvedSource,
+      targetAnchor: resolvedTarget,
+    };
+  }
+
+  // Same-axis pair: the staircase keeps its shape, but the endpoints come from
+  // the anchors (travel-axis coordinate for u, perpendicular coordinate for v).
+  const axis: OrthoAxis = sourceVertical ? 'V' : 'H';
+  const uS = axis === 'H' ? resolvedSource.x : resolvedSource.y;
+  const vS = axis === 'H' ? resolvedSource.y : resolvedSource.x;
+  const uT = axis === 'H' ? resolvedTarget.x : resolvedTarget.y;
+  const vT = axis === 'H' ? resolvedTarget.y : resolvedTarget.x;
 
   const autoCorridor = (uS + uT) / 2;
   const levelMid = (vS + vT) / 2;
@@ -222,6 +390,9 @@ export function orthogonalRoute(
     levelHandles,
     addBendAnchor: pointAtHalfArcLength(points),
     ignoredAdjustment: adjustment != null && !applied,
+    pair: 'same-axis',
+    sourceAnchor: resolvedSource,
+    targetAnchor: resolvedTarget,
   };
 }
 

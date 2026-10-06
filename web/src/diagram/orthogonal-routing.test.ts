@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ANCHOR_CORNER_MARGIN,
   DEFAULT_BEND_SPACING,
   ORTHO_GRID,
   addJog,
+  anchorPoint,
+  autoAnchorSide,
   defaultJogLevelOffset,
   dragOrthoHandle,
   isAdjustmentApplicable,
   orthogonalRoute,
   orthogonalWaypoints,
+  projectAnchorOnBorder,
   removeJog,
   roundedOrthogonalPath,
   roundToOrthoGrid,
@@ -241,6 +245,196 @@ describe('adjustable orthogonal route model (pure, no rendering)', () => {
       const adjusted = orthogonalRoute(a, b, { axis: 'H', corridors: [12], levels: [] });
       expect(orthogonalRoute(a, b, { axis: 'H', corridors: [12], levels: [] })).toEqual(adjusted);
     }
+  });
+});
+
+describe('relationship end anchors (pure geometry, ANC-02..05)', () => {
+  const rect = { x: 0, y: 0, width: 200, height: 100 };
+
+  it('exposes the frozen corner margin', () => {
+    expect(ANCHOR_CORNER_MARGIN).toBe(12);
+  });
+
+  it('autoAnchorSide reproduces the historical side choice exactly', () => {
+    expect(autoAnchorSide(source, alignedRight, 'source')).toBe('E');
+    expect(autoAnchorSide(source, alignedRight, 'target')).toBe('W');
+    expect(autoAnchorSide(source, alignedBelow, 'source')).toBe('S');
+    expect(autoAnchorSide(source, alignedBelow, 'target')).toBe('N');
+    expect(autoAnchorSide(source, staggeredRight, 'source')).toBe('E');
+    expect(autoAnchorSide(source, staggeredRight, 'target')).toBe('W');
+    expect(autoAnchorSide(source, { x: -300, y: 200, width: 100, height: 100 }, 'source')).toBe('W');
+    expect(autoAnchorSide(source, source, 'source')).toBe('E');
+    expect(autoAnchorSide(source, source, 'target')).toBe('W');
+  });
+
+  it('anchorPoint applies signed offsets from the side centre (ANC-02)', () => {
+    expect(anchorPoint(rect, { side: 'N', offset: 10 }, 'S')).toEqual({ side: 'N', x: 110, y: 0 });
+    expect(anchorPoint(rect, { side: 'N', offset: -10 }, 'S')).toEqual({ side: 'N', x: 90, y: 0 });
+    expect(anchorPoint(rect, { side: 'E', offset: 20 }, 'W')).toEqual({ side: 'E', x: 200, y: 70 });
+    expect(anchorPoint(rect, { side: 'W', offset: -20 }, 'E')).toEqual({ side: 'W', x: 0, y: 30 });
+    expect(anchorPoint(rect, { side: 'S', offset: 0 }, 'N')).toEqual({ side: 'S', x: 100, y: 100 });
+  });
+
+  it('anchorPoint clamps to the corner margin and degrades short sides to the centre', () => {
+    expect(anchorPoint(rect, { side: 'N', offset: 1000 }, 'S')).toEqual({ side: 'N', x: 188, y: 0 });
+    expect(anchorPoint(rect, { side: 'W', offset: -1000 }, 'E')).toEqual({ side: 'W', x: 0, y: 12 });
+    expect(anchorPoint(rect, null, 'N')).toEqual({ side: 'N', x: 100, y: 0 });
+    expect(anchorPoint(rect, undefined, 'E')).toEqual({ side: 'E', x: 200, y: 50 });
+    const thin = { x: 0, y: 0, width: 10, height: 100 }; // width < 2 * margin
+    expect(anchorPoint(thin, { side: 'N', offset: 5 }, 'S')).toEqual({ side: 'N', x: 5, y: 0 });
+    const flat = { x: 0, y: 0, width: 200, height: 8 }; // height < 2 * margin
+    expect(anchorPoint(flat, { side: 'E', offset: 4 }, 'W')).toEqual({ side: 'E', x: 200, y: 4 });
+  });
+
+  it('projectAnchorOnBorder returns the nearest side and round trips through anchorPoint', () => {
+    expect(projectAnchorOnBorder(rect, { x: 100, y: -30 })).toEqual({ side: 'N', offset: 0 });
+    expect(projectAnchorOnBorder(rect, { x: 230, y: 50 })).toEqual({ side: 'E', offset: 0 });
+    expect(projectAnchorOnBorder(rect, { x: 100, y: 130 })).toEqual({ side: 'S', offset: 0 });
+    expect(projectAnchorOnBorder(rect, { x: -30, y: 50 })).toEqual({ side: 'W', offset: 0 });
+    const inside = projectAnchorOnBorder(rect, { x: 60, y: 20 });
+    expect(inside).toEqual({ side: 'N', offset: -40 });
+    expect(anchorPoint(rect, inside, 'S')).toEqual({ side: 'N', x: 60, y: 0 });
+    const far = projectAnchorOnBorder(rect, { x: 100, y: -500 });
+    expect(far).toEqual({ side: 'N', offset: 0 });
+    const cornerish = projectAnchorOnBorder(rect, { x: 260, y: 200 });
+    expect(cornerish.side).toBe('E');
+    const back = anchorPoint(rect, cornerish, 'W');
+    expect(back.side).toBe('E');
+    expect(back.x).toBe(200);
+    expect(back.y).toBeGreaterThanOrEqual(ANCHOR_CORNER_MARGIN);
+    expect(back.y).toBeLessThanOrEqual(rect.height - ANCHOR_CORNER_MARGIN);
+  });
+
+  it('slips along a side and hops to the neighbour at the corner (ANC-03)', () => {
+    const sweep = [
+      { x: 100, y: -30 },
+      { x: 230, y: 50 },
+      { x: 100, y: 130 },
+      { x: -30, y: 50 },
+    ].map((p) => projectAnchorOnBorder(rect, p).side);
+    expect(sweep).toEqual(['N', 'E', 'S', 'W']);
+    expect(projectAnchorOnBorder(rect, { x: 230, y: -20 }).side).toBe('N');
+    expect(projectAnchorOnBorder(rect, { x: 230, y: 20 }).side).toBe('E');
+    expect(projectAnchorOnBorder(rect, { x: -30, y: -20 }).side).toBe('N');
+    expect(projectAnchorOnBorder(rect, { x: -30, y: 20 }).side).toBe('W');
+  });
+
+  it('without anchors the route stays byte-identical and reports the auto pair', () => {
+    const route = orthogonalRoute(source, alignedRight);
+    expect(route.pair).toBe('same-axis');
+    expect(route.sourceAnchor).toEqual({ side: 'E', x: 100, y: 50 });
+    expect(route.targetAnchor).toEqual({ side: 'W', x: 300, y: 50 });
+    expect(route.points).toEqual([{ x: 100, y: 50 }, { x: 300, y: 50 }]);
+    expect(orthogonalRoute(source, alignedRight, { axis: 'H', corridors: [0], levels: [], anchors: null })).toEqual(route);
+  });
+
+  it('same-axis anchors pin the endpoints and keep corridors relative (ANC-02)', () => {
+    const anchors = { source: { side: 'E' as const, offset: 25 }, target: { side: 'W' as const, offset: -25 } };
+    const route = orthogonalRoute(source, alignedRight, { axis: 'H', corridors: [0], levels: [], anchors });
+    expect(route.pair).toBe('same-axis');
+    expect(route.axis).toBe('H');
+    expect(route.sourceAnchor).toEqual({ side: 'E', x: 100, y: 75 });
+    expect(route.targetAnchor).toEqual({ side: 'W', x: 300, y: 25 });
+    expect(route.points).toEqual([
+      { x: 100, y: 75 },
+      { x: 200, y: 75 },
+      { x: 200, y: 25 },
+      { x: 300, y: 25 },
+    ]);
+    for (let i = 1; i < route.points.length; i += 1) {
+      const a = route.points[i - 1]!;
+      const b = route.points[i]!;
+      expect(a.x === b.x || a.y === b.y).toBe(true);
+      expect(a.x !== b.x || a.y !== b.y).toBe(true);
+    }
+    const shifted = orthogonalRoute(source, alignedRight, { axis: 'H', corridors: [40], levels: [], anchors });
+    expect(shifted.points).toEqual([
+      { x: 100, y: 75 },
+      { x: 240, y: 75 },
+      { x: 240, y: 25 },
+      { x: 300, y: 25 },
+    ]);
+    expect(shifted.corridors[0]! - shifted.autoCorridor).toBe(40);
+  });
+
+  it('perpendicular anchors emit a single forced corner (ANC-04)', () => {
+    const target = { x: 300, y: 200, width: 100, height: 100 };
+    const anchors = { source: { side: 'E' as const, offset: 0 }, target: { side: 'N' as const, offset: -20 } };
+    const route = orthogonalRoute(source, target, { axis: 'H', corridors: [30], levels: [], anchors });
+    expect(route.pair).toBe('perpendicular');
+    expect(route.points).toEqual([
+      { x: 100, y: 50 },
+      { x: 330, y: 50 },
+      { x: 330, y: 200 },
+    ]);
+    expect(route.corridorHandles).toEqual([]);
+    expect(route.levelHandles).toEqual([]);
+    expect(route.ignoredAdjustment).toBe(true);
+    expect(route.sourceAnchor).toEqual({ side: 'E', x: 100, y: 50 });
+    expect(route.targetAnchor).toEqual({ side: 'N', x: 330, y: 200 });
+    const flipped = orthogonalRoute(source, target, {
+      axis: 'H',
+      corridors: [30],
+      levels: [],
+      anchors: { source: { side: 'S', offset: 10 }, target: { side: 'W', offset: 0 } },
+    });
+    expect(flipped.pair).toBe('perpendicular');
+    expect(flipped.points).toEqual([
+      { x: 60, y: 100 },
+      { x: 60, y: 250 },
+      { x: 300, y: 250 },
+    ]);
+    expect(flipped.ignoredAdjustment).toBe(true);
+  });
+
+  it('ignores corridors authored on the other axis but keeps the anchors (ANC-05)', () => {
+    const target = { x: 300, y: 300, width: 100, height: 100 };
+    const anchors = { source: { side: 'N' as const, offset: 0 }, target: { side: 'S' as const, offset: 0 } };
+    const reference = orthogonalRoute(source, target, { axis: 'V', corridors: [0], levels: [], anchors });
+    const mismatched = orthogonalRoute(source, target, { axis: 'H', corridors: [10], levels: [5], anchors });
+    expect(mismatched.ignoredAdjustment).toBe(true);
+    expect(mismatched.points).toEqual(reference.points);
+    expect(mismatched.points[0]).toEqual({ x: 50, y: 0 });
+    expect(mismatched.points[mismatched.points.length - 1]).toEqual({ x: 350, y: 400 });
+  });
+
+  it('ignores malformed or partial anchors without throwing', () => {
+    const auto = orthogonalRoute(source, staggeredRight);
+    expect(orthogonalRoute(source, staggeredRight, { axis: 'H', corridors: [0], levels: [], anchors: 42 as never })).toEqual(auto);
+    expect(orthogonalRoute(source, staggeredRight, {
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: { source: null as never, target: null as never },
+    })).toEqual(auto);
+    const unknownSide = orthogonalRoute(source, staggeredRight, {
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'X' as never, offset: 0 }, target: { side: 'W', offset: 0 } },
+    });
+    expect(unknownSide.points[0]).toEqual({ x: 100, y: 50 });
+    expect(unknownSide.points[unknownSide.points.length - 1]).toEqual({ x: 300, y: 250 });
+    const nonInteger = orthogonalRoute(source, staggeredRight, {
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'E', offset: 0 }, target: { side: 'W', offset: 0.5 as never } },
+    });
+    expect(nonInteger.points[0]).toEqual({ x: 100, y: 50 });
+    expect(nonInteger.points[nonInteger.points.length - 1]).toEqual({ x: 300, y: 250 });
+    const partial = orthogonalRoute(source, staggeredRight, {
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'S', offset: 10 } } as never,
+    });
+    expect(partial.pair).toBe('perpendicular');
+    expect(partial.points).toEqual([
+      { x: 60, y: 100 },
+      { x: 60, y: 250 },
+      { x: 300, y: 250 },
+    ]);
   });
 });
 
