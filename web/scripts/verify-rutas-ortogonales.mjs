@@ -158,7 +158,7 @@ const pageFlow = `
 async function main() {
   await mkdir(OUT, { recursive: true });
   const session = await seed();
-  const { relationshipId, viewId, suffix, sourceRect, expected } = report.seed;
+  const { relationshipId, suffix, sourceRect, expected } = report.seed;
   const sourceId = (await api(`/projects/${session.projectId}/model`, { token: session.token })).classifiers
     .find((classifier) => classifier.name === 'Customer').id;
 
