@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useId, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -9,6 +9,7 @@ import {
 } from '@xyflow/react';
 import type { RelationshipEndResource, RelationshipResource } from '../api/types';
 import { orthogonalWaypoints, roundedOrthogonalPath } from './orthogonal-routing';
+import { endOrdinalForLabelSide } from './contextMenuBehavior';
 import { formatRelationshipEndLabel } from './uml-format';
 
 export type RelationshipMarker =
@@ -461,6 +462,14 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
     waypoints: Array<{ x: number; y: number }>,
     settled: boolean,
   ) => void;
+  /** Opens the relationship context menu with this end preselected (label right-click). */
+  onRelationshipContextMenu?: (
+    event: MouseEvent<HTMLDivElement>,
+    relationshipId: string,
+    endOrdinal: number,
+  ) => void;
+  /** Reports this edge's endpoint anchors so a line right-click can preselect the nearest end. */
+  onEdgeEndpointsChange?: (relationshipId: string, source: EdgePoint, target: EdgePoint) => void;
 }
 
 export type RelationshipFlowEdge = Edge<RelationshipEdgeData, 'umlRelationship'>;
@@ -488,6 +497,48 @@ export function RelationshipEndLabels({
 function RelationshipEndLabel({ end, side }: { end: RelationshipEndResource; side: 'source' | 'target' }) {
   const label = formatRelationshipEndLabel(end);
   return label ? <span className={`uml-edge-end-label uml-edge-end-label--${side}`}>{label}</span> : null;
+}
+
+/**
+ * Interactive hit area for one relationship end's rendered label. The overlay
+ * div it lives in is inert (`pointer-events: none`); this anchor opts back in
+ * so a right-click on the label opens the relationship context menu with this
+ * exact end preselected (source label = end A, target label = end B).
+ */
+export function RelationshipEndLabelAnchor({
+  side,
+  end,
+  position,
+  labelGroup = false,
+  onContextMenu,
+  children,
+}: {
+  side: 'source' | 'target';
+  end: RelationshipEndResource;
+  position: RelationshipLabelPlacement;
+  /** Flex layout for label groups sharing one position (target end + stereotype). */
+  labelGroup?: boolean;
+  onContextMenu?: ((event: MouseEvent<HTMLDivElement>, endOrdinal: number) => void) | undefined;
+  children?: ReactNode;
+}) {
+  const endOrdinal = endOrdinalForLabelSide(side);
+  return (
+    <div
+      className={`uml-edge-label-position uml-edge-label-position--end${labelGroup ? ' uml-edge-labels' : ''}`}
+      data-end-ordinal={endOrdinal}
+      onContextMenu={(event) => {
+        // The label is the anchor: this exact end is edited, and neither the
+        // browser menu nor the pane menu may take over the right click.
+        event.preventDefault();
+        event.stopPropagation();
+        onContextMenu?.(event, endOrdinal);
+      }}
+      style={{ transform: `translate(-50%, -50%) translate(${position.x}px, ${position.y}px)` }}
+    >
+      <RelationshipEndLabel end={end} side={side} />
+      {children}
+    </div>
+  );
 }
 
 const MARKER_SUFFIXES: Record<Exclude<RelationshipMarker, null>, string> = {
@@ -554,6 +605,17 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     ...waypoints,
     { x: props.targetX, y: props.targetY },
   ];
+
+  // Expose the endpoint anchors so the canvas can preselect the nearest end
+  // when the line itself is right-clicked: only this component knows the
+  // resolved sourceX/Y and targetX/Y of the rendered path.
+  useEffect(() => {
+    data.onEdgeEndpointsChange?.(
+      relationship.id,
+      { x: props.sourceX, y: props.sourceY },
+      { x: props.targetX, y: props.targetY },
+    );
+  }, [data, props.sourceX, props.sourceY, props.targetX, props.targetY, relationship.id]);
   const style = data.style ?? DEFAULT_EDGE_STYLE;
   const sourceRectangle = rectangleForInternalNode(sourceNode);
   const targetRectangle = rectangleForInternalNode(targetNode);
@@ -651,21 +713,23 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
       />
       <EdgeLabelRenderer>
         {sourceLabel && labelPlacements.source && (
-          <div
-            className="uml-edge-label-position"
-            style={{ transform: `translate(-50%, -50%) translate(${labelPlacements.source.x}px, ${labelPlacements.source.y}px)` }}
-          >
-            <RelationshipEndLabel end={orderedEnds[0]!} side="source" />
-          </div>
+          <RelationshipEndLabelAnchor
+            end={orderedEnds[0]!}
+            onContextMenu={(event, endOrdinal) => data.onRelationshipContextMenu?.(event, relationship.id, endOrdinal)}
+            position={labelPlacements.source}
+            side="source"
+          />
         )}
         {(targetLabel || markers.realizationLabelAtTarget) && labelPlacements.target && (
-          <div
-            className="uml-edge-label-position uml-edge-labels"
-            style={{ transform: `translate(-50%, -50%) translate(${labelPlacements.target.x}px, ${labelPlacements.target.y}px)` }}
+          <RelationshipEndLabelAnchor
+            end={orderedEnds[1]!}
+            labelGroup
+            onContextMenu={(event, endOrdinal) => data.onRelationshipContextMenu?.(event, relationship.id, endOrdinal)}
+            position={labelPlacements.target}
+            side="target"
           >
-            {targetLabel && <RelationshipEndLabel end={orderedEnds[1]!} side="target" />}
             {markers.realizationLabelAtTarget && <span className="uml-edge-stereotype">«realize»</span>}
-          </div>
+          </RelationshipEndLabelAnchor>
         )}
         {relationship.name && labelPlacements.name && (
           <div

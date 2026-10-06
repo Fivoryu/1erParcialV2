@@ -39,10 +39,12 @@ export function isSeparator(entry: ContextMenuEntry): entry is ContextMenuSepara
  * What was under the right click: the same selection shape the canvas already
  * uses, plus the empty pane. Attribute/operation/constraint selections cannot
  * be produced by right-clicking the canvas, so they are not menu targets.
+ * For relationships, `endOrdinal` is the end the opener preselected (1 = end A
+ * near the source anchor or its label, 2 = end B); absent when not determinable.
  */
 export type ContextMenuTarget =
   | { kind: 'classifier'; classifierId: string }
-  | { kind: 'relationship'; relationshipId: string }
+  | { kind: 'relationship'; relationshipId: string; endOrdinal?: number }
   | { kind: 'pane' };
 
 /** Menu open state held by CanvasFrame. */
@@ -62,8 +64,9 @@ export interface ContextMenuActions {
 
 /**
  * Everything the relationship submenu needs beyond the target id. `endOrdinal`
- * is the 1-based ordinal of the end being edited; T3 passes the preselected end
- * here, until then it defaults to the source end.
+ * is the 1-based ordinal of the end being edited, preselected by the opener
+ * (label right-click or nearest anchor on a line right-click); it falls back to
+ * the source end when the opener could not determine one.
  */
 export interface ContextMenuRelationshipContext {
   relationship: RelationshipResource;
@@ -74,8 +77,45 @@ export interface ContextMenuRelationshipContext {
 /** The mappable multiplicities offered by the submenu, in menu order. */
 export const CONTEXT_MENU_MULTIPLICITY_OPTIONS = ['EXACTLY_ONE', 'ZERO_OR_ONE', 'ONE_OR_MANY', 'ZERO_OR_MANY'] as const;
 
-/** Until T3 adds end preselection, the submenu edits the source end. */
+/** The end edited when the opener does not preselect one: the source end. */
 export const CONTEXT_MENU_DEFAULT_END_ORDINAL = 1;
+
+/**
+ * Which relationship end a rendered label stands for: the source end label is
+ * end A (ordinal 1) and the target end label is end B (ordinal 2).
+ */
+export function endOrdinalForLabelSide(side: 'source' | 'target'): 1 | 2 {
+  return side === 'source' ? 1 : 2;
+}
+
+/**
+ * The end the Multiplicidad submenu edits for a right-click target: the
+ * preselected end when the opener determined one, otherwise the default source
+ * end. Non-relationship targets carry no ends and always get the default.
+ */
+export function contextMenuEndOrdinal(target: ContextMenuTarget): number {
+  return target.kind === 'relationship'
+    ? target.endOrdinal ?? CONTEXT_MENU_DEFAULT_END_ORDINAL
+    : CONTEXT_MENU_DEFAULT_END_ORDINAL;
+}
+
+/**
+ * Nearest-end preselection for a right click on the relationship line. The
+ * approximation is a plain planar distance test against each endpoint anchor
+ * (squared, so no sqrt): it asks which end of the relationship the cursor is
+ * closer to and ignores the polyline shape between the anchors, which is
+ * enough to pick the end to edit. Ties — including both anchors collapsing to
+ * the same point — keep the source end, mirroring the default ordinal.
+ */
+export function nearestRelationshipEndOrdinal(
+  cursor: { x: number; y: number },
+  source: { x: number; y: number },
+  target: { x: number; y: number },
+): 1 | 2 {
+  const squaredDistance = (point: { x: number; y: number }): number =>
+    (point.x - cursor.x) ** 2 + (point.y - cursor.y) ** 2;
+  return squaredDistance(target) < squaredDistance(source) ? 2 : 1;
+}
 
 /** What activating a menu entry does; dispatch activations close the menu. */
 export type ContextMenuItemActivation =

@@ -7,14 +7,18 @@ import {
   buildContextMenuItems,
   buildMultiplicitySubmenu,
   clampMenuPosition,
+  contextMenuEndOrdinal,
   contextMenuStateFor,
+  endOrdinalForLabelSide,
   isSeparator,
   multiplicityUpdateRequest,
+  nearestRelationshipEndOrdinal,
   selectionFromTarget,
   type ContextMenuActions,
   type ContextMenuEntry,
   type ContextMenuItem,
   type ContextMenuRelationshipContext,
+  type ContextMenuTarget,
 } from './contextMenuBehavior';
 
 describe('clampMenuPosition', () => {
@@ -183,7 +187,7 @@ describe('buildContextMenuItems', () => {
     expect(multiplicity.submenu).toHaveLength(5);
   });
 
-  it('defaults the submenu to the source end (ordinal 1) until T3 preselects an end', () => {
+  it('defaults the submenu to the source end (ordinal 1) when the opener does not preselect one', () => {
     const items = buildContextMenuItems(
       { kind: 'relationship', relationshipId: 'r1' },
       actions,
@@ -191,6 +195,19 @@ describe('buildContextMenuItems', () => {
     );
     const options = multiplicityOptions([findItem(items, 'multiplicity')]);
     expect(options.filter((option) => option.checked).map((option) => option.label)).toEqual(['1']);
+  });
+
+  it('preselects end B in the submenu when the opener threads ordinal 2 through target and context', () => {
+    const items = buildContextMenuItems(
+      { kind: 'relationship', relationshipId: 'r1', endOrdinal: 2 },
+      actions,
+      relationshipContext(relationshipFixture(), 2),
+    );
+    const multiplicity = findItem(items, 'multiplicity');
+    const [header] = multiplicity.submenu ?? [];
+    expect(header?.label).toBe('Extremo B — Persona');
+    expect(multiplicityOptions([multiplicity]).filter((option) => option.checked).map((option) => option.label))
+      .toEqual(['0..*']);
   });
 
   it('offers classifier creation actions on the pane', () => {
@@ -288,6 +305,58 @@ describe('multiplicityUpdateRequest', () => {
     const relationship = relationshipFixture({ name: null });
     const payload = requestFor(relationship, 1, '0..*').payload ?? {};
     expect(payload.name).toBeNull();
+  });
+});
+
+describe('contextMenuEndOrdinal', () => {
+  it('reads the end preselected by the opener from a relationship target', () => {
+    const target: ContextMenuTarget = { kind: 'relationship', relationshipId: 'r1', endOrdinal: 2 };
+    expect(contextMenuEndOrdinal(target)).toBe(2);
+  });
+
+  it('falls back to the default source end when the opener could not determine one', () => {
+    expect(contextMenuEndOrdinal({ kind: 'relationship', relationshipId: 'r1' })).toBe(1);
+  });
+
+  it('returns the default for non-relationship targets, which carry no ends', () => {
+    expect(contextMenuEndOrdinal({ kind: 'classifier', classifierId: 'c1' })).toBe(1);
+    expect(contextMenuEndOrdinal({ kind: 'pane' })).toBe(1);
+  });
+});
+
+describe('nearestRelationshipEndOrdinal', () => {
+  const source = { x: 0, y: 0 };
+  const target = { x: 100, y: 0 };
+
+  it('picks the source end when the cursor is nearer to the source anchor', () => {
+    expect(nearestRelationshipEndOrdinal({ x: 20, y: 10 }, source, target)).toBe(1);
+  });
+
+  it('picks the target end when the cursor is nearer to the target anchor', () => {
+    expect(nearestRelationshipEndOrdinal({ x: 85, y: 5 }, source, target)).toBe(2);
+  });
+
+  it('resolves off-line cursors by planar proximity alone', () => {
+    expect(nearestRelationshipEndOrdinal({ x: 0, y: 40 }, source, target)).toBe(1);
+    expect(nearestRelationshipEndOrdinal({ x: 100, y: 40 }, source, target)).toBe(2);
+  });
+
+  it('defaults to the source end when both anchors are equidistant', () => {
+    expect(nearestRelationshipEndOrdinal({ x: 50, y: 0 }, source, target)).toBe(1);
+  });
+
+  it('defaults to the source end when both anchors collapse to the same point', () => {
+    expect(nearestRelationshipEndOrdinal({ x: 50, y: 7 }, source, source)).toBe(1);
+  });
+});
+
+describe('endOrdinalForLabelSide', () => {
+  it('maps the source end label to ordinal 1 (end A)', () => {
+    expect(endOrdinalForLabelSide('source')).toBe(1);
+  });
+
+  it('maps the target end label to ordinal 2 (end B)', () => {
+    expect(endOrdinalForLabelSide('target')).toBe(2);
   });
 });
 

@@ -22,14 +22,16 @@ import {
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
-import UmlRelationshipEdge, { type RelationshipFlowEdge } from './UmlRelationshipEdge';
+import UmlRelationshipEdge, { type EdgePoint, type RelationshipEdgeData, type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
 import ContextMenu from './ContextMenu';
 import {
   CONTEXT_MENU_DEFAULT_END_ORDINAL,
   buildContextMenuItems,
+  contextMenuEndOrdinal,
   contextMenuStateFor,
   multiplicityUpdateRequest,
+  nearestRelationshipEndOrdinal,
   selectionFromTarget,
   type ContextMenuState,
   type ContextMenuTarget,
@@ -242,6 +244,10 @@ function classifierRectangles(model: ModelResource): Map<string, NodeRectangle> 
 export function buildFlowEdges(
   model: ModelResource,
   onWaypointsChange?: NonNullable<NonNullable<RelationshipFlowEdge['data']>['onWaypointsChange']>,
+  interactionHandlers?: {
+    onRelationshipContextMenu?: RelationshipEdgeData['onRelationshipContextMenu'];
+    onEdgeEndpointsChange?: RelationshipEdgeData['onEdgeEndpointsChange'];
+  },
 ): RelationshipFlowEdge[] {
   const view = defaultView(model);
   const rectangles = classifierRectangles(model);
@@ -282,6 +288,12 @@ export function buildFlowEdges(
         waypoints,
         style,
         ...(onWaypointsChange ? { onWaypointsChange } : {}),
+        ...(interactionHandlers?.onRelationshipContextMenu
+          ? { onRelationshipContextMenu: interactionHandlers.onRelationshipContextMenu }
+          : {}),
+        ...(interactionHandlers?.onEdgeEndpointsChange
+          ? { onEdgeEndpointsChange: interactionHandlers.onEdgeEndpointsChange }
+          : {}),
       },
       selectable: true,
       deletable: false,
@@ -305,6 +317,9 @@ function CanvasFrame(props: UmlCanvasProps) {
   const [connectionDraft, setConnectionDraft] = useState<{ sourceId: string; targetId: string } | null>(null);
   const [connectionKind, setConnectionKind] = useState<RelationshipKind>('ASSOCIATION');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Latest endpoint anchors per edge, reported by UmlRelationshipEdge after each
+  // render; only the edge component knows the resolved sourceX/Y and targetX/Y.
+  const edgeEndpointsRef = useRef(new Map<string, { source: EdgePoint; target: EdgePoint }>());
   const initialNodes = useMemo(
     () => buildFlowNodes(props.model, [], props.onCommand, props.onSelect, undefined, props.touchedElements),
     [],
@@ -352,6 +367,21 @@ function CanvasFrame(props: UmlCanvasProps) {
     }
   }, [coalescer, setEdges, viewId]);
 
+  const rememberEdgeEndpoints = useCallback<NonNullable<RelationshipEdgeData['onEdgeEndpointsChange']>>(
+    (relationshipId, source, target) => {
+      edgeEndpointsRef.current.set(relationshipId, { source, target });
+    },
+    [],
+  );
+
+  const openRelationshipEndContextMenu = useCallback<NonNullable<RelationshipEdgeData['onRelationshipContextMenu']>>(
+    (event, relationshipId, endOrdinal) => {
+      // A right-clicked end label pins the menu to exactly that end.
+      openContextMenu(event, { kind: 'relationship', relationshipId, endOrdinal });
+    },
+    [props.onSelect],
+  );
+
   useEffect(() => {
     // nodesRef holds the nodes committed before this model update, i.e. exactly the
     // elements already on screen; the new classifier is not among them.
@@ -364,7 +394,10 @@ function CanvasFrame(props: UmlCanvasProps) {
       persistResize,
       props.touchedElements,
     ));
-    setEdges(buildFlowEdges(props.model, updateWaypoints));
+    setEdges(buildFlowEdges(props.model, updateWaypoints, {
+      onRelationshipContextMenu: openRelationshipEndContextMenu,
+      onEdgeEndpointsChange: rememberEdgeEndpoints,
+    }));
     if (unplaced.length > 0 && pendingFitRef.current === null) {
       // A node handed over in this render is not yet measured by React Flow, so a
       // synchronous fitView would silently drop it from the fit bounds. Record the
@@ -373,7 +406,7 @@ function CanvasFrame(props: UmlCanvasProps) {
       pendingFitRef.current = unplaced[0]!;
       setPendingFitId(pendingFitRef.current);
     }
-  }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, updateWaypoints, setNodes, setEdges, fitView]);
+  }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, updateWaypoints, setNodes, setEdges, fitView, openRelationshipEndContextMenu, rememberEdgeEndpoints]);
 
   useEffect(() => {
     if (pendingFitId === null) {
@@ -425,6 +458,7 @@ function CanvasFrame(props: UmlCanvasProps) {
     pendingFitRef.current = null;
   }, []);
 
+
   useEffect(() => () => coalescer.cancelAll(), [coalescer]);
 
   function rectangleForNode(node: ClassFlowNode): NodeRectangle {
@@ -454,6 +488,20 @@ function CanvasFrame(props: UmlCanvasProps) {
       props.onSelect(selection);
     }
     setContextMenu(contextMenuStateFor(target, { x: event.clientX, y: event.clientY }));
+  }
+
+  function nearestEndOrdinalForEdge(edgeId: string, event: { clientX: number; clientY: number }): number {
+    // Planar approximation: the edited end is whichever endpoint anchor (source
+    // vs target) sits closer to the cursor; the polyline between them is ignored.
+    const endpoints = edgeEndpointsRef.current.get(edgeId);
+    if (!endpoints) {
+      return CONTEXT_MENU_DEFAULT_END_ORDINAL;
+    }
+    return nearestRelationshipEndOrdinal(
+      screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false }),
+      endpoints.source,
+      endpoints.target,
+    );
   }
 
   function handleConnect(connection: Connection): void {
@@ -493,9 +541,11 @@ function CanvasFrame(props: UmlCanvasProps) {
   }
 
   function contextMenuItemsFor(state: ContextMenuState) {
-    // The Multiplicidad submenu is derived from the relationship's current ends;
-    // until T3 adds preselection it always edits the source end (ordinal 1).
+    // The Multiplicidad submenu edits the end the opener preselected (a
+    // right-clicked end label, or the nearest anchor for a line right-click);
+    // it falls back to the source end when none was determined.
     const target = state.target;
+    const endOrdinal = contextMenuEndOrdinal(target);
     const relationship = target.kind === 'relationship'
       ? props.model.relationships.find((candidate) => candidate.id === target.relationshipId)
       : undefined;
@@ -520,7 +570,7 @@ function CanvasFrame(props: UmlCanvasProps) {
         const relationshipId = target.relationshipId;
         const current = props.model.relationships.find((candidate) => candidate.id === relationshipId);
         const request = current
-          ? multiplicityUpdateRequest(current, CONTEXT_MENU_DEFAULT_END_ORDINAL, multiplicity)
+          ? multiplicityUpdateRequest(current, endOrdinal, multiplicity)
           : null;
         if (!request) {
           return;
@@ -532,6 +582,7 @@ function CanvasFrame(props: UmlCanvasProps) {
     }, relationship
       ? {
         relationship,
+        endOrdinal,
         classifierName: (classifierId: string) => props.model.classifiers.find((candidate) => candidate.id === classifierId)?.name,
       }
       : undefined);
@@ -623,7 +674,11 @@ function CanvasFrame(props: UmlCanvasProps) {
           onNodeDragStop={(_, node) => settleNodeGeometry(node)}
           onConnect={handleConnect}
           onEdgeClick={(_, edge) => props.onSelect({ kind: 'relationship', relationshipId: edge.id })}
-          onEdgeContextMenu={(event, edge) => openContextMenu(event, { kind: 'relationship', relationshipId: edge.id })}
+          onEdgeContextMenu={(event, edge) => openContextMenu(event, {
+            kind: 'relationship',
+            relationshipId: edge.id,
+            endOrdinal: nearestEndOrdinalForEdge(edge.id, event),
+          })}
           onPaneClick={() => props.onSelect(null)}
           onPaneContextMenu={(event) => openContextMenu(event, { kind: 'pane' })}
           snapToGrid

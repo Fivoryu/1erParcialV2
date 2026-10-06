@@ -1393,6 +1393,16 @@ h3 {
   white-space: nowrap;
 }
 
+/*
+ * Only the per-end multiplicity labels opt back into pointer events so a
+ * right-click on them opens the relationship menu with that end preselected;
+ * the rest of the overlay (name label, stereotypes) stays inert.
+ */
+.uml-edge-label-position--end {
+  pointer-events: auto;
+  cursor: context-menu;
+}
+
 .uml-edge-end-label,
 .uml-edge-stereotype,
 .uml-edge-name {
