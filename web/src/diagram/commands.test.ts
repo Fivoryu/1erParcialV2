@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApiClient } from '../api/client';
-import type { ModelResource } from '../api/types';
+import type { ModelResource, OperationEnvelope, ViewStyleResource } from '../api/types';
 import {
+  applyOptimisticCommand,
   buildClassifierCreateEnvelope,
   buildStyleSetRequest,
   mergeViewStyleUpdate,
@@ -175,5 +176,80 @@ describe('mergeViewStyleUpdate', () => {
     const merged = mergeViewStyleUpdate(viewId, targetId, impostor, {});
     expect(merged.viewId).toBe(viewId);
     expect(merged.targetId).toBe(targetId);
+  });
+});
+
+describe('applyOptimisticCommand style.set upsert', () => {
+  const styleEnvelope = (payload: Record<string, unknown>): OperationEnvelope => ({
+    operationId: '11111111-1111-4111-8111-111111111111',
+    type: 'style.set',
+    author: { userId: '22222222-2222-4222-8222-222222222222', externalSubject: 'tester' },
+    projectId: model.projectId,
+    modelId: model.id,
+    baseRevision: model.revision,
+    targets: [],
+    preconditions: [],
+    payload,
+    origin: 'MANUAL',
+    causalParentOperationId: null,
+    idempotencyKey: '33333333-3333-4333-8333-333333333333',
+  });
+  const adjustment = { axis: 'H' as const, corridors: [40], levels: [-12] };
+  const row = (over: Partial<ViewStyleResource>): ViewStyleResource => ({
+    viewId: 'view-1',
+    targetId: 'rel-1',
+    routing: 'ORTHOGONAL',
+    cornerRadius: 8,
+    strokeWidth: 3,
+    dashed: true,
+    routeAdjustment: adjustment,
+    ...over,
+  });
+  const stylePayload = (over: Record<string, unknown> = {}) => ({
+    viewId: 'view-1',
+    targetId: 'rel-1',
+    routing: 'ORTHOGONAL',
+    cornerRadius: 8,
+    strokeWidth: 3,
+    dashed: true,
+    routeAdjustment: adjustment,
+    ...over,
+  });
+
+  it('appends the row when the model has no style row for that view/target', () => {
+    const empty: ModelResource = { ...model, view_style: [] };
+    const next = applyOptimisticCommand(empty, styleEnvelope(stylePayload()));
+    expect(next.view_style).toEqual([row({})]);
+    expect(empty.view_style).toEqual([]); // no input mutation
+    expect(next.relationships).toEqual(model.relationships);
+  });
+
+  it('replaces the existing row for the same (viewId, targetId) and leaves the rest untouched', () => {
+    const otherTarget = row({ targetId: 'rel-other' });
+    const otherView = row({ viewId: 'view-2' });
+    const withRows: ModelResource = {
+      ...model,
+      view_style: [row({ routing: 'STRAIGHT', routeAdjustment: null }), otherTarget, otherView],
+    };
+    const next = applyOptimisticCommand(withRows, styleEnvelope(stylePayload()));
+    expect(next.view_style).toHaveLength(3);
+    expect(next.view_style?.[0]).toEqual(row({}));
+    expect(next.view_style?.[1]).toBe(otherTarget);
+    expect(next.view_style?.[2]).toBe(otherView);
+  });
+
+  it('applies the server defaults when the payload omits the optional fields', () => {
+    const next = applyOptimisticCommand(model, styleEnvelope({ viewId: 'view-1', targetId: 'rel-1' }));
+    expect(next.view_style).toEqual([
+      row({ routing: 'STRAIGHT', cornerRadius: 0, strokeWidth: 2, dashed: false, routeAdjustment: null }),
+    ]);
+  });
+
+  it('leaves the model unchanged when viewId or targetId is missing', () => {
+    const withRow: ModelResource = { ...model, view_style: [row({})] };
+    expect(applyOptimisticCommand(withRow, styleEnvelope({ targetId: 'rel-1' }))).toBe(withRow);
+    expect(applyOptimisticCommand(withRow, styleEnvelope({ viewId: 'view-1' }))).toBe(withRow);
+    expect(applyOptimisticCommand(withRow, styleEnvelope({}))).toBe(withRow);
+    expect(withRow.view_style).toHaveLength(1);
   });
 });
