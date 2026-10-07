@@ -24,6 +24,7 @@ import {
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildUnplacedGeometryRequests, type UnplacedGeometryAttempt } from './unplaced-geometry';
+import type { AnchorSide, RelationshipAnchor } from './orthogonal-routing';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
 import UmlRelationshipEdge, { type EdgePoint, type RelationshipEdgeData, type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
@@ -210,22 +211,39 @@ export function buildFlowNodes(
   });
 }
 
+/** ANC-06: stored anchor sides override the dominant-axis handle choice. */
+const ANCHOR_HANDLE_SIDE: Record<AnchorSide, 'top' | 'right' | 'bottom' | 'left'> = {
+  N: 'top',
+  E: 'right',
+  S: 'bottom',
+  W: 'left',
+};
+
 export function chooseHandles(
   source: NodeRectangle,
   target: NodeRectangle,
+  anchors?: { source: RelationshipAnchor; target: RelationshipAnchor } | null,
 ): { sourceHandle: string; targetHandle: string } {
   const sourceCenter = { x: source.x + source.width / 2, y: source.y + source.height / 2 };
   const targetCenter = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
   const deltaX = targetCenter.x - sourceCenter.x;
   const deltaY = targetCenter.y - sourceCenter.y;
-  if (Math.abs(deltaY) >= Math.abs(deltaX)) {
-    return deltaY >= 0
-      ? { sourceHandle: 'source-bottom', targetHandle: 'target-top' }
-      : { sourceHandle: 'source-top', targetHandle: 'target-bottom' };
-  }
-  return deltaX >= 0
-    ? { sourceHandle: 'source-right', targetHandle: 'target-left' }
-    : { sourceHandle: 'source-left', targetHandle: 'target-right' };
+  const auto = Math.abs(deltaY) >= Math.abs(deltaX)
+    ? (deltaY >= 0
+      ? { source: 'bottom', target: 'top' }
+      : { source: 'top', target: 'bottom' })
+    : (deltaX >= 0
+      ? { source: 'right', target: 'left' }
+      : { source: 'left', target: 'right' });
+  // A missing or malformed end (and an unknown side) simply keeps the auto side.
+  const sideFor = (anchor: RelationshipAnchor | undefined | null): 'top' | 'right' | 'bottom' | 'left' | null =>
+    anchor && typeof anchor.side === 'string' && anchor.side in ANCHOR_HANDLE_SIDE
+      ? ANCHOR_HANDLE_SIDE[anchor.side as AnchorSide]
+      : null;
+  return {
+    sourceHandle: `source-${sideFor(anchors?.source) ?? auto.source}`,
+    targetHandle: `target-${sideFor(anchors?.target) ?? auto.target}`,
+  };
 }
 
 function classifierRectangles(model: ModelResource): Map<string, NodeRectangle> {
@@ -265,14 +283,15 @@ export function buildFlowEdges(
     }
     const sourceRectangle = rectangles.get(sourceEnd.classifierId);
     const targetRectangle = rectangles.get(targetEnd.classifierId);
+    const styleRow = viewStyles.find((row) => row.viewId === view?.id && row.targetId === relationship.id);
+    // ANC-06: the stored anchor sides, when present, pick the connection handles too.
     const handles = sourceRectangle && targetRectangle
-      ? chooseHandles(sourceRectangle, targetRectangle)
+      ? chooseHandles(sourceRectangle, targetRectangle, styleRow?.routeAdjustment?.anchors ?? null)
       : {};
     const waypoints = view?.connector_path
       .filter((path) => path.relationshipId === relationship.id)
       .sort((left, right) => left.ordinal - right.ordinal)
       .map(({ x, y }) => ({ x, y })) ?? [];
-    const styleRow = viewStyles.find((row) => row.viewId === view?.id && row.targetId === relationship.id);
     const style = {
       routing: styleRow?.routing ?? 'STRAIGHT',
       cornerRadius: styleRow?.cornerRadius ?? 0,

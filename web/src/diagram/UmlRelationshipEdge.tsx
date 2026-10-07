@@ -12,6 +12,7 @@ import {
   ORTHO_GRID,
   addJog,
   defaultJogLevelOffset,
+  dragAnchorHandle,
   dragOrthoHandle,
   orthogonalRoute,
   removeJog,
@@ -619,6 +620,9 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
   // after the first move commits a re-render the next pointermove runs with a NEW handle
   // object and an identity check would reject it, freezing the route after a single step.
   const routeDragKey = (handle: OrthoHandle): string => `${handle.kind}:${handle.index}`;
+  // The anchor dots share the same guard ref with a distinct key namespace: one stable
+  // primitive per draggable thing, so the first committed re-render cannot freeze a drag.
+  const anchorDragKey = (end: 'source' | 'target'): string => `anchor:${end}`;
   const routeDragHandle = useRef<string | null>(null);
 
   useEffect(() => {
@@ -713,6 +717,23 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     }
     const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
     const next = dragOrthoHandle(route, adjustmentRef.current, handle, position);
+    adjustmentRef.current = next;
+    setAdjustment(next);
+    data.onRouteAdjustmentChange?.(relationship.id, next, false);
+  }
+
+  /** ANC-03: one anchor dot per end, projected onto that end's own class border. */
+  function updateAnchorHandle(
+    event: PointerEvent<HTMLButtonElement>,
+    end: 'source' | 'target',
+    rectangle: EdgeRectangle,
+  ): void {
+    // Same stable-key guard as the corridor/level handles (see updateRouteHandle).
+    if (!route || routeDragHandle.current !== anchorDragKey(end)) {
+      return;
+    }
+    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const next = dragAnchorHandle(route, adjustmentRef.current, end, position, rectangle);
     adjustmentRef.current = next;
     setAdjustment(next);
     data.onRouteAdjustmentChange?.(relationship.id, next, false);
@@ -890,6 +911,28 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
                 type="button"
               />
             ))}
+            {(['source', 'target'] as const).map((end) => {
+              const anchor = end === 'source' ? route.sourceAnchor : route.targetAnchor;
+              const rectangle = end === 'source' ? sourceRectangle : targetRectangle;
+              return (
+                <button
+                  aria-label={end === 'source' ? 'Move source end anchor' : 'Move target end anchor'}
+                  className="uml-waypoint-handle uml-anchor-handle nodrag nopan"
+                  key={`anchor-${end}`}
+                  onPointerCancel={settleRouteAdjustment}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    routeDragHandle.current = anchorDragKey(end);
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                  }}
+                  onPointerMove={(event) => updateAnchorHandle(event, end, rectangle)}
+                  onPointerUp={settleRouteAdjustment}
+                  style={{ transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)` }}
+                  type="button"
+                />
+              );
+            })}
           </>
         )}
       </EdgeLabelRenderer>

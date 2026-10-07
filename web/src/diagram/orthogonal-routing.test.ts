@@ -7,6 +7,7 @@ import {
   anchorPoint,
   autoAnchorSide,
   defaultJogLevelOffset,
+  dragAnchorHandle,
   dragOrthoHandle,
   isAdjustmentApplicable,
   orthogonalRoute,
@@ -17,6 +18,8 @@ import {
   roundToOrthoGrid,
   slideCorridor,
   slideLevel,
+  type OrthoAdjustment,
+  type OrthoRoute,
 } from './orthogonal-routing';
 
 const source = { x: 0, y: 0, width: 100, height: 100 };
@@ -435,6 +438,141 @@ describe('relationship end anchors (pure geometry, ANC-02..05)', () => {
       { x: 60, y: 250 },
       { x: 300, y: 250 },
     ]);
+  });
+});
+
+describe('anchor dot drag (pure, no rendering, ANC-03)', () => {
+  it('materializes the adjustment from null with the other end at the route side centre', () => {
+    const route = orthogonalRoute(source, alignedRight);
+    const next = dragAnchorHandle(route, null, 'source', { x: 100, y: 20 }, source);
+    expect(next).toEqual({
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: {
+        source: { side: 'E', offset: -30 },
+        target: { side: 'W', offset: 0 },
+      },
+    });
+  });
+
+  it('materializes from a perpendicular route repairing corridors to [0]', () => {
+    const perpendicular = orthogonalRoute(source, alignedBelow, {
+      axis: 'V',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'E', offset: 0 }, target: { side: 'N', offset: 0 } },
+    });
+    expect(perpendicular.pair).toBe('perpendicular');
+    expect(perpendicular.corridors).toEqual([]);
+    const next = dragAnchorHandle(perpendicular, null, 'target', { x: 70, y: 300 }, alignedBelow);
+    expect(next.axis).toBe(perpendicular.axis);
+    expect(next.corridors).toEqual([0]);
+    expect(next.levels).toEqual([]);
+    expect(next.anchors).toEqual({
+      source: { side: 'E', offset: 0 },
+      target: { side: 'N', offset: 20 },
+    });
+  });
+
+  it('the dragged end follows the projection through all four sides', () => {
+    const rectangle = { x: 0, y: 0, width: 200, height: 100 };
+    const route = orthogonalRoute(rectangle, alignedRight);
+    const cases = [
+      [{ x: 100, y: -60 }, 'N', 0],
+      [{ x: 260, y: 50 }, 'E', 0],
+      [{ x: 100, y: 160 }, 'S', 0],
+      [{ x: -60, y: 50 }, 'W', 0],
+      [{ x: 40, y: -60 }, 'N', -60],
+    ] as const;
+    for (const [position, side, offset] of cases) {
+      const next = dragAnchorHandle(route, null, 'source', position, rectangle);
+      expect(next.anchors?.source).toEqual({ side, offset });
+    }
+  });
+
+  it('keeps the other end stored and the corridors of an applicable adjustment', () => {
+    const anchors = { source: { side: 'E' as const, offset: 25 }, target: { side: 'W' as const, offset: -20 } };
+    const adjustment = { axis: 'H' as const, corridors: [40], levels: [], anchors };
+    const route = orthogonalRoute(source, alignedRight, adjustment);
+    const next = dragAnchorHandle(route, adjustment, 'source', { x: 100, y: 80 }, source);
+    expect(next.corridors).toEqual([40]);
+    expect(next.levels).toEqual([]);
+    expect(next.anchors).toEqual({
+      source: { side: 'E', offset: 30 },
+      target: { side: 'W', offset: -20 },
+    });
+  });
+
+  it('materializes the other end from the route side when it had no stored anchor', () => {
+    const adjustment = { axis: 'H' as const, corridors: [40], levels: [] };
+    const route = orthogonalRoute(source, alignedRight, adjustment);
+    const next = dragAnchorHandle(route, adjustment, 'target', { x: 300, y: 50 }, alignedRight);
+    expect(next.anchors).toEqual({
+      source: { side: 'E', offset: 0 },
+      target: { side: 'W', offset: 0 },
+    });
+  });
+
+  it('always yields a backend-valid shape (corridors >= 1, levels = corridors - 1, integer offsets)', () => {
+    const cases: Array<{ route: OrthoRoute; adjustment: OrthoAdjustment | null }> = [
+      { route: orthogonalRoute(source, alignedRight), adjustment: null },
+      {
+        route: orthogonalRoute(source, alignedBelow, {
+          axis: 'V',
+          corridors: [0],
+          levels: [],
+          anchors: { source: { side: 'E', offset: 0 }, target: { side: 'N', offset: 0 } },
+        }),
+        adjustment: null,
+      },
+      {
+        route: orthogonalRoute(source, staggeredRight),
+        adjustment: {
+          axis: 'H',
+          corridors: [24, -48],
+          levels: [12, -12],
+          anchors: { source: { side: 'E', offset: 10 }, target: { side: 'W', offset: -10 } },
+        },
+      },
+    ];
+    for (const item of cases) {
+      for (const end of ['source', 'target'] as const) {
+        const next = dragAnchorHandle(item.route, item.adjustment, end, { x: 33.7, y: 41.3 }, source);
+        expect(next.corridors.length).toBeGreaterThanOrEqual(1);
+        expect(next.levels.length).toBe(next.corridors.length - 1);
+        for (const anchor of [next.anchors!.source, next.anchors!.target]) {
+          expect(['N', 'E', 'S', 'W']).toContain(anchor.side);
+          expect(Number.isInteger(anchor.offset)).toBe(true);
+        }
+        expect(next.axis).toBe(item.route.axis);
+      }
+    }
+  });
+
+  it('never mutates the inputs', () => {
+    const deepFreeze = <T,>(value: T): T => {
+      if (value && typeof value === 'object') {
+        Object.values(value as Record<string, unknown>).forEach(deepFreeze);
+        Object.freeze(value);
+      }
+      return value;
+    };
+    const anchors = { source: { side: 'E' as const, offset: 25 }, target: { side: 'W' as const, offset: -20 } };
+    const adjustment = deepFreeze({ axis: 'H' as const, corridors: [40], levels: [], anchors });
+    const route = deepFreeze(orthogonalRoute(source, alignedRight, adjustment));
+    const snapshot = JSON.stringify({ route, adjustment });
+    let next: OrthoAdjustment | null = null;
+    expect(() => {
+      next = dragAnchorHandle(route, adjustment, 'source', { x: 100, y: 80 }, source);
+    }).not.toThrow();
+    expect(next).toEqual({
+      axis: 'H',
+      corridors: [40],
+      levels: [],
+      anchors: { source: { side: 'E', offset: 30 }, target: { side: 'W', offset: -20 } },
+    });
+    expect(JSON.stringify({ route, adjustment })).toBe(snapshot);
   });
 });
 

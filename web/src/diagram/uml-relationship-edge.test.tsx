@@ -129,6 +129,24 @@ describe('buildFlowEdges interaction threading', () => {
     expect(edge?.data?.style?.routeAdjustment).toEqual(adjustment);
   });
 
+  it('keeps threading routeAdjustment.anchors into the edge style', () => {
+    const anchors = { source: { side: 'E' as const, offset: 12 }, target: { side: 'W' as const, offset: -12 } };
+    const anchoredModel: ModelResource = {
+      ...model,
+      view_style: [{
+        viewId,
+        targetId: relationshipId,
+        routing: 'ORTHOGONAL',
+        cornerRadius: 0,
+        strokeWidth: 2,
+        dashed: false,
+        routeAdjustment: { axis: 'H', corridors: [24], levels: [], anchors },
+      }],
+    };
+    const edge = buildFlowEdges(anchoredModel).find((candidate) => candidate.id === relationshipId);
+    expect(edge?.data?.style?.routeAdjustment?.anchors).toEqual(anchors);
+  });
+
   it('defaults routeAdjustment to null when the row has none or there is no row', () => {
     const rowWithoutAdjustment: ModelResource = {
       ...model,

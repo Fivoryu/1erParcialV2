@@ -421,6 +421,52 @@ export function dragOrthoHandle(
     : slideLevel(base, handle.index, absolute, route.levelMid);
 }
 
+/**
+ * Applies one anchor-dot drag (ANC-03): the dragged end's stored anchor becomes the
+ * pointer position projected onto THAT end's own class border (projectAnchorOnBorder,
+ * so sliding along a side and hopping to the neighbour at a corner come for free),
+ * while the other end keeps its stored anchor and is otherwise materialized at the
+ * route's resolved side centre. The base follows the same rules as dragOrthoHandle:
+ * a null, other-axis, or malformed input materializes the one-corridor auto shape.
+ * The result is always backend-valid — at least one corridor and exactly
+ * corridors.length - 1 levels — so a perpendicular route (which reports corridors: [])
+ * is repaired to [0]. The offset is rounded to a whole px (ANC-02) because a fractional
+ * flow position would be rejected by the backend's strict integer validation. The
+ * inputs are never mutated.
+ */
+export function dragAnchorHandle(
+  route: OrthoRoute,
+  adjustment: OrthoAdjustment | null,
+  end: 'source' | 'target',
+  position: OrthoPoint,
+  rectangle: OrthoRectangle,
+): OrthoAdjustment {
+  const base: OrthoAdjustment = adjustment && isAdjustmentApplicable(adjustment, route.axis)
+    ? {
+      axis: adjustment.axis,
+      corridors: [...adjustment.corridors],
+      levels: [...adjustment.levels],
+      ...(adjustment.anchors
+        ? { anchors: { source: { ...adjustment.anchors.source }, target: { ...adjustment.anchors.target } } }
+        : {}),
+    }
+    : { axis: route.axis, corridors: [0], levels: [] };
+  const storedOther = adjustment?.anchors?.[end === 'source' ? 'target' : 'source'] ?? null;
+  const otherAnchor: RelationshipAnchor = isValidAnchor(storedOther)
+    ? { ...storedOther }
+    : { side: end === 'source' ? route.targetAnchor.side : route.sourceAnchor.side, offset: 0 };
+  const projected = projectAnchorOnBorder(rectangle, position);
+  const dragged: RelationshipAnchor = { side: projected.side, offset: Math.round(projected.offset) };
+  return {
+    axis: base.axis,
+    corridors: base.corridors.length >= 1 ? base.corridors : [0],
+    levels: base.corridors.length >= 1 ? base.levels : [],
+    anchors: end === 'source'
+      ? { source: dragged, target: otherAnchor }
+      : { source: otherAnchor, target: dragged },
+  };
+}
+
 /** Appends a jog (corridor + level). Null or other-axis input starts a fresh same-axis adjustment. */
 export function addJog(adjustment: OrthoAdjustment | null, axis: OrthoAxis, levelOffset = 0): OrthoAdjustment {
   if (!adjustment || adjustment.axis !== axis) {
