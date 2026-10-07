@@ -44,6 +44,32 @@ export interface RelationshipAnchor {
 /** Kept clear of the corners so the side of a border point stays unambiguous (ANC-03). */
 export const ANCHOR_CORNER_MARGIN = 12;
 
+/**
+ * How far the route leaves a side before it may turn (T5). Without this stub the route
+ * would use the anchor coordinates only and would cut straight through the classes
+ * whenever the two chosen sides do not face each other.
+ */
+export const ANCHOR_STUB = 24;
+
+/** Outward direction of a side: `N` points up, `E` right, and so on. */
+export interface AnchorNormal {
+  axis: 'x' | 'y';
+  sign: 1 | -1;
+}
+
+export function anchorNormal(side: AnchorSide): AnchorNormal {
+  switch (side) {
+    case 'N':
+      return { axis: 'y', sign: -1 };
+    case 'S':
+      return { axis: 'y', sign: 1 };
+    case 'W':
+      return { axis: 'x', sign: -1 };
+    case 'E':
+      return { axis: 'x', sign: 1 };
+  }
+}
+
 const ANCHOR_SIDES: readonly AnchorSide[] = ['N', 'E', 'S', 'W'];
 
 function isAnchorSide(value: unknown): value is AnchorSide {
@@ -224,6 +250,40 @@ export function isAdjustmentApplicable(adjustment: OrthoAdjustment | null | unde
   return [...corridors, ...levels].every((value) => Number.isInteger(value));
 }
 
+/**
+ * T5: an orthogonal route may not enter a class. A segment merely touching a border is
+ * allowed; crossing the interior is not. A vertical or horizontal segment is a degenerate
+ * box, so the perpendicular axis is tested against the OPEN interval: testing the box
+ * overlap instead would miss a line running straight through the middle of a class.
+ */
+function segmentEntersRectangle(a: OrthoPoint, b: OrthoPoint, rectangle: OrthoRectangle): boolean {
+  const left = rectangle.x;
+  const right = rectangle.x + rectangle.width;
+  const top = rectangle.y;
+  const bottom = rectangle.y + rectangle.height;
+  const xOverlap = Math.min(Math.max(a.x, b.x), right) - Math.max(Math.min(a.x, b.x), left);
+  const yOverlap = Math.min(Math.max(a.y, b.y), bottom) - Math.max(Math.min(a.y, b.y), top);
+  if (a.x === b.x) {
+    return a.x > left && a.x < right && yOverlap > 1e-9;
+  }
+  if (a.y === b.y) {
+    return a.y > top && a.y < bottom && xOverlap > 1e-9;
+  }
+  return xOverlap > 1e-9 && yOverlap > 1e-9;
+}
+
+/** True when any segment of the polyline cuts through one of the rectangles. */
+function routeEntersRectangles(points: OrthoPoint[], rectangles: OrthoRectangle[]): boolean {
+  for (let index = 1; index < points.length; index += 1) {
+    for (const rectangle of rectangles) {
+      if (segmentEntersRectangle(points[index - 1]!, points[index]!, rectangle)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Drops consecutive duplicates and interior points collinear with both neighbours. */
 function collapseOrthoPoints(points: OrthoPoint[]): OrthoPoint[] {
   const deduped: OrthoPoint[] = [];
@@ -289,27 +349,65 @@ export function orthogonalRoute(
 ): OrthoRoute {
   const resolvedSource = anchorPoint(source, resolveAnchorEnd(adjustment?.anchors, 'source'), autoAnchorSide(source, target, 'source'));
   const resolvedTarget = anchorPoint(target, resolveAnchorEnd(adjustment?.anchors, 'target'), autoAnchorSide(source, target, 'target'));
-  const sourceVertical = resolvedSource.side === 'N' || resolvedSource.side === 'S';
-  const targetVertical = resolvedTarget.side === 'N' || resolvedTarget.side === 'S';
+  const normalSource = anchorNormal(resolvedSource.side);
+  const normalTarget = anchorNormal(resolvedTarget.side);
+  const sourceVertical = normalSource.axis === 'y';
+  const targetVertical = normalTarget.axis === 'y';
 
-  // Perpendicular pair (ANC-04): no orthogonal degrees of freedom, one forced
-  // corner where the two anchor lines cross. Corridors/levels never apply here.
-  if (sourceVertical !== targetVertical) {
-    const axis: OrthoAxis = sourceVertical ? 'V' : 'H';
-    const corner = {
-      x: sourceVertical ? resolvedSource.x : resolvedTarget.x,
-      y: sourceVertical ? resolvedTarget.y : resolvedSource.y,
-    };
-    const points = collapseOrthoPoints([
-      { x: resolvedSource.x, y: resolvedSource.y },
-      corner,
-      { x: resolvedTarget.x, y: resolvedTarget.y },
-    ]);
+  // T5: the route leaves the source along its own outward normal and enters the target
+  // against its own normal. These stub points are what makes that possible; using the
+  // anchor coordinates alone cut through the classes whenever the sides did not face.
+  const stubOf = (point: { x: number; y: number }, normal: AnchorNormal) => (normal.axis === 'x'
+    ? { x: point.x + normal.sign * ANCHOR_STUB, y: point.y }
+    : { x: point.x, y: point.y + normal.sign * ANCHOR_STUB });
+  const stubSource = stubOf(resolvedSource, normalSource);
+  const stubTarget = stubOf(resolvedTarget, normalTarget);
+
+  // Both ends attached to the same point: there is no route to draw. This is the
+  // degenerate case (zero-sized or coincident rectangles) and must stay a single point
+  // instead of the closed loop the detour below would otherwise produce.
+  if (resolvedSource.x === resolvedTarget.x && resolvedSource.y === resolvedTarget.y) {
+    const collapsedAxis: OrthoAxis = sourceVertical ? 'V' : 'H';
     return {
-      axis,
+      axis: collapsedAxis,
+      points: [{ x: resolvedSource.x, y: resolvedSource.y }],
+      autoCorridor: collapsedAxis === 'H' ? resolvedSource.x : resolvedSource.y,
+      levelMid: collapsedAxis === 'H' ? resolvedSource.y : resolvedSource.x,
+      corridors: [],
+      levels: [],
+      corridorHandles: [],
+      levelHandles: [],
+      addBendAnchor: { x: resolvedSource.x, y: resolvedSource.y },
+      ignoredAdjustment: adjustment != null,
+      pair: 'same-axis',
+      sourceAnchor: resolvedSource,
+      targetAnchor: resolvedTarget,
+    };
+  }
+
+  // Perpendicular pair: two corners are topologically valid (the source may turn right
+  // after its stub, or after reaching the target's line). The first one that does not
+  // cut a class wins; corridors/levels never apply here.
+  if (sourceVertical !== targetVertical) {
+    const pairAxis: OrthoAxis = sourceVertical ? 'V' : 'H';
+    const cornerOptions = sourceVertical
+      ? [{ x: stubSource.x, y: stubTarget.y }, { x: stubTarget.x, y: stubSource.y }]
+      : [{ x: stubTarget.x, y: stubSource.y }, { x: stubSource.x, y: stubTarget.y }];
+    const sourceAnchorPoint = { x: resolvedSource.x, y: resolvedSource.y };
+    const targetAnchorPoint = { x: resolvedTarget.x, y: resolvedTarget.y };
+    const options = cornerOptions.map((corner) => collapseOrthoPoints([
+      sourceAnchorPoint,
+      stubSource,
+      corner,
+      stubTarget,
+      targetAnchorPoint,
+    ]));
+    const points = options.find((candidate) => !routeEntersRectangles(candidate, [source, target])) ?? options[0]!;
+    return {
+      axis: pairAxis,
       points,
-      autoCorridor: axis === 'H' ? (resolvedSource.x + resolvedTarget.x) / 2 : (resolvedSource.y + resolvedTarget.y) / 2,
-      levelMid: axis === 'H' ? (resolvedSource.y + resolvedTarget.y) / 2 : (resolvedSource.x + resolvedTarget.x) / 2,
+      autoCorridor: pairAxis === 'H' ? (resolvedSource.x + resolvedTarget.x) / 2 : (resolvedSource.y + resolvedTarget.y) / 2,
+      levelMid: pairAxis === 'H' ? (resolvedSource.y + resolvedTarget.y) / 2 : (resolvedSource.x + resolvedTarget.x) / 2,
       corridors: [],
       levels: [],
       corridorHandles: [],
@@ -322,33 +420,113 @@ export function orthogonalRoute(
     };
   }
 
-  // Same-axis pair: the staircase keeps its shape, but the endpoints come from
-  // the anchors (travel-axis coordinate for u, perpendicular coordinate for v).
+  // Same-axis pair: the frame travels along the normals' axis. `u` is that axis and `v`
+  // the perpendicular one; the staircase runs between the two stubs.
   const axis: OrthoAxis = sourceVertical ? 'V' : 'H';
   const uS = axis === 'H' ? resolvedSource.x : resolvedSource.y;
   const vS = axis === 'H' ? resolvedSource.y : resolvedSource.x;
   const uT = axis === 'H' ? resolvedTarget.x : resolvedTarget.y;
   const vT = axis === 'H' ? resolvedTarget.y : resolvedTarget.x;
+  const uA = axis === 'H' ? stubSource.x : stubSource.y;
+  const uB = axis === 'H' ? stubTarget.x : stubTarget.y;
 
-  const autoCorridor = (uS + uT) / 2;
-  const levelMid = (vS + vT) / 2;
+  // The crossing line must lie beyond each stub in that side's outward direction, so the
+  // route can leave and arrive without entering a class. Each positive normal sets a lower
+  // bound, each negative normal an upper bound.
+  const lowerBounds: number[] = [];
+  const upperBounds: number[] = [];
+  for (const [coordinate, sign] of [[uA, normalSource.sign], [uB, normalTarget.sign]] as const) {
+    if (sign > 0) {
+      lowerBounds.push(coordinate);
+    } else {
+      upperBounds.push(coordinate);
+    }
+  }
+  const lower = lowerBounds.length > 0 ? Math.max(...lowerBounds) : null;
+  const upper = upperBounds.length > 0 ? Math.min(...upperBounds) : null;
+
   const applied = isAdjustmentApplicable(adjustment ?? null, axis);
   const corridorOffsets = applied && adjustment ? adjustment.corridors : [0];
   const levelOffsets = applied && adjustment ? adjustment.levels : [];
-  const corridors = corridorOffsets.map((offset) => autoCorridor + offset);
-  const levels = levelOffsets.map((offset) => levelMid + offset);
-
+  const levelMid = (vS + vT) / 2;
   const toPoint = (u: number, v: number): OrthoPoint => (axis === 'H' ? { x: u, y: v } : { x: v, y: u });
 
-  const frame: OrthoPoint[] = [toPoint(uS, vS)];
-  let currentV = vS;
-  for (let i = 0; i < corridors.length; i += 1) {
-    frame.push(toPoint(corridors[i]!, currentV));
-    currentV = i < levels.length ? levels[i]! : vT;
-    frame.push(toPoint(corridors[i]!, currentV));
+  const staircaseAt = (crossingValue: number): OrthoPoint[] => {
+    const stairs = corridorOffsets.map((offset) => crossingValue + offset);
+    const steps = levelOffsets.map((offset) => levelMid + offset);
+    const frame: OrthoPoint[] = [toPoint(uS, vS), toPoint(uA, vS)];
+    let currentV = vS;
+    for (let i = 0; i < stairs.length; i += 1) {
+      frame.push(toPoint(stairs[i]!, currentV));
+      currentV = i < steps.length ? steps[i]! : vT;
+      frame.push(toPoint(stairs[i]!, currentV));
+    }
+    frame.push(toPoint(uB, vT));
+    frame.push(toPoint(uT, vT));
+    return collapseOrthoPoints(frame);
+  };
+
+  const lateralAt = (lateral: number): OrthoPoint[] => collapseOrthoPoints([
+    toPoint(uS, vS),
+    toPoint(uA, vS),
+    toPoint(uA, lateral),
+    toPoint(uB, lateral),
+    toPoint(uB, vT),
+    toPoint(uT, vT),
+  ]);
+
+  // A single crossing line exists only when the bounds do not contradict each other. Equal
+  // normals leave the crossing free beyond both stubs, so the other bound is a real second
+  // option (both sides facing right, for instance, may cross past the nearer or the farther one).
+  const crossingOptions: number[] = [];
+  if (lower !== null && upper !== null) {
+    if (lower <= upper) {
+      crossingOptions.push((lower + upper) / 2);
+    }
+  } else if (lower !== null) {
+    crossingOptions.push(lower);
+  } else if (upper !== null) {
+    crossingOptions.push(upper);
   }
-  frame.push(toPoint(uT, vT));
-  const points = collapseOrthoPoints(frame);
+  if (normalSource.sign === normalTarget.sign) {
+    const alternative = normalSource.sign > 0 ? Math.min(uA, uB) : Math.max(uA, uB);
+    if (!crossingOptions.includes(alternative)) {
+      crossingOptions.push(alternative);
+    }
+  }
+
+  const perpendicularAxisBounds = axis === 'H'
+    ? { low: Math.min(source.y, target.y), high: Math.max(source.y + source.height, target.y + target.height) }
+    : { low: Math.min(source.x, target.x), high: Math.max(source.x + source.width, target.x + target.width) };
+  const lateralLow = perpendicularAxisBounds.low - ANCHOR_STUB;
+  const lateralHigh = perpendicularAxisBounds.high + ANCHOR_STUB;
+  const lateralOrder = Math.abs((vS + vT) / 2 - lateralLow) <= Math.abs(lateralHigh - (vS + vT) / 2)
+    ? [lateralLow, lateralHigh]
+    : [lateralHigh, lateralLow];
+
+  // An adjustment the user stored is an explicit instruction, so honour it with the primary
+  // crossing: a bend they placed by hand must never be silently replaced. The exception is an
+  // adjustment that changes nothing (one corridor at offset 0, no levels): that IS the auto
+  // shape, so it goes through the safe search like any automatic route and can be rerouted
+  // around a class.
+  const trivialAdjustment = corridorOffsets.length === 1 && corridorOffsets[0] === 0
+    && levelOffsets.length === 0;
+  const primaryCrossing = crossingOptions[0] ?? null;
+  const honoured = applied && primaryCrossing !== null && !trivialAdjustment;
+  const candidates = honoured
+    ? [{ points: staircaseAt(primaryCrossing), crossing: primaryCrossing as number | null }]
+    : [
+      ...crossingOptions.map((value) => ({ points: staircaseAt(value), crossing: value as number | null })),
+      ...lateralOrder.map((lateral) => ({ points: lateralAt(lateral), crossing: null as number | null })),
+    ];
+  const chosen = candidates.find((candidate) => !routeEntersRectangles(candidate.points, [source, target]))
+    ?? candidates[0]!;
+
+  const autoCorridor = chosen.crossing ?? (uA + uB) / 2;
+  const corridors = chosen.crossing === null ? [] : corridorOffsets.map((offset) => chosen.crossing! + offset);
+  const levels = chosen.crossing === null ? [] : levelOffsets.map((offset) => levelMid + offset);
+  const points = chosen.points;
+  const adjustmentApplied = applied && chosen.crossing !== null;
 
   const corridorHandles: OrthoHandle[] = [];
   for (let i = 0; i < corridors.length; i += 1) {
@@ -389,7 +567,7 @@ export function orthogonalRoute(
     corridorHandles,
     levelHandles,
     addBendAnchor: pointAtHalfArcLength(points),
-    ignoredAdjustment: adjustment != null && !applied,
+    ignoredAdjustment: adjustment != null && !adjustmentApplied,
     pair: 'same-axis',
     sourceAnchor: resolvedSource,
     targetAnchor: resolvedTarget,

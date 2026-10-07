@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ANCHOR_CORNER_MARGIN,
+  ANCHOR_STUB,
   DEFAULT_BEND_SPACING,
   ORTHO_GRID,
   addJog,
@@ -18,7 +19,9 @@ import {
   roundToOrthoGrid,
   slideCorridor,
   slideLevel,
+  type AnchorSide,
   type OrthoAdjustment,
+  type OrthoRectangle,
   type OrthoRoute,
 } from './orthogonal-routing';
 
@@ -433,6 +436,9 @@ describe('relationship end anchors (pure geometry, ANC-02..05)', () => {
       anchors: { source: { side: 'S', offset: 10 } } as never,
     });
     expect(partial.pair).toBe('perpendicular');
+    // T5 confirmed this shape: the partial value falls back to the target's auto side, and
+    // the route leaves the source's bottom, crosses below it and enters the target's left
+    // side at its middle. The safe-candidate search keeps exactly this route.
     expect(partial.points).toEqual([
       { x: 60, y: 100 },
       { x: 60, y: 250 },
@@ -654,6 +660,134 @@ describe('orthogonal handle drag (pure, no rendering)', () => {
     expect(next.levels).toEqual([]);
     const routed = orthogonalRoute(source, staggeredBelow, next);
     expect(routed.points[1]).toEqual({ x: 50, y: 216 });
+  });
+});
+
+describe('anchored route respects the outward normal of each side (T5)', () => {
+  const origin: OrthoRectangle = { x: 0, y: 0, width: 120, height: 120 };
+  const layouts: OrthoRectangle[] = [
+    { x: 240, y: 0, width: 120, height: 120 },
+    { x: 240, y: 200, width: 120, height: 120 },
+    { x: 0, y: 240, width: 120, height: 120 },
+    { x: -240, y: 0, width: 120, height: 120 },
+    { x: 0, y: -240, width: 120, height: 120 },
+    { x: -260, y: 170, width: 120, height: 120 },
+  ];
+  const sides: AnchorSide[] = ['N', 'E', 'S', 'W'];
+
+  function strictlyInside(point: { x: number; y: number }, rect: OrthoRectangle): boolean {
+    return point.x > rect.x && point.x < rect.x + rect.width
+      && point.y > rect.y && point.y < rect.y + rect.height;
+  }
+
+  /** Counts, over the whole grid, how many side pairs cut through a class. */
+  function sweep(): { checked: number; broken: number } {
+    let checked = 0;
+    let broken = 0;
+    for (const target of layouts) {
+      for (const from of sides) {
+        for (const to of sides) {
+          checked += 1;
+          const route = orthogonalRoute(origin, target, {
+            axis: 'H',
+            corridors: [0],
+            levels: [],
+            anchors: { source: { side: from, offset: 0 }, target: { side: to, offset: 0 } },
+          });
+          let cuts = false;
+          for (let index = 1; index < route.points.length; index += 1) {
+            const previous = route.points[index - 1]!;
+            const current = route.points[index]!;
+            if (previous.x !== current.x && previous.y !== current.y) {
+              cuts = true;
+            }
+            for (let step = 1; step < 80; step += 1) {
+              const t = step / 80;
+              const sample = {
+                x: previous.x + (current.x - previous.x) * t,
+                y: previous.y + (current.y - previous.y) * t,
+              };
+              if (strictlyInside(sample, origin) || strictlyInside(sample, target)) {
+                cuts = true;
+              }
+            }
+          }
+          if (cuts) {
+            broken += 1;
+          }
+        }
+      }
+    }
+    return { checked, broken };
+  }
+
+  it('never cuts through either class, for any pair of chosen sides', () => {
+    expect(sweep()).toEqual({ checked: 96, broken: 0 });
+  });
+
+  it('pins the endpoints to the anchors for every pair', () => {
+    for (const target of layouts) {
+      for (const from of sides) {
+        for (const to of sides) {
+          const route = orthogonalRoute(origin, target, {
+            axis: 'H',
+            corridors: [0],
+            levels: [],
+            anchors: { source: { side: from, offset: 0 }, target: { side: to, offset: 0 } },
+          });
+          expect(route.points[0]).toEqual({ x: route.sourceAnchor.x, y: route.sourceAnchor.y });
+          expect(route.points[route.points.length - 1]).toEqual({
+            x: route.targetAnchor.x,
+            y: route.targetAnchor.y,
+          });
+        }
+      }
+    }
+  });
+
+  it('keeps the automatic route when the facing sides are the chosen ones', () => {
+    const target = layouts[1]!;
+    const automatic = orthogonalRoute(origin, target);
+    const anchored = orthogonalRoute(origin, target, {
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'E', offset: 0 }, target: { side: 'W', offset: 0 } },
+    });
+    expect(anchored.points).toEqual(automatic.points);
+  });
+
+  it('runs the crossing outside both classes when both sides face the same way', () => {
+    const route = orthogonalRoute(origin, layouts[1]!, {
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'N', offset: 0 }, target: { side: 'N', offset: 0 } },
+    });
+    expect(route.points).toEqual([
+      { x: 60, y: 0 },
+      { x: 60, y: -ANCHOR_STUB },
+      { x: 300, y: -ANCHOR_STUB },
+      { x: 300, y: 200 },
+    ]);
+  });
+
+  it('goes around through the nearest lateral side when the normals contradict', () => {
+    const route = orthogonalRoute(origin, layouts[4]!, {
+      axis: 'V',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'S', offset: 0 }, target: { side: 'N', offset: 0 } },
+    });
+    expect(route.points).toEqual([
+      { x: 60, y: 120 },
+      { x: 60, y: 120 + ANCHOR_STUB },
+      { x: -ANCHOR_STUB, y: 120 + ANCHOR_STUB },
+      { x: -ANCHOR_STUB, y: -240 - ANCHOR_STUB },
+      { x: 60, y: -240 - ANCHOR_STUB },
+      { x: 60, y: -240 },
+    ]);
+    expect(route.corridorHandles).toEqual([]);
   });
 });
 
