@@ -27,7 +27,7 @@ const TARGET_RECT = { x: 396, y: 160, w: 120, h: 120 }; // center 456,220
 
 const report = {
   seed: {}, zoom: null, flowToScreenCheck: null,
-  handles: {}, drag: {}, persisted: {}, bend: {}, reload: {},
+  handles: {}, drag: {}, persisted: {}, bend: {}, reload: {}, anchors: {},
   screenshots: [], steps: {}, errors: [],
 };
 
@@ -430,6 +430,139 @@ async function main() {
   }
   report.steps.step6_survivesReload = true;
   await shot('5-after-reload.png');
+
+  // ===== T4 / ANC-03 extension: drag the SOURCE end anchor to a different side =====
+
+  const anchorInfo = () => page.evaluate(() => {
+    const source = document.querySelector('[aria-label="Move source end anchor"]');
+    const target = document.querySelector('[aria-label="Move target end anchor"]');
+    return {
+      sourceRect: source ? source.getBoundingClientRect().toJSON() : null,
+      targetRect: target ? target.getBoundingClientRect().toJSON() : null,
+    };
+  });
+
+  // STEP 7: both anchor dots visible after selection; record pre-drag state.
+  const DRAGGED_SIDE = 'S'; // auto source side is E (right); the drag lands on S (bottom)
+  const anchorsVisible = await anchorInfo();
+  report.anchors.visible = anchorsVisible;
+  if (!anchorsVisible.sourceRect || !anchorsVisible.targetRect) {
+    fail(7, `anchor dots are not rendered after selection: ${JSON.stringify(anchorsVisible)}`);
+  }
+  const dBeforeAnchorDrag = afterReload.d;
+  const modelBeforeAnchorDrag = await api(`/projects/${session.projectId}/model`, { token: session.token });
+  const rowBeforeAnchorDrag = (modelBeforeAnchorDrag.view_style ?? []).find((c) => c.targetId === relationshipId);
+  report.anchors.dBeforeDrag = dBeforeAnchorDrag;
+  report.anchors.persistedBeforeDrag = rowBeforeAnchorDrag?.routeAdjustment?.anchors ?? null;
+  await page.evaluate(() => {
+    const dot = document.querySelector('[aria-label="Move source end anchor"]');
+    if (dot) dot.dataset.probeTag = 'anchor-drag-start';
+  });
+  await shot('6-anchors-visible.png');
+
+  // STEP 7 drag: E -> S in 4 chunks x 8 pointer steps, sampling `d` every chunk.
+  const startAX = anchorsVisible.sourceRect.left + anchorsVisible.sourceRect.width / 2;
+  const startAY = anchorsVisible.sourceRect.top + anchorsVisible.sourceRect.height / 2;
+  const endAFlow = { x: sourceRect.x + sourceRect.w / 2, y: sourceRect.y + sourceRect.h + 30 }; // 30 flow px below the class
+  const endAScreen = freshToScreen(endAFlow.x, endAFlow.y);
+  const CHUNKS_A = 4;
+  const STEPS_A = 8;
+  const anchorMid = [];
+  await page.mouse.move(startAX, startAY);
+  await page.mouse.down();
+  for (let chunk = 1; chunk <= CHUNKS_A; chunk += 1) {
+    const t = chunk / CHUNKS_A;
+    await page.mouse.move(startAX + (endAScreen.x - startAX) * t, startAY + (endAScreen.y - startAY) * t, { steps: STEPS_A });
+    await new Promise((r) => setTimeout(r, 60));
+    const probe = await page.evaluate(() => {
+      const tagged = document.querySelector('[data-probe-tag="anchor-drag-start"]');
+      const current = document.querySelector('[aria-label="Move source end anchor"]');
+      return { taggedStillConnected: !!tagged, taggedIsCurrent: !!tagged && tagged === current };
+    });
+    anchorMid.push({ afterChunk: chunk, d: await edgeD(), ...probe });
+    if (chunk === 2) await shot('7-anchor-mid-drag.png');
+  }
+  await page.mouse.up();
+  await new Promise((r) => setTimeout(r, 300));
+  const dAfterAnchorDrag = await edgeD();
+  report.anchors.drag = {
+    startScreen: { x: startAX, y: startAY }, endFlow: endAFlow, endScreen: endAScreen,
+    dMid: anchorMid, dAfter: dAfterAnchorDrag, chunks: CHUNKS_A, stepsPerChunk: STEPS_A,
+  };
+  if (anchorMid.length < 2 || anchorMid[0].d === dBeforeAnchorDrag) {
+    fail(7, `path did not move with the anchor: dBefore=${dBeforeAnchorDrag} dMid1=${anchorMid[0]?.d}`);
+  }
+  if (anchorMid[1].d === anchorMid[0].d) {
+    fail(7, `anchor gesture froze after the first movement: dMid1=${anchorMid[0].d} dMid2=${anchorMid[1].d}`);
+  }
+  if (dAfterAnchorDrag === dBeforeAnchorDrag) {
+    fail(7, `path unchanged across the whole anchor drag: dBefore=${dBeforeAnchorDrag} dAfter=${dAfterAnchorDrag}`);
+  }
+  report.steps.step7_anchorDragProgressive = true;
+  await shot('8-anchor-after-drag.png');
+
+  // STEP 8: anchors.source.side persisted with the dragged side; other end kept its own anchor.
+  const rowAfterAnchorDrag = await pollModel(
+    (row) => row.routeAdjustment?.anchors?.source?.side === DRAGGED_SIDE,
+    10000,
+    `routeAdjustment.anchors.source.side === '${DRAGGED_SIDE}'`,
+  );
+  report.anchors.persistedAfterDrag = rowAfterAnchorDrag.routeAdjustment;
+  const targetAnchor = rowAfterAnchorDrag.routeAdjustment?.anchors?.target ?? null;
+  if (!targetAnchor || !['N', 'E', 'S', 'W'].includes(targetAnchor.side) || targetAnchor.offset !== 0) {
+    fail(8, `the other end did not keep/materialize its own anchor: ${JSON.stringify(targetAnchor)}`);
+  }
+  report.steps.step8_anchorPersisted = true;
+
+  // STEP 9: reload, re-select (click the midpoint of the rendered first segment),
+  // and require the same `d` plus the source dot back on the dragged side.
+  await page.reload({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelector('.react-flow__node') && document.querySelector('.uml-class-card'), { timeout: 20000 }).catch(() => {});
+  await new Promise((r) => setTimeout(r, 2000));
+  const freshAnchor = await flow();
+  if (!freshAnchor.nodeRect || !freshAnchor.matrix || !freshAnchor.d) {
+    fail(9, `editor did not re-render after the anchor reload: ${JSON.stringify({ d: freshAnchor.d, hasNodeRect: !!freshAnchor.nodeRect })}`);
+  }
+  const seg = /^M\s*(-?[\d.]+)[ ,]+(-?[\d.]+)\s*L\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/.exec(freshAnchor.d);
+  if (!seg) fail(9, `cannot parse the first segment of the rendered path: d=${freshAnchor.d}`);
+  const anchorZoom = freshAnchor.matrix.a;
+  const anchorFlowToScreen = (fx, fy) => ({
+    x: freshAnchor.nodeRect.left + (fx - sourceRect.x) * anchorZoom,
+    y: freshAnchor.nodeRect.top + (fy - sourceRect.y) * anchorZoom,
+  });
+  const reselect = anchorFlowToScreen((Number(seg[1]) + Number(seg[3])) / 2, (Number(seg[2]) + Number(seg[4])) / 2);
+  await page.mouse.click(reselect.x, reselect.y);
+  await page.waitForFunction((rel) => {
+    const edge = document.querySelector(`.react-flow__edge[data-id="${rel}"]`);
+    return edge && edge.classList.contains('selected');
+  }, { timeout: 10000 }, relationshipId).catch(() => {});
+  const afterAnchorReload = await flow();
+  const dotAfterReload = await anchorInfo();
+  const dotFlow = dotAfterReload.sourceRect ? {
+    x: sourceRect.x + (dotAfterReload.sourceRect.left + dotAfterReload.sourceRect.width / 2 - freshAnchor.nodeRect.left) / anchorZoom,
+    y: sourceRect.y + (dotAfterReload.sourceRect.top + dotAfterReload.sourceRect.height / 2 - freshAnchor.nodeRect.top) / anchorZoom,
+  } : null;
+  report.anchors.reload = {
+    dAfterDrag: dAfterAnchorDrag, dAfterReload: afterAnchorReload.d,
+    matches: afterAnchorReload.d === dAfterAnchorDrag,
+    sourceDotRect: dotAfterReload.sourceRect, sourceDotFlow: dotFlow,
+    expectedSideBorderY: sourceRect.y + sourceRect.h,
+  };
+  if (!report.anchors.reload.matches) {
+    fail(9, `path after reload differs: dAfterDrag=${dAfterAnchorDrag} dAfterReload=${afterAnchorReload.d}`);
+  }
+  if (!dotFlow || Math.abs(dotFlow.y - (sourceRect.y + sourceRect.h)) > 3
+    || dotFlow.x < sourceRect.x || dotFlow.x > sourceRect.x + sourceRect.w) {
+    fail(9, `source anchor dot is not on the ${DRAGGED_SIDE} side after reload: dotFlow=${JSON.stringify(dotFlow)}`);
+  }
+  const modelAfterReload = await api(`/projects/${session.projectId}/model`, { token: session.token });
+  const rowAfterReload = (modelAfterReload.view_style ?? []).find((c) => c.targetId === relationshipId);
+  report.anchors.persistedAfterReload = rowAfterReload?.routeAdjustment?.anchors ?? null;
+  if (rowAfterReload?.routeAdjustment?.anchors?.source?.side !== DRAGGED_SIDE) {
+    fail(9, `persisted anchors lost after reload: ${JSON.stringify(report.anchors.persistedAfterReload)}`);
+  }
+  report.steps.step9_anchorSurvivesReload = true;
+  await shot('9-anchor-after-reload.png');
 
   await browser.close();
   report.steps.step1_seed = true;
