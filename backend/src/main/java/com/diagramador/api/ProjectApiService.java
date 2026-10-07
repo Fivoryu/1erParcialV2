@@ -254,7 +254,27 @@ public class ProjectApiService {
         return new RouteAdjustmentResource(
                 adjustment.path("axis").asText(null),
                 integersOf(adjustment.path("corridors")),
-                integersOf(adjustment.path("levels")));
+                integersOf(adjustment.path("levels")),
+                anchorsOf(adjustment.path("anchors")));
+    }
+
+    /** ANC-01: null-safe read of the persisted per-end route anchors. */
+    private ModelResource.RouteAnchorsResource anchorsOf(JsonNode anchors) {
+        if (anchors == null || anchors.isNull() || !anchors.isObject()) {
+            return null;
+        }
+        return new ModelResource.RouteAnchorsResource(
+                anchorOf(anchors.path("source")),
+                anchorOf(anchors.path("target")));
+    }
+
+    private ModelResource.RouteAnchorResource anchorOf(JsonNode anchor) {
+        if (anchor == null || anchor.isNull() || !anchor.isObject()) {
+            return null;
+        }
+        return new ModelResource.RouteAnchorResource(
+                anchor.path("side").asText(null),
+                anchor.path("offset").asInt(0));
     }
 
     private List<Integer> integersOf(JsonNode values) {

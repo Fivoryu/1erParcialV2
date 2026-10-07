@@ -181,6 +181,20 @@ export interface RouteAdjustmentResource {
   axis: 'H' | 'V';
   corridors: number[];
   levels: number[];
+  /** ANC-01: optional/nullable so an older backend or a fixture without the field still compiles. */
+  anchors?: RouteAnchorsResource | null;
+}
+
+/** ANC-02: one anchor end; the signed px offset is measured from the centre of the side. */
+export interface RelationshipAnchorResource {
+  side: 'N' | 'E' | 'S' | 'W';
+  offset: number;
+}
+
+/** ANC-01: the per-end anchors of the orthogonal route. */
+export interface RouteAnchorsResource {
+  source: RelationshipAnchorResource;
+  target: RelationshipAnchorResource;
 }
 
 export interface ViewStyleResource {

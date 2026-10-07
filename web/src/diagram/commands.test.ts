@@ -117,6 +117,25 @@ describe('style.set command builder', () => {
     });
   });
 
+  it('carries the anchors inside the routeAdjustment payload', () => {
+    const anchors = { source: { side: 'E' as const, offset: -24 }, target: { side: 'W' as const, offset: 12 } };
+    const request = buildStyleSetRequest({
+      viewId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      targetId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      routing: 'ORTHOGONAL',
+      cornerRadius: 0,
+      strokeWidth: 2,
+      dashed: false,
+      routeAdjustment: { axis: 'H', corridors: [0], levels: [], anchors },
+    });
+    expect(request.payload?.routeAdjustment).toEqual({
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'E', offset: -24 }, target: { side: 'W', offset: 12 } },
+    });
+  });
+
   it('carries the explicit null routeAdjustment so the panel can clear it', () => {
     const request = buildStyleSetRequest({
       viewId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
@@ -243,6 +262,37 @@ describe('applyOptimisticCommand style.set upsert', () => {
     expect(next.view_style).toEqual([
       row({ routing: 'STRAIGHT', cornerRadius: 0, strokeWidth: 2, dashed: false, routeAdjustment: null }),
     ]);
+  });
+
+  it('carries the anchors into the optimistic row on create and update', () => {
+    const anchoredAdjustment = {
+      axis: 'H' as const,
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'E' as const, offset: -24 }, target: { side: 'W' as const, offset: 12 } },
+    };
+    const payload = stylePayload({ routeAdjustment: anchoredAdjustment });
+
+    const created = applyOptimisticCommand({ ...model, view_style: [] }, styleEnvelope(payload));
+    expect(created.view_style?.[0]?.routeAdjustment?.anchors).toEqual({
+      source: { side: 'E', offset: -24 },
+      target: { side: 'W', offset: 12 },
+    });
+
+    const updated = applyOptimisticCommand(
+      { ...model, view_style: [row({ routeAdjustment: null })] },
+      styleEnvelope(payload));
+    expect(updated.view_style).toHaveLength(1);
+    expect(updated.view_style?.[0]?.routeAdjustment?.anchors).toEqual({
+      source: { side: 'E', offset: -24 },
+      target: { side: 'W', offset: 12 },
+    });
+  });
+
+  it('handles a routeAdjustment without anchors exactly as before', () => {
+    const created = applyOptimisticCommand({ ...model, view_style: [] }, styleEnvelope(stylePayload()));
+    expect(created.view_style?.[0]?.routeAdjustment).toEqual(adjustment);
+    expect(Object.hasOwn(created.view_style?.[0]?.routeAdjustment ?? {}, 'anchors')).toBe(false);
   });
 
   it('leaves the model unchanged when viewId or targetId is missing', () => {
