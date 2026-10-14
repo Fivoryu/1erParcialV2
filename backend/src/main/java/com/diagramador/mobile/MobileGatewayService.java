@@ -21,7 +21,6 @@ import com.diagramador.persistence.UmlModelRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -269,40 +268,66 @@ public class MobileGatewayService {
         return URI.create("http://" + host + ":" + port + path);
     }
     private UpstreamResponse forwardOnce(URI target, OperationRequest request) {
-        AtomicReference<InputStream> stream = new AtomicReference<>();
-        CompletableFuture<UpstreamResponse> operation = CompletableFuture.supplyAsync(() -> {
-            try {
-                HttpResponse<InputStream> response = client.send(upstreamRequest(target, request), HttpResponse.BodyHandlers.ofInputStream());
-                stream.set(response.body());
-                return new UpstreamResponse(response.statusCode(), parseBounded(response.body()));
-            } catch (IOException exception) { throw new UpstreamFailure(exception); }
-            catch (InterruptedException exception) { Thread.currentThread().interrupt(); throw new UpstreamFailure(exception); }
-        });
-        try { return operation.get(properties.getRequestTimeoutMillis(), TimeUnit.MILLISECONDS); }
-        catch (TimeoutException exception) {
-            operation.cancel(true); closeQuietly(stream.get());
+        var subscriber = new BoundedBodySubscriber(objectMapper, properties.getMaxResponseBytes());
+        CompletableFuture<HttpResponse<JsonNode>> operation;
+        try { operation = client.sendAsync(upstreamRequest(target, request), ignored -> subscriber); }
+        catch (IOException exception) { throw rejected("UPSTREAM_UNAVAILABLE", HttpStatus.BAD_GATEWAY); }
+        try {
+            var response = operation.get(properties.getRequestTimeoutMillis(), TimeUnit.MILLISECONDS);
+            return new UpstreamResponse(response.statusCode(), response.body());
+        } catch (TimeoutException exception) {
+            subscriber.cancel(); operation.cancel(true);
             throw rejected("UPSTREAM_TIMEOUT", HttpStatus.GATEWAY_TIMEOUT);
         } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt(); operation.cancel(true); closeQuietly(stream.get());
+            subscriber.cancel(); operation.cancel(true); Thread.currentThread().interrupt();
             throw rejected("UPSTREAM_TIMEOUT", HttpStatus.GATEWAY_TIMEOUT);
         } catch (ExecutionException exception) {
+            subscriber.cancel();
             Throwable cause = exception.getCause();
+            while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) cause = cause.getCause();
             if (cause instanceof ApiException apiException) throw apiException;
+            if (cause instanceof java.net.http.HttpTimeoutException) throw rejected("UPSTREAM_TIMEOUT", HttpStatus.GATEWAY_TIMEOUT);
             throw rejected("UPSTREAM_UNAVAILABLE", HttpStatus.BAD_GATEWAY);
         }
     }
-    private JsonNode parseBounded(InputStream input) throws IOException {
-        try (input; var output = new java.io.ByteArrayOutputStream()) {
-            byte[] chunk = new byte[8192]; int read;
-            while ((read = input.read(chunk)) != -1) {
-                if (output.size() + read > properties.getMaxResponseBytes()) throw rejected("UPSTREAM_RESPONSE_TOO_LARGE", HttpStatus.BAD_GATEWAY);
-                output.write(chunk, 0, read);
+
+    /** Nonblocking bounded body ownership; cancellation also fences late subscription publication. */
+    static final class BoundedBodySubscriber implements HttpResponse.BodySubscriber<JsonNode> {
+        private final ObjectMapper json;
+        private final int limit;
+        private final java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+        private final CompletableFuture<JsonNode> body = new CompletableFuture<>();
+        private final java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        private final AtomicReference<java.util.concurrent.Flow.Subscription> subscription = new AtomicReference<>();
+        BoundedBodySubscriber(ObjectMapper json, int limit) { this.json = json; this.limit = limit; }
+        public java.util.concurrent.CompletionStage<JsonNode> getBody() { return body; }
+        public void onSubscribe(java.util.concurrent.Flow.Subscription value) {
+            if (!subscription.compareAndSet(null, value) || cancelled.get()) { value.cancel(); return; }
+            value.request(1);
+        }
+        public void onNext(List<java.nio.ByteBuffer> chunks) {
+            if (cancelled.get() || body.isDone()) { cancel(); return; }
+            for (var chunk : chunks) {
+                if (chunk.remaining() > limit - output.size()) {
+                    body.completeExceptionally(rejected("UPSTREAM_RESPONSE_TOO_LARGE", HttpStatus.BAD_GATEWAY));
+                    cancelSubscription(); return;
+                }
+                byte[] bytes = new byte[chunk.remaining()]; chunk.get(bytes); output.writeBytes(bytes);
             }
-            byte[] bytes = output.toByteArray();
-            return bytes.length == 0 ? objectMapper.nullNode() : objectMapper.readTree(bytes);
+            if (!cancelled.get() && !body.isDone()) subscription.get().request(1);
+        }
+        public void onError(Throwable error) { body.completeExceptionally(error); cancelSubscription(); }
+        public void onComplete() {
+            if (body.isDone()) return;
+            try { body.complete(output.size() == 0 ? json.nullNode() : json.readTree(output.toByteArray())); }
+            catch (IOException error) { body.completeExceptionally(error); }
+        }
+        void cancel() { cancelSubscription(); body.cancel(true); }
+        private void cancelSubscription() {
+            cancelled.set(true);
+            var current = subscription.get(); if (current != null) current.cancel();
         }
     }
-    private static void closeQuietly(InputStream stream) { if (stream != null) try { stream.close(); } catch (IOException ignored) { } }
     private CurrentUser requireAuthenticatedMember(UUID projectId, boolean write) {
         CurrentUser user = users.require(); // Operators have no user identity and may not reach generated data.
         if (write) authorization.requireEditor(projectId); else authorization.requireMember(projectId);

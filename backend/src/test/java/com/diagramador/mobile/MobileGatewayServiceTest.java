@@ -69,6 +69,72 @@ class MobileGatewayServiceTest {
     @AfterAll
     static void stopUpstream() { if (upstream != null) upstream.stop(0); }
 
+    @Test
+    void timeoutBeforeBodySubscriptionCancelsLateSubscription() {
+        var subscriber = new MobileGatewayService.BoundedBodySubscriber(new ObjectMapper(), 16);
+        subscriber.cancel();
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        subscriber.onSubscribe(new java.util.concurrent.Flow.Subscription() {
+            public void request(long count) { }
+            public void cancel() { cancelled.set(true); }
+        });
+        assertThat(cancelled).isTrue();
+        assertThat(subscriber.getBody().toCompletableFuture()).isCancelled();
+    }
+
+    @Test
+    void oversizedAsyncBodyCancelsSubscriptionWithoutAccumulatingBeyondCap() {
+        var subscriber = new MobileGatewayService.BoundedBodySubscriber(new ObjectMapper(), 2);
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        subscriber.onSubscribe(new java.util.concurrent.Flow.Subscription() {
+            public void request(long count) { }
+            public void cancel() { cancelled.set(true); }
+        });
+        subscriber.onNext(java.util.List.of(java.nio.ByteBuffer.wrap(new byte[] {1, 2, 3})));
+        assertThat(cancelled).isTrue();
+        assertThat(subscriber.getBody().toCompletableFuture()).isCompletedExceptionally();
+    }
+    private static final class TimeoutSubscription implements java.util.concurrent.Flow.Subscription {
+        final AtomicInteger requests = new AtomicInteger(), cancels = new AtomicInteger();
+        public void request(long count) { requests.incrementAndGet(); }
+        public void cancel() { cancels.incrementAndGet(); }
+    }
+
+    @Test
+    void exactLimitMultipleChunksCompletesAndNextByteCancels() throws Exception {
+        var exact = new MobileGatewayService.BoundedBodySubscriber(new ObjectMapper(), 2);
+        var first = new TimeoutSubscription();
+        exact.onSubscribe(first);
+        exact.onNext(java.util.List.of(java.nio.ByteBuffer.wrap(new byte[] {'1'}),
+                java.nio.ByteBuffer.wrap(new byte[] {'2'})));
+        exact.onComplete();
+        assertThat(exact.getBody().toCompletableFuture().get().asInt()).isEqualTo(12);
+        assertThat(first.cancels).hasValue(0);
+        var over = new MobileGatewayService.BoundedBodySubscriber(new ObjectMapper(), 2);
+        var second = new TimeoutSubscription();
+        over.onSubscribe(second);
+        over.onNext(java.util.List.of(java.nio.ByteBuffer.wrap(new byte[] {'1'})));
+        over.onNext(java.util.List.of(java.nio.ByteBuffer.wrap(new byte[] {'2', '3'})));
+        assertThat(second.cancels).hasValue(1);
+        assertThat(over.getBody().toCompletableFuture()).isCompletedExceptionally();
+    }
+
+    @Test
+    void cancellationRejectsLateSubscriptionsAndBody() {
+        var subscriber = new MobileGatewayService.BoundedBodySubscriber(new ObjectMapper(), 4);
+        subscriber.cancel();
+        var first = new TimeoutSubscription();
+        var second = new TimeoutSubscription();
+        subscriber.onSubscribe(first);
+        subscriber.onSubscribe(second);
+        subscriber.onNext(java.util.List.of(java.nio.ByteBuffer.wrap(new byte[] {'1', '2'})));
+        subscriber.onComplete();
+        assertThat(first.requests).hasValue(0);
+        assertThat(second.requests).hasValue(0);
+        assertThat(first.cancels.get()).isGreaterThanOrEqualTo(1);
+        assertThat(second.cancels).hasValue(1);
+        assertThat(subscriber.getBody().toCompletableFuture()).isCancelled();
+    }
     @BeforeEach
     void setUp() {
         DeploymentRepository deployments = mock(DeploymentRepository.class);
