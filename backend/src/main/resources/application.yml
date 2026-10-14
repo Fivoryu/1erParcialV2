@@ -27,6 +27,14 @@ spring:
     locations: classpath:db/migration
 
 diagrammer:
+  mobile-gateway:
+    # Generated HTTP services currently bind all interfaces. Keep this disabled until their network is isolated
+    # from untrusted clients; the gateway is the only intended caller and never forwards platform credentials.
+    enabled: ${DIAGRAMMER_MOBILE_GATEWAY_ENABLED:false}
+    upstream-host: ${DIAGRAMMER_MOBILE_GATEWAY_UPSTREAM_HOST:127.0.0.1}
+    connect-timeout-millis: ${DIAGRAMMER_MOBILE_GATEWAY_CONNECT_TIMEOUT_MILLIS:2000}
+    request-timeout-millis: ${DIAGRAMMER_MOBILE_GATEWAY_REQUEST_TIMEOUT_MILLIS:5000}
+    max-response-bytes: ${DIAGRAMMER_MOBILE_GATEWAY_MAX_RESPONSE_BYTES:1048576}
   operator:
     # An empty value disables the operator principal, and any request shaped like an operator
     # credential then falls back to normal session resolution. No credential is ever committed,
