@@ -181,9 +181,12 @@ class ChatSessionApiTest extends AuthenticatedApiTest {
         assertThat(history.get(0).path("kind").asText()).isEqualTo("HUMAN");
         assertThat(history.get(0).path("sessionId").asText()).isEqualTo(sessionId(session).toString());
 
-        // No AI message is ever written by a human post (RN-07): every stored message stays HUMAN.
+        // No AI message is ever written by a human post (RN-07): an improper invocation would
+        // land its answer in this very session, so the count is session-scoped (the suite shares
+        // one database, so a global count would see other classes' legitimate AI answers).
         Integer aiRows = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM diagrammer.diagram_message WHERE kind = 'AI'", Integer.class);
+                "SELECT count(*) FROM diagrammer.diagram_message WHERE kind = 'AI' AND session_id = ?::uuid",
+                Integer.class, sessionId(session).toString());
         assertThat(aiRows).isZero();
     }
 

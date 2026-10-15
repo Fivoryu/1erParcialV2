@@ -38,6 +38,14 @@ public class DiagramMessage {
     @JoinColumn(name = "session_id", nullable = false)
     private ChatSession session;
 
+    /**
+     * The HUMAN question this message answers (T3/L38). Null for human messages; informational
+     * only, so the DB nulls it out if the question is ever deleted.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reply_to_message_id")
+    private DiagramMessage replyTo;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "kind", nullable = false, columnDefinition = "text")
     private MessageKind kind;
@@ -62,6 +70,20 @@ public class DiagramMessage {
         return message;
     }
 
+    /**
+     * AI answers have no human author and are linked to the question they respond to (L38).
+     */
+    public static DiagramMessage createAiAnswer(ChatSession session, DiagramMessage replyTo, String body) {
+        DiagramMessage message = new DiagramMessage();
+        message.model = session.getView().getModel();
+        message.session = session;
+        message.kind = MessageKind.AI;
+        message.replyTo = replyTo;
+        message.body = body;
+        message.createdAt = OffsetDateTime.now();
+        return message;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -80,6 +102,10 @@ public class DiagramMessage {
 
     public UserAccount getAuthor() {
         return author;
+    }
+
+    public DiagramMessage getReplyTo() {
+        return replyTo;
     }
 
     public String getBody() {

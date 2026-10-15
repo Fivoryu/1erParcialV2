@@ -6,6 +6,7 @@ import com.diagramador.api.ChatResources.MessageResource;
 import com.diagramador.domain.ChatSession;
 import com.diagramador.domain.DiagramMessage;
 import com.diagramador.domain.DiagramView;
+import com.diagramador.domain.MessageKind;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UserAccount;
 import com.diagramador.identity.CurrentUserContext;
@@ -131,6 +132,67 @@ public class ChatService {
         return postMessage(defaultSession(model), body);
     }
 
+    // ---- AI asks and answers (T3/L38) ----
+
+    /**
+     * Validates an ask target without posting anything: the session must belong to the project
+     * (404 otherwise, CA-06) and the referenced message must be a HUMAN message of that very
+     * session (400 otherwise). Runs in the request thread, so member authorization inside
+     * requireSessionInProject applies.
+     */
+    @Transactional(readOnly = true)
+    public void requireAskTarget(UUID projectId, UUID sessionId, UUID messageId) {
+        ChatSession session = requireSessionInProject(projectId, sessionId);
+        DiagramMessage message = messageRepository.findById(messageId)
+                .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "NOT_FOUND",
+                        "The message was not found for this session."));
+        if (!message.getSession().getId().equals(session.getId())
+                || message.getKind() != MessageKind.HUMAN) {
+            throw error(HttpStatus.BAD_REQUEST, "INVALID_PAYLOAD",
+                    "Only a human message of this session can be asked to the assistant.");
+        }
+    }
+
+    /**
+     * Session-chain validation alone, for endpoints that only need to confirm the session is
+     * reachable and belongs to the project (GET/DELETE of the pending AI request, L38).
+     */
+    @Transactional(readOnly = true)
+    public void requireAskTargetExists(UUID projectId, UUID sessionId) {
+        requireSessionInProject(projectId, sessionId);
+    }
+
+    /**
+     * Persists the AI answer on the queue worker thread. Deliberately free of member
+     * authorization: the ask was already authorized in the request thread, and the worker has no
+     * user context. The answer is an AI-kind message linked to its question (L38).
+     */
+    @Transactional
+    public MessageResource postAiAnswer(UUID sessionId, UUID replyToMessageId, String body) {
+        ChatSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(ChatService::notFoundForProject);
+        DiagramMessage question = messageRepository.findById(replyToMessageId)
+                .orElseThrow(ChatService::notFoundForProject);
+        if (!question.getSession().getId().equals(session.getId())) {
+            throw error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
+                    "The answered question does not belong to the session.");
+        }
+        DiagramMessage saved = messageRepository.saveAndFlush(
+                DiagramMessage.createAiAnswer(session, question, sanitizeBody(body)));
+        MessageResource resource = messageResource(saved);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publishMessagePosted(session, resource);
+                }
+            });
+        } else {
+            publishMessagePosted(session, resource);
+        }
+        return resource;
+    }
+
     // ---- Internals ----
 
     private MessageResource postMessage(ChatSession session, String body) {
@@ -159,9 +221,11 @@ public class ChatService {
 
     private void publishMessagePosted(ChatSession session, MessageResource resource) {
         try {
-            // The SSE channel stays project-scoped; the message resource carries its sessionId and kind.
+            // The SSE channel stays project-scoped; the payload carries the message resource plus
+            // explicit sessionId/kind so clients can filter per session (L33/L38).
             projectEventBus.publish(ProjectEvent.of("message.posted",
-                    session.getView().getModel().getProject().getId(), Map.of("message", resource)));
+                    session.getView().getModel().getProject().getId(),
+                    Map.of("message", resource, "sessionId", resource.sessionId(), "kind", resource.kind())));
         } catch (RuntimeException exception) {
             logger.warn("Failed to publish message.posted for message {}", resource.id(), exception);
             // The write is durable; delivery failure cannot undo it.
@@ -259,10 +323,11 @@ public class ChatService {
 
     private static MessageResource messageResource(DiagramMessage message) {
         UserAccount author = message.getAuthor();
+        DiagramMessage replyTo = message.getReplyTo();
         return new MessageResource(message.getId(), message.getSession().getId(), message.getKind().name(),
                 author == null ? null : author.getId(),
                 author == null ? AI_DISPLAY_NAME : author.getDisplayName(),
-                message.getBody(), message.getCreatedAt());
+                message.getBody(), message.getCreatedAt(), replyTo == null ? null : replyTo.getId());
     }
 
     private static ApiException error(HttpStatus status, String code, String message) {

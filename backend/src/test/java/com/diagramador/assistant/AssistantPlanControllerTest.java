@@ -76,7 +76,7 @@ class AssistantPlanControllerTest {
                     + "\"explanation\":\"Te explico el modelo.\"}";
         };
         AssistantPlanService planService = new AssistantPlanService(projectApiService, authorizationService, provider,
-                new AssistantPlanValidator(), objectMapper);
+                new AssistantPlanValidator(), new DiagramContextRenderer(objectMapper), objectMapper);
         AssistantPlanController controller = new AssistantPlanController(planService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .addInterceptors(new AuthenticationInterceptor(identityService, currentUserContext, OPERATOR_TOKEN))

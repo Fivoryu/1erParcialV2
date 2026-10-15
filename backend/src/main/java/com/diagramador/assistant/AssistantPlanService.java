@@ -1,10 +1,6 @@
 package com.diagramador.assistant;
 
 import com.diagramador.api.ModelResource;
-import com.diagramador.api.ModelResource.AttributeResource;
-import com.diagramador.api.ModelResource.ClassifierResource;
-import com.diagramador.api.ModelResource.OperationResource;
-import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.api.ProjectApiService;
 import com.diagramador.identity.ProjectAuthorizationService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -30,17 +26,20 @@ public class AssistantPlanService {
     private final ProjectAuthorizationService projectAuthorizationService;
     private final AiAssistantProvider provider;
     private final AssistantPlanValidator validator;
+    private final DiagramContextRenderer contextRenderer;
     private final ObjectMapper objectMapper;
 
     public AssistantPlanService(ProjectApiService projectApiService,
             ProjectAuthorizationService projectAuthorizationService,
             AiAssistantProvider provider,
             AssistantPlanValidator validator,
+            DiagramContextRenderer contextRenderer,
             ObjectMapper objectMapper) {
         this.projectApiService = projectApiService;
         this.projectAuthorizationService = projectAuthorizationService;
         this.provider = provider;
         this.validator = validator;
+        this.contextRenderer = contextRenderer;
         this.objectMapper = objectMapper;
     }
 
@@ -54,7 +53,7 @@ public class AssistantPlanService {
                     "El diagrama cambió. Revisá el modelo antes de generar un nuevo plan.");
         }
 
-        String contextJson = contextJson(model);
+        String contextJson = contextRenderer.render(model);
         String rawDraft;
         try {
             rawDraft = provider.draft(contextJson, request.utterance());
@@ -86,57 +85,6 @@ public class AssistantPlanService {
             return rejected("UNPARSEABLE_DRAFT", "El asistente no devolvió una intención válida.");
         }
         return validator.validate(intent, operations, model, question, explanation);
-    }
-
-    private String contextJson(ModelResource model) {
-        Map<String, Object> context = new LinkedHashMap<>();
-        List<Map<String, Object>> classifiers = new ArrayList<>();
-        for (ClassifierResource classifier : model.classifiers()) {
-            Map<String, Object> classifierJson = new LinkedHashMap<>();
-            classifierJson.put("name", classifier.name());
-            classifierJson.put("kind", classifier.kind() == null ? null : classifier.kind().name());
-            List<Map<String, Object>> attributes = new ArrayList<>();
-            for (AttributeResource attribute : classifier.attributes()) {
-                Map<String, Object> attributeJson = new LinkedHashMap<>();
-                attributeJson.put("name", attribute.name());
-                attributeJson.put("type", attribute.type());
-                attributes.add(attributeJson);
-            }
-            classifierJson.put("attributes", attributes);
-            List<Map<String, Object>> operations = new ArrayList<>();
-            for (OperationResource operation : classifier.operations()) {
-                Map<String, Object> operationJson = new LinkedHashMap<>();
-                operationJson.put("name", operation.name());
-                operationJson.put("returnType", operation.returnType());
-                operations.add(operationJson);
-            }
-            classifierJson.put("operations", operations);
-            classifiers.add(classifierJson);
-        }
-        context.put("classifiers", classifiers);
-
-        Map<java.util.UUID, String> classifierNames = new LinkedHashMap<>();
-        for (ClassifierResource classifier : model.classifiers()) {
-            classifierNames.put(classifier.id(), classifier.name());
-        }
-        List<Map<String, Object>> relationships = new ArrayList<>();
-        for (RelationshipResource relationship : model.relationships()) {
-            Map<String, Object> relationshipJson = new LinkedHashMap<>();
-            relationshipJson.put("kind", relationship.kind());
-            String source = relationship.ends().size() > 0
-                    ? classifierNames.get(relationship.ends().get(0).classifierId()) : null;
-            String target = relationship.ends().size() > 1
-                    ? classifierNames.get(relationship.ends().get(1).classifierId()) : null;
-            relationshipJson.put("source", source);
-            relationshipJson.put("target", target);
-            relationships.add(relationshipJson);
-        }
-        context.put("relationships", relationships);
-        try {
-            return objectMapper.writeValueAsString(context);
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("The model context could not be serialized", exception);
-        }
     }
 
     private Map<String, Object> extractJson(String raw) {

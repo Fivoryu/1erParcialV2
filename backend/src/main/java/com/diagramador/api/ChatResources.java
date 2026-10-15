@@ -22,6 +22,6 @@ public final class ChatResources {
     }
 
     public record MessageResource(UUID id, UUID sessionId, String kind, UUID authorUserId,
-            String authorDisplayName, String body, OffsetDateTime createdAt) {
+            String authorDisplayName, String body, OffsetDateTime createdAt, UUID replyTo) {
     }
 }
