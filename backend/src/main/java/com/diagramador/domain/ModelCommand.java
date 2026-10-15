@@ -73,8 +73,19 @@ public class ModelCommand {
     @Column(name = "idempotency_key", length = 128)
     private String idempotencyKey;
 
+    /**
+     * Accepted changes start as pending derived processing (T4/L41): a later task consumes them
+     * without ever invoking the LLM per change. Rejected commands are never persisted.
+     */
+    @Column(name = "knowledge_pending", nullable = false)
+    private boolean knowledgePending = true;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
+
+    public boolean isKnowledgePending() {
+        return knowledgePending;
+    }
 
     protected ModelCommand() {
     }

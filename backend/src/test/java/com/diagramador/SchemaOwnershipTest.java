@@ -52,6 +52,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("model_version", Set.of("version_id", "model_id", "revision", "parent_revision", "state_hash",
                     "validation_state", "created_by_user_id", "created_at")),
             Map.entry("model_command", Set.of("command_id", "model_id", "author_user_id", "base_revision",
+                    "knowledge_pending",
                     "result_revision", "operation", "target_type", "target_id", "payload", "origin",
                     "authorization_classification", "inverse_of_command_id", "causal_parent_operation_id",
                     "idempotency_key", "created_at")),

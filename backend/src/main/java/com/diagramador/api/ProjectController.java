@@ -7,6 +7,7 @@ import com.diagramador.validation.ModelValidationReport;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -54,6 +56,20 @@ public class ProjectController {
     @GetMapping("/{id}/model/validation")
     public ModelValidationReport getModelValidation(@PathVariable("id") UUID id) {
         return modelValidationApiService.validateModel(id);
+    }
+
+    // ---- Accepted-change log (T4/L41) ----
+
+    @GetMapping("/{id}/model/changes")
+    public List<ModelChangeResource> modelChanges(@PathVariable("id") UUID id,
+            @RequestParam(name = "sinceRevision", required = false) Long sinceRevision,
+            @RequestParam(name = "limit", required = false) Integer limit) {
+        return projectApiService.modelChanges(id, sinceRevision, limit);
+    }
+
+    @GetMapping("/{id}/model/changes/pending-count")
+    public Map<String, Long> pendingChangeCount(@PathVariable("id") UUID id) {
+        return projectApiService.pendingChangeCount(id);
     }
 
     @PostMapping(path = "/{id}/commands", consumes = MediaType.APPLICATION_JSON_VALUE)
