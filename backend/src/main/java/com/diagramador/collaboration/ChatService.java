@@ -254,6 +254,14 @@ public class ChatService {
         return view;
     }
 
+    /**
+     * Member-checked view resolution shared with sibling services (T5 memory): a view of another
+     * project is indistinguishable from a missing one (CA-06).
+     */
+    public DiagramView requireAccessibleView(UUID projectId, UUID viewId) {
+        return requireViewInProject(projectId, viewId);
+    }
+
     private ChatSession requireSessionInProject(UUID projectId, UUID sessionId) {
         UmlModel model = requireMemberModel(projectId);
         ChatSession session = sessionRepository.findById(sessionId)

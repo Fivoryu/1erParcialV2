@@ -1,8 +1,10 @@
 package com.diagramador.persistence;
 
 import com.diagramador.domain.DiagramMessage;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -25,4 +27,12 @@ public interface DiagramMessageRepository extends JpaRepository<DiagramMessage, 
     @Modifying
     @Query("DELETE FROM DiagramMessage m WHERE m.session.id = :sessionId")
     int deleteBySession_Id(@Param("sessionId") UUID sessionId);
+
+    // T5/L43: pending sources of memory extraction for one diagram, oldest first, capped by the caller.
+    List<DiagramMessage> findBySession_View_IdAndMemoryExtractedFalseOrderByCreatedAtAscIdAsc(UUID viewId,
+            Pageable pageable);
+
+    @Modifying
+    @Query("UPDATE DiagramMessage m SET m.memoryExtracted = true WHERE m.id IN :ids")
+    int markMemoryExtracted(@Param("ids") Collection<UUID> ids);
 }

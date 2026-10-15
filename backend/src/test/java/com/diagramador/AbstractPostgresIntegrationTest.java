@@ -12,7 +12,11 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 abstract class AbstractPostgresIntegrationTest {
 
-    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    private static final PostgreSQLContainer<?> POSTGRES =
+            new PostgreSQLContainer<>("postgres:16-alpine")
+                    // The suite shares one container across many Spring contexts (one Hikari pool
+                    // each); the default max_connections=100 exhausted with ~30 contexts.
+                    .withCommand("postgres -c max_connections=300");
 
     static {
         POSTGRES.start();
@@ -23,5 +27,8 @@ abstract class AbstractPostgresIntegrationTest {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        // Small per-context pools: contexts are cached per unique configuration, so the sum stays
+        // far below the container's max_connections.
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
     }
 }

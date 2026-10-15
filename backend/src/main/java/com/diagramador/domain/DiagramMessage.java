@@ -53,6 +53,13 @@ public class DiagramMessage {
     @Column(name = "body", nullable = false, columnDefinition = "text")
     private String body;
 
+    /**
+     * Set by a successful memory extraction (T5/L43): the source is consumed exactly once, so a
+     * forgotten memory's origin is never re-fed (CA-21).
+     */
+    @Column(name = "memory_extracted", nullable = false)
+    private boolean memoryExtracted = false;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -114,5 +121,13 @@ public class DiagramMessage {
 
     public OffsetDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public boolean isMemoryExtracted() {
+        return memoryExtracted;
+    }
+
+    public void setMemoryExtracted(boolean memoryExtracted) {
+        this.memoryExtracted = memoryExtracted;
     }
 }
