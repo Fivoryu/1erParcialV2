@@ -11,7 +11,17 @@ public final class ChatResources {
     public record CreateMessageRequest(String body) {
     }
 
-    public record MessageResource(UUID id, UUID authorUserId, String authorDisplayName, String body,
+    public record CreateSessionRequest(String title) {
+    }
+
+    /**
+     * A conversation inside one diagram view. Sessions never copy each other's history (CA-01).
+     */
+    public record ChatSessionResource(UUID id, UUID viewId, String title, UUID createdByUserId,
             OffsetDateTime createdAt) {
+    }
+
+    public record MessageResource(UUID id, UUID sessionId, String kind, UUID authorUserId,
+            String authorDisplayName, String body, OffsetDateTime createdAt) {
     }
 }

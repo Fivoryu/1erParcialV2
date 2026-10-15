@@ -2,6 +2,8 @@ package com.diagramador.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -28,9 +30,17 @@ public class DiagramMessage {
     @JoinColumn(name = "model_id", nullable = false)
     private UmlModel model;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "author_user_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "author_user_id")
     private UserAccount author;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "session_id", nullable = false)
+    private ChatSession session;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind", nullable = false, columnDefinition = "text")
+    private MessageKind kind;
 
     @Column(name = "body", nullable = false, columnDefinition = "text")
     private String body;
@@ -41,10 +51,12 @@ public class DiagramMessage {
     protected DiagramMessage() {
     }
 
-    public static DiagramMessage create(UmlModel model, UserAccount author, String body) {
+    public static DiagramMessage create(ChatSession session, UserAccount author, String body) {
         DiagramMessage message = new DiagramMessage();
-        message.model = model;
+        message.model = session.getView().getModel();
         message.author = author;
+        message.session = session;
+        message.kind = MessageKind.HUMAN;
         message.body = body;
         message.createdAt = OffsetDateTime.now();
         return message;
@@ -56,6 +68,14 @@ public class DiagramMessage {
 
     public UmlModel getModel() {
         return model;
+    }
+
+    public ChatSession getSession() {
+        return session;
+    }
+
+    public MessageKind getKind() {
+        return kind;
     }
 
     public UserAccount getAuthor() {
