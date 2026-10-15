@@ -104,18 +104,40 @@ public class ChatAiService {
                     "This session already has a pending AI request.");
         }
         try {
-            List<ChatAssistantProvider.Turn> turns = buildTurns(projectId, sessionId);
+            // QUEUED is published before any worker can exist, so RUNNING/COMPLETED can never
+            // precede it, and a cancellation's CANCELLED can only follow it.
+            publishStatus(projectId, sessionId, "QUEUED", null);
+            List<ChatAssistantProvider.Turn> turns = buildTurns(projectId, sessionId, messageId);
             Future<?> future = executor.submit(() -> run(projectId, sessionId, request, turns));
             synchronized (request) {
                 request.future = future;
             }
+            return new AskAccepted("QUEUED");
         } catch (RejectedExecutionException exception) {
-            pending.remove(sessionId, request);
+            failRequest(projectId, sessionId, request, "The AI queue is full; try again once a slot frees up.");
             throw error(HttpStatus.TOO_MANY_REQUESTS, "AI_QUEUE_FULL",
                     "The AI queue is full; try again once a slot frees up.");
+        } catch (ApiException exception) {
+            // A typed client error (project/model resolution): clean the registry and let the
+            // meaningful status reach the caller instead of masking it as a server failure.
+            failRequest(projectId, sessionId, request, exception.getMessage());
+            throw exception;
+        } catch (RuntimeException exception) {
+            logger.warn("AI ask could not be enqueued for session {}", sessionId, exception);
+            failRequest(projectId, sessionId, request, briefReason(exception));
+            throw error(HttpStatus.INTERNAL_SERVER_ERROR, "AI_REQUEST_FAILED",
+                    "The AI request could not be enqueued.");
         }
-        publishStatus(projectId, sessionId, "QUEUED", null);
-        return new AskAccepted("QUEUED");
+    }
+
+    /**
+     * Compensates a QUEUED announcement with a FAILED state and clears the pending registry, so
+     * no ask path can leave a session orphaned in QUEUED (verifier finding, L40).
+     */
+    private void failRequest(UUID projectId, UUID sessionId, PendingRequest request, String reason) {
+        pending.remove(sessionId, request);
+        request.state = "FAILED";
+        publishStatus(projectId, sessionId, "FAILED", reason);
     }
 
     public PendingResource pendingState(UUID projectId, UUID sessionId) {
@@ -164,9 +186,11 @@ public class ChatAiService {
         if (!request.startGate.compareAndSet(false, true)) {
             return;
         }
-        request.state = "RUNNING";
-        publishStatus(projectId, sessionId, "RUNNING", null);
         try {
+            // The RUNNING transition lives inside the try so any fatal failure on this path is
+            // still covered by the finally cleanup below.
+            request.state = "RUNNING";
+            publishStatus(projectId, sessionId, "RUNNING", null);
             String answer = provider.chat(turns);
             chatService.postAiAnswer(sessionId, request.questionMessageId, answer);
             request.state = "COMPLETED";
@@ -182,7 +206,7 @@ public class ChatAiService {
         }
     }
 
-    private List<ChatAssistantProvider.Turn> buildTurns(UUID projectId, UUID sessionId) {
+    private List<ChatAssistantProvider.Turn> buildTurns(UUID projectId, UUID sessionId, UUID questionMessageId) {
         // S8-lite: the chosen diagram's semantic snapshot plus this session's recent messages;
         // real token budgeting, reservation and compaction stay in T6 (PD-03).
         ModelResource model = projectApiService.getModel(projectId);
@@ -190,10 +214,24 @@ public class ChatAiService {
         turns.add(new ChatAssistantProvider.Turn("user",
                 "Contexto actual del diagrama (JSON):\n" + contextRenderer.render(model)));
         List<MessageResource> history = chatService.sessionHistory(projectId, sessionId);
-        int from = Math.max(0, history.size() - CONTEXT_HISTORY_MESSAGES);
-        for (MessageResource message : history.subList(from, history.size())) {
+        MessageResource question = null;
+        List<MessageResource> window = new ArrayList<>();
+        for (MessageResource message : history) {
+            if (message.id().equals(questionMessageId)) {
+                question = message;
+            } else {
+                window.add(message);
+            }
+        }
+        // The asked question is always the final turn even when it is older than the window (L38);
+        // it is excluded from the window so the provider never receives it twice.
+        int from = Math.max(0, window.size() - (CONTEXT_HISTORY_MESSAGES - 1));
+        for (MessageResource message : window.subList(from, window.size())) {
             turns.add(new ChatAssistantProvider.Turn("assistant".equalsIgnoreCase(message.kind()) ? "assistant" : "user",
                     message.body()));
+        }
+        if (question != null) {
+            turns.add(new ChatAssistantProvider.Turn("user", question.body()));
         }
         return turns;
     }

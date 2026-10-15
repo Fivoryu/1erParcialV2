@@ -301,6 +301,37 @@ class ChatAiApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void theAskedQuestionIsAlwaysTheLastTurnSentToTheProvider() throws Exception {
+        // L38: the provider receives the recent history PLUS the question it must answer. If the
+        // asked message is older than the history window, it must still arrive as the last turn.
+        String owner = username("owner");
+        UUID projectId = createProject(owner);
+        UUID viewId = defaultViewId(projectId);
+        UUID sessionId = createSession(owner, projectId, viewId, "Ventana");
+        String oldQuestion = null;
+        for (int index = 1; index <= 12; index++) {
+            String id = postMessage(owner, projectId, sessionId, "mensaje " + index);
+            if (index == 2) {
+                oldQuestion = id;
+            }
+        }
+
+        when(chatAssistantProvider.chat(anyList())).thenReturn("respuesta");
+        mockMvc.perform(ask(owner, projectId, sessionId, oldQuestion))
+                .andExpect(status().isAccepted());
+        awaitAiAnswer(owner, projectId, sessionId, oldQuestion);
+
+        ArgumentCaptor<List<ChatAssistantProvider.Turn>> turns = ArgumentCaptor.captor();
+        verify(chatAssistantProvider, timeout(5_000)).chat(turns.capture());
+        List<ChatAssistantProvider.Turn> sent = turns.getValue();
+        assertThat(sent).isNotEmpty();
+        assertThat(sent.get(sent.size() - 1).content()).isEqualTo("mensaje 2");
+        // The recent history stays, excluding the question to avoid sending it twice.
+        assertThat(sent.stream().map(ChatAssistantProvider.Turn::content)).contains("mensaje 12");
+        assertThat(sent.stream().map(ChatAssistantProvider.Turn::content).filter("mensaje 2"::equals)).hasSize(1);
+    }
+
+    @Test
     void aFailingProviderRecordsOnlyTheFailureState() throws Exception {
         String owner = username("owner");
         UUID projectId = createProject(owner);
