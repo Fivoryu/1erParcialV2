@@ -1,6 +1,7 @@
 package com.diagramador.persistence;
 
 import com.diagramador.domain.DiagramView;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -12,10 +13,13 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Row of {@code diagrammer.view_style}: per-view appearance of a relationship
- * (routing mode, corner radius, stroke width, dash pattern).
+ * (routing mode, corner radius, stroke width, dash pattern) plus the optional
+ * ROR-02 frame-relative orthogonal route adjustment ({@code route_adjustment}).
  *
  * <p>{@code targetType} is frozen to {@code RELATIONSHIP} by the schema check in
  * {@code V12__view_style.sql} for this unit; {@code targetId} is polymorphic and
@@ -52,6 +56,11 @@ public class ViewStyle {
     @Column(name = "dashed", nullable = false)
     private boolean dashed;
 
+    /** ROR-02: {@code {"axis":"H"|"V","corridors":[int,...],"levels":[int,...]}} or null; outside the XMI. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "route_adjustment")
+    private JsonNode routeAdjustment;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -62,20 +71,22 @@ public class ViewStyle {
     }
 
     public static ViewStyle create(DiagramView view, UUID targetId, String routing, int cornerRadius,
-            int strokeWidth, boolean dashed) {
+            int strokeWidth, boolean dashed, JsonNode routeAdjustment) {
         ViewStyle style = new ViewStyle();
         style.view = view;
         style.targetId = targetId;
         style.createdAt = OffsetDateTime.now();
-        style.apply(routing, cornerRadius, strokeWidth, dashed);
+        style.apply(routing, cornerRadius, strokeWidth, dashed, routeAdjustment);
         return style;
     }
 
-    public void apply(String routing, int cornerRadius, int strokeWidth, boolean dashed) {
+    public void apply(String routing, int cornerRadius, int strokeWidth, boolean dashed,
+            JsonNode routeAdjustment) {
         this.routing = routing;
         this.cornerRadius = cornerRadius;
         this.strokeWidth = strokeWidth;
         this.dashed = dashed;
+        this.routeAdjustment = routeAdjustment;
         this.updatedAt = OffsetDateTime.now();
     }
 
@@ -109,6 +120,10 @@ public class ViewStyle {
 
     public boolean isDashed() {
         return dashed;
+    }
+
+    public JsonNode getRouteAdjustment() {
+        return routeAdjustment;
     }
 
     public OffsetDateTime getUpdatedAt() {

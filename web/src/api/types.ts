@@ -177,6 +177,26 @@ export interface XmiImportResource {
   disagreements: XmiDisagreementResource[];
 }
 
+export interface RouteAdjustmentResource {
+  axis: 'H' | 'V';
+  corridors: number[];
+  levels: number[];
+  /** ANC-01: optional/nullable so an older backend or a fixture without the field still compiles. */
+  anchors?: RouteAnchorsResource | null;
+}
+
+/** ANC-02: one anchor end; the signed px offset is measured from the centre of the side. */
+export interface RelationshipAnchorResource {
+  side: 'N' | 'E' | 'S' | 'W';
+  offset: number;
+}
+
+/** ANC-01: the per-end anchors of the orthogonal route. */
+export interface RouteAnchorsResource {
+  source: RelationshipAnchorResource;
+  target: RelationshipAnchorResource;
+}
+
 export interface ViewStyleResource {
   viewId: Uuid;
   targetId: Uuid;
@@ -184,6 +204,8 @@ export interface ViewStyleResource {
   cornerRadius: number;
   strokeWidth: number;
   dashed: boolean;
+  /** Optional so an older backend or a fixture without the field still reads as undefined/null. */
+  routeAdjustment?: RouteAdjustmentResource | null;
 }
 
 export interface ViewResource {

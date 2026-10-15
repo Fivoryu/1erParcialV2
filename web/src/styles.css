@@ -1458,6 +1458,18 @@ h3 {
   cursor: pointer;
 }
 
+/* ANC-06: an end anchor is a different kind of thing from a bend handle — one moves the
+   endpoint, the other shapes the middle. They live side by side on the same edge, so they
+   must not look alike: the anchor is larger, ringed and lighter. */
+.uml-waypoint-handle.uml-anchor-handle {
+  width: 16px;
+  height: 16px;
+  z-index: 8;
+  background: #fff;
+  border: 3px solid var(--accent);
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 85%), 0 1px 4px rgb(25 42 37 / 35%);
+}
+
 .revision-status {
   margin-left: 4px;
   color: var(--muted);

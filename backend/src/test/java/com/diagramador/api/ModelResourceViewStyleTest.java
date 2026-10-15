@@ -113,6 +113,7 @@ class ModelResourceViewStyleTest {
         assertThat(style.cornerRadius()).isEqualTo(8);
         assertThat(style.strokeWidth()).isEqualTo(2);
         assertThat(style.dashed()).isTrue();
+        assertThat(style.routeAdjustment()).isNull();
         // Semantic resources stay untouched: the style list is additive.
         assertThat(model.relationships()).hasSize(1);
 
@@ -126,10 +127,101 @@ class ModelResourceViewStyleTest {
     }
 
     @Test
+    void modelResourceExposesTheRouteAdjustmentWithItsExactShapeAndClearsItBackToNull() {
+        Fixture fixture = fixture("route-adjustment-resource");
+        UUID sourceId = createClassifier(fixture, 0, "Source");
+        UUID targetId = createClassifier(fixture, 1, "Target");
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> relationshipPayload = new java.util.HashMap<>();
+        relationshipPayload.put("id", relationshipId.toString());
+        relationshipPayload.put("kind", "ASSOCIATION");
+        relationshipPayload.put("name", null);
+        relationshipPayload.put("source", end(sourceId));
+        relationshipPayload.put("target", end(targetId));
+        relationshipPayload.put("waypoints", List.of());
+        accept(command(fixture, 2, "relationship.create", List.of(
+                new Target("classifier", sourceId), new Target("classifier", targetId)), relationshipPayload));
+
+        currentUserContext.set(new CurrentUser(fixture.author().userId(), "routeadj", "RouteAdjustment"));
+        accept(command(fixture, 3, "style.set", List.of(), Map.of(
+                "viewId", fixture.view().getId().toString(),
+                "targetId", relationshipId.toString(),
+                "routing", "ORTHOGONAL",
+                "routeAdjustment", Map.of(
+                        "axis", "H",
+                        "corridors", List.of(40, -30, 60),
+                        "levels", List.of(-12, 0)))));
+
+        ModelResource model = projectApiService.getModel(fixture.project().getId());
+        assertThat(model.viewStyle()).hasSize(1);
+        assertThat(model.viewStyle().get(0).routeAdjustment()).isEqualTo(
+                new ModelResource.RouteAdjustmentResource("H", List.of(40, -30, 60), List.of(-12, 0), null));
+
+        Map<String, Object> cleared = new java.util.HashMap<>();
+        cleared.put("viewId", fixture.view().getId().toString());
+        cleared.put("targetId", relationshipId.toString());
+        cleared.put("routing", "ORTHOGONAL");
+        cleared.put("routeAdjustment", null);
+        accept(command(fixture, 4, "style.set", List.of(), cleared));
+
+        ModelResource afterClear = projectApiService.getModel(fixture.project().getId());
+        assertThat(afterClear.viewStyle().get(0).routeAdjustment()).isNull();
+    }
+
+    @Test
     void theLegacyModelResourceConstructorKeepsAnEmptyViewStyleList() {
         ModelResource legacy = new ModelResource(UUID.randomUUID(), UUID.randomUUID(), 1L, UUID.randomUUID(),
                 List.of(), List.of(), List.of());
         assertThat(legacy.viewStyle()).isEmpty();
+    }
+
+    @Test
+    void modelResourceExposesTheAnchorsWithTheirExactShapeAndNullWhenTheRowHasNone() {
+        Fixture fixture = fixture("anchors-resource");
+        UUID sourceId = createClassifier(fixture, 0, "Source");
+        UUID targetId = createClassifier(fixture, 1, "Target");
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> relationshipPayload = new java.util.HashMap<>();
+        relationshipPayload.put("id", relationshipId.toString());
+        relationshipPayload.put("kind", "ASSOCIATION");
+        relationshipPayload.put("name", null);
+        relationshipPayload.put("source", end(sourceId));
+        relationshipPayload.put("target", end(targetId));
+        relationshipPayload.put("waypoints", List.of());
+        accept(command(fixture, 2, "relationship.create", List.of(
+                new Target("classifier", sourceId), new Target("classifier", targetId)), relationshipPayload));
+
+        currentUserContext.set(new CurrentUser(fixture.author().userId(), "anchors", "Anchors"));
+        accept(command(fixture, 3, "style.set", List.of(), Map.of(
+                "viewId", fixture.view().getId().toString(),
+                "targetId", relationshipId.toString(),
+                "routing", "ORTHOGONAL",
+                "routeAdjustment", Map.of(
+                        "axis", "H",
+                        "corridors", List.of(0),
+                        "levels", List.of(),
+                        "anchors", Map.of(
+                                "source", Map.of("side", "E", "offset", -24),
+                                "target", Map.of("side", "W", "offset", 12))))));
+
+        ModelResource model = projectApiService.getModel(fixture.project().getId());
+        assertThat(model.viewStyle()).hasSize(1);
+        assertThat(model.viewStyle().get(0).routeAdjustment()).isEqualTo(
+                new ModelResource.RouteAdjustmentResource("H", List.of(0), List.of(),
+                        new ModelResource.RouteAnchorsResource(
+                                new ModelResource.RouteAnchorResource("E", -24),
+                                new ModelResource.RouteAnchorResource("W", 12))));
+
+        accept(command(fixture, 4, "style.set", List.of(), Map.of(
+                "viewId", fixture.view().getId().toString(),
+                "targetId", relationshipId.toString(),
+                "routing", "ORTHOGONAL",
+                "routeAdjustment", Map.of(
+                        "axis", "V", "corridors", List.of(10), "levels", List.of()))));
+
+        ModelResource withoutAnchors = projectApiService.getModel(fixture.project().getId());
+        assertThat(withoutAnchors.viewStyle().get(0).routeAdjustment()).isEqualTo(
+                new ModelResource.RouteAdjustmentResource("V", List.of(10), List.of(), null));
     }
 
     private Map<String, Object> end(UUID classifierId) {

@@ -20,6 +20,7 @@ import {
   buildParameterUpdateRequest,
   buildRelationshipUpdateRequest,
   buildStyleSetRequest,
+  mergeViewStyleUpdate,
   RELATIONSHIP_KINDS,
   type ConstraintOwnerType,
   type ModelCommandRequest,
@@ -27,7 +28,7 @@ import {
   type RelationshipKind,
   type RoutingMode,
   type TypeReferenceInput,
-  type ViewStyleUpdate,
+  type ViewStyleValues,
 } from './commands';
 import type { CanvasSelection } from './selection';
 
@@ -382,23 +383,23 @@ function RelationshipProperties({
   const defaultViewId = model.views.find((view) => view.is_default)?.id ?? model.views[0]?.id;
   const styleRow = model.view_style?.find((row) => row.viewId === defaultViewId
     && row.targetId === relationship.id);
-  const currentStyle = {
+  const currentStyle: ViewStyleValues = {
     routing: styleRow?.routing ?? 'STRAIGHT',
     cornerRadius: styleRow?.cornerRadius ?? 0,
     strokeWidth: styleRow?.strokeWidth ?? 2,
     dashed: styleRow?.dashed ?? false,
-  } as const;
+    // ROR-02/T2: absent means "clear" downstream, so every style.set must carry the stored
+    // adjustment (or an explicit null when the row has none).
+    routeAdjustment: styleRow?.routeAdjustment ?? null,
+  };
 
-  function setStyle(override: Partial<ViewStyleUpdate>): void {
+  function setStyle(override: Partial<ViewStyleValues>): void {
     if (!defaultViewId) {
       return;
     }
-    onCommand(buildStyleSetRequest({
-      viewId: defaultViewId,
-      targetId: relationship.id,
-      ...currentStyle,
-      ...override,
-    }));
+    onCommand(buildStyleSetRequest(
+      mergeViewStyleUpdate(defaultViewId, relationship.id, currentStyle, override),
+    ));
   }
 
   function resetRoute(): void {

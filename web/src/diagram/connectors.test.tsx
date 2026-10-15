@@ -505,15 +505,54 @@ describe('relationship route & style (IA4-07)', () => {
       cornerRadius: 8,
       strokeWidth: 3,
       dashed: true,
+      routeAdjustment: { axis: 'H', corridors: [40], levels: [-12] },
     }],
   };
 
   it('propagates the per-view style row into the flow edge data and defaults to straight', () => {
     const connector = buildFlowEdges(styledModel).find((edge) => edge.id === relationshipId);
-    expect(connector?.data?.style).toEqual({ routing: 'ORTHOGONAL', cornerRadius: 8, strokeWidth: 3, dashed: true });
+    expect(connector?.data?.style).toEqual({
+      routing: 'ORTHOGONAL',
+      cornerRadius: 8,
+      strokeWidth: 3,
+      dashed: true,
+      routeAdjustment: { axis: 'H', corridors: [40], levels: [-12] },
+    });
 
     const plain = buildFlowEdges(model).find((edge) => edge.id === relationshipId);
-    expect(plain?.data?.style).toEqual({ routing: 'STRAIGHT', cornerRadius: 0, strokeWidth: 2, dashed: false });
+    expect(plain?.data?.style).toEqual({
+      routing: 'STRAIGHT',
+      cornerRadius: 0,
+      strokeWidth: 2,
+      dashed: false,
+      routeAdjustment: null,
+    });
+  });
+
+  it('threads the stored anchors into the style and picks the connection handles from those sides', () => {
+    const anchoredModel: ModelResource = {
+      ...model,
+      view_style: [{
+        viewId,
+        targetId: relationshipId,
+        routing: 'ORTHOGONAL',
+        cornerRadius: 0,
+        strokeWidth: 2,
+        dashed: false,
+        routeAdjustment: {
+          axis: 'H',
+          corridors: [40],
+          levels: [],
+          anchors: { source: { side: 'N', offset: 30 }, target: { side: 'N', offset: -30 } },
+        },
+      }],
+    };
+    const edge = buildFlowEdges(anchoredModel).find((candidate) => candidate.id === relationshipId);
+    expect(edge?.data?.style?.routeAdjustment?.anchors)
+      .toEqual({ source: { side: 'N', offset: 30 }, target: { side: 'N', offset: -30 } });
+    // The classes sit side by side (auto = right/left), but the stored sides win (ANC-06).
+    expect(edge?.sourceHandle).toBe('source-top');
+    expect(edge?.targetHandle).toBe('target-top');
   });
 
   it('renders the route & style controls reflecting the persisted view style row', () => {
