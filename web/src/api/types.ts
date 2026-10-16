@@ -28,12 +28,73 @@ export interface PresencePerson {
   cursorY: number | null;
 }
 
+export type ChatMessageKind = 'HUMAN' | 'AI';
+
 export interface ChatMessageResource {
   id: Uuid;
-  authorUserId: Uuid;
+  /** Present on session chat responses; optional for legacy project-level chat payloads. */
+  sessionId?: Uuid;
+  kind?: ChatMessageKind;
+  authorUserId: Uuid | null;
   authorDisplayName: string;
   body: string;
   createdAt: string;
+  replyTo?: Uuid | null;
+  /** Attachment ids are resolved through the authorized session attachment endpoint. */
+  attachments?: Uuid[];
+}
+
+export interface ChatAttachmentResource {
+  attachmentId: Uuid;
+  filename: string;
+  sizeBytes: number;
+  contentType: string;
+}
+
+export interface ContextMeterResource {
+  contextWindow: number;
+  reservedForResponse: number;
+  promptBudget: number;
+  instructions: number;
+  diagramData: number;
+  memories: number;
+  history: number;
+  images: number;
+  totalUsed: number;
+  promptThreshold: number;
+  compactionPending: boolean;
+  percent: number;
+}
+
+export interface CompactionOutcomeResource {
+  compacted: boolean;
+  reason: string;
+}
+
+export interface DiagramMemoryResource {
+  memoryId: Uuid;
+  kind: 'DECISION' | 'HYPOTHESIS';
+  status: 'ACTIVE' | 'CONFLICTED' | 'REPLACED';
+  content: string;
+  sourceSessionId: Uuid | null;
+  sourceMessageId: Uuid | null;
+  replacedBy: Uuid | null;
+  createdAt: string;
+}
+
+export interface MemoryExtractionResource {
+  memoriesCreated: number;
+  conflictsMarked: number;
+  replacements: number;
+  consumed: boolean;
+}
+
+export interface DeletedSessionHistoryResource {
+  deletedMessages: number;
+}
+
+export interface ForgottenMemoriesResource {
+  deletedMemories: number;
 }
 
 export interface MessagePostedPayload {
@@ -208,10 +269,7 @@ export interface ViewStyleResource {
   routeAdjustment?: RouteAdjustmentResource | null;
 }
 
-/**
- * The chat session of one diagram view (T7/L47): the client binds the chat panel to the
- * diagram's General (default) session; the full selector is T9.
- */
+/** One conversation session inside a diagram view; T9 lets collaborators switch between them. */
 export interface ChatSessionResource {
   id: Uuid;
   viewId: Uuid;

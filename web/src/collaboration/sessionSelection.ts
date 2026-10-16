@@ -23,5 +23,22 @@ export function defaultSessionFor(views: SessionViewRef[], sessions: SessionRef[
   if (!defaultView) {
     return null;
   }
-  return sessions.find((session) => session.viewId === defaultView.id) ?? null;
+  const defaultViewSessions = sessions.filter((session) => session.viewId === defaultView.id);
+  return defaultViewSessions.find((session) => session.title === 'General')
+    ?? defaultViewSessions[0]
+    ?? null;
+}
+
+/** Keeps a valid user selection when a session list refreshes, otherwise chooses General. */
+export function activeSessionFor(
+  views: SessionViewRef[],
+  sessions: SessionRef[],
+  activeSessionId: string | null,
+): SessionRef | null {
+  const defaultView = views.find((view) => view.isDefault);
+  if (!defaultView) {
+    return null;
+  }
+  return sessions.find((session) => session.viewId === defaultView.id && session.id === activeSessionId)
+    ?? defaultSessionFor(views, sessions);
 }

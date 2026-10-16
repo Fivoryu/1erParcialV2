@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultSessionFor } from './sessionSelection';
+import { activeSessionFor, defaultSessionFor } from './sessionSelection';
 
 /**
  * Pure-logic tests for T7/L47 session resolution: the chat panel binds to the General (default)
@@ -21,8 +21,20 @@ describe('defaultSessionFor', () => {
     expect(defaultSessionFor([defaultView, otherView], [straySession])).toBeNull();
   });
 
+  it('prefers the initial General session even if the list contains other sessions first', () => {
+    const earlierSession = { id: '55555555-5555-4555-8555-555555555555', viewId: defaultView.id, title: 'Review' };
+    expect(defaultSessionFor([defaultView], [earlierSession, generalSession])).toEqual(generalSession);
+  });
+
+  it('preserves a selected session on refresh and falls back to General if it disappeared', () => {
+    const reviewSession = { id: '55555555-5555-4555-8555-555555555555', viewId: defaultView.id, title: 'Review' };
+    expect(activeSessionFor([defaultView], [generalSession, reviewSession], reviewSession.id)).toEqual(reviewSession);
+    expect(activeSessionFor([defaultView], [generalSession], reviewSession.id)).toEqual(generalSession);
+  });
+
   it('returns null without a default view or without sessions', () => {
     expect(defaultSessionFor([], [])).toBeNull();
     expect(defaultSessionFor([defaultView], [])).toBeNull();
+    expect(activeSessionFor([], [generalSession], generalSession.id)).toBeNull();
   });
 });

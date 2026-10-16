@@ -1,7 +1,13 @@
 import type {
   ApiErrorResource,
+  ChatAttachmentResource,
   ChatMessageResource,
   CommandOutcome,
+  CompactionOutcomeResource,
+  ContextMeterResource,
+  DeletedSessionHistoryResource,
+  DiagramMemoryResource,
+  ForgottenMemoriesResource,
   CommandResult,
   CreateGenerationRequest,
   CreateGenerationTargetRequest,
@@ -18,6 +24,7 @@ import type {
   OperationEnvelope,
   OperationOutcomeResource,
   ChatSessionResource,
+  MemoryExtractionResource,
   ProjectResource,
   RegisterRequest,
   LoginRequest,
@@ -106,7 +113,23 @@ export interface ApiClient {
   listProjectMessages(projectId: Uuid): Promise<ChatMessageResource[]>;
   postProjectMessage(projectId: Uuid, body: string): Promise<ChatMessageResource>;
   listSessions(projectId: Uuid, viewId: Uuid): Promise<ChatSessionResource[]>;
-  postSessionMessage(projectId: Uuid, sessionId: Uuid, body: string): Promise<ChatMessageResource>;
+  createSession(projectId: Uuid, viewId: Uuid, title: string): Promise<ChatSessionResource>;
+  listSessionMessages(projectId: Uuid, sessionId: Uuid): Promise<ChatMessageResource[]>;
+  postSessionMessage(
+    projectId: Uuid,
+    sessionId: Uuid,
+    body: string,
+    attachmentIds?: Uuid[],
+  ): Promise<ChatMessageResource>;
+  deleteSessionHistory(projectId: Uuid, sessionId: Uuid): Promise<DeletedSessionHistoryResource>;
+  getContextMeter(projectId: Uuid, sessionId: Uuid): Promise<ContextMeterResource>;
+  compactSession(projectId: Uuid, sessionId: Uuid): Promise<CompactionOutcomeResource>;
+  listMemories(projectId: Uuid, viewId: Uuid, status?: string): Promise<DiagramMemoryResource[]>;
+  extractMemories(projectId: Uuid, viewId: Uuid): Promise<MemoryExtractionResource>;
+  forgetMemory(projectId: Uuid, viewId: Uuid, memoryId: Uuid): Promise<ForgottenMemoriesResource>;
+  forgetAllMemories(projectId: Uuid, viewId: Uuid): Promise<ForgottenMemoriesResource>;
+  uploadAttachment(projectId: Uuid, sessionId: Uuid, file: File): Promise<ChatAttachmentResource>;
+  getAttachmentBytes(projectId: Uuid, sessionId: Uuid, attachmentId: Uuid): Promise<Blob>;
   listProjectMembers(projectId: Uuid): Promise<MemberResource[]>;
   listProjectInvitations(projectId: Uuid): Promise<InvitationResource[]>;
   createProjectInvitation(projectId: Uuid, request: CreateInvitationRequest): Promise<InvitationResource>;
@@ -222,6 +245,23 @@ export function createApiClient(
     throw transportErrorFromBody(body, response.status);
   }
 
+  async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
+    let response: Response;
+    try {
+      response = await fetcher(`${base}${path}`, authorizedInit(path, init));
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
+      throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
+    }
+
+    clearSessionOnUnauthorized(path, response);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as unknown;
+      throw transportErrorFromBody(body, response.status);
+    }
+    return response.blob();
+  }
+
   function postJson<T>(path: string, payload: unknown): Promise<T> {
     return requestJson<T>(path, {
       method: 'POST',
@@ -302,10 +342,74 @@ export function createApiClient(
         `/projects/${encodeURIComponent(projectId)}/views/${encodeURIComponent(viewId)}/sessions`,
       );
     },
-    postSessionMessage(projectId, sessionId, body) {
+    createSession(projectId, viewId, title) {
+      return postJson<ChatSessionResource>(
+        `/projects/${encodeURIComponent(projectId)}/views/${encodeURIComponent(viewId)}/sessions`,
+        { title },
+      );
+    },
+    listSessionMessages(projectId, sessionId) {
+      return requestJson<ChatMessageResource[]>(
+        `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/messages`,
+      );
+    },
+    postSessionMessage(projectId, sessionId, body, attachmentIds) {
+      const payload = attachmentIds && attachmentIds.length > 0 ? { body, attachmentIds } : { body };
       return postJson<ChatMessageResource>(
         `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/messages`,
-        { body },
+        payload,
+      );
+    },
+    deleteSessionHistory(projectId, sessionId) {
+      return requestJson<DeletedSessionHistoryResource>(
+        `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`,
+        { method: 'DELETE' },
+      );
+    },
+    getContextMeter(projectId, sessionId) {
+      return requestJson<ContextMeterResource>(
+        `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/meter`,
+      );
+    },
+    compactSession(projectId, sessionId) {
+      return requestJson<CompactionOutcomeResource>(
+        `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/compact`,
+        { method: 'POST' },
+      );
+    },
+    listMemories(projectId, viewId, status) {
+      const query = status ? `?status=${encodeURIComponent(status)}` : '';
+      return requestJson<DiagramMemoryResource[]>(
+        `/projects/${encodeURIComponent(projectId)}/views/${encodeURIComponent(viewId)}/memories${query}`,
+      );
+    },
+    extractMemories(projectId, viewId) {
+      return requestJson<MemoryExtractionResource>(
+        `/projects/${encodeURIComponent(projectId)}/views/${encodeURIComponent(viewId)}/memories/extract`,
+        { method: 'POST' },
+      );
+    },
+    forgetMemory(projectId, viewId, memoryId) {
+      return requestJson<ForgottenMemoriesResource>(
+        `/projects/${encodeURIComponent(projectId)}/views/${encodeURIComponent(viewId)}/memories/${encodeURIComponent(memoryId)}`,
+        { method: 'DELETE' },
+      );
+    },
+    forgetAllMemories(projectId, viewId) {
+      return requestJson<ForgottenMemoriesResource>(
+        `/projects/${encodeURIComponent(projectId)}/views/${encodeURIComponent(viewId)}/memories`,
+        { method: 'DELETE' },
+      );
+    },
+    async uploadAttachment(projectId, sessionId, file) {
+      const path = `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/attachments`;
+      const form = new FormData();
+      form.append('file', file);
+      return requestJson<ChatAttachmentResource>(path, { method: 'POST', body: form });
+    },
+    getAttachmentBytes(projectId, sessionId, attachmentId) {
+      return requestBlob(
+        `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`,
       );
     },
     listProjectMembers(projectId) {
