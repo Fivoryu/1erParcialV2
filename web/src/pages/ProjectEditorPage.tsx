@@ -20,6 +20,7 @@ import type {
   ProjectResource,
 } from '../api/types';
 import ChatPanel from '../collaboration/ChatPanel';
+import { defaultSessionFor } from '../collaboration/sessionSelection';
 import PresencePanel from '../collaboration/PresencePanel';
 import { createCursorCoalescer, type CursorCoalescer } from '../collaboration/cursorCoalescer';
 import { buildRemoteCursorMarkers } from '../collaboration/remoteCursors';
@@ -155,6 +156,8 @@ export default function ProjectEditorPage() {
   const [chatLoading, setChatLoading] = useState(true);
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatDraft, setChatDraft] = useState('');
+  // T7/L47: the chat panel binds to the diagram's General (default) session; the selector is T9.
+  const [chatSessionId, setChatSessionId] = useState<Uuid | null>(null);
   const [chatBusy, setChatBusy] = useState(false);
   const [remoteCursorPositions, setRemoteCursors] = useState<Map<string, { x: number; y: number }>>(() => new Map());
   const [loading, setLoading] = useState(true);
@@ -519,16 +522,53 @@ export default function ProjectEditorPage() {
     });
   }, [projectId, targetElementId]);
 
+  // T7/L47: resolve the General session from the model's default view; failures surface in the
+  // chat panel instead of silently falling back to the legacy endpoints.
+  useEffect(() => {
+    if (!model) {
+      setChatSessionId(null);
+      return;
+    }
+    const defaultView = model.views.find((view) => view.is_default);
+    if (!defaultView) {
+      setChatSessionId(null);
+      return;
+    }
+    let cancelled = false;
+    void api.listSessions(projectId, defaultView.id)
+      .then((sessions) => {
+        if (cancelled) {
+          return;
+        }
+        const session = defaultSessionFor(model.views, sessions);
+        setChatSessionId(session?.id ?? null);
+        setChatError(session ? null : 'Este diagrama todavía no tiene sesión de chat; recargá la página.');
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setChatError('No se pudo resolver la sesión de chat del diagrama.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [model, projectId]);
+
   async function sendMessage(body: string): Promise<void> {
     const trimmedBody = body.trim();
     if (!projectId || !trimmedBody || chatBusy) {
       return;
     }
 
+    if (chatSessionId === null) {
+      setChatError('La sesión de chat del diagrama no está disponible todavía.');
+      return;
+    }
+
     setChatBusy(true);
     setChatError(null);
     try {
-      const message = await api.postProjectMessage(projectId, trimmedBody);
+      const message = await api.postSessionMessage(projectId, chatSessionId, trimmedBody);
       if (currentProjectIdRef.current !== projectId) {
         return;
       }

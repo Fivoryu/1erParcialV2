@@ -1,6 +1,16 @@
-import type { FormEvent } from 'react';
+import { useEffect, type FormEvent } from 'react';
 import type { ChatMessageResource } from '../api/types';
+import { appendTranscript } from '../assistant/speechTranscript';
+import { useSpeechRecognition } from '../assistant/useSpeechRecognition';
 import { formatMessageTime } from './messageTime';
+
+/**
+ * T7/L47: what speech recognition actually is — the browser's Web Speech API, whose audio is
+ * processed by the browser vendor's cloud in Chromium (not local); shown on the mic button.
+ */
+const DICTATION_HINT =
+  'Dictado: usa la API de voz del navegador; en Chromium el audio se procesa en la nube del proveedor '
+  + 'del navegador (no es local). La transcripción se agrega al mensaje y se envía solo cuando presionás Enviar.';
 
 export interface ChatPanelProps {
   history: ChatMessageResource[];
@@ -24,9 +34,19 @@ export default function ChatPanel({
   onSend,
 }: ChatPanelProps) {
   const { locale, timeZone } = new Intl.DateTimeFormat().resolvedOptions();
+  const speech = useSpeechRecognition();
   const orderedHistory = [...history].sort((left, right) => (
     Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id)
   ));
+
+  // T7/L47: the finished transcript is appended to the draft; sending stays explicit — the user
+  // presses Send. A no-op on an empty transcript so nothing the user wrote is discarded.
+  useEffect(() => {
+    if (!speech.listening && speech.transcript.length > 0) {
+      onDraftChange(appendTranscript(draft, speech.transcript));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-append only when a transcript completes
+  }, [speech.listening, speech.transcript]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -90,6 +110,18 @@ export default function ChatPanel({
           type="text"
           value={draft}
         />
+        {speech.supported && (
+          <button
+            type="button"
+            className="button chat-dictate"
+            aria-label={DICTATION_HINT}
+            disabled={busy || speech.listening}
+            title={DICTATION_HINT}
+            onClick={() => (speech.listening ? speech.stop() : speech.start())}
+          >
+            {speech.listening ? 'Escuchando…' : 'Dictar'}
+          </button>
+        )}
         <button
           className="button button-primary"
           disabled={busy || !draft.trim()}

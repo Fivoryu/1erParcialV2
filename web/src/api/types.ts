@@ -208,6 +208,18 @@ export interface ViewStyleResource {
   routeAdjustment?: RouteAdjustmentResource | null;
 }
 
+/**
+ * The chat session of one diagram view (T7/L47): the client binds the chat panel to the
+ * diagram's General (default) session; the full selector is T9.
+ */
+export interface ChatSessionResource {
+  id: Uuid;
+  viewId: Uuid;
+  title: string;
+  createdByUserId: Uuid;
+  createdAt: string;
+}
+
 export interface ViewResource {
   id: Uuid;
   name: string;

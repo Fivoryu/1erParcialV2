@@ -17,6 +17,7 @@ import type {
   ModelResource,
   OperationEnvelope,
   OperationOutcomeResource,
+  ChatSessionResource,
   ProjectResource,
   RegisterRequest,
   LoginRequest,
@@ -104,6 +105,8 @@ export interface ApiClient {
   getProject(projectId: Uuid): Promise<ProjectResource>;
   listProjectMessages(projectId: Uuid): Promise<ChatMessageResource[]>;
   postProjectMessage(projectId: Uuid, body: string): Promise<ChatMessageResource>;
+  listSessions(projectId: Uuid, viewId: Uuid): Promise<ChatSessionResource[]>;
+  postSessionMessage(projectId: Uuid, sessionId: Uuid, body: string): Promise<ChatMessageResource>;
   listProjectMembers(projectId: Uuid): Promise<MemberResource[]>;
   listProjectInvitations(projectId: Uuid): Promise<InvitationResource[]>;
   createProjectInvitation(projectId: Uuid, request: CreateInvitationRequest): Promise<InvitationResource>;
@@ -291,6 +294,17 @@ export function createApiClient(
     postProjectMessage(projectId, body) {
       return postJson<ChatMessageResource>(
         `/projects/${encodeURIComponent(projectId)}/messages`,
+        { body },
+      );
+    },
+    listSessions(projectId, viewId) {
+      return requestJson<ChatSessionResource[]>(
+        `/projects/${encodeURIComponent(projectId)}/views/${encodeURIComponent(viewId)}/sessions`,
+      );
+    },
+    postSessionMessage(projectId, sessionId, body) {
+      return postJson<ChatMessageResource>(
+        `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/messages`,
         { body },
       );
     },
