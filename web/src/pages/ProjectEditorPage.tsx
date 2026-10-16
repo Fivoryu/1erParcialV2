@@ -59,6 +59,7 @@ import {
 import type { CanvasSelection } from '../diagram/selection';
 import { groupTouchesByElement } from '../diagram/touch-highlight';
 import { loginErrorMessage } from './LoginPage';
+import HelpGuide from '../help/HelpGuideWidget';
 import TourOverlay from '../help/TourOverlay';
 import { createTourProgress } from '../help/tourProgress';
 import {
@@ -1199,6 +1200,7 @@ export default function ProjectEditorPage() {
             </Modal>
 
             <FloatingAssistantButton open={assistantOpen} onOpen={handleOpenAssistant} />
+            <HelpGuide api={api} openSection={openSection} />
             {tourOpen && project.id === projectId && (
               <TourOverlay
                 stepIndex={tourStepIndex}

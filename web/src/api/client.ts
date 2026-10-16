@@ -18,6 +18,8 @@ import type {
   GenerationProfileResource,
   GenerationRunResource,
   GenerationTargetResource,
+  HelpGuideRequest,
+  HelpGuideResponse,
   InvitationResource,
   MemberResource,
   ModelResource,
@@ -107,6 +109,7 @@ export interface ApiClient {
   login(request: LoginRequest): Promise<LoginResponse>;
   logout(): Promise<void>;
   me(): Promise<UserResource>;
+  askHelpGuide(request: HelpGuideRequest): Promise<HelpGuideResponse>;
   createProject(request: CreateProjectRequest): Promise<ProjectResource>;
   listProjects(): Promise<ProjectResource[]>;
   getProject(projectId: Uuid): Promise<ProjectResource>;
@@ -318,6 +321,9 @@ export function createApiClient(
     },
     me() {
       return requestJson<UserResource>('/auth/me');
+    },
+    askHelpGuide(request) {
+      return postJson<HelpGuideResponse>('/help/guide', request);
     },
     createProject(request) {
       return postJson<ProjectResource>('/projects', request);
