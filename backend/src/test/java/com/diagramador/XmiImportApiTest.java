@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.ProjectMemberRole;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.persistence.ClassifierRepository;
 import com.diagramador.persistence.UmlModelRepository;
@@ -172,6 +173,26 @@ class XmiImportApiTest extends AuthenticatedApiTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    @Test
+    void replacingTheModelIsReservedToTheOwnerBecauseItDestroysChatHistory() throws Exception {
+        // PD-01: only the OWNER may destroy chat history; a REPLACE import cascades
+        // view -> chat_session -> diagram_message, so editors must not trigger it (L36).
+        UUID projectId = createProject();
+        String editor = "xmi-replace-editor-" + UUID.randomUUID();
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        byte[] bytes = fixtureBytes();
+
+        mockMvc.perform(authorizedAs(editor, post("/projects/{projectId}/xmi/import", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(importRequest(bytes, sha256(bytes),
+                        XmiImportMode.REEMPLAZAR)))))
+                .andExpect(status().isForbidden());
+
+        // Lesser import modes stay available to editors.
+        importFile(projectId, XmiImportMode.AGREGAR, bytes, sha256(bytes));
     }
 
     private JsonNode importFile(UUID projectId, XmiImportMode mode, byte[] bytes, String checksum) throws Exception {

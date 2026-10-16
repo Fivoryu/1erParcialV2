@@ -66,7 +66,14 @@ public class XmiImportController {
     public XmiImportResource importXmi(@PathVariable("projectId") UUID projectId,
             @Valid @RequestBody XmiImportRequest request) {
         requireProject(projectId);
-        authorizationService.requireEditor(projectId);
+        if (request.mode() == XmiImportMode.REEMPLAZAR) {
+            // REEMPLAZAR deletes the existing model's views, which cascades view ->
+            // chat_session -> message (PD-02/L33): destroying chat history is
+            // OWNER-exclusive (PD-01, L36), so editors must not trigger it.
+            authorizationService.requireOwner(projectId);
+        } else {
+            authorizationService.requireEditor(projectId);
+        }
         var user = currentUserContext.require();
         byte[] rawBytes = decode(request.fileBase64());
         try {

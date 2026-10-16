@@ -28,6 +28,7 @@ import com.diagramador.domain.ModelCommand;
 import com.diagramador.domain.OperationParameter;
 import com.diagramador.domain.Project;
 import com.diagramador.domain.ProjectMember;
+import com.diagramador.domain.UserAccount;
 import com.diagramador.domain.RelationshipEnd;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.TypeReference;
@@ -67,6 +68,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -76,6 +78,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProjectApiService {
 
     private final ProjectRepository projectRepository;
+    private final ModelCommandRepository modelCommandRepository;
     private final ProjectMemberRepository projectMemberRepository;
     private final CurrentUserContext currentUserContext;
     private final ProjectAuthorizationService projectAuthorizationService;
@@ -95,7 +98,8 @@ public class ProjectApiService {
     private final com.diagramador.command.CommandService commandService;
     private final com.diagramador.undo.UndoCaptureService undoCaptureService;
 
-    public ProjectApiService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
+    public ProjectApiService(ProjectRepository projectRepository, ModelCommandRepository modelCommandRepository,
+            UmlModelRepository modelRepository,
             ModelVersionRepository versionRepository, ClassifierRepository classifierRepository,
             UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, OperationParameterRepository parameterRepository,
@@ -108,6 +112,7 @@ public class ProjectApiService {
             com.diagramador.command.CommandService commandService,
             com.diagramador.undo.UndoCaptureService undoCaptureService) {
         this.projectRepository = projectRepository;
+        this.modelCommandRepository = modelCommandRepository;
         this.projectMemberRepository = projectMemberRepository;
         this.currentUserContext = currentUserContext;
         this.projectAuthorizationService = projectAuthorizationService;
@@ -189,6 +194,12 @@ public class ProjectApiService {
         requireProject(pathProjectId);
         CurrentUser currentUser = currentUserContext.require();
         projectAuthorizationService.requireMember(pathProjectId);
+        if ("xmi.import".equalsIgnoreCase(envelope.type()) && isReplaceMode(envelope.payload())) {
+            // L36/L54: REEMPLAZAR destroys the model's views (cascading chat history and memory
+            // away) — the generic command route must honor the same OWNER-only rule as the import
+            // controller, or an EDITOR could walk around it.
+            projectAuthorizationService.requireOwner(pathProjectId);
+        }
         OperationEnvelope authenticatedEnvelope = new OperationEnvelope(envelope.operationId(), envelope.type(),
                 new Author(currentUser.userId(), currentUser.username()), envelope.projectId(), envelope.modelId(),
                 envelope.baseRevision(), envelope.targets(), envelope.preconditions(), envelope.payload(),
@@ -203,11 +214,56 @@ public class ProjectApiService {
         return result;
     }
 
+    // ---- Accepted-change log (T4/L41): recovery + pending derived-processing count ----
+
+    @Transactional(readOnly = true)
+    public List<ModelChangeResource> modelChanges(UUID projectId, Long sinceRevision, Integer limit) {
+        requireProject(projectId);
+        projectAuthorizationService.requireMember(projectId);
+        UUID modelId = modelRepository.findByProjectId(projectId)
+                .orElseThrow(() -> notFound("Model was not found.")).getId();
+        int cappedLimit = limit == null ? 50 : Math.max(0, Math.min(limit, 200));
+        List<ModelCommand> commands = sinceRevision == null
+                ? modelCommandRepository.findByModelIdAndResultRevisionNotNullOrderByResultRevisionDesc(modelId,
+                        PageRequest.of(0, cappedLimit))
+                : modelCommandRepository.findByModelIdAndResultRevisionNotNullAndResultRevisionGreaterThanOrderByResultRevisionDesc(
+                        modelId, sinceRevision, PageRequest.of(0, cappedLimit));
+        return commands.stream().map(ProjectApiService::changeResource).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Long> pendingChangeCount(UUID projectId) {
+        requireProject(projectId);
+        projectAuthorizationService.requireMember(projectId);
+        UUID modelId = modelRepository.findByProjectId(projectId)
+                .orElseThrow(() -> notFound("Model was not found.")).getId();
+        return Map.of("pendingChanges", modelCommandRepository.countByModelIdAndKnowledgePendingTrue(modelId));
+    }
+
+    private static ModelChangeResource changeResource(ModelCommand command) {
+        UserAccount author = command.getAuthor();
+        return new ModelChangeResource(command.getCommandId(),
+                command.getOrigin() == null ? null : command.getOrigin().name(),
+                author == null ? null : author.getId(),
+                author == null ? null : author.getDisplayName(),
+                command.getBaseRevision(), command.getResultRevision(), command.getOperation(),
+                command.getTargetType() == null ? null : command.getTargetType().name(),
+                command.getTargetId(), command.isKnowledgePending(), command.getCreatedAt());
+    }
+
+    private static boolean isReplaceMode(Object payload) {
+        if (payload instanceof Map<?, ?> map) {
+            Object mode = map.get("mode");
+            return mode != null && "REEMPLAZAR".equalsIgnoreCase(String.valueOf(mode));
+        }
+        return payload != null && String.valueOf(payload).toUpperCase(java.util.Locale.ROOT)
+                .contains("REEMPLAZAR");
+    }
+
     @Transactional(readOnly = true)
     public ModelResource getModel(UUID projectId) {
         requireProject(projectId);
-        projectAuthorizationService.requireMember(projectId);
-        UmlModel model = modelRepository.findByProjectId(projectId)
+        projectAuthorizationService.requireMember(projectId);        UmlModel model = modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> notFound("Model was not found."));
 
         List<UmlConstraint> modelConstraints = constraintRepository.findByModelId(model.getId());
