@@ -171,6 +171,29 @@ export interface ApiErrorResource {
   operationId: Uuid | null;
 }
 
+export interface HelpGuideTopicContext {
+  slug: string;
+  title: string;
+  summary: string;
+}
+
+export interface HelpGuideEditorState {
+  openSection: string | null;
+  sections: string[];
+}
+
+export interface HelpGuideRequest {
+  question: string;
+  topics: HelpGuideTopicContext[];
+  editorState: HelpGuideEditorState;
+}
+
+export interface HelpGuideResponse {
+  schemaVersion: 1;
+  answer: string;
+  suggestedSlugs: string[];
+}
+
 export interface ModelResource {
   id: Uuid;
   projectId: Uuid;

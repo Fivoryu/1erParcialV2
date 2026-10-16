@@ -141,7 +141,8 @@ export default function ChatPanel({
     if (!speech.listening && speech.transcript.length > 0) {
       onDraftChange(appendTranscript(draft, speech.transcript));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-append only when a transcript completes
+    // Re-append only when a transcript completes; the effect is deliberately
+    // scoped to the listening state and the completed transcript.
   }, [speech.listening, speech.transcript]);
 
   function handleFileChange(files: FileList | null): void {
