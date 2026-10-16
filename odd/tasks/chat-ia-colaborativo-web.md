@@ -333,6 +333,8 @@ Todas las tareas siguientes son **futuras**. El usuario detuvo explícitamente l
 
 **Verificación independiente acumulada:** gentle-ai-verify sobre la rama completa (71 archivos, +7357/−192) — FAIL inicial con 7 bloqueos, resuelto como arriba; sin filtraciones ni mutaciones cruzadas encontradas en las rutas nuevas.
 
+**Verificación nativa de receipts (T10, decisión del usuario):** la rama completa (75 archivos, 8109 líneas) excede el presupuesto de contexto del revisor nativo (`lens_context_budget_exceeded`, stop terminal del runtime). Cobertura resultante: **T2 revisada nativamente** (lineage `review-f3e6540d3d31ee77`, cerrada como *escalated* — el BLOCKER del bypass `/commands` quedó registrado como inconcluso por causalidad desconocida dentro de la vista congelada de T2, y ya está corregido en la punta de la rama por 930dc96); **T3-T10 exceden el presupuesto incluso por tarea** (el slice de T3: 27 archivos también dio stop), y el usuario aceptó cubrir el resto con el verificador acumulado + las compuertas + el PR #8 como vehículo de revisión humana. Sin autoridad nativa huérfana (el start fallido no creó lineage).
+
 ## Log
 
 ### L1 — Solicitud original (transcripción conservada el 2026-10-14)
