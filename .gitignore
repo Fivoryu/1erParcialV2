@@ -48,3 +48,8 @@ nul
 # Configuración local con valores de entorno; se versiona el ejemplo
 .env
 !.env.example
+
+# Documentación local fuera del versionado: credenciales de acceso y capturas
+# de la rama rutas-ortogonales que quedaron sin commitear (L54)
+docs/CUENTAS-DE-ACCESO.md
+docs/capturas/rutas-ortogonales/
