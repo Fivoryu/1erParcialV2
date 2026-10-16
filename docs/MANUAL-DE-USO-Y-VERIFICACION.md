@@ -296,3 +296,25 @@ solo el despliegue del ingreso.
 | El teléfono no encuentra despliegues | Su APK apunta a `localhost:8081` y no hay túnel | Recompilar con `--dart-define`, o levantar túnel y `adb reverse` |
 | La raíz del ingreso devuelve `404` | `/opt/web` quedó vacío (transferencia interrumpida) | Republicar el editor: el deployer vuelve a copiar el artefacto |
 | El ingreso no arranca | Falta la red `apps-net` | `ssh … "docker network create apps-net"` y volver a levantar el stack |
+
+## 7. La guía de la app: tour y chat de ayuda
+
+El editor tiene dos capas de ayuda, una sin IA y otra con IA local:
+
+**Tour de bienvenida (sin IA, determinista).** La primera vez que entrás a un proyecto aparece una tarjeta
+con cinco pasos que recorren el editor: dibujar clases, menú contextual, XMI, colaboración, generación y
+despliegue. Cerrar el tour lo marca como visto **para ese proyecto** (queda en tu navegador); el botón
+**Show editor tour** de la barra de opciones lo vuelve a abrir cuando quieras. Los textos del tour vienen del
+mismo inventario que la guía conversacional: si una sección cambia, las pruebas lo detectan.
+
+**Guía conversacional (IA local).** El botón flotante de ayuda abre un panel propio, independiente del chat
+del diagrama: no comparte sesiones ni memoria, y nunca modifica el modelo. Escribís una pregunta (por ejemplo
+«¿cómo genero el backend?» o «¿cómo invito a alguien?»), el editor envía la pregunta junto con el inventario
+de temas y el estado actual, y el modelo local responde en breve basándose solo en esos temas. Si la pregunta
+queda fuera de la ayuda de la app, lo dice en vez de inventar. Cuando la respuesta sugiere una sección, ves
+botones **Open …**: apretar uno abre esa sección del editor; nada se abre solo.
+
+**Si la guía no responde:** si el despliegue no tiene la IA local habilitada, el panel lo declara
+explícitamente («not available on this deployment») en vez de fallar en silencio; con el proveedor activo,
+un error transitorio se reintenta con la misma pregunta. El panel no necesita configuración adicional: usa el
+mismo runtime local que el chat del diagrama.
