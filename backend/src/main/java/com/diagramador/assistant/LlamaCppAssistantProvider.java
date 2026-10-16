@@ -138,6 +138,11 @@ public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssis
     }
 
     @Override
+    public String systemPrompt() {
+        return CHAT_SYSTEM_PROMPT;
+    }
+
+    @Override
     public String draft(String modelContextJson, String utterance) {
         if (!enabled) {
             throw new IllegalStateException("AI assistant provider is disabled");

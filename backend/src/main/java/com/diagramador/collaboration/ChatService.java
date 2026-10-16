@@ -255,6 +255,14 @@ public class ChatService {
     }
 
     /**
+     * Member-checked session resolution shared with sibling services (T6 meter/compaction): a
+     * session of another project is indistinguishable from a missing one (CA-06).
+     */
+    public ChatSession requireAccessibleSession(UUID projectId, UUID sessionId) {
+        return requireSessionInProject(projectId, sessionId);
+    }
+
+    /**
      * Member-checked view resolution shared with sibling services (T5 memory): a view of another
      * project is indistinguishable from a missing one (CA-06).
      */

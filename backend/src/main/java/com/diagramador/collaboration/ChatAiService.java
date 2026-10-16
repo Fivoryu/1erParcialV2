@@ -2,6 +2,7 @@ package com.diagramador.collaboration;
 
 import com.diagramador.assistant.ChatAssistantProvider;
 import com.diagramador.assistant.DiagramContextRenderer;
+import com.diagramador.context.ContextBudgetService;
 import com.diagramador.api.ApiException;
 import com.diagramador.api.ChatResources.MessageResource;
 import com.diagramador.api.ModelResource;
@@ -40,8 +41,7 @@ public class ChatAiService {
 
     private final ChatService chatService;
     private final ChatAssistantProvider provider;
-    private final ProjectApiService projectApiService;
-    private final DiagramContextRenderer contextRenderer;
+    private final com.diagramador.context.ContextBudgetService contextBudgetService;
     private final ProjectEventBus eventBus;
     private final boolean enabled;
 
@@ -76,13 +76,12 @@ public class ChatAiService {
     }
 
     public ChatAiService(ChatService chatService, ChatAssistantProvider provider,
-            ProjectApiService projectApiService, DiagramContextRenderer contextRenderer,
+            com.diagramador.context.ContextBudgetService contextBudgetService,
             ProjectEventBus eventBus,
             @Value("${diagrammer.assistant.enabled:false}") boolean enabled) {
         this.chatService = chatService;
         this.provider = provider;
-        this.projectApiService = projectApiService;
-        this.contextRenderer = contextRenderer;
+        this.contextBudgetService = contextBudgetService;
         this.eventBus = eventBus;
         this.enabled = enabled;
     }
@@ -207,31 +206,14 @@ public class ChatAiService {
     }
 
     private List<ChatAssistantProvider.Turn> buildTurns(UUID projectId, UUID sessionId, UUID questionMessageId) {
-        // S8-lite: the chosen diagram's semantic snapshot plus this session's recent messages;
-        // real token budgeting, reservation and compaction stay in T6 (PD-03).
-        ModelResource model = projectApiService.getModel(projectId);
+        // T6/L45: the budget service meters, auto-compacts at ceil(0.8*P) and refuses overflow;
+        // the built context carries diagram data, memories and this session's summary only (CA-15).
+        ContextBudgetService.LiveContext live = contextBudgetService.prepare(projectId, sessionId, questionMessageId);
         List<ChatAssistantProvider.Turn> turns = new ArrayList<>();
-        turns.add(new ChatAssistantProvider.Turn("user",
-                "Contexto actual del diagrama (JSON):\n" + contextRenderer.render(model)));
-        List<MessageResource> history = chatService.sessionHistory(projectId, sessionId);
-        MessageResource question = null;
-        List<MessageResource> window = new ArrayList<>();
-        for (MessageResource message : history) {
-            if (message.id().equals(questionMessageId)) {
-                question = message;
-            } else {
-                window.add(message);
-            }
-        }
-        // The asked question is always the final turn even when it is older than the window (L38);
-        // it is excluded from the window so the provider never receives it twice.
-        int from = Math.max(0, window.size() - (CONTEXT_HISTORY_MESSAGES - 1));
-        for (MessageResource message : window.subList(from, window.size())) {
-            turns.add(new ChatAssistantProvider.Turn("assistant".equalsIgnoreCase(message.kind()) ? "assistant" : "user",
-                    message.body()));
-        }
-        if (question != null) {
-            turns.add(new ChatAssistantProvider.Turn("user", question.body()));
+        turns.add(new ChatAssistantProvider.Turn("user", live.contextTurn()));
+        turns.addAll(live.liveTurns());
+        if (live.questionTurn() != null) {
+            turns.add(live.questionTurn());
         }
         return turns;
     }

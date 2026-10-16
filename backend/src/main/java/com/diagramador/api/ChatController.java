@@ -6,6 +6,7 @@ import com.diagramador.api.ChatResources.CreateSessionRequest;
 import com.diagramador.api.ChatResources.MessageResource;
 import com.diagramador.collaboration.ChatAiService;
 import com.diagramador.collaboration.ChatService;
+import com.diagramador.context.ContextBudgetService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,10 +27,13 @@ public class ChatController {
 
     private final ChatService chatService;
     private final ChatAiService chatAiService;
+    private final ContextBudgetService contextBudgetService;
 
-    public ChatController(ChatService chatService, ChatAiService chatAiService) {
+    public ChatController(ChatService chatService, ChatAiService chatAiService,
+            ContextBudgetService contextBudgetService) {
         this.chatService = chatService;
         this.chatAiService = chatAiService;
+        this.contextBudgetService = contextBudgetService;
     }
 
     @GetMapping("/projects/{id}/messages")
@@ -99,6 +103,20 @@ public class ChatController {
     public ChatAiService.PendingResource pendingAiRequest(@PathVariable("projectId") UUID projectId,
             @PathVariable("sessionId") UUID sessionId) {
         return chatAiService.pendingState(projectId, sessionId);
+    }
+
+    // ---- Context budget (T6/L45) ----
+
+    @GetMapping("/projects/{projectId}/sessions/{sessionId}/meter")
+    public ContextBudgetService.ContextReport meter(@PathVariable("projectId") UUID projectId,
+            @PathVariable("sessionId") UUID sessionId) {
+        return contextBudgetService.meter(projectId, sessionId);
+    }
+
+    @PostMapping("/projects/{projectId}/sessions/{sessionId}/compact")
+    public ContextBudgetService.CompactionOutcome compact(@PathVariable("projectId") UUID projectId,
+            @PathVariable("sessionId") UUID sessionId) {
+        return contextBudgetService.compact(projectId, sessionId);
     }
 
     @DeleteMapping("/projects/{projectId}/sessions/{sessionId}/ai-request")

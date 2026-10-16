@@ -49,6 +49,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("uml_model", Set.of("model_id", "project_id", "name", "current_revision", "created_at")),
             Map.entry("diagram_message", Set.of("message_id", "model_id", "session_id", "kind", "author_user_id", "reply_to_message_id", "memory_extracted", "body", "created_at")),
             Map.entry("diagram_memory", Set.of("memory_id", "view_id", "kind", "status", "content", "source_session_id", "source_message_id", "replaced_by", "created_by_user_id", "created_at")),
+            Map.entry("chat_session_compaction", Set.of("session_id", "summary", "up_to_message_id", "created_at", "updated_at")),
             Map.entry("chat_session", Set.of("session_id", "view_id", "title", "created_by_user_id", "is_default", "created_at")),
             Map.entry("model_version", Set.of("version_id", "model_id", "revision", "parent_revision", "state_hash",
                     "validation_state", "created_by_user_id", "created_at")),

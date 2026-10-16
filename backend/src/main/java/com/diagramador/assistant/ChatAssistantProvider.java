@@ -18,6 +18,12 @@ public interface ChatAssistantProvider {
     String chat(List<Turn> turns);
 
     /**
+     * The conversational system prompt the implementation prepends internally (T6/L45): the
+     * context budget counts it as the instructions component without duplicating its text.
+     */
+    String systemPrompt();
+
+    /**
      * One OpenAI-style message: role is "system", "user" or "assistant".
      */
     record Turn(String role, String content) {
