@@ -44,7 +44,7 @@
 | ID | Specs | Descripción | Estado |
 | --- | --- | --- | --- |
 | T1 | S5 | Corpus de ayuda de la app: inventario de secciones/panels/flujos como módulo de datos puro + pruebas de cobertura contra `editorSections.ts` | **cerrada** — `0ea918e` (corpus + 5 pruebas, GREEN tras RED); `f8f02c0` (arreglo preexistente de lint: disable de regla sin plugin en `ChatPanel.tsx`); compuertas: lint 0, suite completa 550 passed / 4 skipped |
-| T2 | S4 | Tour determinista de onboarding (datos de pasos, overlay con resaltado, persistencia local, reabrir) | pendiente |
+| T2 | S4 | Tour determinista de onboarding (datos de pasos, overlay con resaltado, persistencia local, reabrir) | **cerrada** — `782aa18` (escritor delegado; RED→GREEN, 14 pruebas nuevas de ayuda; compuertas del orquestador: suite 559 passed / 4 skipped, lint 0, build verde); tarjeta de paso con navegación, progreso por proyecto en localStorage (`editor-onboarding-tour:v1:<projectId>`), apertura automática al cargar el modelo la primera vez, botón «Show editor tour» para reabrir; pasos derivados del corpus (fuente única) con apertura de la sección asociada al navegar |
 | T3 | S1, S2, S6 | Panel de ayuda: botón flotante, panel propio, endpoint backend del guía con corpus en contexto, respuestas con navegación propuesta | pendiente |
 | T4 | S3 | Acciones de navegación: propuesta en la respuesta, botón de confirmación, dispatch de apertura de sección, prueba de que nunca muta el modelo | pendiente |
 | T5 | S1–S6 | Cierre: suites verdes, docs de uso, acta | pendiente |
