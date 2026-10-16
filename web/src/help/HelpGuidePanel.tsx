@@ -1,16 +1,19 @@
 import type { CSSProperties, FormEvent, ReactElement } from 'react';
 
-import { HELP_TOPICS } from './helpCorpus';
+import type { EditorSectionId } from '../pages/editorSections';
 import { getHelpGuideStatusText, type HelpGuidePanelState } from './helpGuide';
+import { getHelpNavigationSuggestions } from './helpNavigation';
 
 export type HelpGuidePanelProps = {
   isOpen: boolean;
   draft: string;
   state: HelpGuidePanelState;
+  openSection: EditorSectionId | null;
   onToggle: () => void;
   onClose: () => void;
   onDraftChange: (draft: string) => void;
   onSubmit: (question: string) => void;
+  onNavigateToSection: (section: EditorSectionId) => void;
 };
 
 const triggerStyle: CSSProperties = {
@@ -48,16 +51,16 @@ export default function HelpGuidePanel({
   isOpen,
   draft,
   state,
+  openSection,
   onToggle,
   onClose,
   onDraftChange,
   onSubmit,
+  onNavigateToSection,
 }: HelpGuidePanelProps): ReactElement {
   const statusText = getHelpGuideStatusText(state);
-  const suggestedTopics = state.kind === 'answered'
-    ? state.response.suggestedSlugs
-      .map((slug) => HELP_TOPICS.find((topic) => topic.slug === slug))
-      .filter((topic) => topic !== undefined)
+  const navigationSuggestions = state.kind === 'answered'
+    ? getHelpNavigationSuggestions(state.response.suggestedSlugs, openSection)
     : [];
 
   function submit(event: FormEvent<HTMLFormElement>): void {
@@ -105,11 +108,22 @@ export default function HelpGuidePanel({
           {state.kind === 'answered' && (
             <>
               <p className="help-guide-answer">{state.response.answer}</p>
-              {suggestedTopics.length > 0 && (
-                <section aria-label="Suggested topics" className="help-guide-suggestions">
-                  <h3>Suggested topics</h3>
+              {navigationSuggestions.length > 0 && (
+                <section aria-label="Suggested navigation" className="help-guide-suggestions">
+                  <h3>Suggested navigation</h3>
                   <ul>
-                    {suggestedTopics.map((topic) => <li key={topic.slug}>{topic.title}</li>)}
+                    {navigationSuggestions.map((suggestion) => (
+                      <li key={suggestion.section}>
+                        <button
+                          aria-label={`${suggestion.label} section`}
+                          className="button button-secondary button-compact"
+                          onClick={() => onNavigateToSection(suggestion.section)}
+                          type="button"
+                        >
+                          {suggestion.label}
+                        </button>
+                      </li>
+                    ))}
                   </ul>
                 </section>
               )}

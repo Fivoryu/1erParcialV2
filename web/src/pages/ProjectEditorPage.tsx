@@ -713,6 +713,9 @@ export default function ProjectEditorPage() {
   const handleOpenSection = useCallback((id: EditorSectionId) => {
     setOpenSection((current) => nextActiveSection(current, id));
   }, []);
+  const handleNavigateToSection = useCallback((id: EditorSectionId) => {
+    setOpenSection(findEditorSection(id).id);
+  }, []);
   const closeSection = useCallback(() => setOpenSection(null), []);
   const openTour = useCallback(() => {
     setTourStepIndex(0);
@@ -1200,7 +1203,11 @@ export default function ProjectEditorPage() {
             </Modal>
 
             <FloatingAssistantButton open={assistantOpen} onOpen={handleOpenAssistant} />
-            <HelpGuide api={api} openSection={openSection} />
+            <HelpGuide
+              api={api}
+              openSection={openSection}
+              onNavigateToSection={handleNavigateToSection}
+            />
             {tourOpen && project.id === projectId && (
               <TourOverlay
                 stepIndex={tourStepIndex}

@@ -13,9 +13,10 @@ import {
 export type HelpGuideProps = {
   api: Pick<ApiClient, 'askHelpGuide'>;
   openSection: EditorSectionId | null;
+  onNavigateToSection: (section: EditorSectionId) => void;
 };
 
-export default function HelpGuide({ api, openSection }: HelpGuideProps) {
+export default function HelpGuide({ api, openSection, onNavigateToSection }: HelpGuideProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [state, setState] = useState<HelpGuidePanelState>({ kind: 'idle' });
@@ -42,10 +43,12 @@ export default function HelpGuide({ api, openSection }: HelpGuideProps) {
       isOpen={isOpen}
       draft={draft}
       state={state}
+      openSection={openSection}
       onToggle={() => setIsOpen((current) => !current)}
       onClose={() => setIsOpen(false)}
       onDraftChange={setDraft}
       onSubmit={(question) => void ask(question)}
+      onNavigateToSection={onNavigateToSection}
     />
   );
 }
