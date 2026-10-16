@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ChatSessionCompactionRepository extends JpaRepository<ChatSessionCompaction, UUID> {
 
     Optional<ChatSessionCompaction> findBySession_Id(UUID sessionId);
+
+    void deleteBySession_Id(UUID sessionId);
 }

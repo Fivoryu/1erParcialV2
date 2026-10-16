@@ -154,6 +154,14 @@ class ChatAiApiTest extends AuthenticatedApiTest {
         String owner = username("owner");
         UUID projectId = createProject(owner);
         UUID viewId = defaultViewId(projectId);
+        // PD-04: one pending ask per USER — six users, one ask each: 1 running + 4 queued, the
+        // sixth rejected with AI_QUEUE_FULL (the global queue, not a per-session one).
+        String[] users = new String[6];
+        for (int index = 0; index < 6; index++) {
+            users[index] = username("user-" + index);
+            bearer(users[index]);
+            addMembership(users[index], projectId, ProjectMemberRole.EDITOR);
+        }
         CountDownLatch release = new CountDownLatch(1);
         when(chatAssistantProvider.chat(anyList())).thenAnswer(invocation -> {
             release.await(AWAIT_MS, TimeUnit.MILLISECONDS);
@@ -162,24 +170,24 @@ class ChatAiApiTest extends AuthenticatedApiTest {
         List<UUID> sessionIds = new ArrayList<>();
         List<String> questionIds = new ArrayList<>();
         for (int index = 0; index < 6; index++) {
-            UUID sessionId = createSession(owner, projectId, viewId, "Cola " + index);
+            UUID sessionId = createSession(users[index], projectId, viewId, "Cola " + index);
             sessionIds.add(sessionId);
-            questionIds.add(postMessage(owner, projectId, sessionId, "pregunta " + index));
+            questionIds.add(postMessage(users[index], projectId, sessionId, "pregunta " + index));
         }
 
         // The first ask occupies the single inference slot; the next four fill the queue (PD-04).
         for (int index = 0; index < 5; index++) {
-            mockMvc.perform(ask(owner, projectId, sessionIds.get(index), questionIds.get(index)))
+            mockMvc.perform(ask(users[index], projectId, sessionIds.get(index), questionIds.get(index)))
                     .andExpect(status().isAccepted());
         }
-        MvcResult rejected = mockMvc.perform(ask(owner, projectId, sessionIds.get(5), questionIds.get(5)))
+        MvcResult rejected = mockMvc.perform(ask(users[5], projectId, sessionIds.get(5), questionIds.get(5)))
                 .andExpect(status().isTooManyRequests())
                 .andReturn();
         assertThat(errorCode(rejected)).isEqualTo("AI_QUEUE_FULL");
 
         release.countDown();
         for (int index = 0; index < 5; index++) {
-            awaitAiAnswer(owner, projectId, sessionIds.get(index), questionIds.get(index));
+            awaitAiAnswer(users[index], projectId, sessionIds.get(index), questionIds.get(index));
         }
         // Each result belongs to its own session; the rejected ask never produced one (CA-05).
         assertThat(messages(owner, projectId, sessionIds.get(5))).hasSize(1);
@@ -192,6 +200,13 @@ class ChatAiApiTest extends AuthenticatedApiTest {
         UUID viewId = defaultViewId(projectId);
         UUID runningSession = createSession(owner, projectId, viewId, "Corriendo");
         UUID queuedSession = createSession(owner, projectId, viewId, "En cola");
+        // PD-04: one pending ask per USER — two users, one ask each.
+        String userA = username("user-a");
+        String userB = username("user-b");
+        bearer(userA);
+        addMembership(userA, projectId, ProjectMemberRole.EDITOR);
+        bearer(userB);
+        addMembership(userB, projectId, ProjectMemberRole.EDITOR);
         CountDownLatch release = new CountDownLatch(1);
         when(chatAssistantProvider.chat(anyList())).thenAnswer(invocation -> {
             release.await(AWAIT_MS, TimeUnit.MILLISECONDS);
@@ -200,7 +215,7 @@ class ChatAiApiTest extends AuthenticatedApiTest {
         String runningQuestion = postMessage(owner, projectId, runningSession, "corre");
         String queuedQuestion = postMessage(owner, projectId, queuedSession, "espera");
 
-        mockMvc.perform(ask(owner, projectId, runningSession, runningQuestion))
+        mockMvc.perform(ask(userA, projectId, runningSession, runningQuestion))
                 .andExpect(status().isAccepted());
         // Determinism: the single worker must already be inside the latch before we cancel, so
         // the queued request is still queued and the running one is truly running.
@@ -217,7 +232,7 @@ class ChatAiApiTest extends AuthenticatedApiTest {
         assertThat(runningState).isNotNull();
         assertThat(runningState.path("questionMessageId").asText()).isEqualTo(runningQuestion);
 
-        mockMvc.perform(ask(owner, projectId, queuedSession, queuedQuestion))
+        mockMvc.perform(ask(userB, projectId, queuedSession, queuedQuestion))
                 .andExpect(status().isAccepted());
         JsonNode queuedState = pendingState(owner, projectId, queuedSession);
         assertThat(queuedState).isNotNull();
@@ -232,7 +247,7 @@ class ChatAiApiTest extends AuthenticatedApiTest {
                 .andExpect(status().isConflict());
 
         release.countDown();
-        awaitAiAnswer(owner, projectId, runningSession, runningQuestion);
+        awaitAiAnswer(userA, projectId, runningSession, runningQuestion);
         assertThat(messages(owner, projectId, queuedSession)).hasSize(1);
         assertThat(pendingState(owner, projectId, queuedSession)).isNull();
         mockMvc.perform(authorizedAs(owner, delete("/projects/{projectId}/sessions/{sessionId}/ai-request",
@@ -356,6 +371,33 @@ class ChatAiApiTest extends AuthenticatedApiTest {
                 .anyMatch(event -> "chat.ai.status".equals(event.type())
                         && sessionId.equals(event.payload().get("sessionId"))
                         && "FAILED".equals(event.payload().get("state")))).isTrue();
+    }
+
+    @Test
+    void aUserHoldsAtMostOnePendingAskAcrossSessions() throws Exception {
+        // PD-04: "1 por usuario" — the pending registry is per USER across their sessions, not per session.
+        String owner = username("owner");
+        UUID projectId = createProject(owner);
+        UUID viewId = defaultViewId(projectId);
+        UUID sessionA = createSession(owner, projectId, viewId, "A");
+        UUID sessionB = createSession(owner, projectId, viewId, "B");
+        CountDownLatch release = new CountDownLatch(1);
+        when(chatAssistantProvider.chat(anyList())).thenAnswer(invocation -> {
+            release.await(AWAIT_MS, TimeUnit.MILLISECONDS);
+            return "respuesta";
+        });
+        String questionA = postMessage(owner, projectId, sessionA, "pregunta A");
+        String questionB = postMessage(owner, projectId, sessionB, "pregunta B");
+
+        mockMvc.perform(ask(owner, projectId, sessionA, questionA))
+                .andExpect(status().isAccepted());
+        MvcResult rejected = mockMvc.perform(ask(owner, projectId, sessionB, questionB))
+                .andExpect(status().isConflict())
+                .andReturn();
+        assertThat(errorCode(rejected)).isEqualTo("AI_REQUEST_IN_FLIGHT");
+
+        release.countDown();
+        awaitAiAnswer(owner, projectId, sessionA, questionA);
     }
 
     private String username(String role) {

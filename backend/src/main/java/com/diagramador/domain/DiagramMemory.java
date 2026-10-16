@@ -51,6 +51,10 @@ public class DiagramMemory {
     @JoinColumn(name = "source_message_id")
     private DiagramMessage sourceMessage;
 
+    /** The accepted command this memory cites as evidence (PD-02/T5; nullable — message-sourced). */
+    @Column(name = "source_command_id")
+    private UUID sourceCommandId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "replaced_by")
     private DiagramMemory replacedBy;
@@ -105,6 +109,14 @@ public class DiagramMemory {
 
     public DiagramMessage getSourceMessage() {
         return sourceMessage;
+    }
+
+    public UUID getSourceCommandId() {
+        return sourceCommandId;
+    }
+
+    public void setSourceCommandId(UUID sourceCommandId) {
+        this.sourceCommandId = sourceCommandId;
     }
 
     public DiagramMemory getReplacedBy() {

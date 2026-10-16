@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -222,6 +223,28 @@ class ContextMeterApiTest extends AuthenticatedApiTest {
         mockMvc.perform(authorizedAs(owner, get("/projects/{projectId}/sessions/{sessionId}/meter",
                         projectId, foreignSession)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deletingHistoryAlsoDropsTheCompactedSummary() throws Exception {
+        // CA-20/L54: the compacted summary belongs to the session's history; purging the history
+        // must drop it too, or the old content keeps flowing into the context.
+        String owner = username("owner");
+        UUID projectId = createProject(owner);
+        UUID sessionId = createSession(owner, projectId, defaultViewId(projectId), "Compacta y borra");
+        fillPastThreshold(owner, projectId, sessionId);
+        when(chatAssistantProvider.chat(anyList())).thenReturn(
+                "{\"summary\":\"Resumen viejo\",\"decisions\":[],\"hypotheses\":[],\"pending\":[]}");
+        mockMvc.perform(compact(owner, projectId, sessionId))
+                .andExpect(status().isOk());
+        assertThat(meter(owner, projectId, sessionId).path("history").asLong()).isPositive();
+
+        mockMvc.perform(authorizedAs(owner, delete("/projects/{projectId}/sessions/{sessionId}",
+                        projectId, sessionId)))
+                .andExpect(status().isOk());
+
+        // The summary is gone: the meter's history is back to zero.
+        assertThat(meter(owner, projectId, sessionId).path("history").asLong()).isZero();
     }
 
     private String username(String role) {

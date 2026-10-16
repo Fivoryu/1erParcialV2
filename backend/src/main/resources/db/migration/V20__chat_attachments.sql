@@ -17,3 +17,8 @@ CREATE TABLE diagrammer.chat_attachment (
 
 CREATE INDEX idx_chat_attachment_session
     ON diagrammer.chat_attachment(session_id, created_at, attachment_id);
+
+-- An attachment rides at most one message: the partial unique index closes the double-bind race
+-- between two concurrent posts validating the same unbound attachment (L54).
+CREATE UNIQUE INDEX uq_chat_attachment_message
+    ON diagrammer.chat_attachment(message_id) WHERE message_id IS NOT NULL;

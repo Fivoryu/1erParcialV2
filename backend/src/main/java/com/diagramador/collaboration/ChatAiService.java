@@ -43,6 +43,7 @@ public class ChatAiService {
     private final ChatAssistantProvider provider;
     private final com.diagramador.context.ContextBudgetService contextBudgetService;
     private final com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository;
+    private final com.diagramador.identity.CurrentUserContext currentUserContext;
     private final ProjectEventBus eventBus;
     private final boolean enabled;
 
@@ -56,6 +57,7 @@ public class ChatAiService {
 
     private static final class PendingRequest {
         private final UUID questionMessageId;
+        private final UUID authorUserId;
         private volatile Future<?> future;
         private volatile String state = "QUEUED";
         /**
@@ -65,8 +67,9 @@ public class ChatAiService {
          */
         private final AtomicBoolean startGate = new AtomicBoolean(false);
 
-        private PendingRequest(UUID questionMessageId) {
+        private PendingRequest(UUID questionMessageId, UUID authorUserId) {
             this.questionMessageId = questionMessageId;
+            this.authorUserId = authorUserId;
         }
     }
 
@@ -79,12 +82,14 @@ public class ChatAiService {
     public ChatAiService(ChatService chatService, ChatAssistantProvider provider,
             com.diagramador.context.ContextBudgetService contextBudgetService,
             com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository,
+            com.diagramador.identity.CurrentUserContext currentUserContext,
             ProjectEventBus eventBus,
             @Value("${diagrammer.assistant.enabled:false}") boolean enabled) {
         this.chatService = chatService;
         this.provider = provider;
         this.contextBudgetService = contextBudgetService;
         this.chatAttachmentRepository = chatAttachmentRepository;
+        this.currentUserContext = currentUserContext;
         this.eventBus = eventBus;
         this.enabled = enabled;
     }
@@ -100,7 +105,13 @@ public class ChatAiService {
                     "The AI assistant is not enabled on this deployment.");
         }
         chatService.requireAskTarget(projectId, sessionId, messageId);
-        PendingRequest request = new PendingRequest(messageId);
+        UUID userId = currentUserContext.require().userId();
+        // PD-04: "1 por usuario" — one pending ask per USER across all their sessions (L54).
+        if (pending.values().stream().anyMatch(existing -> userId.equals(existing.authorUserId))) {
+            throw error(HttpStatus.CONFLICT, "AI_REQUEST_IN_FLIGHT",
+                    "This user already has a pending AI request.");
+        }
+        PendingRequest request = new PendingRequest(messageId, userId);
         if (pending.putIfAbsent(sessionId, request) != null) {
             throw error(HttpStatus.CONFLICT, "AI_REQUEST_IN_FLIGHT",
                     "This session already has a pending AI request.");

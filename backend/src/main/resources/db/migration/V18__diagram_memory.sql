@@ -9,6 +9,7 @@ CREATE TABLE diagrammer.diagram_memory (
     content TEXT NOT NULL,
     source_session_id UUID REFERENCES diagrammer.chat_session(session_id) ON DELETE SET NULL,
     source_message_id UUID REFERENCES diagrammer.diagram_message(message_id) ON DELETE SET NULL,
+    source_command_id UUID REFERENCES diagrammer.model_command(command_id) ON DELETE SET NULL,
     replaced_by UUID REFERENCES diagrammer.diagram_memory(memory_id) ON DELETE SET NULL,
     created_by_user_id UUID REFERENCES diagrammer.user_account(user_id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()

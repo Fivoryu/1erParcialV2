@@ -194,6 +194,12 @@ public class ProjectApiService {
         requireProject(pathProjectId);
         CurrentUser currentUser = currentUserContext.require();
         projectAuthorizationService.requireMember(pathProjectId);
+        if ("xmi.import".equalsIgnoreCase(envelope.type()) && isReplaceMode(envelope.payload())) {
+            // L36/L54: REEMPLAZAR destroys the model's views (cascading chat history and memory
+            // away) — the generic command route must honor the same OWNER-only rule as the import
+            // controller, or an EDITOR could walk around it.
+            projectAuthorizationService.requireOwner(pathProjectId);
+        }
         OperationEnvelope authenticatedEnvelope = new OperationEnvelope(envelope.operationId(), envelope.type(),
                 new Author(currentUser.userId(), currentUser.username()), envelope.projectId(), envelope.modelId(),
                 envelope.baseRevision(), envelope.targets(), envelope.preconditions(), envelope.payload(),
@@ -243,6 +249,15 @@ public class ProjectApiService {
                 command.getBaseRevision(), command.getResultRevision(), command.getOperation(),
                 command.getTargetType() == null ? null : command.getTargetType().name(),
                 command.getTargetId(), command.isKnowledgePending(), command.getCreatedAt());
+    }
+
+    private static boolean isReplaceMode(Object payload) {
+        if (payload instanceof Map<?, ?> map) {
+            Object mode = map.get("mode");
+            return mode != null && "REEMPLAZAR".equalsIgnoreCase(String.valueOf(mode));
+        }
+        return payload != null && String.valueOf(payload).toUpperCase(java.util.Locale.ROOT)
+                .contains("REEMPLAZAR");
     }
 
     @Transactional(readOnly = true)

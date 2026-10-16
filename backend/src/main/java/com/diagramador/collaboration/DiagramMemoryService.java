@@ -130,7 +130,7 @@ public class DiagramMemoryService {
             if (!(candidateObject instanceof Map<?, ?> rawMap)) {
                 continue;
             }
-            DiagramMemory memory = buildCandidate(view, rawMap, pendingMessages, pendingMessageIds);
+            DiagramMemory memory = buildCandidate(view, rawMap, pendingMessages, pendingMessageIds, pendingCommands);
             if (memory == null || created.containsKey(memory.getId())) {
                 continue;
             }
@@ -210,7 +210,7 @@ public class DiagramMemoryService {
     }
 
     private DiagramMemory buildCandidate(DiagramView view, Map<?, ?> rawMap, List<DiagramMessage> pendingMessages,
-            Set<UUID> pendingMessageIds) {
+            Set<UUID> pendingMessageIds, List<ModelCommand> pendingCommands) {
         Map<String, Object> candidate = stringKeys(rawMap);
         String content = stringValue(candidate.get("content"));
         MemoryKind kind = parseKind(candidate.get("kind"));
@@ -224,8 +224,14 @@ public class DiagramMemoryService {
                 .filter(message -> message.getId().equals(sourceMessageId))
                 .findFirst()
                 .orElse(null);
-        return DiagramMemory.create(view, kind, content.strip(), source == null ? null : source.getSession(),
+        UUID parsedCommandId = parseUuid(candidate.get("sourceCommandId"));
+        boolean commandCitable = parsedCommandId != null && pendingCommands.stream()
+                .anyMatch(command -> command.getCommandId().equals(parsedCommandId));
+        UUID sourceCommandId = commandCitable ? parsedCommandId : null;
+        DiagramMemory memory = DiagramMemory.create(view, kind, content.strip(), source == null ? null : source.getSession(),
                 source, currentUser());
+        memory.setSourceCommandId(sourceCommandId);
+        return memory;
     }
 
     private UserAccount currentUser() {

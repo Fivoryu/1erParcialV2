@@ -45,6 +45,7 @@ public class ChatService {
     private final ChatSessionRepository sessionRepository;
     private final DiagramMessageRepository messageRepository;
     private final com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository;
+    private final com.diagramador.persistence.ChatSessionCompactionRepository compactionRepository;
     private final UserAccountRepository userAccountRepository;
     private final CurrentUserContext currentUserContext;
     private final ProjectAuthorizationService projectAuthorizationService;
@@ -54,6 +55,7 @@ public class ChatService {
             DiagramViewRepository viewRepository, ChatSessionRepository sessionRepository,
             DiagramMessageRepository messageRepository,
             com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository,
+            com.diagramador.persistence.ChatSessionCompactionRepository compactionRepository,
             UserAccountRepository userAccountRepository,
             CurrentUserContext currentUserContext, ProjectAuthorizationService projectAuthorizationService,
             ProjectEventBus projectEventBus) {
@@ -63,6 +65,7 @@ public class ChatService {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
         this.chatAttachmentRepository = chatAttachmentRepository;
+        this.compactionRepository = compactionRepository;
         this.userAccountRepository = userAccountRepository;
         this.currentUserContext = currentUserContext;
         this.projectAuthorizationService = projectAuthorizationService;
@@ -112,7 +115,20 @@ public class ChatService {
         List<ChatAttachment> attachments = validateAttachments(session, attachmentIds);
         DiagramMessage saved = postMessageInternal(session, body);
         attachments.forEach(attachment -> attachment.setMessage(saved));
-        return messageResource(saved);
+        MessageResource resource = messageResource(saved);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    // T10/L54: session messages are published over SSE exactly like the legacy
+                    // route — collaborators must not need a reload (CA-04).
+                    publishMessagePosted(session, resource);
+                }
+            });
+        } else {
+            publishMessagePosted(session, resource);
+        }
+        return resource;
     }
 
     private List<ChatAttachment> validateAttachments(ChatSession session, List<UUID> attachmentIds) {
@@ -150,6 +166,9 @@ public class ChatService {
         projectAuthorizationService.requireOwner(projectId);
         ChatSession session = requireSessionInProject(projectId, sessionId);
         long deleted = messageRepository.deleteBySession_Id(session.getId());
+        // L54: the compacted summary belongs to the session's history — purging the history drops
+        // it too, or the old content keeps flowing into the context after the purge (CA-20).
+        compactionRepository.deleteBySession_Id(session.getId());
         return Map.of("deletedMessages", deleted);
     }
 
