@@ -3,6 +3,7 @@ package com.diagramador.collaboration;
 import com.diagramador.api.ApiException;
 import com.diagramador.api.ChatResources.ChatSessionResource;
 import com.diagramador.api.ChatResources.MessageResource;
+import com.diagramador.domain.ChatAttachment;
 import com.diagramador.domain.ChatSession;
 import com.diagramador.domain.DiagramMessage;
 import com.diagramador.domain.DiagramView;
@@ -17,6 +18,7 @@ import com.diagramador.persistence.DiagramViewRepository;
 import com.diagramador.persistence.ProjectRepository;
 import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.UserAccountRepository;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,6 +44,7 @@ public class ChatService {
     private final DiagramViewRepository viewRepository;
     private final ChatSessionRepository sessionRepository;
     private final DiagramMessageRepository messageRepository;
+    private final com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository;
     private final UserAccountRepository userAccountRepository;
     private final CurrentUserContext currentUserContext;
     private final ProjectAuthorizationService projectAuthorizationService;
@@ -49,7 +52,9 @@ public class ChatService {
 
     public ChatService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
             DiagramViewRepository viewRepository, ChatSessionRepository sessionRepository,
-            DiagramMessageRepository messageRepository, UserAccountRepository userAccountRepository,
+            DiagramMessageRepository messageRepository,
+            com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository,
+            UserAccountRepository userAccountRepository,
             CurrentUserContext currentUserContext, ProjectAuthorizationService projectAuthorizationService,
             ProjectEventBus projectEventBus) {
         this.projectRepository = projectRepository;
@@ -57,6 +62,7 @@ public class ChatService {
         this.viewRepository = viewRepository;
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
+        this.chatAttachmentRepository = chatAttachmentRepository;
         this.userAccountRepository = userAccountRepository;
         this.currentUserContext = currentUserContext;
         this.projectAuthorizationService = projectAuthorizationService;
@@ -85,14 +91,51 @@ public class ChatService {
     public List<MessageResource> sessionHistory(UUID projectId, UUID sessionId) {
         ChatSession session = requireSessionInProject(projectId, sessionId);
         return messageRepository.findBySession_IdOrderByCreatedAtAscIdAsc(session.getId()).stream()
-                .map(ChatService::messageResource)
+                .map(this::messageResource)
                 .toList();
     }
 
     @Transactional
     public MessageResource postToSession(UUID projectId, UUID sessionId, String body) {
+        return postToSession(projectId, sessionId, body, null);
+    }
+
+    /**
+     * Posts with image attachments (T8/L49): every attachment must exist, belong to this session
+     * and still be unbound (CA-06), and the per-message cap holds (CA-31). The link happens in
+     * the same transaction, so a rejected attachment leaves no orphan message.
+     */
+    @Transactional
+    public MessageResource postToSession(UUID projectId, UUID sessionId, String body,
+            List<UUID> attachmentIds) {
         ChatSession session = requireSessionInProject(projectId, sessionId);
-        return postMessage(session, body);
+        List<ChatAttachment> attachments = validateAttachments(session, attachmentIds);
+        DiagramMessage saved = postMessageInternal(session, body);
+        attachments.forEach(attachment -> attachment.setMessage(saved));
+        return messageResource(saved);
+    }
+
+    private List<ChatAttachment> validateAttachments(ChatSession session, List<UUID> attachmentIds) {
+        if (attachmentIds == null || attachmentIds.isEmpty()) {
+            return List.of();
+        }
+        if (attachmentIds.size() > 3) {
+            // CA-31/L49: at most three images per message.
+            throw error(HttpStatus.BAD_REQUEST, "INVALID_ATTACHMENT", "At most 3 attachments per message.");
+        }
+        List<ChatAttachment> found = new ArrayList<>();
+        for (UUID attachmentId : attachmentIds) {
+            ChatAttachment attachment = chatAttachmentRepository.findById(attachmentId)
+                    .orElseThrow(() -> error(HttpStatus.BAD_REQUEST, "INVALID_ATTACHMENT",
+                            "The attachment was not found for this session."));
+            if (!attachment.getSession().getId().equals(session.getId()) || attachment.getMessage() != null) {
+                // A foreign or already-bound attachment cannot ride this message (CA-06).
+                throw error(HttpStatus.BAD_REQUEST, "INVALID_ATTACHMENT",
+                        "The attachment was not found for this session.");
+            }
+            found.add(attachment);
+        }
+        return found;
     }
 
     /**
@@ -122,7 +165,7 @@ public class ChatService {
         UmlModel model = requireMemberModel(projectId);
         ChatSession general = defaultSession(model);
         return messageRepository.findBySession_IdOrderByCreatedAtAscIdAsc(general.getId()).stream()
-                .map(ChatService::messageResource)
+                .map(this::messageResource)
                 .toList();
     }
 
@@ -195,14 +238,18 @@ public class ChatService {
 
     // ---- Internals ----
 
-    private MessageResource postMessage(ChatSession session, String body) {
+    private DiagramMessage postMessageInternal(ChatSession session, String body) {
         String sanitizedBody = sanitizeBody(body);
         UUID authorId = currentUserContext.require().userId();
         UserAccount author = userAccountRepository.findById(authorId)
                 .orElseThrow(() -> error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
                         "The authenticated user account was not found."));
 
-        DiagramMessage saved = messageRepository.saveAndFlush(DiagramMessage.create(session, author, sanitizedBody));
+        return messageRepository.saveAndFlush(DiagramMessage.create(session, author, sanitizedBody));
+    }
+
+    private MessageResource postMessage(ChatSession session, String body) {
+        DiagramMessage saved = postMessageInternal(session, body);
         MessageResource resource = messageResource(saved);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -337,13 +384,16 @@ public class ChatService {
                 session.getCreatedBy().getId(), session.getCreatedAt());
     }
 
-    private static MessageResource messageResource(DiagramMessage message) {
+    private MessageResource messageResource(DiagramMessage message) {
         UserAccount author = message.getAuthor();
         DiagramMessage replyTo = message.getReplyTo();
+        List<UUID> attachments = chatAttachmentRepository
+                .findByMessage_IdOrderByCreatedAtAscIdAsc(message.getId())
+                .stream().map(ChatAttachment::getId).toList();
         return new MessageResource(message.getId(), message.getSession().getId(), message.getKind().name(),
                 author == null ? null : author.getId(),
                 author == null ? AI_DISPLAY_NAME : author.getDisplayName(),
-                message.getBody(), message.getCreatedAt(), replyTo == null ? null : replyTo.getId());
+                message.getBody(), message.getCreatedAt(), replyTo == null ? null : replyTo.getId(), attachments);
     }
 
     private static ApiException error(HttpStatus status, String code, String message) {

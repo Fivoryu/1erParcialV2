@@ -49,6 +49,7 @@ public class ContextBudgetService {
     private final DiagramMemoryRepository memoryRepository;
     private final DiagramMessageRepository messageRepository;
     private final ModelCommandRepository commandRepository;
+    private final com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository;
     private final ChatSessionCompactionRepository compactionRepository;
     private final ChatAssistantProvider provider;
     private final TokenCounter tokenCounter;
@@ -56,9 +57,10 @@ public class ContextBudgetService {
     private final long contextWindow;
     private final long reservedForResponse;
     private final long promptBudget;
+    private final long imageTokens;
 
     public record ContextReport(long contextWindow, long reservedForResponse, long promptBudget, long instructions,
-            long diagramData, long memories, long history, long totalUsed, long promptThreshold,
+            long diagramData, long memories, long history, long images, long totalUsed, long promptThreshold,
             boolean compactionPending, int percent) {
     }
 
@@ -74,11 +76,13 @@ public class ContextBudgetService {
             com.diagramador.api.ProjectApiService projectApiService,
             DiagramContextRenderer contextRenderer, DiagramMemoryRepository memoryRepository,
             DiagramMessageRepository messageRepository, ModelCommandRepository commandRepository,
+            com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository,
             ChatSessionCompactionRepository compactionRepository, ChatAssistantProvider provider,
             TokenCounter tokenCounter, ObjectMapper objectMapper,
             @Value("${diagrammer.context.window:4096}") long contextWindow,
             @Value("${diagrammer.context.response-reserved:512}") long reservedForResponse,
-            @Value("${diagrammer.context.prompt-budget:3584}") long promptBudget) {
+            @Value("${diagrammer.context.prompt-budget:3584}") long promptBudget,
+            @Value("${diagrammer.context.image-tokens:600}") long imageTokens) {
         // CA-23: a broken budget configuration is rejected at startup, never at ask time.
         if (contextWindow <= 0 || promptBudget <= 0 || reservedForResponse < 0
                 || promptBudget > contextWindow - reservedForResponse) {
@@ -91,6 +95,7 @@ public class ContextBudgetService {
         this.memoryRepository = memoryRepository;
         this.messageRepository = messageRepository;
         this.commandRepository = commandRepository;
+        this.chatAttachmentRepository = chatAttachmentRepository;
         this.compactionRepository = compactionRepository;
         this.provider = provider;
         this.tokenCounter = tokenCounter;
@@ -98,12 +103,16 @@ public class ContextBudgetService {
         this.contextWindow = contextWindow;
         this.reservedForResponse = reservedForResponse;
         this.promptBudget = promptBudget;
+        this.imageTokens = imageTokens;
     }
 
     @Transactional(readOnly = true)
     public ContextReport meter(UUID projectId, UUID sessionId) {
         ChatSession session = chatService.requireAccessibleSession(projectId, sessionId);
-        return report(session, projectId);
+        return report(session, projectId, imageTokens
+                * chatAttachmentRepository
+                        .findBySession_IdAndMessageIsNullOrderByCreatedAtAscIdAsc(session.getId())
+                        .size());
     }
 
     /**
@@ -145,11 +154,14 @@ public class ContextBudgetService {
     @Transactional
     public LiveContext prepare(UUID projectId, UUID sessionId, UUID questionMessageId) {
         ChatSession session = chatService.requireAccessibleSession(projectId, sessionId);
-        ContextReport before = report(session, projectId);
+        long questionImages = imageTokens
+                * chatAttachmentRepository.findByMessage_IdOrderByCreatedAtAscIdAsc(questionMessageId)
+                        .size();
+        ContextReport before = report(session, projectId, questionImages);
         if (before.compactionPending()) {
             compact(projectId, sessionId);
         }
-        ContextReport after = report(session, projectId);
+        ContextReport after = report(session, projectId, questionImages);
         if (after.totalUsed() > after.promptBudget()) {
             throw error(HttpStatus.PAYLOAD_TOO_LARGE, "CONTEXT_OVERFLOW",
                     "The context does not fit even after compaction; narrow the request (CA-26).");
@@ -157,7 +169,7 @@ public class ContextBudgetService {
         return buildLiveContext(session, projectId, after, questionMessageId);
     }
 
-    private ContextReport report(ChatSession session, UUID projectId) {
+    private ContextReport report(ChatSession session, UUID projectId, long images) {
         long instructions = tokenCounter.count(provider.systemPrompt());
         String diagramJson = contextRenderer.render(projectApiService.getModel(projectId));
         long diagramData = tokenCounter.count(diagramJson);
@@ -170,10 +182,10 @@ public class ContextBudgetService {
         List<DiagramMessage> live = liveAfter(all, compaction);
         long history = (compaction == null ? 0 : tokenCounter.count(compaction.getSummary()))
                 + live.stream().mapToLong(message -> tokenCounter.count(message.getBody())).sum();
-        long totalUsed = instructions + diagramData + memories + history;
+        long totalUsed = instructions + diagramData + memories + history + images;
         long threshold = (promptBudget * 4 + 4) / 5; // ceil(0.8*P), computed over P only (CA-24)
         return new ContextReport(contextWindow, reservedForResponse, promptBudget, instructions, diagramData,
-                memories, history, totalUsed, threshold, totalUsed >= threshold,
+                memories, history, images, totalUsed, threshold, totalUsed >= threshold,
                 (int) (totalUsed * 100 / Math.max(1, promptBudget)));
     }
 

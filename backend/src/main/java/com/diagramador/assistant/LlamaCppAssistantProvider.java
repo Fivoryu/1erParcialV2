@@ -97,7 +97,15 @@ public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssis
         List<Map<String, Object>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content", CHAT_SYSTEM_PROMPT));
         for (Turn turn : turns) {
-            messages.add(Map.of("role", turn.role(), "content", turn.content()));
+            if (turn.imageBase64() == null) {
+                messages.add(Map.of("role", turn.role(), "content", turn.content()));
+            } else {
+                // T8/L49: the visual route — multimodal content with the inline image (CA-30).
+                messages.add(Map.of("role", turn.role(), "content", List.of(
+                        Map.of("type", "text", "text", turn.content()),
+                        Map.of("type", "image_url", "image_url", Map.of("url",
+                                "data:" + turn.imageMime() + ";base64," + turn.imageBase64())))));
+            }
         }
         return callCompletions(messages);
     }

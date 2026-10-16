@@ -42,6 +42,7 @@ public class ChatAiService {
     private final ChatService chatService;
     private final ChatAssistantProvider provider;
     private final com.diagramador.context.ContextBudgetService contextBudgetService;
+    private final com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository;
     private final ProjectEventBus eventBus;
     private final boolean enabled;
 
@@ -77,11 +78,13 @@ public class ChatAiService {
 
     public ChatAiService(ChatService chatService, ChatAssistantProvider provider,
             com.diagramador.context.ContextBudgetService contextBudgetService,
+            com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository,
             ProjectEventBus eventBus,
             @Value("${diagrammer.assistant.enabled:false}") boolean enabled) {
         this.chatService = chatService;
         this.provider = provider;
         this.contextBudgetService = contextBudgetService;
+        this.chatAttachmentRepository = chatAttachmentRepository;
         this.eventBus = eventBus;
         this.enabled = enabled;
     }
@@ -213,7 +216,17 @@ public class ChatAiService {
         turns.add(new ChatAssistantProvider.Turn("user", live.contextTurn()));
         turns.addAll(live.liveTurns());
         if (live.questionTurn() != null) {
-            turns.add(live.questionTurn());
+            // T8/L49: the asked message's first image rides the question turn (the visual route).
+            var questionAttachments = chatAttachmentRepository
+                    .findByMessage_IdOrderByCreatedAtAscIdAsc(questionMessageId);
+            if (questionAttachments.isEmpty()) {
+                turns.add(live.questionTurn());
+            } else {
+                var image = questionAttachments.get(0);
+                turns.add(new ChatAssistantProvider.Turn("user", live.questionTurn().content(),
+                        java.util.Base64.getEncoder().encodeToString(image.getData()),
+                        image.getContentType()));
+            }
         }
         return turns;
     }

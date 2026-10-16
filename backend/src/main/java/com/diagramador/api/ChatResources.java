@@ -1,6 +1,7 @@
 package com.diagramador.api;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public final class ChatResources {
@@ -8,7 +9,7 @@ public final class ChatResources {
     private ChatResources() {
     }
 
-    public record CreateMessageRequest(String body) {
+    public record CreateMessageRequest(String body, List<UUID> attachmentIds) {
     }
 
     public record CreateSessionRequest(String title) {
@@ -22,6 +23,7 @@ public final class ChatResources {
     }
 
     public record MessageResource(UUID id, UUID sessionId, String kind, UUID authorUserId,
-            String authorDisplayName, String body, OffsetDateTime createdAt, UUID replyTo) {
+            String authorDisplayName, String body, OffsetDateTime createdAt, UUID replyTo,
+            List<UUID> attachments) {
     }
 }

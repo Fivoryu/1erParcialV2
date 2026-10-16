@@ -5,6 +5,7 @@ import com.diagramador.api.ChatResources.CreateMessageRequest;
 import com.diagramador.api.ChatResources.CreateSessionRequest;
 import com.diagramador.api.ChatResources.MessageResource;
 import com.diagramador.collaboration.ChatAiService;
+import com.diagramador.collaboration.ChatAttachmentService;
 import com.diagramador.collaboration.ChatService;
 import com.diagramador.context.ContextBudgetService;
 import java.util.List;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -28,12 +30,14 @@ public class ChatController {
     private final ChatService chatService;
     private final ChatAiService chatAiService;
     private final ContextBudgetService contextBudgetService;
+    private final ChatAttachmentService chatAttachmentService;
 
     public ChatController(ChatService chatService, ChatAiService chatAiService,
-            ContextBudgetService contextBudgetService) {
+            ContextBudgetService contextBudgetService, ChatAttachmentService chatAttachmentService) {
         this.chatService = chatService;
         this.chatAiService = chatAiService;
         this.contextBudgetService = contextBudgetService;
+        this.chatAttachmentService = chatAttachmentService;
     }
 
     @GetMapping("/projects/{id}/messages")
@@ -73,7 +77,32 @@ public class ChatController {
     public ResponseEntity<MessageResource> postSessionMessage(@PathVariable("projectId") UUID projectId,
             @PathVariable("sessionId") UUID sessionId, @RequestBody CreateMessageRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(chatService.postToSession(projectId, sessionId, request == null ? null : request.body()));
+                .body(chatService.postToSession(projectId, sessionId,
+                        request == null ? null : request.body(),
+                        request == null ? null : request.attachmentIds()));
+    }
+
+    // ---- Image attachments (T8/L49) ----
+
+    @PostMapping(path = "/projects/{projectId}/sessions/{sessionId}/attachments",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ChatAttachmentService.AttachmentResource> uploadAttachment(
+            @PathVariable("projectId") UUID projectId, @PathVariable("sessionId") UUID sessionId,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
+        // CA-31: magic bytes and size are validated here, before any inference.
+        return ResponseEntity.status(HttpStatus.CREATED).body(
+                chatAttachmentService.upload(projectId, sessionId, file.getOriginalFilename(), file.getBytes()));
+    }
+
+    @GetMapping("/projects/{projectId}/sessions/{sessionId}/attachments/{attachmentId}")
+    public ResponseEntity<byte[]> downloadAttachment(@PathVariable("projectId") UUID projectId,
+            @PathVariable("sessionId") UUID sessionId, @PathVariable("attachmentId") UUID attachmentId) {
+        ChatAttachmentService.AttachmentBytes attachment =
+                chatAttachmentService.bytesFor(projectId, sessionId, attachmentId);
+        return ResponseEntity.ok()
+                .header("Content-Type", attachment.contentType())
+                .header("Content-Disposition", "inline; filename=\"" + attachment.filename() + "\"")
+                .body(attachment.data());
     }
 
     /**

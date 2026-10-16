@@ -24,8 +24,17 @@ public interface ChatAssistantProvider {
     String systemPrompt();
 
     /**
-     * One OpenAI-style message: role is "system", "user" or "assistant".
+     * One OpenAI-style message: role is "system", "user" or "assistant". An attachment turn
+     * carries its image inline as base64 data (T8/L49 — the visual route); text-only turns keep
+     * the two-argument factory.
      */
-    record Turn(String role, String content) {
+    record Turn(String role, String content, String imageBase64, String imageMime) {
+        public Turn(String role, String content) {
+            this(role, content, null, null);
+        }
+
+        public Turn(String role, String content, String imageBase64) {
+            this(role, content, imageBase64, "image/jpeg");
+        }
     }
 }
