@@ -59,6 +59,14 @@ import {
 import type { CanvasSelection } from '../diagram/selection';
 import { groupTouchesByElement } from '../diagram/touch-highlight';
 import { loginErrorMessage } from './LoginPage';
+import TourOverlay from '../help/TourOverlay';
+import { createTourProgress } from '../help/tourProgress';
+import {
+  clampTourStepIndex,
+  getTourStep,
+  nextTourStepIndex,
+  previousTourStepIndex,
+} from '../help/tourSteps';
 import { findEditorSection, nextActiveSection, type EditorSectionId } from './editorSections';
 import EditorOptionsBar from './EditorOptionsBar';
 import FloatingAssistantButton from '../ui/FloatingAssistantButton';
@@ -177,6 +185,8 @@ export default function ProjectEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [openSection, setOpenSection] = useState<EditorSectionId | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourStepIndex, setTourStepIndex] = useState(0);
   const modelRef = useRef<ModelResource | null>(null);
   const canonicalModelRef = useRef<ModelResource | null>(null);
   const revisionRef = useRef<number | null>(null);
@@ -354,6 +364,16 @@ export default function ProjectEditorPage() {
   }, [projectId]);
 
   const modelLoaded = model !== null;
+  useEffect(() => {
+    if (!projectId || !modelLoaded || project?.id !== projectId) {
+      return;
+    }
+
+    const progress = createTourProgress(projectId, window.localStorage);
+    setTourStepIndex(0);
+    setTourOpen(progress.shouldShow());
+  }, [modelLoaded, project?.id, projectId]);
+
   useEffect(() => {
     let active = true;
     setChatSessions([]);
@@ -693,6 +713,24 @@ export default function ProjectEditorPage() {
     setOpenSection((current) => nextActiveSection(current, id));
   }, []);
   const closeSection = useCallback(() => setOpenSection(null), []);
+  const openTour = useCallback(() => {
+    setTourStepIndex(0);
+    setOpenSection(null);
+    setAssistantOpen(false);
+    setTourOpen(true);
+  }, []);
+  const changeTourStep = useCallback((requestedIndex: number) => {
+    const nextIndex = clampTourStepIndex(requestedIndex);
+    setTourStepIndex(nextIndex);
+    setOpenSection(getTourStep(nextIndex).section ?? null);
+    setAssistantOpen(false);
+  }, []);
+  const finishTour = useCallback(() => {
+    if (projectId) {
+      createTourProgress(projectId, window.localStorage).markSeen();
+    }
+    setTourOpen(false);
+  }, [projectId]);
 
   // `openSection` and `assistantOpen` are independent, so opening the assistant
   // from the floating button must close any open section dialog first: two open
@@ -1040,6 +1078,11 @@ export default function ProjectEditorPage() {
               onOpenSection={handleOpenSection}
               badges={{ collaboration: presence.length }}
             />
+            {!tourOpen && (
+              <button className="text-button" onClick={openTour} type="button">
+                Show editor tour
+              </button>
+            )}
 
             <div className="editor-workspace">
               <UmlCanvas
@@ -1156,6 +1199,15 @@ export default function ProjectEditorPage() {
             </Modal>
 
             <FloatingAssistantButton open={assistantOpen} onOpen={handleOpenAssistant} />
+            {tourOpen && project.id === projectId && (
+              <TourOverlay
+                stepIndex={tourStepIndex}
+                onPrevious={() => changeTourStep(previousTourStepIndex(tourStepIndex))}
+                onNext={() => changeTourStep(nextTourStepIndex(tourStepIndex))}
+                onFinish={finishTour}
+                onReopenHelp={openTour}
+              />
+            )}
           </>
         ) : null}
       </div>
