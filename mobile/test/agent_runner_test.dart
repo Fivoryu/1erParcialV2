@@ -484,6 +484,48 @@ void main() {
       throwsFormatException,
     );
     expect(contract.authorize('add Note with text = "hello"'), isNotNull);
-    expect(contract.authorize('add Note with text = hello'), isNull);
+    // Natural values are now authorized deterministically from user text.
+    expect(contract.authorize('add Note with text = hello'), isNotNull);
+    expect(contract.authorize('Creá una Note que diga "hola"'), isNotNull);
+    expect(contract.authorize('agregá la Note hola'), isNotNull);
+    expect(
+      contract.authorize('Crea Note con text = "hello" y text2 = "bye"'),
+      isNull,
+    );
+  });
+
+  test('natural Spanish create authorizes values from user text only', () {
+    final contract = fixture();
+    for (final request in [
+      'Creá una Note que diga "hola mundo"',
+      'Crea Note que diga hola',
+      'agregá la Note "hola"',
+      'agrega Note con text = hola',
+      'add Note with text = "hi there"',
+    ]) {
+      final authorization = contract.authorize(request);
+      expect(authorization, isNotNull, reason: request);
+    }
+    // Values binding is deterministic: user text 'hola mundo' → required text field.
+    expect(
+      contract.authorize('Creá una Note que diga "hola mundo"')!.encodedProposal,
+      contains('hola mundo'),
+    );
+    // Unknown entities, missing values and type mismatches stay closed.
+    for (final request in [
+      'Creá una entidad rara que diga hola',
+      'Creá una Note',
+      'borrá la Note',
+      'Creá una Note que diga hola y chau',
+      'crear Note text = 42',
+    ]) {
+      expect(contract.authorize(request), isNull, reason: request);
+    }
+  });
+
+  test('plural and accented entity mentions resolve without guessing', () {
+    final contract = fixture();
+    expect(contract.authorize('Creá unas Notes que digan "hola"'), isNotNull);
+    expect(contract.authorize('creá la NOTA que diga "hola"'), isNull);
   });
 }

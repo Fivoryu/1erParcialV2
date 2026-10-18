@@ -77,44 +77,71 @@ class AgentContract {
     return proposal;
   }
 
-  /// Narrow natural-language grammar: verb + exact entity [+ UUID] + con/with
-  /// + JSON object, or field = JSON literal. Nothing is inferred from the model.
+  /// Natural-language write authorization (S4/T3). Writes stay authorized
+  /// only by deterministic parsing of the user's own request text — never
+  /// from model output. Accents/case are ignored; the entity mention must
+  /// match a contract entity (plural -s/-es allowed); values bind only to
+  /// declared fields, and free text binds only to the entity's single
+  /// required string field. Anything ambiguous fails closed (null).
   AgentWriteAuthorization? authorize(String request) {
-    final match = RegExp(
-      r'^(crea|crear|añade|agrega|create|add|edita|editar|actualiza|edit|update)\s+([A-Za-z0-9_-]+)(?:\s+([0-9a-fA-F-]{36}))?\s+(?:con|with)\s+(.+)$',
-      caseSensitive: false,
-    ).firstMatch(request.trim());
-    if (match == null) return null;
-    final names = entities.keys
-        .where((name) => name.toLowerCase() == match[2]!.toLowerCase())
-        .toList();
-    if (names.length != 1) return null;
+    final normalized = _plain(request.trim());
+    final verb = RegExp(
+      r'^(crea|cree|crear|anade|agrega|create|add|edita|editar|actualiza|actualizar|edit|update)\b(.*)$',
+      dotAll: true,
+    ).firstMatch(normalized);
+    if (verb == null) return null;
     final update = {
       'edita',
       'editar',
       'actualiza',
+      'actualizar',
       'edit',
       'update',
-    }.contains(match[1]!.toLowerCase());
-    if (update != (match[3] != null)) return null;
-    try {
-      final raw = match[4]!;
-      dynamic values;
-      if (raw.startsWith('{')) {
-        values = jsonDecode(raw);
-      } else {
-        final field = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$')
-            .firstMatch(raw);
-        if (field == null) return null;
-        values = {field[1]!: jsonDecode(field[2]!)};
+    }.contains(verb[1]!);
+    final rest = verb[2]!.trim();
+
+    // Update verbs require an exact record identifier; create verbs forbid one.
+    String? id;
+    var working = rest;
+    final idMatch = RegExp(r'\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b')
+        .firstMatch(working);
+    if (idMatch != null) {
+      id = idMatch.group(1);
+      working = working.replaceRange(idMatch.start, idMatch.end, ' ');
+    }
+    if (update != (id != null)) return null;
+
+    // Entity mention: first non-article token naming exactly one contract
+    // entity, singular/plural and accent/case insensitive.
+    String? entityName;
+    var tailStart = -1;
+    final words = RegExp(r'\S+').allMatches(working).toList();
+    for (final word in words) {
+      final token = word.group(0)!;
+      final singulars = _singulars(token);
+      final names = entities.keys
+          .where((name) => singulars.contains(_plain(name)))
+          .toList();
+      if (names.length == 1) {
+        entityName = names.single;
+        tailStart = word.end;
+        break;
       }
-      if (values is! Map<String, dynamic>) return null;
+      if (names.length > 1) return null;
+      if (!_articles.contains(token)) return null;
+    }
+    if (entityName == null || tailStart < 0) return null;
+    final tail = working.substring(tailStart).trim();
+
+    final values = _valuesFromTail(tail, entityName);
+    if (values == null) return null;
+    try {
       final proposal = operation(
         AgentAction.parse(
           jsonEncode({
             'tag': update ? 'update' : 'create',
-            'entity': names.single,
-            if (update) 'id': match[3],
+            'entity': entityName,
+            if (update) 'id': id,
             'values': values,
           }),
         ),
@@ -127,6 +154,114 @@ class AgentContract {
     } on FormatException {
       return null;
     }
+  }
+
+  static const _articles = {
+    'un', 'una', 'unos', 'unas', 'el', 'la', 'los', 'las',
+    'the', 'a', 'an', 'mi', 'mis', 'este', 'esta', 'estos', 'estas',
+  };
+
+  /// Tail -> values. Accepted shapes, all deterministic:
+  /// 1. JSON object: {"text":"x"}
+  /// 2. field = value pairs (JSON literal or bare single token per value)
+  /// 3. free text after que (diga|digan|tenga|tengan|contenga|contengan|sea|sean)
+  ///    or a quoted/single-token tail, bound to the entity's single required
+  ///    string field; anything else fails closed.
+  Map<String, dynamic>? _valuesFromTail(String tail, String entityName) {
+    if (tail.isEmpty) return null;
+    if (tail.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(tail);
+        return decoded is Map<String, dynamic> ? decoded : null;
+      } on FormatException {
+        return null;
+      }
+    }
+    final body = tail.replaceFirst(RegExp(r'^(?:con|with)\s+'), '');
+    final pairShape = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=');
+    if (pairShape.firstMatch(body) != null) {
+      final values = <String, dynamic>{};
+      for (final part in body.split(',')) {
+        final pair = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$', dotAll: true)
+            .firstMatch(part.trim());
+        if (pair == null) return null;
+        final value = _literal(pair.group(2)!.trim());
+        if (value == null) return null;
+        values[pair.group(1)!] = value;
+      }
+      return values;
+    }
+    final free = RegExp(
+      r'^(?:que\s+)?(?:digan|diga|contengan|contenga|tengan|tenga|sean|sea)\s+(.+)$',
+      dotAll: true,
+    ).firstMatch(tail);
+    final text = free == null ? tail : free.group(1)!.trim();
+    if (text.contains(' ') && !(text.startsWith('"') && text.endsWith('"'))) {
+      return null;
+    }
+    final value = _literal(text);
+    if (value is! String) return null;
+    final target = _singleRequiredStringField(entityName);
+    return target == null ? null : {target: value};
+  }
+
+  /// JSON literal when it parses; quoted text stripped of quotes; otherwise a
+  /// bare single-token string. Multiword unquoted text never reaches here.
+  dynamic _literal(String raw) {
+    if (raw.length >= 2 &&
+        raw.startsWith('"') &&
+        raw.endsWith('"') &&
+        !raw.substring(1, raw.length - 1).contains('"')) {
+      return raw.substring(1, raw.length - 1);
+    }
+    try {
+      return jsonDecode(raw);
+    } on FormatException {
+      if (raw.contains(' ') || raw.contains('"')) return null;
+      return raw;
+    }
+  }
+
+  /// The entity's exactly-one required string field, from the compact
+  /// contract view; zero or multiple candidates fail closed.
+  String? _singleRequiredStringField(String entityName) {
+    final entry = compactDescriptor
+        .where((e) => e['entity'] == entityName)
+        .firstOrNull;
+    if (entry == null) return null;
+    final fields = entry['fields'];
+    final required = entry['required'];
+    if (fields is! Map || required is! List) return null;
+    final candidates = required
+        .whereType<String>()
+        .where((name) => fields[name] == 'string')
+        .toList();
+    return candidates.length == 1 ? candidates.single : null;
+  }
+
+  /// Both plural unfoldings: Spanish/English '-s' and '-es'. 'notes' ->
+  /// {'note', 'not'}; only an exact entity match in either form is accepted.
+  static Set<String> _singulars(String token) {
+    final plain = _plain(token);
+    return {
+      plain,
+      if (plain.length > 4 && plain.endsWith('es'))
+        plain.substring(0, plain.length - 2),
+      if (plain.length > 3 && plain.endsWith('s'))
+        plain.substring(0, plain.length - 1),
+    };
+  }
+
+  static String _plain(String value) {
+    const accents = {
+      'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n',
+    };
+    final buffer = StringBuffer();
+    for (final rune in value.toLowerCase().runes) {
+      final character = String.fromCharCode(rune);
+      buffer.write(accents[character] ?? character);
+    }
+    return buffer.toString();
   }
 
   Map<String, dynamic> get descriptor => {
