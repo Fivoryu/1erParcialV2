@@ -11,6 +11,8 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ThinkingConfig
 import com.google.ai.edge.litertlm.tool
@@ -18,6 +20,7 @@ import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -188,8 +191,51 @@ class LiteRtAgentBridge(context: Context, messenger: BinaryMessenger) : AutoClos
         try {
             checkActive(operation)
             // Do not extract, truncate or replace any part of the runner envelope.
-            val response = local.sendMessage(input.prompt, maxOutputToken = input.maxTokens)
+            val completed = CountDownLatch(1)
+            val partialText = StringBuilder()
+            val finalMessage = AtomicReference<Message?>(null)
+            val failure = AtomicReference<Throwable?>(null)
+            local.sendMessageAsync(input.prompt, object : MessageCallback {
+                override fun onMessage(message: Message) {
+                    finalMessage.set(message)
+                    val chunk = message.contents.contents
+                        .filterIsInstance<Content.Text>()
+                        .joinToString("") { it.text }
+                    val accumulatedText = synchronized(partialText) {
+                        partialText.append(chunk).toString()
+                    }
+                    if (chunk.isEmpty()) return
+                    if (acceptsCompletion(
+                            operation.epoch, epoch.get(), operation.cancelled.get(), disposed.get(),
+                            SystemClock.elapsedRealtime(), operation.deadline,
+                        ) && !operation.delivered.get()) {
+                        main.post {
+                            if (acceptsCompletion(
+                                    operation.epoch, epoch.get(), operation.cancelled.get(), disposed.get(),
+                                    SystemClock.elapsedRealtime(), operation.deadline,
+                                ) && !operation.delivered.get()) {
+                                channel.invokeMethod("onPartial", mapOf("text" to accumulatedText))
+                            }
+                        }
+                    }
+                }
+
+                override fun onDone() {
+                    completed.countDown()
+                }
+
+                override fun onError(error: Throwable) {
+                    failure.set(error)
+                    completed.countDown()
+                }
+            }, maxOutputToken = input.maxTokens)
+            completed.await()
             checkActive(operation)
+            failure.get()?.let { throw it }
+            val response = checkNotNull(finalMessage.get()) { "Local Gemma returned no message." }
+            // The final decision comes from the SDK's final message, never from
+            // the UI accumulator: partial delivery semantics (chunks vs
+            // cumulative snapshots) must not affect strict decision output.
             val text = response.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
             return AgentDecisionMapping.decision(text, response.toolCalls)
         } finally {

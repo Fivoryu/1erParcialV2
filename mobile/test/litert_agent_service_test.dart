@@ -1,13 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:diagrammer_mobile/data/litert_agent_service.dart';
+import 'package:diagrammer_mobile/domain/agent_models.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('agent-test');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-  tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+  Future<void> deliverNativeCall(MethodCall call) async {
+    final reply = Completer<void>();
+    messenger.handlePlatformMessage(
+      channel.name,
+      const StandardMethodCodec().encodeMethodCall(call),
+      (_) => reply.complete(),
+    );
+    await reply.future;
+  }
+
+  tearDown(() {
+    messenger.setMockMethodCallHandler(channel, null);
+    channel.setMethodCallHandler(null);
+  });
   test('optional native unavailable never fakes readiness', () async {
     expect(
       (await MethodChannelLiteRtAgentService(
@@ -36,6 +52,40 @@ void main() {
       expect(calls.last.arguments, isNull);
     },
   );
+  test('forwards bounded partials and still validates the strict final decision', () async {
+    final partials = <String>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'generateAgent') {
+        await deliverNativeCall(
+          const MethodCall('onPartial', {'text': '{"tag":"answer"'}),
+        );
+        await deliverNativeCall(
+          const MethodCall('onPartial', {'text': '{"tag":"answer","text":"done"}'}),
+        );
+        await deliverNativeCall(const MethodCall('onPartial', {'text': ''}));
+        await deliverNativeCall(const MethodCall('onPartial', {'text': 42}));
+        await deliverNativeCall(
+          MethodCall('onPartial', {'text': 'x' * 32769}),
+        );
+      }
+      return '{"tag":"answer","text":"done"}';
+    });
+
+    final result = await MethodChannelLiteRtAgentService(
+      channel: channel,
+    ).generateAgent(prompt: '{}', onPartial: partials.add);
+
+    expect(partials, [
+      '{"tag":"answer"',
+      '{"tag":"answer","text":"done"}',
+    ]);
+    expect(AgentAction.parse(result).payload['text'], 'done');
+    await deliverNativeCall(
+      const MethodCall('onPartial', {'text': 'late partial'}),
+    );
+    expect(partials, hasLength(2));
+  });
+
   test(
     'strict response rejects arbitrary output and malformed status',
     () async {

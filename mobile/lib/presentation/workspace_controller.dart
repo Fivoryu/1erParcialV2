@@ -395,7 +395,10 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   /// Agent generation shares the same serialized native model lifetime.
-  Future<String> generateAgent(String prompt) async {
+  Future<String> generateAgent(
+    String prompt, {
+    void Function(String partial)? onPartial,
+  }) async {
     final service = _mnn;
     final epoch = _modelEpoch;
     if (!mnnStatus.isLoaded ||
@@ -410,9 +413,19 @@ class WorkspaceController extends ChangeNotifier {
       if (epoch != _modelEpoch) {
         throw const MnnUnavailableException('Local model session changed.');
       }
-      response = selectedRuntime == LocalRuntime.gemma
-          ? await litert!.generateAgent(prompt: prompt)
-          : await (service as MnnAgentService).generateAgent(prompt: prompt);
+      if (selectedRuntime == LocalRuntime.gemma) {
+        final agent = litert!;
+        response = agent is LiteRtStreamingAgentService
+            ? await agent.generateAgent(
+                prompt: prompt,
+                onPartial: onPartial,
+              )
+            : await agent.generateAgent(prompt: prompt);
+      } else {
+        response = await (service as MnnAgentService).generateAgent(
+          prompt: prompt,
+        );
+      }
       if (epoch != _modelEpoch) {
         throw const MnnUnavailableException('Local model session changed.');
       }

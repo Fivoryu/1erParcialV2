@@ -15,6 +15,11 @@ import '../data/chat_store.dart';
 import '../data/platform_service.dart';
 import '../domain/chat_models.dart';
 
+typedef StreamingAgentModel = Future<String> Function(
+  String prompt, {
+  void Function(String partial)? onPartial,
+});
+
 class ChatController extends ChangeNotifier {
   ChatController({
     required this.store,
@@ -28,6 +33,7 @@ class ChatController extends ChangeNotifier {
   final Future<void> Function()? cancelModel;
   void invalidateModel() {
     _requestCancelled = true;
+    _clearStreamingMessage();
     _runner?.cancel();
     ++_epoch;
     busy = false;
@@ -46,6 +52,7 @@ class ChatController extends ChangeNotifier {
   ChatScope? _scope;
   String? _token;
   int _epoch = 0;
+  String? _streamingMessageId;
   bool busy = false;
   String? error;
   List<LocalConversation> conversations = const [];
@@ -75,6 +82,7 @@ class ChatController extends ChangeNotifier {
     _token = token;
     conversations = const [];
     messages = const [];
+    _streamingMessageId = null;
     selected = null;
     busy = false;
     error = null;
@@ -100,6 +108,7 @@ class ChatController extends ChangeNotifier {
       );
     } catch (e) {
       if (epoch == _epoch) {
+        _clearStreamingMessage();
         error = 'History sync is unavailable. Local data is retained. $e';
       }
     } finally {
@@ -158,6 +167,7 @@ class ChatController extends ChangeNotifier {
   void showHistory() {
     if (busy) return;
     selected = null;
+    _clearStreamingMessage();
     messages = const [];
     notifyListeners();
   }
@@ -169,6 +179,14 @@ class ChatController extends ChangeNotifier {
     cancelModel?.call().catchError((Object _) {});
     error = 'Stop requested. No new tool will be sent; an in-flight model or write may still finish.';
     notifyListeners();
+  }
+
+  void _clearStreamingMessage() {
+    final id = _streamingMessageId;
+    if (id != null) {
+      messages = messages.where((message) => message.id != id).toList();
+    }
+    _streamingMessageId = null;
   }
 
   Future<void> sendMessage(String content) => _run((
@@ -206,6 +224,7 @@ class ChatController extends ChangeNotifier {
     final local = await store.messages(repository.scope, conversation.id);
     if (epoch != _epoch) return;
     messages = local;
+    _streamingMessageId = null;
     setDraft('');
     progress = const [];
     deletePreview = null;
@@ -218,7 +237,30 @@ class ChatController extends ChangeNotifier {
             .skip(local.length > 12 ? local.length - 12 : 0)
             .map((m) => {'role': m.role, 'content': m.content})
             .toList();
-        return generate(jsonEncode(input));
+        final modelInput = jsonEncode(input);
+        if (generate is StreamingAgentModel) {
+          return generate(
+            modelInput,
+            onPartial: (partial) {
+              if (!allowed() || partial.isEmpty || partial.length > 32768) {
+                return;
+              }
+              final messageId = _streamingMessageId ??= _uuid();
+              messages = [
+                ...local,
+                ChatMessage(
+                  id: messageId,
+                  role: 'assistant',
+                  content: 'Gemma is generating (partial):\n\n$partial',
+                  createdAt: DateTime.now().toUtc(),
+                  metadata: const {'streaming': true},
+                ),
+              ];
+              notifyListeners();
+            },
+          );
+        }
+        return generate(modelInput);
       },
       gateway: (proposal) =>
           _tool(repository.scope, token, proposal, allowed: allowed),
@@ -271,6 +313,7 @@ class ChatController extends ChangeNotifier {
     );
     final updated = await store.messages(repository.scope, conversation.id);
     if (epoch != _epoch) return;
+    _streamingMessageId = null;
     messages = updated;
     notifyListeners();
     try {

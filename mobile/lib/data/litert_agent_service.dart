@@ -21,10 +21,36 @@ abstract interface class LiteRtAgentService {
   Future<void> release();
 }
 
-class MethodChannelLiteRtAgentService implements LiteRtAgentService {
+abstract interface class LiteRtStreamingAgentService
+    implements LiteRtAgentService {
+  Future<String> generateAgent({
+    required String prompt,
+    int maxTokens = 512,
+    void Function(String partial)? onPartial,
+  });
+}
+
+class MethodChannelLiteRtAgentService implements LiteRtStreamingAgentService {
   MethodChannelLiteRtAgentService({MethodChannel? channel})
     : _channel = channel ?? const MethodChannel('diagrammer/litert_agent');
   final MethodChannel _channel;
+  void Function(String partial)? _onPartial;
+  bool _acceptPartials = false;
+
+  Future<Object?> _handleMethodCall(MethodCall call) async {
+    if (call.method != 'onPartial' || !_acceptPartials) return null;
+    final arguments = call.arguments;
+    if (arguments is! Map ||
+        arguments.length != 1 ||
+        arguments['text'] is! String) {
+      return null;
+    }
+    final text = arguments['text'] as String;
+    if (text.isEmpty || text.length > 32768) return null;
+    _onPartial?.call(text);
+    return null;
+  }
+
   Future<LiteRtAgentStatus> _status(String method) async {
     try {
       final value = await _channel.invokeMethod<Object?>(method);
@@ -67,6 +93,7 @@ class MethodChannelLiteRtAgentService implements LiteRtAgentService {
   Future<String> generateAgent({
     required String prompt,
     int maxTokens = 512,
+    void Function(String partial)? onPartial,
   }) async {
     if (prompt.isEmpty ||
         prompt.length > 32768 ||
@@ -74,15 +101,27 @@ class MethodChannelLiteRtAgentService implements LiteRtAgentService {
         maxTokens > 512) {
       throw ArgumentError('Invalid local model input limit.');
     }
-    final value = await _channel.invokeMethod<Object?>('generateAgent', {
-      'prompt': prompt,
-      'maxTokens': maxTokens,
-    });
-    if (value is! String) {
-      throw const FormatException('Local runtime returned no strict decision.');
+    _onPartial = onPartial;
+    _acceptPartials = true;
+    _channel.setMethodCallHandler(_handleMethodCall);
+    try {
+      final value = await _channel.invokeMethod<Object?>('generateAgent', {
+        'prompt': prompt,
+        'maxTokens': maxTokens,
+      });
+      _acceptPartials = false;
+      if (value is! String) {
+        throw const FormatException(
+          'Local runtime returned no strict decision.',
+        );
+      }
+      AgentAction.parse(value);
+      return value;
+    } finally {
+      _acceptPartials = false;
+      _onPartial = null;
+      _channel.setMethodCallHandler(null);
     }
-    AgentAction.parse(value);
-    return value;
   }
 
   @override
