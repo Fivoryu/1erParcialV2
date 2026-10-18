@@ -203,6 +203,130 @@ void main() {
     },
   );
 
+  test('read observations carry refs instead of raw record identifiers', () async {
+    const uuid = '22222222-2222-4222-8222-222222222222';
+    Map<String, dynamic>? secondEnvelope;
+    var calls = 0;
+    final runner = AgentRunner(
+      contract: fixture(),
+      model: (prompt) async {
+        if (calls++ == 0) return '{"tag":"read","entity":"Note"}';
+        secondEnvelope = jsonDecode(prompt) as Map<String, dynamic>;
+        return '{"tag":"answer","text":"La nota dice hola"}';
+      },
+      gateway: (_) async => AgentToolResult(
+        data: [
+          {'id': uuid, 'text': 'hola'},
+          {'id': '33333333-3333-4333-8333-333333333333', 'text': 'chau'},
+        ],
+        complete: true,
+        fetchedAt: DateTime.now(),
+      ),
+      scopeGuard: () => true,
+    );
+    final result = await runner.run('Mostrá las notas');
+    expect(result.status, AgentRunStatus.answered);
+    final observations = secondEnvelope!['observations'] as List;
+    final records = (observations.cast<Map>().last['result'] as Map)['data'] as List;
+    expect(records.first['ref'], '#1');
+    expect(records.first['entity'], 'Note');
+    expect(records.first['text'], 'hola');
+    expect(records.last['ref'], '#2');
+    expect(jsonEncode(records), isNot(contains(uuid)));
+  });
+
+  test('record refs are stable across reads in one run', () async {
+    const first = '22222222-2222-4222-8222-222222222222';
+    const second = '33333333-3333-4333-8333-333333333333';
+    final seen = <List<dynamic>>[];
+    var reads = 0;
+    final runner = AgentRunner(
+      contract: fixture(),
+      model: (prompt) async {
+        final envelope = jsonDecode(prompt) as Map<String, dynamic>;
+        if (envelope['observations'] is List && (envelope['observations'] as List).isNotEmpty) {
+          seen.add(((envelope['observations'] as List).last as Map)['result']['data'] as List);
+        }
+        if (reads++ < 2) return '{"tag":"read","entity":"Note"}';
+        return '{"tag":"answer","text":"ok"}';
+      },
+      gateway: (_) async => AgentToolResult(
+        data: reads < 3
+            ? [
+                {'id': first, 'text': 'a'},
+                {'id': second, 'text': 'b'},
+              ]
+            : [
+                {'id': second, 'text': 'b'},
+              ],
+        complete: true,
+        fetchedAt: DateTime.now(),
+      ),
+      scopeGuard: () => true,
+    );
+    final result = await runner.run('leer dos veces');
+    expect(result.status, AgentRunStatus.answered);
+    expect(seen, hasLength(2));
+    // First read assigns #1 and #2 in order.
+    expect(seen[0].map((r) => r['ref']), ['#1', '#2']);
+    // Second read of the same records reuses their refs.
+    expect(seen[1].map((r) => r['ref']), ['#1', '#2']);
+  });
+
+  test('delete preview resolves a record ref to the exact identifier', () async {
+    const uuid = '22222222-2222-4222-8222-222222222222';
+    var calls = 0;
+    final runner = AgentRunner(
+      contract: fixture(),
+      model: (_) async {
+        if (calls++ == 0) return '{"tag":"read","entity":"Note"}';
+        return '{"tag":"delete_preview","entity":"Note","id":"#1"}';
+      },
+      gateway: (_) async => AgentToolResult(
+        data: [
+          {'id': uuid, 'text': 'hola'},
+        ],
+        complete: true,
+        fetchedAt: DateTime.now(),
+      ),
+      scopeGuard: () => true,
+    );
+    final result = await runner.run('Borrá la nota');
+    expect(result.status, AgentRunStatus.deletePending);
+    expect(result.deletePreview!.path, '/api/Note/$uuid');
+  });
+
+  test('unknown or foreign-entity refs fail closed without dispatch', () async {
+    for (final action in [
+      '{"tag":"delete_preview","entity":"Note","id":"#9"}',
+      '{"tag":"delete_preview","entity":"Satellite","id":"#1"}',
+    ]) {
+      var gatewayCalls = 0;
+      final runner = AgentRunner(
+        contract: fixture(),
+        model: (_) async {
+          return gatewayCalls == 0
+              ? '{"tag":"read","entity":"Note"}'
+              : action;
+        },
+        gateway: (_) async {
+          gatewayCalls++;
+          return AgentToolResult(
+            data: [
+              {'id': '22222222-2222-4222-8222-222222222222', 'text': 'hola'},
+            ],
+            complete: true,
+            fetchedAt: DateTime.now(),
+          );
+        },
+        scopeGuard: () => true,
+      );
+      final result = await runner.run('Borrá');
+      expect(result.status, AgentRunStatus.clarification);
+      expect(gatewayCalls, 1);
+    }
+  });
+
   test(
     'invalid model decision still fails closed with zero dispatch',
     () async {

@@ -34,11 +34,24 @@ class AgentContract {
     return result;
   }
 
-  OperationProposal operation(AgentAction action) {
+  OperationProposal operation(AgentAction action, {Map<String, RecordRef> refs = const {}}) {
     final entity = action.payload['entity'];
     final base = entities[entity];
     if (base == null) throw const FormatException('Unknown entity.');
-    final id = action.payload['id'];
+    var id = action.payload['id'];
+    // Record refs ("#1") resolve against this run's read observations; an
+    // unknown or foreign-entity ref never falls back to a guess.
+    if (id is String && id.startsWith('#')) {
+      final ref = refs[id];
+      if (ref == null) {
+        throw const FormatException('Unknown record ref.');
+      }
+      if (entity is! String ||
+          ref.entity.toLowerCase() != entity.toLowerCase()) {
+        throw const FormatException('Record ref does not match the entity.');
+      }
+      id = ref.id;
+    }
     if (id != null && (id is! String || !uuid.hasMatch(id))) {
       throw const FormatException('Exact UUID required.');
     }

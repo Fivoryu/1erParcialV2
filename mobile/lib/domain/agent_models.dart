@@ -7,8 +7,7 @@ enum AgentRunStatus { answered, clarification, deletePending, stopped, failed }
 class AgentAction {
   AgentAction._(this.tag, this.payload);
   final String tag;
-  final Map<String, dynamic> payload;
-  static AgentAction parse(String raw) {
+  final Map<String, dynamic> payload;  static AgentAction parse(String raw) {
     if (raw.length > 32768) {
       throw const FormatException('Model response exceeds limit.');
     }
@@ -94,6 +93,14 @@ class AgentRunResult {
   final String text;
   final OperationProposal? deletePreview;
   final dynamic data;
+}
+
+/// A record reference handed to the on-device model: stable short alias
+/// instead of the raw record UUID, bound to the entity it was read from.
+class RecordRef {
+  const RecordRef(this.id, this.entity);
+  final String id;
+  final String entity;
 }
 
 /// Issued by trusted UI/application code, never deserialized from model output.
