@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import '../chat_controller.dart';
 
@@ -127,7 +128,9 @@ class _ChatPanelState extends State<ChatPanel> {
                 child: Card(
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: SelectableText(message.content),
+                    child: message.role == 'assistant'
+                        ? MarkdownBody(data: message.content, selectable: true)
+                        : SelectableText(message.content),
                   ),
                 ),
               ),
