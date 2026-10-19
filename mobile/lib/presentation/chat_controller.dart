@@ -370,7 +370,7 @@ class ChatController extends ChangeNotifier {
         await store.putCache(
           CacheEntry(
             scope: scope,
-            path: proposal.path,
+            path: proposal.cacheKey,
             body: result.body,
             fetchedAt: time,
             complete: false,
@@ -382,7 +382,7 @@ class ChatController extends ChangeNotifier {
           fetchedAt: time,
         );
       } catch (_) {
-        final cached = await store.getCache(scope, proposal.path);
+        final cached = await store.getCache(scope, proposal.cacheKey);
         if (cached == null) rethrow;
         return AgentToolResult(
           data: cached.body,

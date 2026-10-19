@@ -33,6 +33,7 @@ class OpenApiValidator {
         'The selected contract does not allow that method.',
       );
     }
+    _validateQuery(proposal, operation);
     final requestBody = operation['requestBody'];
     if (requestBody is Map) {
       final content = requestBody['content'];
@@ -49,6 +50,56 @@ class OpenApiValidator {
       throw const FormatException(
         'This operation does not accept a request body.',
       );
+    }
+  }
+
+  /// Mirrors the platform gateway: only GET, only declared `in: query`
+  /// parameters, non-array parameters once, enum and integer bounds, bounded
+  /// values without control characters, and required parameters present.
+  void _validateQuery(OperationProposal proposal, Map operation) {
+    final declared = <String, Map>{
+      for (final parameter in operation['parameters'] as List? ?? const [])
+        if (parameter is Map && parameter['in'] == 'query' && parameter['name'] is String)
+          parameter['name'] as String: parameter,
+    };
+    if (proposal.query.isEmpty && !declared.values.any((p) => p['required'] == true)) return;
+    if (proposal.method != 'GET' || proposal.query.length > 24) {
+      throw const FormatException('Query parameters are only allowed on reads.');
+    }
+    final counts = <String, int>{};
+    for (final parameter in proposal.query) {
+      final declaration = declared[parameter.name];
+      if (declaration == null) {
+        throw FormatException('Unknown query parameter: ${parameter.name}');
+      }
+      if (parameter.value.length > 256 || RegExp(r'[\x00-\x1F\x7F]').hasMatch(parameter.value)) {
+        throw const FormatException('Query value is too long or contains control characters.');
+      }
+      final schema = declaration['schema'] is Map ? declaration['schema'] as Map : const {};
+      final repeatable = schema['type'] == 'array';
+      counts[parameter.name] = (counts[parameter.name] ?? 0) + 1;
+      if (counts[parameter.name]! > 1 && !repeatable) {
+        throw FormatException('Query parameter repeated: ${parameter.name}');
+      }
+      final valueSchema = repeatable && schema['items'] is Map ? schema['items'] as Map : schema;
+      final allowed = valueSchema['enum'];
+      if (allowed is List && !allowed.contains(parameter.value)) {
+        throw FormatException('Query value not allowed for ${parameter.name}.');
+      }
+      if (valueSchema['type'] == 'integer') {
+        final number = int.tryParse(parameter.value);
+        final minimum = valueSchema['minimum'], maximum = valueSchema['maximum'];
+        if (number == null ||
+            (minimum is num && number < minimum) ||
+            (maximum is num && number > maximum)) {
+          throw FormatException('Query value out of range for ${parameter.name}.');
+        }
+      }
+    }
+    for (final entry in declared.entries) {
+      if (entry.value['required'] == true && !counts.containsKey(entry.key)) {
+        throw FormatException('Missing query parameter: ${entry.key}');
+      }
     }
   }
 
@@ -151,6 +202,10 @@ class OpenApiValidator {
       }
       if (schema['format'] == 'uuid' && !_uuid.hasMatch(value)) {
         throw const FormatException('Value must be a UUID.');
+      }
+      final literals = schema['enum'];
+      if (literals is List && !literals.contains(value)) {
+        throw FormatException('Value must be one of ${literals.join(', ')}.');
       }
     } else if (type == 'integer' && value is! int) {
       throw const FormatException('Value must be an integer.');

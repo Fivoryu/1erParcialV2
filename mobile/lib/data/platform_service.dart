@@ -171,6 +171,8 @@ class PlatformService {
         'path': proposal.path,
         'body': proposal.body,
         'confirmed': true,
+        if (proposal.query.isNotEmpty)
+          'query': [for (final parameter in proposal.query) parameter.toJson()],
       }),
     );
     if (response.statusCode >= 400) {
