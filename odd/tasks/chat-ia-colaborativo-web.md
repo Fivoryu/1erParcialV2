@@ -1,5 +1,5 @@
 # Chat colaborativo web con IA local y memoria por diagrama
-> Objetivo: conservar el diseño acordado para implementar después. Estado: implementación reanudada el 2026-10-14 con autorización explícita del usuario (L30); T1 y T2 completadas (L32, L35); siguiente T3. Fecha de documentación: 2026-10-14.
+> Objetivo: conservar el diseño acordado para implementar después. Estado: T1-T10 completadas (L54); control `Ask AI` del chat cableado y verificado en navegador real (L55); duplicado de miembros corregido y verificado (L56); nombres naturales en el asistente y markdown seguro en el chat (L57). Fecha de documentación: 2026-10-18.
 > Rama observada: `feat/rutas-ortogonales-ajustables` (lectura de `.git/HEAD`); rama futura propuesta: `feat/chat-ia-colaborativo-web`, NO creada. Entrega: `ask-on-risk`. Runners futuros: backend `mvn -o -B verify`; web `npm test`, `npm run lint`, `npm run build`; aceptación real por definir en T10.
 
 ## Specs
@@ -754,4 +754,65 @@ Prueba en vivo contra el runtime (`FiveUsersLiveTest`, con `assumeTrue` de salud
 - **Ruta visual (CA-30/32):** si el mensaje preguntado tiene adjuntos, `ChatAssistantProvider.Turn` lleva la imagen (base64) del turno — el proveedor la ve SOLO en ese turno (S13: no reenviar por turno); la instrucción pide interpretación general junto a la pregunta y el contexto, dudas explícitas, sin asumir que todo dibujo es UML y sin certeza inventada. La extracción es provisional; explicar no muta (CA-34): el chat nunca aplica operaciones — las propuestas exigen el flujo de planes con preview/confirmación.
 - **Costo de contexto (CA-23):** cada imagen enviada cuenta como costo fijo configurable `diagrammer.context.image-tokens=600` (baseline L30: ~450-485 tokens por imagen, margen conservador), sumado en `prepare()` antes del chequeo de presupuesto; el medidor lo reporta como componente `images`.
 - **Aislamiento (CA-06/33, RNF-01):** texto e imágenes son DATO, no instrucción — el system prompt ya lo fija y el chat nunca muta; un mensaje hostil que pida ignorar permisos no altera UML, memoria ni revisiones (pinchado por prueba).
+
+### L55 — Cableado del control Ask AI en el chat y verificación real en navegador (2026-10-18)
+
+**Pedido literal del usuario:** «Cablea, además dichas pruebas quiero que le saques foto par aver que funcione bien».
+
+**Hallazgo que motivó la unidad:** el backend T3 ya exponía `POST /projects/{p}/sessions/{s}/ask`, pero `ChatPanel` solo mostraba `aiStatus`; ningún control de la web disparaba la solicitud. La verificación de navegador previa (11/12) lo demostró: el pedido se disparó desde la página con el token real para probar SSE y render.
+
+**Implementado:**
+- `ApiClient.askAi(projectId, sessionId, messageId)` → `POST .../ask` con `{messageId}` y Bearer; tipo `AskAiResponse`.
+- `ChatPanel` muestra `Ask AI` solo en mensajes propios `HUMAN` (`authorUserId === userId`), deshabilitado con `busy`, sin sesión activa o con `aiStatus` `QUEUED`/`RUNNING`.
+- `ProjectEditorPage` cablea el handler; no agrega respuestas ni estados locales: la autoridad sigue siendo SSE (`chat.ai.status` y `message.posted`).
+- Arnés `web/scripts/verify-ai-browser.mjs`: abre el asistente, crea componentes con preview/confirm, publica un mensaje, hace clic real en `Ask AI` y espera la respuesta por SSE; capturas en `docs/capturas/ai-browser/`.
+
+**Evidencia:**
+- RED: 5 fallos (método `askAi` ausente y cuatro casos de ChatPanel). GREEN focalizado: 35 pasan, 1 skip. Suite web: **578 pasan, 4 skipped**; `npm run lint` y `npm run build` verdes.
+- E2E real con Chrome + Qwen3.5-2B: **12/12 checks**, `failed: 0`. Componentes: Producto y Proveedor, atributos y 1 asociación; chat: mensaje humano, botón `Ask AI`, respuesta real por SSE con `replyTo` y estado `AI request completed`.
+- El único finding del arnés es el tour de onboarding que tapa el FAB en un proyecto nuevo (`ASSISTANT_BUTTON_COVERED_BY_TOUR`); el arnés lo cierra con «Finish tour» como un humano.
+
+**Hallazgos de calidad del planner (fuera del cableado, sin corregir):**
+- Con la frase única «Creá la clase Producto con el atributo nombre: String» el 2B devolvió solo `classifier.create` (sin `attribute.add`); con dos cláusulas explícitas sí planeó ambos. Sensibilidad a la formulación.
+- En la corrida final el plan volvió a agregar `nombre` a Producto y el apply aceptó un **atributo duplicado** (`+ nombre: String` dos veces). La validación UML reporta nombres de miembros únicos, pero el camino de comandos no rechaza el duplicado. Requiere decisión de producto.
+- La respuesta del chat fue correcta en la relación pero afirmó que no había atributos, y el chat muestra el markdown literal (`**...**`) porque el cuerpo es texto plano. Calidad del 2B y estilo de render, no del transporte.
+
+**Alcance:** sin cambios de backend; sin commit (no solicitado). Archivos: `web/src/api/client.ts`, `web/src/collaboration/ChatPanel.tsx`, `web/src/pages/ProjectEditorPage.tsx`, sus tests y `web/scripts/verify-ai-browser.mjs`.
+
+### L56 — Corrección del duplicado de miembros y verificación E2E (2026-10-18)
+
+**Pedido literal del usuario:** «Corrige el duplicado».
+
+**Hallazgo:** el planner agregó `nombre` a `Producto` dos veces; el camino de comandos no aplicaba la regla UML de nombres de miembros únicos (solo la validación lo reportaba) y el apply aceptaba el duplicado.
+
+**Implementado:**
+- `CommandHandlerSupport.ensureAttributeNameAvailable/ensureOperationNameAvailable`; `AttributeAddHandler`, `OperationAddHandler`, `AttributeUpdateHandler` y `OperationUpdateHandler` rechazan colisiones con `PRECONDITION_FAILED` (case-sensitive, por classifier y por tipo; atributo y operación con el mismo nombre siguen permitidos).
+- `AssistantApplyService`: un `attribute.add`/`operation.add` redundante se registra como `SKIPPED` con `NAME_COLLISION` y el plan continúa; sin comando, sin mutación y sin entrada de undo. Evita que el step rechazado corte `Proveedor`, `cuit` y la relación.
+- Sin cambio de DTO: se reutiliza el código `NAME_COLLISION` ya admitido.
+
+**Evidencia:**
+- RED/GREEN: `T3bCommandHandlersTest` +7 pruebas (duplicados add/rename, scope por classifier, cross-kind, case-sensitive); `AssistantApplyServiceTest` +4 (skip/continue, operación, no-duplicado, rechazo posterior). Focused 17/0; suite completa **529 tests, 0 fallos, 0 errores, 1 skipped** (BUILD SUCCESS, verificado por el orquestador).
+- E2E real Chrome + Qwen3.5-2B: **14/14**, `failed: 0`. Steps: `attribute.add nombre` → **Omitido** con «El atributo 'nombre' ya existe en la clase 'Producto'; se omitió.»; `Proveedor`, `cuit` y la relación **Aceptados**. Canvas: un solo `nombre`, `cuit`, 1 arista. Chat: `Ask AI` + respuesta real por SSE.
+- Capturas: `docs/capturas/ai-browser/05-assistant-applied-proveedor.png` (Omitido + canvas), `06-chat-ask-ai-button.png`, `07-chat-ai-answer.png`.
+- Arnés: `waitForAttribute` corrige la carrera de render del atributo; sigue el finding del tour tapando el FAB.
+
+**Alcance:** backend + tests + arnés; sin commit. La UI sigue pendiente de auditoría (markdown literal, medidor, jerarquía del modal).
+
+### L57 — Nombres naturales en el asistente y markdown seguro en el chat (2026-10-18)
+
+**Pedidos literales del usuario:** «No quiero estar poniendo el codigo del diagrama, sino su nombre directo, lenguaje natural pe» y «Además añade que se vea en markdown preview, para que no se vean los asteriscos, barras, etc. Sino que se vea bien la UI».
+
+**Implementado:**
+- `assistantNames.ts`: índice puro desde el modelo vivo (classifiers, attributes con dueño, operations con dueño, relationships con extremos y kind). `describeAssistantOperation` usa nombres y args en español, resuelve `targetClassifierName`/`classifierName` de clases creadas en el mismo plan y nunca imprime UUIDs ni «elemento nuevo»; los fallbacks son humanos («la clase seleccionada», «la relación seleccionada»).
+- `AssistantState` retiene el plan en el estado `done/applied`; `StepList` mapea `step.index` a la operación original. `AssistantPanel` recibe el modelo vivo desde `ProjectEditorPage`.
+- `markdown.ts` + `MarkdownText.tsx`: parser determinista (párrafos, saltos, negrita, itálica, código inline/fence, headings, listas, blockquote, `---`, tablas simples) y renderer React con nodos allowlisted. Sin `dangerouslySetInnerHTML`; HTML crudo se escapa; links no se renderizan. Solo los mensajes `AI` usan markdown; los humanos siguen texto plano.
+- CSS para markdown en la tarjeta del chat (ritmo, listas, código, tablas, blockquote) con los tokens existentes.
+
+**Evidencia:**
+- Web: **600 tests, 4 skipped**; `npm run lint` y `npm run build` verdes. Nuevas pruebas del parser, del renderer (incluido `<script>` escapado), del índice y del markup del chat.
+- E2E real Chrome + Qwen3.5-2B: **25/25 checks, 0 fallos**. Preview y steps: `Crear clase "Producto"`, `Agregar atributo "nombre: String" a "Producto"`, `Agregar atributo "cuit: String" a "Proveedor"`, `Crear relación de Asociación "Producto" → "Proveedor"`; sin UUIDs, sin «elemento nuevo», sin «clase seleccionada». Respuesta cruda con `**` y viñetas; DOM renderizado con `<strong>`/`<li>`, sin `**` visibles.
+- Capturas: `docs/capturas/ai-browser/05-assistant-applied-proveedor.png` (nombres + Omitido), `06-chat-ask-ai-button.png`, `07-chat-ai-answer.png` (markdown).
+- Finding restante: el tour de onboarding tapa el FAB en un proyecto nuevo. La calidad del 2B sigue limitada: en esta corrida la respuesta afirmó que no había atributos, aunque el canvas tenía `nombre` y `cuit`; es contenido del modelo, no render.
+
+**Alcance:** frontend, tests y arnés; sin cambios de backend; sin commit. La auditoría visual general (jerarquía del modal, medidor de contexto, densidad) sigue pendiente.
 

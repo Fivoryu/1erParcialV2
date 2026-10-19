@@ -35,6 +35,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Owns immutable generation identities and the pre-generation compatibility gate. */
@@ -44,6 +45,7 @@ public class GenerationIdentityService {
     public static final String V1_PROFILE_KEY = "spring-boot-postgresql";
     public static final String DIAGNOSTIC_CHECK_NAME = "generation-diagnostics";
     private static final String V1_PROFILE_NAME = "Spring Boot PostgreSQL";
+    private static final String V1_PROFILE_LABEL = "Spring Boot PostgreSQL V1";
     private static final String V1_TEMPLATE_CONTENT = "spring-boot-postgresql-template-v1";
     private static final int MAX_IDENTITY_RETRIES = 5;
 
@@ -83,6 +85,29 @@ public class GenerationIdentityService {
     /** Provisions the unchanged V1 profile or returns the existing exact revision. */
     public GenerationProfile provisionV1Profile(UUID projectId) {
         return provisionProfile(projectId, VersionedGenerationProfileConfiguration.v1());
+    }
+
+    /** Evaluates a model version against the static V1 subset without persisting generation identities or runs. */
+    @Transactional(readOnly = true)
+    public java.util.Optional<GenerationReadiness> preflight(UUID projectId, UUID versionId) {
+        return transactionTemplate.execute(status -> {
+            UmlModel model = modelRepository.findByProjectId(projectId).orElse(null);
+            ModelVersion version = versionRepository.findById(versionId).orElse(null);
+            if (model == null || version == null || !version.getModel().getId().equals(model.getId())) {
+                return java.util.Optional.empty();
+            }
+
+            JsonNode configuration = VersionedGenerationProfileConfiguration.v1();
+            InputSnapshot snapshot = snapshotFactory.create(version);
+            Map<String, ProvisionalGenerationProfile.TypeMapping> primitiveTypes =
+                    VersionedGenerationProfileConfiguration.primitiveTypes(configuration);
+            DomainModelIR ir = irMapper.map(snapshot, primitiveTypes);
+            List<GenerationDiagnostic> diagnostics = profileSubsetDiagnostics(configuration, snapshot, ir)
+                    .stream().distinct().toList();
+            boolean ready = diagnostics.stream().noneMatch(GenerationDiagnostic::blocking);
+            return java.util.Optional.of(new GenerationReadiness(version.getId(), V1_PROFILE_LABEL, ready,
+                    diagnostics));
+        });
     }
 
     /** Creates a new immutable revision only when the canonical non-secret configuration changes. */
@@ -339,8 +364,19 @@ public class GenerationIdentityService {
 
     private List<GenerationDiagnostic> profileCompatibilityDiagnostics(GenerationProfile profile,
             GenerationTarget target, InputSnapshot snapshot, DomainModelIR ir) {
+        List<GenerationDiagnostic> diagnostics = new ArrayList<>(profileSubsetDiagnostics(
+                profile.getConfiguration(), snapshot, ir));
+        if (!"POSTGRESQL".equals(target.getDatabaseEngine())) {
+            addProfileDiagnostic(diagnostics, null, "databaseEngine",
+                    "Target option 'database_engine' is not supported by profile option 'databaseEngine'.");
+        }
+        return diagnostics.stream().distinct().toList();
+    }
+
+    private List<GenerationDiagnostic> profileSubsetDiagnostics(JsonNode configuration, InputSnapshot snapshot,
+            DomainModelIR ir) {
         List<GenerationDiagnostic> diagnostics = new ArrayList<>(ir.diagnostics());
-        JsonNode subset = profile.getConfiguration().path("supportedUmlSubset");
+        JsonNode subset = configuration.path("supportedUmlSubset");
 
         for (ClassifierElement classifier : snapshot.classifiers()) {
             requireSupportedValue(subset.path("classifierKinds"), classifier.kind().name(),
@@ -379,11 +415,7 @@ public class GenerationIdentityService {
                     relationship.kind() == null ? null : relationship.kind().name(),
                     "supportedUmlSubset.relationshipKinds", relationship.id(), diagnostics);
         }
-        if (!"POSTGRESQL".equals(target.getDatabaseEngine())) {
-            addProfileDiagnostic(diagnostics, null, "databaseEngine",
-                    "Target option 'database_engine' is not supported by profile option 'databaseEngine'.");
-        }
-        return diagnostics.stream().distinct().toList();
+        return diagnostics;
     }
 
     private void requireSupportedValue(JsonNode supportedValues, String value, String option, UUID elementId,
@@ -542,6 +574,16 @@ public class GenerationIdentityService {
 
     public record TargetConfiguration(String name, String databaseEngine, String databaseName,
             String databaseSchema, String connectionConfigRef) {
+    }
+
+    public record GenerationReadiness(UUID versionId, String profile, boolean ready,
+            List<GenerationDiagnostic> diagnostics) {
+
+        public GenerationReadiness {
+            Objects.requireNonNull(versionId, "versionId");
+            Objects.requireNonNull(profile, "profile");
+            diagnostics = List.copyOf(diagnostics);
+        }
     }
 
     public record GenerationRunStart(GenerationRun run, List<GenerationDiagnostic> diagnostics) {

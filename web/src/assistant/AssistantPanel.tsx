@@ -1,14 +1,16 @@
 import { useEffect } from 'react';
 import type { FormEvent } from 'react';
-import type { Uuid } from '../api/types';
+import type { Uuid, ModelResource } from '../api/types';
 import type { SpeechRecognitionErrorReason } from './speechRecognition';
-import { describeAssistantOperation, STEP_STATUS_LABELS, type AssistantState } from './assistantState';
+import { createDiagramNames, describeAssistantOperation, type DiagramNames } from './assistantNames';
+import { STEP_STATUS_LABELS, type AssistantState } from './assistantState';
 import { useAssistantPanel } from './useAssistantPanel';
 import { useSpeechRecognition } from './useSpeechRecognition';
 import { appendTranscript } from './speechTranscript';
 
 export interface AssistantPanelViewProps {
   state: AssistantState;
+  diagramNames: DiagramNames;
   utterance: string;
   canConfirm: boolean;
   onUtteranceChange(value: string): void;
@@ -104,30 +106,52 @@ function CancelButton({ onCancel }: { onCancel(): void }) {
   );
 }
 
-function PreviewList({ state }: { state: Extract<AssistantState, { phase: 'preview' }> }) {
+const TECHNICAL_ID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+function humanDiagnosticMessage(message: string): string {
+  return message
+    .replace(TECHNICAL_ID_PATTERN, 'el elemento seleccionado')
+    .replace(/elemento nuevo/gi, 'el elemento seleccionado');
+}
+
+function PreviewList({ state, diagramNames }: {
+  state: Extract<AssistantState, { phase: 'preview' }>;
+  diagramNames: DiagramNames;
+}) {
   return (
     <ul className="generation-diagnostics">
       {state.plan.operations.map((operation, index) => (
         <li key={`${operation.type}-${index}`}>
-          <strong>{describeAssistantOperation(operation)}</strong>
+          <strong>{describeAssistantOperation(operation, diagramNames)}</strong>
         </li>
       ))}
     </ul>
   );
 }
 
-function StepList({ state }: { state: Extract<AssistantState, { phase: 'done' }> & { kind: 'applied' } }) {
+function StepList({ state, diagramNames }: {
+  state: Extract<AssistantState, { phase: 'done' }> & { kind: 'applied' };
+  diagramNames: DiagramNames;
+}) {
   return (
     <ul className="generation-diagnostics">
-      {state.steps.map((step) => (
-        <li key={step.index}>
-          <strong>{step.type ? describeAssistantOperation({ type: step.type, targetId: step.targetId, args: {} }) : `Paso ${step.index + 1}`}</strong>
-          <span>{STEP_STATUS_LABELS[step.status]}</span>
-          {step.diagnostics.map((diagnostic, index) => (
-            <span key={`${diagnostic.code}-${index}`}>{diagnostic.message}</span>
-          ))}
-        </li>
-      ))}
+      {state.steps.map((step) => {
+        const operation = state.plan.operations[step.index];
+        const description = operation
+          ? describeAssistantOperation(operation, diagramNames)
+          : step.type
+            ? describeAssistantOperation({ type: step.type, targetId: null, args: {} }, diagramNames)
+            : `Paso ${step.index + 1}`;
+        return (
+          <li key={step.index}>
+            <strong>{description}</strong>
+            <span>{STEP_STATUS_LABELS[step.status]}</span>
+            {step.diagnostics.map((diagnostic, index) => (
+              <span key={`${diagnostic.code}-${index}`}>{humanDiagnosticMessage(diagnostic.message)}</span>
+            ))}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -145,6 +169,7 @@ export function AssistantPanelView({
   onRetry,
   onDismiss,
   voice,
+  diagramNames,
 }: AssistantPanelViewProps) {
   const requestInFlight = state.phase === 'analyzing' || state.phase === 'applying';
   const cancellable = requestInFlight || state.phase === 'preview' || state.phase === 'clarify';
@@ -174,12 +199,12 @@ export function AssistantPanelView({
 
       <form className="chat-compose-form" onSubmit={handleAskSubmit}>
         <label className="sr-only" htmlFor="assistant-utterance">Consigna para el asistente</label>
-        <input
+        <textarea
           autoComplete="off"
           id="assistant-utterance"
           onChange={(event) => onUtteranceChange(event.target.value)}
           placeholder="Describí el cambio que querés hacer en el modelo…"
-          type="text"
+          rows={3}
           value={utterance}
         />
         <button className="button button-primary" disabled={requestInFlight || !utterance.trim()} type="submit">
@@ -239,7 +264,7 @@ export function AssistantPanelView({
               El modelo cambió desde que se generó la vista previa. Volvé a consultar antes de aplicar.
             </div>
           )}
-          <PreviewList state={state} />
+          <PreviewList diagramNames={diagramNames} state={state} />
           <div className="generation-actions">
             <button className="button button-primary" disabled={!canConfirm} onClick={onConfirm} type="button">
               Aplicar cambios
@@ -252,7 +277,7 @@ export function AssistantPanelView({
       {state.phase === 'done' && state.kind === 'applied' && (
         <div className="generation-run" aria-live="polite">
           <p className="generation-run-state">Cambios aplicados. Revisión final: {state.finalRevision}.</p>
-          <StepList state={state} />
+          <StepList diagramNames={diagramNames} state={state} />
           <button className="text-button" onClick={onDismiss} type="button">Listo</button>
         </div>
       )}
@@ -284,12 +309,16 @@ export function AssistantPanelView({
 
 export interface AssistantPanelProps {
   projectId: Uuid;
+  model: ModelResource;
   /** Live model revision used for stale-preview detection (frozen IA4-05 §9). */
   currentRevision: number;
+  /** Optional caller-supplied draft, populated without submitting it. */
+  initialUtterance?: string | undefined;
 }
 
-export default function AssistantPanel({ projectId, currentRevision }: AssistantPanelProps) {
-  const assistant = useAssistantPanel({ projectId, currentRevision });
+export default function AssistantPanel({ projectId, model, currentRevision, initialUtterance }: AssistantPanelProps) {
+  const assistant = useAssistantPanel({ projectId, currentRevision, initialUtterance });
+  const diagramNames = createDiagramNames(model);
   const speech = useSpeechRecognition();
 
   // When the dictation ends (stop clicked or the browser ended on its own),
@@ -320,6 +349,7 @@ export default function AssistantPanel({ projectId, currentRevision }: Assistant
   return (
     <AssistantPanelView
       canConfirm={assistant.canConfirm}
+      diagramNames={diagramNames}
       onAsk={assistant.ask}
       onAnswerClarification={assistant.answerClarification}
       onCancel={assistant.cancel}

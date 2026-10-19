@@ -1,6 +1,6 @@
 import type { ModalSize } from '../ui/Modal';
 
-export type EditorSectionId = 'xmi' | 'collaboration' | 'members' | 'generation';
+export type EditorSectionId = 'xmi' | 'collaboration' | 'members' | 'review' | 'generation';
 
 export type EditorSection = {
   id: EditorSectionId;
@@ -15,12 +15,13 @@ export type EditorSection = {
 /**
  * Frozen registry of the editor sections collapsed into the compact view.
  * The order here is the order the option bar renders, and it is part of the
- * plan contract: xmi, collaboration, members, generation.
+ * plan contract: xmi, collaboration, members, review, generation.
  */
 export const EDITOR_SECTIONS: readonly EditorSection[] = [
   { id: 'xmi', label: 'XMI interchange', title: 'Import an XMI file', size: 'md' },
   { id: 'collaboration', label: 'Collaboration', title: 'Live collaboration', size: 'lg' },
   { id: 'members', label: 'Members', title: 'Members', size: 'lg' },
+  { id: 'review', label: 'Review', title: 'Review diagram', size: 'md' },
   { id: 'generation', label: 'Generation', title: 'Generate a backend', size: 'md' },
 ];
 

@@ -103,6 +103,21 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     section: 'members',
   },
   {
+    slug: 'review-the-diagram',
+    title: 'Review the diagram',
+    summary:
+      'Check UML validation findings and backend readiness before generating; review is read-only and destination-specific checks stay in Generation.',
+    steps: [
+      'Open Review from the editor option bar and use Run review to refresh UML validation and backend readiness.',
+      'Read the grouped errors and warnings, then check the blocking diagnostics for the displayed generation profile.',
+      'Editors and owners can choose Explain with AI or Propose a fix; the assistant opens with a draft, and Consultar is always a separate action.',
+      'Review any proposed plan before choosing Aplicar cambios; nothing is sent or changed automatically.',
+      'Choose Generation for destination-specific checks such as the database engine.',
+    ],
+    keywords: ['review', 'validation', 'readiness', 'issues', 'diagram', 'uml'],
+    section: 'review',
+  },
+  {
     slug: 'generate-a-backend',
     title: 'Generate a backend',
     summary:

@@ -366,6 +366,26 @@ public class CommandHandlerSupport {
         }
     }
 
+    public void ensureAttributeNameAvailable(Classifier classifier, String name, UUID excludedId) {
+        boolean collision = attributeRepository.findByClassifierId(classifier.getId()).stream()
+                .anyMatch(attribute -> !Objects.equals(attribute.getId(), excludedId)
+                        && attribute.getName().equals(name));
+        if (collision) {
+            precondition("Attribute name '" + name + "' collides with an existing attribute of classifier '"
+                    + classifier.getName() + "'");
+        }
+    }
+
+    public void ensureOperationNameAvailable(Classifier classifier, String name, UUID excludedId) {
+        boolean collision = operationRepository.findByClassifierId(classifier.getId()).stream()
+                .anyMatch(operation -> !Objects.equals(operation.getId(), excludedId)
+                        && operation.getName().equals(name));
+        if (collision) {
+            precondition("Operation name '" + name + "' collides with an existing operation of classifier '"
+                    + classifier.getName() + "'");
+        }
+    }
+
     public TypeReference typeReference(CommandHandler.Context context, JsonNode type) {
         if (type == null || !type.isObject()) {
             invalid("Type must be an object with exactly one of primitiveName or classifierId");

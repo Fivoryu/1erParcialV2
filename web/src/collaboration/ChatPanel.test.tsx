@@ -1,9 +1,32 @@
-import { createElement } from 'react';
+import { createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatMessageResource } from '../api/types';
 import { formatMessageTime } from './messageTime';
 import ChatPanel, { type ChatPanelProps } from './ChatPanel';
+
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  return {
+    ...actual,
+    useEffect: () => undefined,
+    useRef: (current: unknown) => ({ current }),
+    useState: (initial: unknown) => [initial, () => undefined],
+  };
+});
+
+vi.mock('../assistant/useSpeechRecognition', () => ({
+  useSpeechRecognition: () => ({
+    supported: false,
+    listening: false,
+    transcript: '',
+    interim: '',
+    error: null,
+    start: () => undefined,
+    stop: () => undefined,
+    reset: () => undefined,
+  }),
+}));
 
 const readerId = '11111111-1111-4111-8111-111111111111';
 const session = {
@@ -54,8 +77,8 @@ const history: ChatMessageResource[] = [
   },
 ];
 
-function render(overrides: Partial<ChatPanelProps> = {}): string {
-  const props: ChatPanelProps = {
+function panelProps(overrides: Partial<ChatPanelProps> = {}): ChatPanelProps {
+  return {
     history: [],
     userId: readerId,
     loading: false,
@@ -64,6 +87,7 @@ function render(overrides: Partial<ChatPanelProps> = {}): string {
     busy: false,
     onDraftChange: () => undefined,
     onSend: () => undefined,
+    onAskAi: () => undefined,
     sessions: [session],
     sessionsLoading: false,
     activeSessionId: session.id,
@@ -92,7 +116,10 @@ function render(overrides: Partial<ChatPanelProps> = {}): string {
     attachmentUrls: {},
     ...overrides,
   };
-  return renderToStaticMarkup(createElement(ChatPanel, props));
+}
+
+function render(overrides: Partial<ChatPanelProps> = {}): string {
+  return renderToStaticMarkup(createElement(ChatPanel, panelProps(overrides)));
 }
 
 function messageRows(markup: string): string[] {
@@ -103,7 +130,63 @@ function renderedTime(row: string): string | undefined {
   return row.match(/<time\b[^>]*>([^<]+)<\/time>/)?.[1];
 }
 
+function askButtonMarkup(markup: string): string {
+  return markup.match(/<button\b[^>]*>Ask AI<\/button>/)?.[0] ?? '';
+}
+
+function findAskButton(node: ReactNode): ReactElement<{
+  children?: ReactNode;
+  onClick?: (event: never) => void;
+  disabled?: boolean;
+}> | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findAskButton(child);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!isValidElement(node)) return null;
+  const element = node as ReactElement<{
+    children?: ReactNode;
+    onClick?: (event: never) => void;
+    disabled?: boolean;
+  }>;
+  if (element.type === 'button' && element.props.children === 'Ask AI') return element;
+  return findAskButton(element.props.children);
+}
+
+const ownHumanMessage: ChatMessageResource = {
+  ...history[1]!,
+  id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  kind: 'HUMAN',
+  body: 'My own question',
+};
+const otherHumanMessage: ChatMessageResource = {
+  ...history[0]!,
+  id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  kind: 'HUMAN',
+};
+const assistantMessage: ChatMessageResource = {
+  ...ownHumanMessage,
+  id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  kind: 'AI',
+  authorUserId: null,
+  authorDisplayName: 'Assistant',
+  body: 'AI answer',
+};
+
 describe('ChatPanel', () => {
+  it('uses the conversation eyebrow and two-column conversation/context layout', () => {
+    const markup = render();
+
+    expect(markup).toContain('class="chat-layout"');
+    expect(markup).toContain('class="chat-main"');
+    expect(markup).toContain('class="chat-side"');
+    expect(markup).toContain('<p class="eyebrow">Conversation</p>');
+    expect(markup).not.toContain('Live collaboration');
+  });
+
   it('renders messages oldest first with each author, body, and its own time', () => {
     const markup = render({ history });
     const rows = messageRows(markup);
@@ -126,11 +209,78 @@ describe('ChatPanel', () => {
     expect(rows[0]).toContain('You');
   });
 
+  it('renders AI markdown while keeping HUMAN message bodies as plain text', () => {
+    const human = { ...ownHumanMessage, body: '**human answer**' };
+    const assistant = { ...assistantMessage, body: '**assistant answer**\n- detail' };
+    const markup = render({ history: [human, assistant] });
+
+    expect(markup).toContain('chat-message-body chat-message-body--markdown');
+    expect(markup).toContain('<strong>assistant answer</strong>');
+    expect(markup).toContain('<ul><li>detail</li></ul>');
+    expect(markup).not.toContain('**assistant answer**');
+    expect(markup).toContain('<p class="chat-message-body">**human answer**</p>');
+    expect(markup).not.toContain('<strong>human answer</strong>');
+    expect(markup).not.toContain('<p class="chat-message-body chat-message-body--markdown">**human answer**</p>');
+  });
+
+  it('renders Ask AI only on the reader’s HUMAN message and clicking passes its exact id', () => {
+    const markup = render({ history: [ownHumanMessage, otherHumanMessage, assistantMessage] });
+    const rows = messageRows(markup);
+    const ownRow = rows.find((row) => row.includes(ownHumanMessage.body)) ?? '';
+    const otherRow = rows.find((row) => row.includes(otherHumanMessage.body)) ?? '';
+    const aiRow = rows.find((row) => row.includes(assistantMessage.body)) ?? '';
+
+    expect(ownRow).toContain('>Ask AI</button>');
+    expect(otherRow).not.toContain('Ask AI');
+    expect(aiRow).not.toContain('Ask AI');
+
+    const onAskAi = vi.fn();
+    const button = findAskButton(ChatPanel(panelProps({ history: [ownHumanMessage], onAskAi })));
+    expect(button).not.toBeNull();
+    button?.props.onClick?.(undefined as never);
+    expect(onAskAi).toHaveBeenCalledExactlyOnceWith(ownHumanMessage.id);
+  });
+
+  it('disables Ask AI while the chat is busy or there is no active session', () => {
+    const busyButton = askButtonMarkup(render({ history: [ownHumanMessage], busy: true }));
+    const noSessionButton = askButtonMarkup(render({
+      history: [ownHumanMessage],
+      sessions: [],
+      activeSessionId: null,
+    }));
+
+    expect(busyButton).toContain('disabled=""');
+    expect(noSessionButton).toContain('disabled=""');
+  });
+
+  it('disables Ask AI for QUEUED and RUNNING states', () => {
+    for (const state of ['QUEUED', 'RUNNING'] as const) {
+      const button = askButtonMarkup(render({
+        history: [ownHumanMessage],
+        aiStatus: { sessionId: session.id, state },
+      }));
+      expect(button).toContain('disabled=""');
+    }
+  });
+
+  it('keeps Ask AI enabled for COMPLETED, FAILED, CANCELLED, and null states', () => {
+    for (const state of ['COMPLETED', 'FAILED', 'CANCELLED', null] as const) {
+      const button = askButtonMarkup(render({
+        history: [ownHumanMessage],
+        aiStatus: state ? { sessionId: session.id, state } : null,
+      }));
+      expect(button).toContain('>Ask AI</button>');
+      expect(button).not.toContain('disabled=""');
+    }
+  });
+
   it('shows a quiet empty state without any message rows', () => {
     const markup = render({ history: [] });
 
     expect(markup).toContain('No messages yet.');
-    expect(markup).toContain('chat-empty');
+    expect(markup).toContain('Start the conversation or ask the AI about the diagram.');
+    expect(markup).toContain('class="chat-conversation-area"');
+    expect(markup).toContain('class="chat-empty"');
     expect(messageRows(markup)).toHaveLength(0);
   });
 
@@ -183,6 +333,7 @@ describe('ChatPanel', () => {
     const markup = render({ contextMeter: meter });
 
     expect(markup).toContain('109% of the input budget (3920 / 3584 tokens)');
+    expect(markup).toContain('<details class="context-meter-details"><summary>Details</summary>');
     expect(markup).toContain('<dt>Images</dt><dd>600</dd>');
     expect(markup).toContain('<dt>Compaction threshold</dt><dd>2868</dd>');
     expect(markup).toContain('data-threshold-reached="true"');

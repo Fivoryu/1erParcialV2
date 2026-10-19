@@ -79,6 +79,7 @@ describe('help corpus', () => {
       'export-and-import-xmi',
       'collaborate-in-real-time',
       'invite-and-manage-members',
+      'review-the-diagram',
       'generate-a-backend',
       'deploy-the-generated-backend',
       'assistant-with-natural-language',

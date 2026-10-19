@@ -30,7 +30,9 @@ public class OperationUpdateHandler implements CommandHandler {
         }
         UmlOperation operation = support.operation(context);
         if (payload.has("name")) {
-            operation.setName(support.text(payload, "name"));
+            String name = support.text(payload, "name");
+            support.ensureOperationNameAvailable(operation.getClassifier(), name, operation.getId());
+            operation.setName(name);
         }
         if (payload.has("returnType")) {
             operation.setReturnTypeReference(payload.get("returnType").isNull()

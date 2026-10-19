@@ -20,9 +20,11 @@ import type {
   GenerationTargetResource,
   HelpGuideRequest,
   HelpGuideResponse,
+  GenerationReadinessResource,
   InvitationResource,
   MemberResource,
   ModelResource,
+  ModelValidationResource,
   OperationEnvelope,
   OperationOutcomeResource,
   ChatSessionResource,
@@ -42,6 +44,10 @@ import type {
 } from './types';
 import type { EditingLeaseEnvelope, EditingLeaseRequest } from './types';
 import { clearSession, getAuthorizationHeaderValue } from './session';
+
+export interface AskAiResponse {
+  state: 'QUEUED';
+}
 
 export class ApiTransportError extends Error {
   readonly kind = 'transport';
@@ -124,6 +130,7 @@ export interface ApiClient {
     body: string,
     attachmentIds?: Uuid[],
   ): Promise<ChatMessageResource>;
+  askAi(projectId: Uuid, sessionId: Uuid, messageId: Uuid): Promise<AskAiResponse>;
   deleteSessionHistory(projectId: Uuid, sessionId: Uuid): Promise<DeletedSessionHistoryResource>;
   getContextMeter(projectId: Uuid, sessionId: Uuid): Promise<ContextMeterResource>;
   compactSession(projectId: Uuid, sessionId: Uuid): Promise<CompactionOutcomeResource>;
@@ -146,6 +153,8 @@ export interface ApiClient {
   removeProjectMember(projectId: Uuid, userId: Uuid): Promise<MemberResource>;
   listMyInvitations(): Promise<InvitationResource[]>;
   getModel(projectId: Uuid): Promise<ModelResource>;
+  getModelValidation(projectId: Uuid): Promise<ModelValidationResource>;
+  getGenerationReadiness(projectId: Uuid, versionId: Uuid): Promise<GenerationReadinessResource>;
   previewXmi(projectId: Uuid, request: XmiPreviewRequest): Promise<XmiPreviewResource>;
   importXmi(projectId: Uuid, request: XmiImportRequest): Promise<XmiImportResource>;
   exportXmi(projectId: Uuid): Promise<XmiExportResource>;
@@ -366,6 +375,12 @@ export function createApiClient(
         payload,
       );
     },
+    askAi(projectId, sessionId, messageId) {
+      return postJson<AskAiResponse>(
+        `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/ask`,
+        { messageId },
+      );
+    },
     deleteSessionHistory(projectId, sessionId) {
       return requestJson<DeletedSessionHistoryResource>(
         `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`,
@@ -461,6 +476,16 @@ export function createApiClient(
     },
     getModel(projectId) {
       return requestJson<ModelResource>(`/projects/${encodeURIComponent(projectId)}/model`);
+    },
+    getModelValidation(projectId) {
+      return requestJson<ModelValidationResource>(
+        `/projects/${encodeURIComponent(projectId)}/model/validation`,
+      );
+    },
+    getGenerationReadiness(projectId, versionId) {
+      return requestJson<GenerationReadinessResource>(
+        `/projects/${encodeURIComponent(projectId)}/generation-readiness?versionId=${encodeURIComponent(versionId)}`,
+      );
     },
     previewXmi(projectId, request) {
       return postJson<XmiPreviewResource>(

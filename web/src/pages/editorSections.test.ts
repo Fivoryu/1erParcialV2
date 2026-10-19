@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { EDITOR_SECTIONS, findEditorSection, nextActiveSection } from './editorSections';
 
 describe('editor sections registry', () => {
-  it('lists exactly the four sections in the frozen order', () => {
+  it('lists exactly the five sections in the frozen order', () => {
     expect(EDITOR_SECTIONS.map((section) => section.id)).toEqual([
       'xmi',
       'collaboration',
       'members',
+      'review',
       'generation',
     ]);
   });

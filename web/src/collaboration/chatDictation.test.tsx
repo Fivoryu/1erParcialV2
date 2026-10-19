@@ -35,6 +35,7 @@ function render(overrides: Partial<ChatPanelProps> = {}): string {
     busy: false,
     onDraftChange: () => undefined,
     onSend: () => undefined,
+    onAskAi: () => undefined,
     sessions: [],
     sessionsLoading: false,
     activeSessionId: null,

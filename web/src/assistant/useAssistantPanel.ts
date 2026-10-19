@@ -9,6 +9,8 @@ export interface UseAssistantPanelOptions {
   projectId: Uuid | undefined;
   /** Live model revision; a change between plan and confirm marks the preview stale. */
   currentRevision: number | null;
+  /** Optional draft supplied by a caller; populates the editor without asking. */
+  initialUtterance?: string | undefined;
   api?: Pick<AssistantApi, 'requestPlan' | 'applyPlan'>;
 }
 
@@ -33,10 +35,11 @@ export interface AssistantPanelController {
 export function useAssistantPanel({
   projectId,
   currentRevision,
+  initialUtterance,
   api,
 }: UseAssistantPanelOptions): AssistantPanelController {
   const [state, setState] = useState<AssistantState>({ phase: 'idle' });
-  const [utterance, setUtterance] = useState('');
+  const [utterance, setUtterance] = useState(initialUtterance ?? '');
   const stateRef = useRef(state);
   const mountedRef = useRef(false);
   const projectIdRef = useRef(projectId);
@@ -68,6 +71,10 @@ export function useAssistantPanel({
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    setUtterance(initialUtterance ?? '');
+  }, [initialUtterance]);
 
   useEffect(() => {
     projectIdRef.current = projectId;

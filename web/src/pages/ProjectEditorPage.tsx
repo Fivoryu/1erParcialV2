@@ -44,6 +44,7 @@ import { useUndoRedoShortcuts } from '../diagram/useUndoRedoShortcuts';
 import PropertiesPanel from '../diagram/PropertiesPanel';
 import AssistantPanel from '../assistant/AssistantPanel';
 import GenerationPanel from '../generation/GenerationPanel';
+import { ReviewPanelLoader } from '../review/ReviewPanel';
 import XmiImportPanel from '../xmi/XmiImportPanel';
 import XmiExportPanel from '../xmi/XmiExportPanel';
 import MembersPanel from '../members/MembersPanel';
@@ -186,6 +187,7 @@ export default function ProjectEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [openSection, setOpenSection] = useState<EditorSectionId | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantSeed, setAssistantSeed] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStepIndex, setTourStepIndex] = useState(0);
   const modelRef = useRef<ModelResource | null>(null);
@@ -739,9 +741,14 @@ export default function ProjectEditorPage() {
   // `openSection` and `assistantOpen` are independent, so opening the assistant
   // from the floating button must close any open section dialog first: two open
   // dialogs would mean two backdrops, two focus traps and two scroll locks.
-  const handleOpenAssistant = useCallback(() => {
+  const handleOpenAssistant = useCallback((seed?: string) => {
     setOpenSection(null);
+    setAssistantSeed(seed ?? null);
     setAssistantOpen(true);
+  }, []);
+  const closeAssistant = useCallback(() => {
+    setAssistantOpen(false);
+    setAssistantSeed(null);
   }, []);
   const touchedElements = useMemo(() => groupTouchesByElement(presence), [presence]);
   const remoteCursorMarkers = useMemo(
@@ -826,6 +833,22 @@ export default function ProjectEditorPage() {
     } finally {
       if (currentProjectIdRef.current === projectId) {
         setChatBusy(false);
+      }
+    }
+  }
+
+  async function askAi(messageId: Uuid): Promise<void> {
+    const sessionId = chatSessionId;
+    if (!projectId || !sessionId) {
+      return;
+    }
+
+    setChatError(null);
+    try {
+      await api.askAi(projectId, sessionId, messageId);
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
+        setChatError(loginErrorMessage(cause));
       }
     }
   }
@@ -1157,6 +1180,7 @@ export default function ProjectEditorPage() {
                 onExtractMemories={() => void extractDiagramMemories()}
                 onForgetAllMemories={() => void forgetAllDiagramMemories()}
                 onForgetMemory={(memoryId) => void forgetDiagramMemory(memoryId)}
+                onAskAi={(messageId) => void askAi(messageId)}
                 onSend={(body, images) => sendMessage(body, images)}
                 onSessionChange={changeChatSession}
                 sessionActionBusy={chatSessionActionBusy}
@@ -1174,6 +1198,22 @@ export default function ProjectEditorPage() {
               onClose={closeSection}
             >
               <MembersPanel key={project.id} projectId={project.id} />
+            </Modal>
+
+            <Modal
+              open={activeSection?.id === 'review'}
+              title={findEditorSection('review').title}
+              size={findEditorSection('review').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <ReviewPanelLoader
+                projectId={project.id}
+                model={model}
+                role={currentUserRole}
+                onExplain={handleOpenAssistant}
+                onProposeFix={handleOpenAssistant}
+              />
             </Modal>
 
             <Modal
@@ -1197,9 +1237,14 @@ export default function ProjectEditorPage() {
               title="Asistente de modelo"
               size="md"
               titleVisible={false}
-              onClose={() => setAssistantOpen(false)}
+              onClose={closeAssistant}
             >
-              <AssistantPanel currentRevision={model.revision} projectId={project.id} />
+              <AssistantPanel
+                currentRevision={model.revision}
+                initialUtterance={assistantSeed ?? undefined}
+                model={model}
+                projectId={project.id}
+              />
             </Modal>
 
             <FloatingAssistantButton open={assistantOpen} onOpen={handleOpenAssistant} />
@@ -1208,7 +1253,7 @@ export default function ProjectEditorPage() {
               openSection={openSection}
               onNavigateToSection={handleNavigateToSection}
             />
-            {tourOpen && project.id === projectId && (
+            {tourOpen && openSection === null && !assistantOpen && project.id === projectId && (
               <TourOverlay
                 stepIndex={tourStepIndex}
                 onPrevious={() => changeTourStep(previousTourStepIndex(tourStepIndex))}

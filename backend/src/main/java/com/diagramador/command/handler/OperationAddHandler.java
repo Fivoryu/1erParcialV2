@@ -36,6 +36,8 @@ public class OperationAddHandler implements CommandHandler {
         UUID id = support.uuid(payload, "id");
         support.duplicateId(operationRepository.existsById(id), id, "operation");
         Classifier classifier = support.classifier(context, "classifier");
+        String name = support.text(payload, "name");
+        support.ensureOperationNameAvailable(classifier, name, null);
         TypeReference returnType = payload.has("returnType") && !payload.get("returnType").isNull()
                 ? support.typeReference(context, payload.get("returnType")) : null;
         String visibility = support.visibility(payload, "visibility", "PUBLIC");
@@ -43,7 +45,7 @@ public class OperationAddHandler implements CommandHandler {
         boolean isStatic = payload.has("isStatic") ? support.bool(payload, "isStatic") : false;
         int ordinal = support.ordinalOrNext(payload, "ordinal",
                 operationRepository.findByClassifierId(classifier.getId()).stream().map(UmlOperation::getOrdinal).toList());
-        support.insertOperation(context, id, classifier, support.text(payload, "name"), returnType, visibility,
+        support.insertOperation(context, id, classifier, name, returnType, visibility,
                 isAbstract, isStatic, ordinal);
         return Outcome.none();
     }
