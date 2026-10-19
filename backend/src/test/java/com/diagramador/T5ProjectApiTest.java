@@ -385,7 +385,8 @@ class T5ProjectApiTest extends AuthenticatedApiTest {
         UUID operationId = UUID.randomUUID();
 
         MvcResult result = postEnvelope(projectId, projectId, modelId, operationId, 1L, "classifier.create",
-                List.of(), Map.of("id", UUID.randomUUID(), "name", "Unsupported", "kind", "ENUMERATION"))
+                List.of(), Map.of("id", UUID.randomUUID(), "name", "Orphan", "kind", "CLASS",
+                        "namespaceId", UUID.randomUUID()))
                 .andExpect(status().isOk())
                 .andReturn();
 

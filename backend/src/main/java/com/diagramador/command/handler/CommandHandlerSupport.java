@@ -212,9 +212,6 @@ public class CommandHandlerSupport {
 
     public ClassifierKind classifierKind(JsonNode payload) {
         String value = text(payload, "kind").toUpperCase(Locale.ROOT);
-        if (value.equals("ENUMERATION")) {
-            precondition("Classifier kind ENUMERATION is unsupported: BL-CLS-04 and GAP-02");
-        }
         try {
             return ClassifierKind.valueOf(value);
         } catch (IllegalArgumentException exception) {
@@ -456,21 +453,36 @@ public class CommandHandlerSupport {
                 .executeUpdate();
     }
 
+    /**
+     * Literals of an ENUMERATION are stored as untyped uml_attribute rows of kind LITERAL, the same
+     * shape the XMI reader writes; their name must be a Java constant identifier for the generator.
+     */
+    public void ensureLiteral(Classifier enumeration, String name, boolean typed) {
+        if (typed) {
+            precondition("An enumeration literal of '" + enumeration.getName() + "' cannot have a type");
+        }
+        if (!name.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+            precondition("Enumeration literal '" + name + "' must be an identifier (letters, digits, _)");
+        }
+    }
+
     public void insertAttribute(CommandHandler.Context context, UUID id, Classifier classifier,
             TypeReference type, String name, String visibility, MultiplicityKind multiplicity, String defaultValue,
             int ordinal) {
+        String kind = classifier.getKind() == ClassifierKind.ENUMERATION ? "LITERAL" : "ATTRIBUTE";
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.uml_attribute
                     (attribute_id, classifier_id, type_reference_id, name, kind, visibility, multiplicity,
                      default_value, ordinal, created_at)
                 VALUES (CAST(:id AS uuid), CAST(:classifierId AS uuid), CAST(:typeReferenceId AS uuid), :name,
-                    'ATTRIBUTE', :visibility, CAST(:multiplicity AS diagrammer.multiplicity_kind),
+                    :kind, :visibility, CAST(:multiplicity AS diagrammer.multiplicity_kind),
                     :defaultValue, :ordinal, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("classifierId", classifier.getId())
                 .setParameter("typeReferenceId", id(type))
                 .setParameter("name", name)
+                .setParameter("kind", kind)
                 .setParameter("visibility", visibility)
                 .setParameter("multiplicity", multiplicity.name())
                 .setParameter("defaultValue", defaultValue)

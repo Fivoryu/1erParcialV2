@@ -2,6 +2,7 @@ package com.diagramador.command.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.UmlAttribute;
 import java.util.Set;
@@ -32,12 +33,19 @@ public class AttributeUpdateHandler implements CommandHandler {
             support.invalid("At least one attribute field must be supplied for update");
         }
         UmlAttribute attribute = support.attribute(context);
+        boolean literal = attribute.getClassifier().getKind() == ClassifierKind.ENUMERATION;
         if (payload.has("name")) {
             String name = support.text(payload, "name");
+            if (literal) {
+                support.ensureLiteral(attribute.getClassifier(), name, false);
+            }
             support.ensureAttributeNameAvailable(attribute.getClassifier(), name, attribute.getId());
             attribute.setName(name);
         }
         if (payload.has("type")) {
+            if (literal) {
+                support.ensureLiteral(attribute.getClassifier(), attribute.getName(), true);
+            }
             if (payload.get("type").isNull()) {
                 support.invalid("Attribute type cannot be null");
             }

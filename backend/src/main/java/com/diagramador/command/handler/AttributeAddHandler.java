@@ -3,6 +3,7 @@ package com.diagramador.command.handler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.diagramador.command.CommandHandler;
 import com.diagramador.domain.Classifier;
+import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
@@ -34,13 +35,21 @@ public class AttributeAddHandler implements CommandHandler {
     public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         rejectUnsupportedFlags(payload);
-        support.requireFields(payload, "id", "name", "type");
+        Classifier classifier = support.classifier(context, "classifier");
+        boolean literal = classifier.getKind() == ClassifierKind.ENUMERATION;
+        if (literal) {
+            support.requireFields(payload, "id", "name");
+        } else {
+            support.requireFields(payload, "id", "name", "type");
+        }
         UUID id = support.uuid(payload, "id");
         support.duplicateId(attributeRepository.existsById(id), id, "attribute");
-        Classifier classifier = support.classifier(context, "classifier");
         String name = support.text(payload, "name");
+        if (literal) {
+            support.ensureLiteral(classifier, name, payload.hasNonNull("type"));
+        }
         support.ensureAttributeNameAvailable(classifier, name, null);
-        TypeReference type = support.typeReference(context, payload.get("type"));
+        TypeReference type = literal ? null : support.typeReference(context, payload.get("type"));
         String visibility = support.visibility(payload, "visibility", "PUBLIC");
         MultiplicityKind multiplicity = support.multiplicity(payload, "multiplicity", MultiplicityKind.EXACTLY_ONE);
         int ordinal = support.ordinalOrNext(payload, "ordinal",

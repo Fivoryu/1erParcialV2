@@ -214,10 +214,45 @@ class T3aCommandHandlersTest extends AbstractPostgresIntegrationTest {
         assertRejected(command(fixture, "constraint.add", 1, Map.of("id", UUID.randomUUID(), "ownerType", "ATTRIBUTE",
                 "ownerId", classifierId, "expression", "x"), target("classifier", classifierId)),
                 ErrorCode.PRECONDITION_FAILED, "ATTRIBUTE");
-        assertRejected(command(fixture, "classifier.create", 1, Map.of("id", UUID.randomUUID(), "name", "E",
-                "kind", "ENUMERATION"), List.of()), ErrorCode.PRECONDITION_FAILED, "BL-CLS-04", "GAP-02");
         assertRejected(command(fixture, "classifier.create", 1, Map.of("id", UUID.randomUUID(), "name", "A",
                 "kind", "CLASS", "isAbstract", true), List.of()), ErrorCode.INVALID_PAYLOAD, "isAbstract");
+    }
+
+    @Test
+    void enumerationStoresUntypedLiteralsAndClassesCanUseItAsType() {
+        Fixture fixture = fixture();
+        UUID enumId = UUID.randomUUID();
+        UUID literalId = UUID.randomUUID();
+        UUID classId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        assertAccepted(command(fixture, "classifier.create", 0, Map.of("id", enumId, "name", "Turno",
+                "kind", "ENUMERATION"), List.of()));
+        assertThat(classifierRepository.findById(enumId).orElseThrow().getKind())
+                .isEqualTo(ClassifierKind.ENUMERATION);
+        assertAccepted(command(fixture, "attribute.add", 1, Map.of("id", literalId, "name", "MANANA"),
+                target("classifier", enumId)));
+        assertThat(attributeRepository.findById(literalId).orElseThrow()).satisfies(literal -> {
+            assertThat(literal.getKind()).isEqualTo("LITERAL");
+            assertThat(literal.getTypeReference()).isNull();
+        });
+
+        assertRejected(command(fixture, "attribute.add", 2, Map.of("id", UUID.randomUUID(), "name", "TARDE",
+                "type", Map.of("primitiveName", "String")), target("classifier", enumId)),
+                ErrorCode.PRECONDITION_FAILED, "literal", "type");
+        assertRejected(command(fixture, "attribute.add", 2, Map.of("id", UUID.randomUUID(), "name", "media tarde"),
+                target("classifier", enumId)), ErrorCode.PRECONDITION_FAILED, "media tarde", "identifier");
+        assertRejected(command(fixture, "attribute.update", 2, Map.of("type", Map.of("primitiveName", "String")),
+                target("attribute", literalId)), ErrorCode.PRECONDITION_FAILED, "literal", "type");
+        assertAccepted(command(fixture, "attribute.update", 2, Map.of("name", "NOCHE"), target("attribute", literalId)));
+        assertThat(attributeRepository.findById(literalId).orElseThrow().getName()).isEqualTo("NOCHE");
+
+        assertAccepted(command(fixture, "classifier.create", 3, Map.of("id", classId, "name", "Curso",
+                "kind", "CLASS"), List.of()));
+        assertAccepted(command(fixture, "attribute.add", 4, Map.of("id", attributeId, "name", "turno",
+                "type", Map.of("classifierId", enumId)), target("classifier", classId)));
+        assertThat(attributeRepository.findById(attributeId).orElseThrow().getKind()).isEqualTo("ATTRIBUTE");
+        assertRejected(command(fixture, "attribute.add", 5, Map.of("id", UUID.randomUUID(), "name", "sinTipo"),
+                target("classifier", classId)), ErrorCode.INVALID_PAYLOAD, "type");
     }
 
     @Test
