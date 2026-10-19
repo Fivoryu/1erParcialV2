@@ -372,9 +372,10 @@ void main() {
         },
         scopeGuard: () => true,
       );
+      // The mismatched entity is shown for confirmation, never sent.
       expect(
         (await runner.run('Crea Note con text = "hello"')).status,
-        AgentRunStatus.clarification,
+        AgentRunStatus.writePending,
       );
       expect(calls, 0);
     },

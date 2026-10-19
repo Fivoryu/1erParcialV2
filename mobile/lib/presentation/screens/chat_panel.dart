@@ -70,6 +70,26 @@ class _ChatPanelState extends State<ChatPanel> {
             Text(
               '${event.elapsed.inSeconds}s • ${event.phase}${event.tool == null ? "" : " • ${event.tool}"}',
             ),
+          if (c.writePreview != null)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(c.writeSummary ?? 'Confirm this change'),
+                    FilledButton(
+                      onPressed: c.busy ? null : c.confirmWrite,
+                      child: const Text('Confirm change'),
+                    ),
+                    TextButton(
+                      onPressed: c.dismissWrite,
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (c.deletePreview != null || c.deletePreviews.isNotEmpty)
             Card(
               child: Padding(

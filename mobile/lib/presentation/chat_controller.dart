@@ -41,6 +41,8 @@ class ChatController extends ChangeNotifier {
     deletePreview = null;
     deletePreviews = const [];
     deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     progress = const [];
     notifyListeners();
   }
@@ -61,6 +63,11 @@ class ChatController extends ChangeNotifier {
 
   /// Human labels of the pending delete targets (single or bulk).
   List<String> deleteLabels = const [];
+
+  /// A model-proposed create/update waiting for the user's confirmation, and
+  /// its readable summary.
+  OperationProposal? writePreview;
+  String? writeSummary;
   final _writeScopes = <String>{};
   ChatScope? _scope;
   String? _token;
@@ -90,6 +97,8 @@ class ChatController extends ChangeNotifier {
     deletePreview = null;
     deletePreviews = const [];
     deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     progress = const [];
     _contract = contract;
     ++_epoch;
@@ -197,6 +206,8 @@ class ChatController extends ChangeNotifier {
     deletePreview = null;
     deletePreviews = const [];
     deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     _runner?.cancel();
     cancelModel?.call().catchError((Object _) {});
     error = 'Stop requested. No new tool will be sent; an in-flight model or write may still finish.';
@@ -252,6 +263,8 @@ class ChatController extends ChangeNotifier {
     deletePreview = null;
     deletePreviews = const [];
     deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     notifyListeners();
     final runner = AgentRunner(
       contract: AgentContract(selectedContract),
@@ -329,6 +342,10 @@ class ChatController extends ChangeNotifier {
       deleteLabels = result.deleteLabels.isNotEmpty
           ? result.deleteLabels
           : [_label(selectedContract, proposal.path, target.data)];
+    }
+    if (result.writePreview != null && allowed()) {
+      writePreview = result.writePreview;
+      writeSummary = result.text;
     }
     if (result.deletePreviews.isNotEmpty && allowed()) {
       final previews = <Map<String, dynamic>>[];
@@ -546,6 +563,8 @@ class ChatController extends ChangeNotifier {
     deletePreview = null;
     deletePreviews = const [];
     deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     _requestCancelled = false;
     final deadline = DateTime.now().add(const Duration(minutes: 5));
     bool allowed() =>
@@ -590,6 +609,44 @@ class ChatController extends ChangeNotifier {
       }
     }
   });
+
+  /// Sends the confirmed create/update exactly as it was shown.
+  Future<void> confirmWrite() => _run((repository, token, epoch) async {
+    final proposal = writePreview;
+    final conversation = selected;
+    final contract = _contract;
+    if (proposal == null || conversation == null || contract == null) return;
+    writePreview = null;
+    writeSummary = null;
+    _requestCancelled = false;
+    final deadline = DateTime.now().add(const Duration(minutes: 2));
+    bool allowed() =>
+        epoch == _epoch &&
+        !_requestCancelled &&
+        DateTime.now().isBefore(deadline) &&
+        identical(selected, conversation);
+    final result = await _write(repository.scope, token, proposal, allowed: allowed);
+    if (epoch != _epoch) return;
+    final label = _label(contract, '${proposal.path}/', result.data);
+    await store.appendMessage(
+      repository.scope,
+      conversation.id,
+      ChatMessage(
+        id: _uuid(),
+        role: 'assistant',
+        content: proposal.method == 'POST' ? 'Listo, creado: $label.' : 'Listo, actualizado: $label.',
+        createdAt: DateTime.now().toUtc(),
+      ),
+    );
+    final local = await store.messages(repository.scope, conversation.id);
+    if (epoch == _epoch) messages = local;
+  });
+
+  void dismissWrite() {
+    writePreview = null;
+    writeSummary = null;
+    notifyListeners();
+  }
 
   /// Display label of a record read from [path], from its entity's readable
   /// fields; never its identifier.
@@ -637,6 +694,8 @@ class ChatController extends ChangeNotifier {
     deletePreview = null;
     deletePreviews = const [];
     deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     notifyListeners();
   }
 

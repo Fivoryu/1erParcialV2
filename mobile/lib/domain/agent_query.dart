@@ -119,6 +119,9 @@ class QuerySpec {
     );
   }
 
+  /// Entity named by the model (case, accents and plural tolerant).
+  static EntitySchema? entityNamed(dynamic raw, BackendSchema schema) => schema.entity(_entityName(raw, schema));
+
   static String? _entityName(dynamic raw, BackendSchema schema) {
     if (raw is! String) return null;
     final wanted = normalize(raw);
@@ -393,6 +396,76 @@ class QueryPlanner {
         ? (result.data as List).where((v) => v != null).map((v) => v.toString()).toList()
         : <String>[];
     return _values[key] = values;
+  }
+
+  // ---- writes -----------------------------------------------------------
+
+  /// Values for a create/update as the backend expects them: field names from
+  /// the contract, enum literals, numbers and booleans from the user's words,
+  /// and references resolved from the related record's values or label
+  /// (`"curso": {"grado": "1ro", "seccion": "A"}` or `"curso": "A"`).
+  Future<Map<String, dynamic>> groundWrite(EntitySchema entity, Map<String, dynamic> values) async {
+    final result = <String, dynamic>{};
+    for (final entry in values.entries) {
+      final reference = entity.references.keys
+          .where((field) => normalize(field) == normalize(entry.key) || normalize(field) == '${normalize(entry.key)}id')
+          .firstOrNull;
+      if (reference != null) {
+        final value = entry.value;
+        result[reference] = value is String && RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(value)
+            ? value
+            : await _resolveReference(entity.references[reference]!, value);
+        continue;
+      }
+      final field = entity.fields.values.where((f) => normalize(f.name) == normalize(entry.key)).firstOrNull;
+      if (field == null || field.name == 'id') {
+        throw QueryClarification('${entity.name} no tiene el campo "${entry.key}".',
+            options: [for (final f in entity.fields.values) if (!f.technical) f.name]);
+      }
+      result[field.name] = _groundWriteValue(field, entry.value);
+    }
+    return result;
+  }
+
+  dynamic _groundWriteValue(FieldInfo field, dynamic value) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    if (field.literals.isNotEmpty) {
+      return _match(text, field.literals, field.name) ??
+          (throw QueryClarification('"$text" no es un valor de ${field.name}.', options: field.literals));
+    }
+    return switch (field.type) {
+      'integer' => value is int ? value : (_integer(text) ?? (throw QueryClarification('"$text" no es un número entero para ${field.name}.'))),
+      'number' => value is num ? value : (num.tryParse(text.replaceAll(',', '.')) ?? (throw QueryClarification('"$text" no es un número para ${field.name}.'))),
+      'boolean' => value is bool ? value : switch (normalize(text)) {
+        'si' || 'true' || 'verdadero' => true,
+        'no' || 'false' || 'falso' => false,
+        _ => throw QueryClarification('"$text" no es sí/no para ${field.name}.'),
+      },
+      _ => value is String ? value : text,
+    };
+  }
+
+  /// The one record of [target] the user described; zero or several ask back.
+  Future<String> _resolveReference(String target, dynamic value) async {
+    final entity = schema.entity(target);
+    if (entity == null) throw QueryClarification('No conozco la entidad $target.');
+    if (value is String && value.startsWith('#')) {
+      final ref = refs[value];
+      if (ref != null && ref.entity == entity.name) return ref.id;
+    }
+    final readable = entity.readableFields;
+    final filters = value is Map
+        ? [for (final entry in value.entries) {'field': entry.key, 'op': 'eq', 'value': entry.value}]
+        : [if (readable.isNotEmpty) {'field': readable.first, 'op': 'eq', 'value': value}];
+    if (filters.isEmpty) throw QueryClarification('No sé cómo identificar un registro de ${entity.name}.');
+    final outcome = await run(QuerySpec.fromModel({'tag': 'query', 'entity': entity.name, 'filter': filters, 'limit': 6}, schema));
+    if (outcome.records.length == 1 && outcome.records.single['id'] is String) {
+      return outcome.records.single['id'] as String;
+    }
+    if (outcome.records.isEmpty) throw QueryClarification('No encontré ese registro de ${entity.name}.');
+    throw QueryClarification('Hay varios registros de ${entity.name} que coinciden; decime cuál.',
+        options: [for (final record in outcome.records) label(entity, record)]);
   }
 
   // ---- execution --------------------------------------------------------

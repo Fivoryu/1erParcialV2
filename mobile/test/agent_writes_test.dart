@@ -71,6 +71,53 @@ void main() {
     expect(capped.text, contains('Son 25 registros de alumno; por seguridad borro como máximo 20'));
   });
 
+  test('a create with a related record by its values is grounded and shown for confirmation', () async {
+    final backend = colegioData();
+    final result = await runnerReturning([
+      {'tag': 'create', 'entity': 'alumnos', 'values': {
+        'nombre': 'Pedro', 'apellido': 'Gómez', 'curso': {'grado': 'primero', 'seccion': 'a'}}},
+    ], backend).run('anotá a Pedro Gómez en primero A');
+
+    expect(result.status, AgentRunStatus.writePending);
+    expect(result.text, 'Voy a crear un registro de alumno: nombre: Pedro · apellido: Gómez · curso: A. ¿Confirmás?');
+    expect(result.writePreview!.method, 'POST');
+    expect(result.writePreview!.body, {'nombre': 'Pedro', 'apellido': 'Gómez', 'cursoId': cursoMananaA});
+    expect(backend.calls.where((c) => c.method != 'GET'), isEmpty, reason: 'nothing is written before confirmation');
+  });
+
+  test('an update by name keeps the other values and humanizes the change', () async {
+    final result = await runnerReturning([
+      {'tag': 'update', 'entity': 'alumno', 'match': [{'field': 'nombre', 'value': 'beto'}],
+        'values': {'curso': {'grado': '1ro', 'seccion': 'B'}}},
+    ], colegioData()).run('pasá a Beto al 1ro B');
+
+    expect(result.status, AgentRunStatus.writePending);
+    expect(result.text, 'Voy a cambiar Beto Rios: curso → B. ¿Confirmás?');
+    expect(result.writePreview!.path, '/api/alumno/aaaaaaaa-0000-4000-8000-000000000002');
+    expect(result.writePreview!.body,
+        {'nombre': 'Beto', 'apellido': 'Rios', 'edad': 7, 'cursoId': cursoTardeB});
+
+    final turno = await runnerReturning([
+      {'tag': 'update', 'entity': 'curso', 'match': [{'field': 'seccion', 'value': 'C'}], 'values': {'turno': 'tarde'}},
+    ], colegioData()).run('el C pasa a la tarde');
+    expect(turno.text, 'Voy a cambiar C: turno → Tarde. ¿Confirmás?');
+    expect((turno.writePreview!.body as Map)['turno'], 'TARDE');
+  });
+
+  test('an ambiguous or unknown related record asks back instead of guessing', () async {
+    final ambiguous = await runnerReturning([
+      {'tag': 'create', 'entity': 'alumno', 'values': {'nombre': 'Eva', 'apellido': 'Luna', 'curso': {'grado': 1}}},
+    ], colegioData()).run('anotá a Eva Luna en primero');
+    expect(ambiguous.status, AgentRunStatus.clarification);
+    expect(ambiguous.text, 'Hay varios registros de curso que coinciden; decime cuál.\n\nOpciones: A, B');
+
+    final unknownField = await runnerReturning([
+      {'tag': 'create', 'entity': 'alumno', 'values': {'color': 'rojo'}},
+    ], colegioData()).run('creá un alumno rojo');
+    expect(unknownField.status, AgentRunStatus.clarification);
+    expect(unknownField.text, startsWith('alumno no tiene el campo "color".'));
+  });
+
   test('generated backend errors are translated for the chat', () {
     expect(BackendRejection.from(400, {'code': 'VALIDATION_FAILED', 'detail': 'nombre: must not be null'}).message,
         'Faltan datos o hay valores inválidos: nombre: must not be null.');
@@ -155,5 +202,70 @@ void main() {
     ]);
     expect(controller.messages.last.content, 'Eliminados 2 de 2 registros: Ana Paz, Beto Rios.');
     expect(controller.deletePreviews, isEmpty);
+  });
+
+  test('a confirmed create is sent once, exactly as shown, and reported by its label', () async {
+    final backend = colegioData();
+    final scope = ChatScope(
+      platform: 'https://example.test',
+      userId: 'u',
+      projectId: 'p',
+      deploymentId: 'd',
+      contractHash: 'h',
+    );
+    final store = MemoryChatStore();
+    final now = DateTime.utc(2026);
+    final conversation = LocalConversation(id: 'c', scope: scope, title: 'T', createdAt: now, updatedAt: now);
+    await store.saveConversation(conversation);
+    final writes = <Map<String, dynamic>>[];
+    final api = PlatformService(
+      baseUri: Uri.parse(scope.platform),
+      client: MockClient((request) async {
+        final path = request.url.path;
+        if (path.endsWith('/operations') && path.contains('/agent/')) {
+          final payload = jsonDecode(request.body) as Map<String, dynamic>;
+          writes.add(payload);
+          return http.Response(jsonEncode({...payload, 'state': 'completed', 'status': 201,
+            'result': {'id': 'aaaaaaaa-0000-4000-8000-000000000099', ...payload['body'] as Map}}), 200);
+        }
+        if (path.endsWith('/operations')) {
+          final payload = jsonDecode(request.body) as Map<String, dynamic>;
+          final result = await backend.call(OperationProposal(
+            method: payload['method'] as String,
+            path: payload['path'] as String,
+            body: payload['body'],
+            query: [
+              for (final p in (payload['query'] as List? ?? const []))
+                QueryParameter((p as Map)['name'] as String, p['value'] as String),
+            ],
+          ));
+          return http.Response(jsonEncode({'status': 200, 'body': result.data}), 200);
+        }
+        return http.Response('{"message":"history unavailable"}', 503);
+      }),
+    );
+    final controller = ChatController(
+      store: store,
+      service: api,
+      model: (_) async => jsonEncode({
+        'tag': 'create',
+        'entity': 'alumno',
+        'values': {'nombre': 'Pedro', 'apellido': 'Gómez', 'curso': {'grado': '1ro', 'seccion': 'A'}},
+      }),
+    );
+    await controller.bind(scope, 'fixture',
+        contract: BackendContract(deploymentId: 'd', runId: 'r', contractHash: 'h', openApi: colegioContract()));
+    await controller.open(conversation);
+
+    await controller.sendMessage('anotá a Pedro Gómez en 1ro A');
+    expect(controller.writeSummary, 'Voy a crear un registro de alumno: nombre: Pedro · apellido: Gómez · curso: A. ¿Confirmás?');
+    expect(writes, isEmpty);
+
+    await controller.confirmWrite();
+
+    expect(writes.single['method'], 'POST');
+    expect(writes.single['body'], {'nombre': 'Pedro', 'apellido': 'Gómez', 'cursoId': cursoMananaA});
+    expect(controller.messages.last.content, 'Listo, creado: Pedro Gómez.');
+    expect(controller.writePreview, isNull);
   });
 }

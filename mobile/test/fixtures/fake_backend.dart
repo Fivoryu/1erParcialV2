@@ -17,6 +17,10 @@ class FakeBackend {
     calls.add(proposal);
     final segments = proposal.path.split('/');
     final helper = segments.last;
+    if (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(helper) && proposal.method == 'GET') {
+      final record = (tables[segments[segments.length - 2]] ?? const []).where((r) => r['id'] == helper).firstOrNull;
+      return AgentToolResult(data: record, complete: true, fetchedAt: DateTime.utc(2026, 10, 19));
+    }
     final table = {'query', 'values', 'aggregate'}.contains(helper) ? segments[segments.length - 2] : segments.last;
     final rows = tables[table] ?? const [];
     final params = <String, List<String>>{};

@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'operation_proposal.dart';
 
-enum AgentRunStatus { answered, clarification, deletePending, stopped, failed }
+enum AgentRunStatus { answered, clarification, deletePending, writePending, stopped, failed }
 
 /// Raised by a model adapter when generation ran past its budget and was
 /// cancelled; the runner reports it instead of waiting forever.
@@ -24,7 +24,7 @@ class AgentAction {
       'clarify': {'tag', 'text'},
       'read': {'tag', 'entity', 'id'},
       'create': {'tag', 'entity', 'values'},
-      'update': {'tag', 'entity', 'id', 'values'},
+      'update': {'tag', 'entity', 'id', 'match', 'values'},
       'delete_preview': {'tag', 'entity', 'id', 'match', 'all'},
       'calculate': {'tag', 'calculation'},
       // Reads and reports are validated against the contract by QuerySpec.
@@ -62,7 +62,7 @@ class AgentAction {
       if (tag == 'delete_preview' && value.containsKey('match') && value['match'] is! List) {
         throw const FormatException('match must be a list of filters.');
       }
-      if ((tag == 'update' && !value.containsKey('id')) ||
+      if ((tag == 'update' && !value.containsKey('id') && !value.containsKey('match')) ||
           (tag == 'delete_preview' && !value.containsKey('id') && !value.containsKey('match'))) {
         throw const FormatException('Missing identifier.');
       }
@@ -111,6 +111,7 @@ class AgentRunResult {
     this.deletePreview,
     this.deletePreviews = const [],
     this.deleteLabels = const [],
+    this.writePreview,
     this.data,
   });
   final AgentRunStatus status;
@@ -122,6 +123,10 @@ class AgentRunResult {
 
   /// Human labels of the targets, in the same order; never identifiers.
   final List<String> deleteLabels;
+
+  /// A create or update the model proposed, already grounded and validated;
+  /// it is only sent after the user confirms the shown summary.
+  final OperationProposal? writePreview;
   final dynamic data;
 }
 
