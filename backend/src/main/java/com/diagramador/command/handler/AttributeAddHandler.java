@@ -38,12 +38,14 @@ public class AttributeAddHandler implements CommandHandler {
         UUID id = support.uuid(payload, "id");
         support.duplicateId(attributeRepository.existsById(id), id, "attribute");
         Classifier classifier = support.classifier(context, "classifier");
+        String name = support.text(payload, "name");
+        support.ensureAttributeNameAvailable(classifier, name, null);
         TypeReference type = support.typeReference(context, payload.get("type"));
         String visibility = support.visibility(payload, "visibility", "PUBLIC");
         MultiplicityKind multiplicity = support.multiplicity(payload, "multiplicity", MultiplicityKind.EXACTLY_ONE);
         int ordinal = support.ordinalOrNext(payload, "ordinal",
                 attributeRepository.findByClassifierId(classifier.getId()).stream().map(UmlAttribute::getOrdinal).toList());
-        support.insertAttribute(context, id, classifier, type, support.text(payload, "name"), visibility, multiplicity,
+        support.insertAttribute(context, id, classifier, type, name, visibility, multiplicity,
                 support.optionalText(payload, "defaultValue"), ordinal);
         return Outcome.none();
     }

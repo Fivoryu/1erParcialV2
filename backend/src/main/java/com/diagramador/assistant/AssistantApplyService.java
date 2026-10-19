@@ -98,6 +98,12 @@ public class AssistantApplyService {
                 stopIndex = index;
                 break;
             }
+            AssistantPlanResponse.Diagnostic duplicate = duplicateMemberNameDiagnostic(operation, model);
+            if (duplicate != null) {
+                steps.add(new AssistantApplyResponse.Step(index, operation.type(), operation.targetId(), "SKIPPED",
+                        null, null, List.of(duplicate)));
+                continue;
+            }
             Mapped mapped = mapPayload(operation, model);
             if (mapped.diagnostic() != null) {
                 steps.add(rejected(operation, index, mapped.diagnostic()));
@@ -145,6 +151,40 @@ public class AssistantApplyService {
             AssistantPlanResponse.Diagnostic diagnostic) {
         return new AssistantApplyResponse.Step(index, operation.type(), operation.targetId(), "REJECTED",
                 null, null, List.of(diagnostic));
+    }
+
+    private static AssistantPlanResponse.Diagnostic duplicateMemberNameDiagnostic(AssistantApplyOp operation,
+            ModelResource model) {
+        String type = operation.type();
+        if (!"attribute.add".equals(type) && !"operation.add".equals(type)) {
+            return null;
+        }
+        Map<String, Object> args = operation.args();
+        String name = text(args.get("name"));
+        if (name == null) {
+            return null;
+        }
+        UUID classifierId = resolveClassifierTarget(operation, args, model);
+        if (classifierId == null) {
+            return null;
+        }
+        ClassifierResource classifier = model.classifiers().stream()
+                .filter(candidate -> classifierId.equals(candidate.id()))
+                .findFirst()
+                .orElse(null);
+        if (classifier == null) {
+            return null;
+        }
+
+        boolean duplicate = "attribute.add".equals(type)
+                ? classifier.attributes().stream().anyMatch(attribute -> name.equals(attribute.name()))
+                : classifier.operations().stream().anyMatch(existing -> name.equals(existing.name()));
+        if (!duplicate) {
+            return null;
+        }
+        String memberName = "attribute.add".equals(type) ? "El atributo" : "La operación";
+        return diagnostic("NAME_COLLISION", memberName + " '" + name + "' ya existe en la clase '"
+                + classifier.name() + "'; se omitió.");
     }
 
     private static Set<UUID> resolvableIds(ModelResource model) {

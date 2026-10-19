@@ -112,6 +112,128 @@ class T3bCommandHandlersTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void attributeAddRejectsDuplicateNameOnTheSameClassifier() {
+        Fixture fixture = fixture("duplicate-attribute");
+        UUID classifier = createClassifier(fixture, 0);
+        UUID firstAttribute = UUID.randomUUID();
+        assertAccepted(command(fixture, "attribute.add", 1, Map.of("id", firstAttribute, "name", "value",
+                "type", Map.of("primitiveName", "String")), target("classifier", classifier)));
+
+        CommandResult result = command(fixture, "attribute.add", 2, Map.of("id", UUID.randomUUID(), "name", "value",
+                "type", Map.of("primitiveName", "String")), target("classifier", classifier));
+
+        assertRejected(result, "Attribute name 'value' collides with an existing attribute of classifier 'C0'");
+        assertThat(attributeRepository.findByClassifierId(classifier)).singleElement()
+                .satisfies(attribute -> assertThat(attribute.getId()).isEqualTo(firstAttribute));
+    }
+
+    @Test
+    void operationAddRejectsDuplicateNameOnTheSameClassifier() {
+        Fixture fixture = fixture("duplicate-operation");
+        UUID classifier = createClassifier(fixture, 0);
+        UUID firstOperation = UUID.randomUUID();
+        assertAccepted(command(fixture, "operation.add", 1, Map.of("id", firstOperation, "name", "save"),
+                target("classifier", classifier)));
+
+        CommandResult result = command(fixture, "operation.add", 2,
+                Map.of("id", UUID.randomUUID(), "name", "save"), target("classifier", classifier));
+
+        assertRejected(result, "Operation name 'save' collides with an existing operation of classifier 'C0'");
+        assertThat(operationRepository.findByClassifierId(classifier)).singleElement()
+                .satisfies(operation -> assertThat(operation.getId()).isEqualTo(firstOperation));
+    }
+
+    @Test
+    void attributeUpdateRejectsRenamingToASiblingName() {
+        Fixture fixture = fixture("rename-duplicate-attribute");
+        UUID classifier = createClassifier(fixture, 0);
+        UUID sibling = UUID.randomUUID();
+        UUID renamedAttribute = UUID.randomUUID();
+        assertAccepted(command(fixture, "attribute.add", 1, Map.of("id", sibling, "name", "taken",
+                "type", Map.of("primitiveName", "String")), target("classifier", classifier)));
+        assertAccepted(command(fixture, "attribute.add", 2, Map.of("id", renamedAttribute, "name", "original",
+                "type", Map.of("primitiveName", "String")), target("classifier", classifier)));
+
+        CommandResult result = command(fixture, "attribute.update", 3, Map.of("name", "taken"),
+                target("attribute", renamedAttribute));
+
+        assertRejected(result, "Attribute name 'taken' collides with an existing attribute of classifier 'C0'");
+        assertThat(attributeRepository.findById(renamedAttribute).orElseThrow().getName()).isEqualTo("original");
+        assertThat(attributeRepository.findByClassifierId(classifier)).extracting(UmlAttribute::getName)
+                .containsExactlyInAnyOrder("taken", "original");
+    }
+
+    @Test
+    void operationUpdateRejectsRenamingToASiblingName() {
+        Fixture fixture = fixture("rename-duplicate-operation");
+        UUID classifier = createClassifier(fixture, 0);
+        UUID sibling = UUID.randomUUID();
+        UUID renamedOperation = UUID.randomUUID();
+        assertAccepted(command(fixture, "operation.add", 1, Map.of("id", sibling, "name", "taken"),
+                target("classifier", classifier)));
+        assertAccepted(command(fixture, "operation.add", 2, Map.of("id", renamedOperation, "name", "original"),
+                target("classifier", classifier)));
+
+        CommandResult result = command(fixture, "operation.update", 3, Map.of("name", "taken"),
+                target("operation", renamedOperation));
+
+        assertRejected(result, "Operation name 'taken' collides with an existing operation of classifier 'C0'");
+        assertThat(operationRepository.findById(renamedOperation).orElseThrow().getName()).isEqualTo("original");
+        assertThat(operationRepository.findByClassifierId(classifier)).extracting(UmlOperation::getName)
+                .containsExactlyInAnyOrder("taken", "original");
+    }
+
+    @Test
+    void attributesWithTheSameNameAreAllowedOnDifferentClassifiers() {
+        Fixture fixture = fixture("shared-attribute-name");
+        UUID firstClassifier = createClassifier(fixture, 0);
+        UUID secondClassifier = createClassifier(fixture, 1);
+
+        assertAccepted(command(fixture, "attribute.add", 2, Map.of("id", UUID.randomUUID(), "name", "shared",
+                "type", Map.of("primitiveName", "String")), target("classifier", firstClassifier)));
+        CommandResult result = command(fixture, "attribute.add", 3, Map.of("id", UUID.randomUUID(), "name", "shared",
+                "type", Map.of("primitiveName", "String")), target("classifier", secondClassifier));
+
+        assertAccepted(result);
+        assertThat(attributeRepository.findByClassifierId(firstClassifier)).singleElement()
+                .extracting(UmlAttribute::getName).isEqualTo("shared");
+        assertThat(attributeRepository.findByClassifierId(secondClassifier)).singleElement()
+                .extracting(UmlAttribute::getName).isEqualTo("shared");
+    }
+
+    @Test
+    void attributeAndOperationWithTheSameNameAreAllowedOnOneClassifier() {
+        Fixture fixture = fixture("attribute-operation-shared-name");
+        UUID classifier = createClassifier(fixture, 0);
+        assertAccepted(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "shared",
+                "type", Map.of("primitiveName", "String")), target("classifier", classifier)));
+
+        CommandResult result = command(fixture, "operation.add", 2,
+                Map.of("id", UUID.randomUUID(), "name", "shared"), target("classifier", classifier));
+
+        assertAccepted(result);
+        assertThat(attributeRepository.findByClassifierId(classifier)).singleElement()
+                .extracting(UmlAttribute::getName).isEqualTo("shared");
+        assertThat(operationRepository.findByClassifierId(classifier)).singleElement()
+                .extracting(UmlOperation::getName).isEqualTo("shared");
+    }
+
+    @Test
+    void memberNameCollisionChecksAreCaseSensitive() {
+        Fixture fixture = fixture("case-sensitive-member-names");
+        UUID classifier = createClassifier(fixture, 0);
+        assertAccepted(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "Name",
+                "type", Map.of("primitiveName", "String")), target("classifier", classifier)));
+
+        CommandResult result = command(fixture, "attribute.add", 2, Map.of("id", UUID.randomUUID(), "name", "name",
+                "type", Map.of("primitiveName", "String")), target("classifier", classifier));
+
+        assertAccepted(result);
+        assertThat(attributeRepository.findByClassifierId(classifier)).extracting(UmlAttribute::getName)
+                .containsExactlyInAnyOrder("Name", "name");
+    }
+
+    @Test
     void classifierDeleteRemovesTheWholeGraphAndRecordsOneTombstonePerSupportedElement() {
         Fixture fixture = fixture("cascade");
         UUID deletedClassifier = UUID.randomUUID();

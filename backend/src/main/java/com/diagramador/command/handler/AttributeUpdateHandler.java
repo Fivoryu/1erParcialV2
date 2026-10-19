@@ -33,7 +33,9 @@ public class AttributeUpdateHandler implements CommandHandler {
         }
         UmlAttribute attribute = support.attribute(context);
         if (payload.has("name")) {
-            attribute.setName(support.text(payload, "name"));
+            String name = support.text(payload, "name");
+            support.ensureAttributeNameAvailable(attribute.getClassifier(), name, attribute.getId());
+            attribute.setName(name);
         }
         if (payload.has("type")) {
             if (payload.get("type").isNull()) {

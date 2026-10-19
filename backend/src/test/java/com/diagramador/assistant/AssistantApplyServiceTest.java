@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import com.diagramador.api.ModelResource;
 import com.diagramador.api.ModelResource.AttributeResource;
 import com.diagramador.api.ModelResource.ClassifierResource;
+import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ProjectApiService;
 import com.diagramador.command.CommandOrigin;
 import com.diagramador.command.CommandResult;
@@ -171,6 +172,138 @@ class AssistantApplyServiceTest {
         assertThat(response.steps().get(2).status()).isEqualTo("SKIPPED");
         assertThat(response.steps().get(2).type()).isEqualTo("classifier.setAbstract");
         assertThat(response.finalRevision()).isEqualTo(8L);
+    }
+
+    @Test
+    void skipsDuplicateAttributeAndContinuesExecutingTheRestOfThePlan() {
+        ModelResource initial = model(7L);
+        ClassifierResource persona = initial.classifiers().get(0);
+        UUID proveedorId = UUID.fromString("20000000-0000-0000-0000-000000000002");
+        ModelResource afterCreate = model(8L, persona,
+                new ClassifierResource(proveedorId, "Proveedor", ClassifierKind.CLASS, false, null,
+                        List.of(), List.of(), List.of()));
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(initial, initial, afterCreate);
+        when(commandService.execute(any())).thenReturn(accepted(8L), accepted(9L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("attribute.add", CLASSIFIER_ID, Map.of("name", "nombre", "type", "String")),
+                new AssistantApplyOp("classifier.create", null, Map.of("name", "Proveedor")),
+                new AssistantApplyOp("relationship.create", null, Map.of(
+                        "source", Map.of("classifierName", "Persona"),
+                        "target", Map.of("classifierName", "Proveedor")))), 7L));
+
+        ArgumentCaptor<OperationEnvelope> envelopes = ArgumentCaptor.forClass(OperationEnvelope.class);
+        verify(commandService, times(2)).execute(envelopes.capture());
+        assertThat(envelopes.getAllValues()).extracting(OperationEnvelope::type)
+                .containsExactly("classifier.create", "relationship.create");
+        assertThat(initial.classifiers().get(0).attributes()).hasSize(1);
+        assertThat(response.steps()).hasSize(3);
+        assertThat(response.steps().get(0).index()).isEqualTo(0);
+        assertThat(response.steps().get(0).status()).isEqualTo("SKIPPED");
+        assertThat(response.steps().get(0).diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("NAME_COLLISION");
+            assertThat(diagnostic.message())
+                    .isEqualTo("El atributo 'nombre' ya existe en la clase 'Persona'; se omitió.");
+        });
+        assertThat(response.steps().get(0).resultRevision()).isNull();
+        assertThat(response.steps().get(1).index()).isEqualTo(1);
+        assertThat(response.steps().get(1).status()).isEqualTo("ACCEPTED");
+        assertThat(response.steps().get(1).resultRevision()).isEqualTo(8L);
+        assertThat(response.steps().get(2).index()).isEqualTo(2);
+        assertThat(response.steps().get(2).status()).isEqualTo("ACCEPTED");
+        assertThat(response.steps().get(2).resultRevision()).isEqualTo(9L);
+        assertThat(response.finalRevision()).isEqualTo(9L);
+        verify(undoCaptureService, times(2)).snapshotTargets(any());
+        verify(undoCaptureService, times(2)).recordAccepted(any(), any(), eq(USER_ID), any());
+    }
+
+    @Test
+    void skipsDuplicateOperationAndContinuesThePlan() {
+        ModelResource withOperation = modelWithOperation(7L, "guardar");
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(withOperation, withOperation);
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("operation.add", CLASSIFIER_ID, Map.of("name", "guardar")),
+                new AssistantApplyOp("classifier.create", null, Map.of("name", "Factura"))), 7L));
+
+        ArgumentCaptor<OperationEnvelope> envelopes = ArgumentCaptor.forClass(OperationEnvelope.class);
+        verify(commandService).execute(envelopes.capture());
+        assertThat(envelopes.getValue().type()).isEqualTo("classifier.create");
+        assertThat(response.steps()).hasSize(2);
+        assertThat(response.steps().get(0).index()).isEqualTo(0);
+        assertThat(response.steps().get(0).status()).isEqualTo("SKIPPED");
+        assertThat(response.steps().get(0).diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("NAME_COLLISION");
+            assertThat(diagnostic.message())
+                    .isEqualTo("La operación 'guardar' ya existe en la clase 'Persona'; se omitió.");
+        });
+        assertThat(response.steps().get(1).index()).isEqualTo(1);
+        assertThat(response.steps().get(1).status()).isEqualTo("ACCEPTED");
+        assertThat(response.steps().get(1).resultRevision()).isEqualTo(8L);
+        assertThat(response.finalRevision()).isEqualTo(8L);
+        verify(undoCaptureService).recordAccepted(any(), any(), eq(USER_ID), any());
+    }
+
+    @Test
+    void duplicateMemberChecksAreCaseSensitiveAndScopedByClassifierAndKind() {
+        ModelResource withOperation = modelWithOperation(7L, "guardar");
+        ClassifierResource persona = withOperation.classifiers().get(0);
+        ClassifierResource factura = new ClassifierResource(
+                UUID.fromString("20000000-0000-0000-0000-000000000002"), "Factura", ClassifierKind.CLASS,
+                false, null,
+                List.of(new AttributeResource(UUID.fromString("30000000-0000-0000-0000-000000000002"), "total",
+                        "ATTRIBUTE", "PUBLIC", null, null, null, "String", 0)),
+                List.of(), List.of());
+        ModelResource model = model(7L, persona, factura);
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model, model, model);
+        when(commandService.execute(any())).thenReturn(accepted(8L), accepted(9L), accepted(10L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("attribute.add", CLASSIFIER_ID, Map.of("name", "Nombre")),
+                new AssistantApplyOp("attribute.add", CLASSIFIER_ID, Map.of("name", "total")),
+                new AssistantApplyOp("operation.add", CLASSIFIER_ID, Map.of("name", "nombre"))), 7L));
+
+        verify(commandService, times(3)).execute(any());
+        assertThat(response.steps()).hasSize(3).allSatisfy(step -> {
+            assertThat(step.status()).isEqualTo("ACCEPTED");
+            assertThat(step.diagnostics()).isEmpty();
+        });
+        assertThat(response.finalRevision()).isEqualTo(10L);
+    }
+
+    @Test
+    void commandRejectionAfterDuplicateSkipStillStopsTheSequence() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(7L));
+        when(commandService.execute(any())).thenReturn(new CommandResult(UUID.randomUUID(),
+                CommandStatus.REJECTED, null,
+                List.of(new Diagnostic(ErrorCode.REVISION_MISMATCH, "revision changed")), null));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("attribute.add", CLASSIFIER_ID, Map.of("name", "nombre")),
+                new AssistantApplyOp("classifier.rename", CLASSIFIER_ID, Map.of("newName", "Humana")),
+                new AssistantApplyOp("classifier.setAbstract", CLASSIFIER_ID, Map.of("value", true))), 7L));
+
+        verify(commandService, times(1)).execute(any());
+        verify(undoCaptureService, never()).recordAccepted(any(), any(), any(), any());
+        assertThat(response.steps()).hasSize(3);
+        assertThat(response.steps().get(0).index()).isEqualTo(0);
+        assertThat(response.steps().get(0).status()).isEqualTo("SKIPPED");
+        assertThat(response.steps().get(0).diagnostics())
+                .extracting(AssistantPlanResponse.Diagnostic::code)
+                .containsExactly("NAME_COLLISION");
+        assertThat(response.steps().get(1).index()).isEqualTo(1);
+        assertThat(response.steps().get(1).status()).isEqualTo("REJECTED");
+        assertThat(response.steps().get(1).diagnostics())
+                .extracting(AssistantPlanResponse.Diagnostic::code)
+                .containsExactly("REVISION_MISMATCH");
+        assertThat(response.steps().get(2).index()).isEqualTo(2);
+        assertThat(response.steps().get(2).status()).isEqualTo("SKIPPED");
+        assertThat(response.finalRevision()).isEqualTo(7L);
     }
 
     @Test
@@ -393,6 +526,14 @@ class AssistantApplyServiceTest {
 
     private static CommandResult accepted(long revision) {
         return new CommandResult(UUID.randomUUID(), CommandStatus.ACCEPTED, revision, List.of(), null);
+    }
+
+    private static ModelResource modelWithOperation(long revision, String operationName) {
+        ClassifierResource persona = model(revision).classifiers().get(0);
+        OperationResource operation = new OperationResource(UUID.randomUUID(), operationName, "PUBLIC", false,
+                false, null, null, 0, List.of());
+        return model(revision, new ClassifierResource(persona.id(), persona.name(), persona.kind(), persona.isAbstract(),
+                persona.namespaceId(), persona.attributes(), List.of(operation), persona.constraints()));
     }
 
     private static ModelResource model(long revision) {
