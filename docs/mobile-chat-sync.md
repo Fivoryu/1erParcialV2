@@ -33,3 +33,7 @@ V14 creates only new conversation/message tables and indexes. It changes no exis
 ## Verification
 
 Run `mvn -f backend/pom.xml -Dtest=MobileAgentChat*Test test`. MVC tests exercise identity, collaborator isolation, exact retry, conflicting IDs, bounded history and payload rejection. Persistence tests use a newly created disposable PostgreSQL container to validate migration mapping, keyset queries and lock SQL. No existing platform database is used.
+
+## Mobile synchronization foundation
+
+ChatRepository synchronizes an existing scoped conversation's local messages and paginated remote history. It retains original append payloads across retries and compares remote metadata structurally. Transport failures remain observable and preserve local history. History synchronization never dispatches generated-data operations. UI integration, remote conversation discovery and reconnect automation are not implemented by this foundation.
