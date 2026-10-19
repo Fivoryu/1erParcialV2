@@ -172,6 +172,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
     <div className="uml-class-card" data-testid="uml-class-card">
       <div className="uml-class-heading">
         {classifier.kind === 'INTERFACE' && <div className="uml-stereotype">«interface»</div>}
+        {classifier.kind === 'ENUMERATION' && <div className="uml-stereotype">«enumeration»</div>}
         <div className={`uml-class-name ${classifier.isAbstract ? 'uml-class-name--abstract' : ''}`}>
           {classifier.isAbstract ? (
             <i>
@@ -209,7 +210,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
                 <EditableText
                   ariaLabel={`Edit attribute ${attribute.name}`}
                   className="uml-member-text"
-                  displayValue={formatAttribute(attribute)}
+                  displayValue={classifier.kind === 'ENUMERATION' ? attribute.name : formatAttribute(attribute)}
                   editValue={attribute.name}
                   onCommit={(name) => onRenameMember?.('attribute', classifier.id, attribute.id, name)}
                   onSelect={() => onSelectElement?.(selection)}

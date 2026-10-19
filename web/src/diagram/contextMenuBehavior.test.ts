@@ -213,7 +213,7 @@ describe('buildContextMenuItems', () => {
   it('offers classifier creation actions on the pane', () => {
     const items = menuItems(buildContextMenuItems({ kind: 'pane' }, actions));
     const ids = items.map((item) => item.id);
-    expect(ids).toEqual(['add-class', 'add-abstract-class', 'add-interface', 'add-package']);
+    expect(ids).toEqual(['add-class', 'add-abstract-class', 'add-interface', 'add-enumeration', 'add-package']);
     for (const item of items) {
       expect(item.disabled).toBeFalsy();
       expect(item.onSelect).toBeTypeOf('function');

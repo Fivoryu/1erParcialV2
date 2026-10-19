@@ -712,6 +712,9 @@ function CanvasFrame(props: UmlCanvasProps) {
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('INTERFACE')} type="button">
             + Interface
           </button>
+          <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('ENUMERATION')} type="button">
+            + Enumeration
+          </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('PACKAGE')} type="button">
             + Package
           </button>

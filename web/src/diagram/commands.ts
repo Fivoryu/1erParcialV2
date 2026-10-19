@@ -15,7 +15,7 @@ import type {
   ViewStyleResource,
 } from '../api/types';
 
-export type ClassifierKind = 'CLASS' | 'ABSTRACT_CLASS' | 'INTERFACE' | 'PACKAGE';
+export type ClassifierKind = 'CLASS' | 'ABSTRACT_CLASS' | 'INTERFACE' | 'ENUMERATION' | 'PACKAGE';
 export type RelationshipKind =
   | 'ASSOCIATION'
   | 'AGGREGATION'
@@ -112,6 +112,7 @@ export function buildParameterRemoveRequest(parameterId: string): ModelCommandRe
 function nextClassifierName(model: ModelResource, kind: ClassifierKind): string {
   const prefix = kind === 'ABSTRACT_CLASS' ? 'Abstract class'
     : kind === 'INTERFACE' ? 'Interface'
+      : kind === 'ENUMERATION' ? 'Enumeration'
       : kind === 'PACKAGE' ? 'Package'
         : 'Class';
   const existingNames = new Set(model.classifiers.map((classifier) => classifier.name));
