@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildOperationEnvelope, type UuidFactory } from './envelope';
-import { ApiTransportError, createApiClient } from './client';
+import { ApiTransportError, createApiClient, type AskAiResponse } from './client';
 import { clearSession, loadSession, saveSession, SESSION_STORAGE_KEY } from './session';
 import type {
   ChatMessageResource,
@@ -209,6 +209,43 @@ describe('typed API client', () => {
   });
 });
 
+describe('model review API client', () => {
+  it('calls the UML validation and generation readiness GET routes with the exact version query', async () => {
+    const versionId = '99999999-9999-4999-8999-999999999999';
+    const validation = { diagnostics: [{
+      code: 'CYCLE', severity: 'ERROR', elementId: null, feature: null, message: 'Generalization cycle.',
+    }] };
+    const readiness = {
+      versionId,
+      profile: 'Spring Boot PostgreSQL V1',
+      ready: false,
+      diagnostics: [{
+        code: 'UNSUPPORTED_TYPE', severity: 'ERROR', elementId: null, feature: 'attribute.type',
+        message: 'An attribute type is unsupported.', blocking: true,
+      }],
+    };
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(validation), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(readiness), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    const client = createApiClient('https://diagram.test', fetcher);
+
+    await expect(client.getModelValidation(projectId)).resolves.toEqual(validation);
+    await expect(client.getGenerationReadiness(projectId, versionId)).resolves.toEqual(readiness);
+
+    expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+      `https://diagram.test/projects/${projectId}/model/validation`,
+      `https://diagram.test/projects/${projectId}/generation-readiness?versionId=${versionId}`,
+    ]);
+    expect(fetcher.mock.calls.map(([, init]) => init?.method)).toEqual([undefined, undefined]);
+  });
+});
+
 describe('project member and invitation API client', () => {
   it('calls all member and invitation routes with contract methods, bodies, and the session bearer', async () => {
     const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -300,6 +337,34 @@ describe('project member and invitation API client', () => {
 });
 
 describe('project chat API client', () => {
+  it('asks AI about a message with the session bearer and returns the queued state', async () => {
+    const sessionId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const messageId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const response: AskAiResponse = { state: 'QUEUED' };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(response), {
+      status: 202,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    saveSession({
+      token: 'opaque-session-token',
+      userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      username: 'diagram.user',
+      displayName: 'Diagram User',
+      expiresAt: '2999-01-01T00:00:00Z',
+    });
+
+    await expect(client.askAi(projectId, sessionId, messageId)).resolves.toEqual(response);
+
+    expect(fetcher).toHaveBeenCalledOnce();
+    const [input, init] = fetcher.mock.calls[0] ?? [];
+    expect(String(input)).toBe(`https://diagram.test/projects/${projectId}/sessions/${sessionId}/ask`);
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual({ messageId });
+    expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
+  });
+
   it('lists and posts messages on the project chat routes with the server resource shape', async () => {
     const authorUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     const message: ChatMessageResource = {

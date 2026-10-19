@@ -1,8 +1,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiTransportError } from '../api/client';
 import type {
+  AssistantApi,
   AssistantApplyResource,
   AssistantPlanOperationResource,
   AssistantPlanResource,
@@ -20,7 +21,9 @@ import {
   voiceErrorMessage,
   type AssistantVoiceProps,
 } from './AssistantPanel';
+import { createDiagramNames } from './assistantNames';
 import { appendTranscript } from './speechTranscript';
+import { useAssistantPanel } from './useAssistantPanel';
 
 const projectId = '22222222-2222-4222-8222-222222222222';
 
@@ -126,9 +129,72 @@ function createHarness(initialRevision: number | null = 7): Harness {
   };
 }
 
-function renderPanel(voice: AssistantVoiceProps | undefined): string {
+const PRODUCT_ID = '11111111-1111-4111-8111-111111111111';
+const SUPPLIER_ID = '22222222-2222-4222-8222-222222222222';
+const ATTRIBUTE_ID = '33333333-3333-4333-8333-333333333333';
+const RELATIONSHIP_ID = '44444444-4444-4444-8444-444444444444';
+const MARKUP_NAMES = createDiagramNames({
+  id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  revision: 7,
+  versionId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  views: [],
+  classifiers: [
+    {
+      id: PRODUCT_ID,
+      name: 'Producto',
+      kind: 'CLASS',
+      isAbstract: false,
+      namespaceId: null,
+      attributes: [{
+        id: ATTRIBUTE_ID,
+        name: 'nombre',
+        kind: 'ATTRIBUTE',
+        visibility: 'PUBLIC',
+        multiplicity: '1',
+        defaultValue: null,
+        typeReferenceId: null,
+        type: 'String',
+        ordinal: 0,
+      }],
+      operations: [],
+      constraints: [],
+    },
+    {
+      id: SUPPLIER_ID,
+      name: 'Proveedor',
+      kind: 'CLASS',
+      isAbstract: false,
+      namespaceId: null,
+      attributes: [],
+      operations: [],
+      constraints: [],
+    },
+  ],
+  relationships: [],
+});
+const MARKUP_PLAN: AssistantPlanResource = {
+  intent: 'PLAN',
+  operations: [
+    { type: 'attribute.add', targetId: PRODUCT_ID, args: { name: 'nombre', type: 'String' } },
+    {
+      type: 'relationship.create',
+      targetId: null,
+      args: { source: PRODUCT_ID, target: SUPPLIER_ID, kind: 'ASSOCIATION' },
+    },
+  ],
+  question: null,
+  explanation: null,
+  diagnostics: [],
+};
+
+function renderPanel(
+  voice: AssistantVoiceProps | undefined,
+  state: AssistantState = { phase: 'idle' },
+): string {
   return renderToStaticMarkup(createElement(AssistantPanelView, {
-    state: { phase: 'idle' } as AssistantState,
+    state,
+    diagramNames: MARKUP_NAMES,
     utterance: '',
     canConfirm: false,
     onUtteranceChange: () => undefined,
@@ -223,6 +289,7 @@ describe('assistant panel state machine (transitionAssistantState)', () => {
     if (done.phase === 'done' && done.kind === 'applied') {
       expect(done.steps).toHaveLength(1);
       expect(done.steps[0]?.status).toBe('ACCEPTED');
+      expect(done.plan).toEqual(planResponse);
       expect(done.finalRevision).toBe(8);
     } else {
       expect.unreachable('expected an applied done state');
@@ -389,7 +456,54 @@ describe('assistant controller (React-free)', () => {
   });
 });
 
+describe('assistant initial draft (markup)', () => {
+  it('prefills initialUtterance without automatically asking or applying', () => {
+    const prompt = 'Explicá los hallazgos del diagrama.';
+    const requestPlan = vi.fn<AssistantApi['requestPlan']>().mockResolvedValue(planResponse);
+    const applyPlan = vi.fn<AssistantApi['applyPlan']>().mockResolvedValue(applyResponse);
+
+    function DraftHarness() {
+      const assistant = useAssistantPanel({
+        projectId,
+        currentRevision: 7,
+        initialUtterance: prompt,
+        api: { requestPlan, applyPlan },
+      });
+      return createElement('div', { 'data-phase': assistant.state.phase },
+        createElement('textarea', {
+          'aria-label': 'Assistant draft',
+          rows: 3,
+          value: assistant.utterance,
+          onChange: () => undefined,
+        }));
+    }
+
+    const markup = renderToStaticMarkup(createElement(DraftHarness));
+
+    expect(markup).toContain(`<textarea aria-label="Assistant draft" rows="3">${prompt}</textarea>`);
+    expect(markup).toContain('data-phase="idle"');
+    expect(requestPlan).not.toHaveBeenCalled();
+    expect(applyPlan).not.toHaveBeenCalled();
+  });
+});
+
 describe('assistant panel mic button (markup)', () => {
+  it('uses a multiline utterance textarea and keeps clarification as a single-line input', () => {
+    const mainPrompt = renderPanel(undefined);
+    expect(mainPrompt).toContain('for="assistant-utterance">Consigna para el asistente</label>');
+    expect(mainPrompt).toMatch(/<textarea[^>]*id="assistant-utterance"[^>]*rows="3"/);
+    expect(mainPrompt).toContain('placeholder="Describí el cambio que querés hacer en el modelo…"');
+
+    const clarification = renderPanel(undefined, {
+      phase: 'clarify',
+      utterance: '',
+      question: '¿Qué elemento querés editar?',
+    });
+    expect(clarification).toContain('for="assistant-clarification">Respuesta a la aclaración</label>');
+    expect(clarification).toContain('<input autoComplete="off" id="assistant-clarification"');
+    expect(clarification).toContain('type="text"');
+  });
+
   it('renders the mic button with the idle a11y state when speech is supported', () => {
     const markup = renderPanel(makeVoice());
     expect(markup).toContain('voice-mic-button');
@@ -427,6 +541,63 @@ describe('assistant panel mic button (markup)', () => {
 
   it('reports no error copy while there is no dictation error', () => {
     expect(renderPanel(makeVoice())).not.toContain('voice-hint-error');
+  });
+
+  it('renders named attributes and relationships in both preview and applied steps without technical ids', () => {
+    const preview = renderPanel(undefined, {
+      phase: 'preview',
+      utterance: 'crear atributo y relación',
+      plan: MARKUP_PLAN,
+      baseRevision: 7,
+      stale: false,
+    });
+    const applied = renderPanel(undefined, {
+      phase: 'done',
+      kind: 'applied',
+      plan: MARKUP_PLAN,
+      steps: [
+        {
+          index: 0,
+          type: 'attribute.add',
+          targetId: PRODUCT_ID,
+          status: 'ACCEPTED',
+          operationId: '55555555-5555-4555-8555-555555555555',
+          resultRevision: 8,
+          diagnostics: [],
+        },
+        {
+          index: 1,
+          type: 'relationship.create',
+          targetId: RELATIONSHIP_ID,
+          status: 'ACCEPTED',
+          operationId: '66666666-6666-4666-8666-666666666666',
+          resultRevision: 8,
+          diagnostics: [],
+        },
+        {
+          index: 9,
+          type: 'classifier.delete',
+          targetId: '77777777-7777-4777-8777-777777777777',
+          status: 'SKIPPED',
+          operationId: null,
+          resultRevision: null,
+          diagnostics: [{
+            code: 'PRECONDITION_FAILED',
+            message: 'Error en destino 77777777-7777-4777-8777-777777777777: elemento nuevo.',
+          }],
+        },
+      ],
+      finalRevision: 8,
+    });
+
+    for (const markup of [preview, applied]) {
+      expect(markup).toContain('Agregar atributo &quot;nombre: String&quot; a &quot;Producto&quot;');
+      expect(markup).toContain('Crear relación de Asociación &quot;Producto&quot; → &quot;Proveedor&quot;');
+      expect(markup).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      expect(markup.toLowerCase()).not.toContain('elemento nuevo');
+    }
+    expect(applied).toContain('Eliminar clase seleccionada');
+    expect(applied).toContain('destino el elemento seleccionado: el elemento seleccionado.');
   });
 });
 

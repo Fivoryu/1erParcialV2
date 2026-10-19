@@ -1,7 +1,6 @@
 import type {
   AssistantApplyResource,
   AssistantApplyStepResource,
-  AssistantPlanOperationResource,
   AssistantPlanResource,
 } from '../api/assistant';
 import { ApiTransportError } from '../api/client';
@@ -17,7 +16,7 @@ export type AssistantState =
   | { phase: 'clarify'; utterance: string; question: string }
   | { phase: 'preview'; utterance: string; plan: AssistantPlanResource; baseRevision: number; stale: boolean }
   | { phase: 'applying'; utterance: string; plan: AssistantPlanResource; baseRevision: number }
-  | { phase: 'done'; kind: 'applied'; steps: AssistantApplyStepResource[]; finalRevision: number }
+  | { phase: 'done'; kind: 'applied'; plan: AssistantPlanResource; steps: AssistantApplyStepResource[]; finalRevision: number }
   | { phase: 'done'; kind: 'explain'; explanation: string }
   | { phase: 'cancelled' }
   | { phase: 'error'; message: string; retry: AssistantRetryAction };
@@ -37,31 +36,7 @@ export type AssistantEvent =
   | { type: 'cancel_requested' }
   | { type: 'dismissed' };
 
-const OPERATION_LABELS: Record<string, string> = {
-  'classifier.create': 'Crear clase',
-  'classifier.rename': 'Renombrar clase',
-  'classifier.delete': 'Eliminar clase',
-  'classifier.setAbstract': 'Cambiar abstracción de la clase',
-  'attribute.add': 'Agregar atributo',
-  'attribute.update': 'Actualizar atributo',
-  'attribute.remove': 'Eliminar atributo',
-  'operation.add': 'Agregar operación',
-  'relationship.create': 'Crear relación',
-  'relationship.update': 'Actualizar relación',
-  'relationship.delete': 'Eliminar relación',
-};
-
-/** Human-readable label plus resolved target for one preview operation. */
-export function describeAssistantOperation(operation: AssistantPlanOperationResource): string {
-  const label = OPERATION_LABELS[operation.type] ?? operation.type;
-  const name = operation.args['name'];
-  const target = operation.targetId
-    ? `destino ${operation.targetId}`
-    : typeof name === 'string' && name.length > 0
-      ? `"${name}"`
-      : 'elemento nuevo';
-  return `${label} — ${target}`;
-}
+export { describeAssistantOperation } from './assistantNames';
 
 export const STEP_STATUS_LABELS: Record<AssistantApplyStepResource['status'], string> = {
   ACCEPTED: 'Aceptado',
@@ -117,7 +92,13 @@ export function transitionAssistantState(state: AssistantState, event: Assistant
         : state;
     case 'apply_succeeded':
       return state.phase === 'applying'
-        ? { phase: 'done', kind: 'applied', steps: event.result.steps, finalRevision: event.result.finalRevision }
+        ? {
+          phase: 'done',
+          kind: 'applied',
+          plan: state.plan,
+          steps: event.result.steps,
+          finalRevision: event.result.finalRevision,
+        }
         : state;
     case 'apply_failed':
       return state.phase === 'applying'

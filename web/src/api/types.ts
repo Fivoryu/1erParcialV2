@@ -206,6 +206,31 @@ export interface ModelResource {
   view_style?: ViewStyleResource[];
 }
 
+export type ValidationSeverity = 'ERROR' | 'WARNING';
+
+export interface ValidationDiagnosticResource {
+  code: string;
+  severity: ValidationSeverity;
+  elementId: Uuid | null;
+  feature: string | null;
+  message: string;
+}
+
+export interface ModelValidationResource {
+  diagnostics: ValidationDiagnosticResource[];
+}
+
+export interface GenerationReadinessDiagnosticResource extends ValidationDiagnosticResource {
+  blocking: boolean;
+}
+
+export interface GenerationReadinessResource {
+  versionId: Uuid;
+  profile: string;
+  ready: boolean;
+  diagnostics: GenerationReadinessDiagnosticResource[];
+}
+
 export type XmiImportMode = 'REEMPLAZAR' | 'AGREGAR';
 
 export interface XmiCountsResource {
