@@ -21,3 +21,10 @@
     public <init>(android.content.Context, io.flutter.plugin.common.BinaryMessenger);
     public void close();
 }
+
+# nativeSendMessageAsync resolves callback methods by literal name via JNI
+# (onMessage/onDone/onError on JniMessageCallback), so R8 must not rename,
+# inline or strip anything in the SDK, including classes that implement its
+# callbacks (e.g. the MessageCallback implementation in LiteRtAgentBridge).
+-keep class com.google.ai.edge.litertlm.** { *; }
+-keepclassmembers class * implements com.google.ai.edge.litertlm.** { *; }
