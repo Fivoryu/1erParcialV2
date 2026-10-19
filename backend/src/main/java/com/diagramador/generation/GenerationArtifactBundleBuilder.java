@@ -121,6 +121,13 @@ public final class GenerationArtifactBundleBuilder {
             addErrorResponse(list, "500", "Unexpected server error");
             collection.set("get", list);
             collection.set("post", createOperation(type.javaName() + "Dto"));
+            List<QueryFieldCatalog.QueryField> queryFields = QueryFieldCatalog.fields(type, ir);
+            paths.put(collectionPath + "/query", objectMapper.createObjectNode()
+                    .set("get", queryOperation(type.javaName() + "Dto")));
+            paths.put(collectionPath + "/values", objectMapper.createObjectNode()
+                    .set("get", valuesOperation(type.javaName(), queryFields)));
+            paths.put(collectionPath + "/aggregate", objectMapper.createObjectNode()
+                    .set("get", aggregateOperation(type.javaName(), queryFields)));
 
             String itemPath = collectionPath + "/{id}";
             ObjectNode item = paths.computeIfAbsent(itemPath, ignored -> objectMapper.createObjectNode());
@@ -130,6 +137,14 @@ public final class GenerationArtifactBundleBuilder {
         }
         ObjectNode pathsNode = root.putObject("paths");
         paths.forEach(pathsNode::set);
+        ObjectNode capabilities = root.putObject("x-agent-capabilities");
+        capabilities.put("version", 1);
+        capabilities.put("filterSyntax", "field:operator:value");
+        QueryFieldCatalog.OPERATORS.forEach(capabilities.putArray("operators")::add);
+        QueryFieldCatalog.AGGREGATES.forEach(capabilities.putArray("aggregates")::add);
+        capabilities.put("defaultPageSize", QueryFieldCatalog.DEFAULT_PAGE_SIZE);
+        capabilities.put("maxPageSize", QueryFieldCatalog.MAX_PAGE_SIZE);
+        capabilities.put("maxValues", QueryFieldCatalog.MAX_VALUES);
 
         ObjectNode schemas = objectMapper.createObjectNode();
         declarations.values().forEach(type -> schemas.set(type.javaName() + "Dto", dtoSchema(type, ir)));
@@ -173,6 +188,101 @@ public final class GenerationArtifactBundleBuilder {
         addErrorResponse(operation, "400", "Invalid reference or request validation failure");
         addErrorResponse(operation, "500", "Unexpected server error");
         return operation;
+    }
+
+    private ObjectNode queryOperation(String schemaName) {
+        ObjectNode operation = objectMapper.createObjectNode();
+        operation.put("summary", "Query " + schemaName.substring(0, schemaName.length() - 3));
+        ArrayNode parameters = operation.putArray("parameters");
+        parameters.add(filterParameter());
+        parameters.add(queryParameter("sort", stringSchema(), false));
+        ObjectNode page = objectMapper.createObjectNode().put("type", "integer").put("minimum", 0);
+        parameters.add(queryParameter("page", page, false));
+        ObjectNode size = objectMapper.createObjectNode().put("type", "integer").put("minimum", 1)
+                .put("maximum", QueryFieldCatalog.MAX_PAGE_SIZE);
+        parameters.add(queryParameter("size", size, false));
+        ObjectNode schema = objectMapper.createObjectNode().put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode items = properties.putObject("items").put("type", "array");
+        items.putObject("items").put("$ref", "#/components/schemas/" + schemaName);
+        properties.putObject("total").put("type", "integer").put("format", "int64");
+        properties.putObject("page").put("type", "integer");
+        properties.putObject("size").put("type", "integer");
+        okResponse(operation, schema);
+        addErrorResponse(operation, "400", "Unknown field, operator or value in the query");
+        addErrorResponse(operation, "500", "Unexpected server error");
+        return operation;
+    }
+
+    private ObjectNode valuesOperation(String typeName, List<QueryFieldCatalog.QueryField> fields) {
+        ObjectNode operation = objectMapper.createObjectNode();
+        operation.put("summary", "Distinct values of one " + typeName + " field");
+        ArrayNode parameters = operation.putArray("parameters");
+        parameters.add(queryParameter("field", fieldNameSchema(fields), true));
+        parameters.add(filterParameter());
+        ObjectNode schema = objectMapper.createObjectNode().put("type", "array");
+        schema.putObject("items");
+        okResponse(operation, schema);
+        addErrorResponse(operation, "400", "Unknown field, operator or value in the query");
+        addErrorResponse(operation, "500", "Unexpected server error");
+        return operation;
+    }
+
+    private ObjectNode aggregateOperation(String typeName, List<QueryFieldCatalog.QueryField> fields) {
+        ObjectNode operation = objectMapper.createObjectNode();
+        operation.put("summary", "Aggregate " + typeName + " records, optionally grouped");
+        ArrayNode parameters = operation.putArray("parameters");
+        ObjectNode op = stringSchema();
+        QueryFieldCatalog.AGGREGATES.forEach(op.putArray("enum")::add);
+        parameters.add(queryParameter("op", op, true));
+        parameters.add(queryParameter("field", fieldNameSchema(fields), false));
+        parameters.add(queryParameter("groupBy", fieldNameSchema(fields), false));
+        parameters.add(filterParameter());
+        ObjectNode schema = objectMapper.createObjectNode().put("type", "array");
+        ObjectNode bucket = schema.putObject("items").put("type", "object");
+        ObjectNode properties = bucket.putObject("properties");
+        properties.putObject("group");
+        properties.putObject("value").put("type", "number");
+        okResponse(operation, schema);
+        addErrorResponse(operation, "400", "Unknown field, operator or value in the query");
+        addErrorResponse(operation, "500", "Unexpected server error");
+        return operation;
+    }
+
+    private ObjectNode filterParameter() {
+        ObjectNode schema = objectMapper.createObjectNode().put("type", "array");
+        schema.set("items", stringSchema());
+        ObjectNode parameter = queryParameter("filter", schema, false);
+        parameter.put("style", "form");
+        parameter.put("explode", true);
+        parameter.put("description", "Repeatable field:operator:value; in separates values with |");
+        return parameter;
+    }
+
+    private ObjectNode queryParameter(String name, ObjectNode schema, boolean required) {
+        ObjectNode parameter = objectMapper.createObjectNode();
+        parameter.put("name", name);
+        parameter.put("in", "query");
+        parameter.put("required", required);
+        parameter.set("schema", schema);
+        return parameter;
+    }
+
+    private ObjectNode fieldNameSchema(List<QueryFieldCatalog.QueryField> fields) {
+        ObjectNode schema = stringSchema();
+        ArrayNode names = schema.putArray("enum");
+        fields.forEach(field -> names.add(field.name()));
+        return schema;
+    }
+
+    private ObjectNode stringSchema() {
+        return objectMapper.createObjectNode().put("type", "string");
+    }
+
+    private void okResponse(ObjectNode operation, ObjectNode schema) {
+        ObjectNode response = operation.putObject("responses").putObject("200");
+        response.put("description", "Successful response");
+        response.putObject("content").putObject("application/json").set("schema", schema);
     }
 
     private void addPathIdParameter(ObjectNode path, String method, String summary, String schemaName,
@@ -272,6 +382,15 @@ public final class GenerationArtifactBundleBuilder {
         }
         ArrayNode displayFields = schema.putArray("x-display-fields");
         displayFields(type).forEach(displayFields::add);
+        ArrayNode queryFields = schema.putArray("x-query-fields");
+        for (QueryFieldCatalog.QueryField field : QueryFieldCatalog.fields(type, ir)) {
+            ObjectNode item = queryFields.addObject();
+            item.put("name", field.name());
+            item.put("kind", field.kind().name());
+            if (field.enumeration() != null) {
+                field.enumeration().literals().forEach(item.putArray("enum")::add);
+            }
+        }
         schema.set("x-uml-operations", operationsExtension(type));
         schema.set("x-uml-relationships", relationshipsExtension(type, ir));
         return schema;

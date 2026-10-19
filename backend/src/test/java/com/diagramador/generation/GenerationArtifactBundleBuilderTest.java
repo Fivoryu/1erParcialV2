@@ -131,8 +131,23 @@ class GenerationArtifactBundleBuilderTest {
         JsonNode openApi = JSON.readTree(document);
 
         assertThat(openApi.path("openapi").asText()).isEqualTo("3.0.3");
-        assertThat(fieldNames(openApi.path("paths")))
-                .containsExactly("/api/customer", "/api/customer/{id}", "/api/order", "/api/order/{id}");
+        assertThat(fieldNames(openApi.path("paths"))).containsExactly("/api/customer",
+                "/api/customer/aggregate", "/api/customer/query", "/api/customer/values", "/api/customer/{id}",
+                "/api/order", "/api/order/aggregate", "/api/order/query", "/api/order/values", "/api/order/{id}");
+        JsonNode query = openApi.at("/paths/~1api~1order~1query/get");
+        assertThat(query.at("/parameters/0/name").asText()).isEqualTo("filter");
+        assertThat(query.at("/parameters/0/explode").asBoolean()).isTrue();
+        assertThat(query.at("/parameters/3/schema/maximum").asInt()).isEqualTo(200);
+        assertThat(query.at("/responses/200/content/application~1json/schema/properties/items/items/$ref").asText())
+                .isEqualTo("#/components/schemas/OrderDto");
+        assertThat(openApi.at("/paths/~1api~1order~1aggregate/get/parameters/0/schema/enum").toString())
+                .isEqualTo("[\"count\",\"sum\",\"avg\",\"min\",\"max\"]");
+        assertThat(openApi.at("/paths/~1api~1order~1values/get/parameters/0/schema/enum").toString())
+                .isEqualTo("[\"orderNumber\",\"customerId\",\"customer.displayName\"]");
+        assertThat(openApi.at("/components/schemas/OrderDto/x-query-fields/2").toString())
+                .isEqualTo("{\"name\":\"customer.displayName\",\"kind\":\"STRING\"}");
+        assertThat(openApi.at("/x-agent-capabilities/filterSyntax").asText()).isEqualTo("field:operator:value");
+        assertThat(openApi.at("/x-agent-capabilities/operators").size()).isEqualTo(9);
         assertCrudOperations(openApi, "customer");
         assertCrudOperations(openApi, "order");
         assertThat(openApi.at("/paths/~1api~1customer/post/responses/201/content/application~1json/schema/$ref")
@@ -182,6 +197,8 @@ class GenerationArtifactBundleBuilderTest {
         assertThat(property.path("type").asText()).isEqualTo("string");
         assertThat(property.path("enum").toString()).isEqualTo("[\"OPEN\",\"CLOSED\"]");
         assertThat(property.path("x-enum-name").asText()).isEqualTo("OrderStatus");
+        assertThat(openApi.at("/components/schemas/OrderDto/x-query-fields").toString())
+                .contains("{\"name\":\"status\",\"kind\":\"ENUM\",\"enum\":[\"OPEN\",\"CLOSED\"]}");
         assertThat(openApi.at("/components/schemas/OrderDto/properties/statusId").isMissingNode()).isTrue();
     }
 

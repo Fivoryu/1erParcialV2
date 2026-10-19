@@ -109,6 +109,7 @@ class DomainProjectEmitterTest {
                 "src/main/java/com/generated/course/store/api/GeneratedApiException.java",
                 "src/main/java/com/generated/course/store/api/GeneratedApiExceptionHandler.java",
                 "src/main/java/com/generated/course/store/api/OrderController.java",
+                "src/main/java/com/generated/course/store/api/QuerySupport.java",
                 "src/main/java/com/generated/course/store/api/dto/CustomerDto.java",
                 "src/main/java/com/generated/course/store/api/dto/OrderDto.java",
                 "src/main/java/com/generated/course/store/domain/Customer.java",
@@ -400,6 +401,61 @@ class DomainProjectEmitterTest {
     }
 
     @Test
+    void generatedQueryEndpointsFilterPageGroupAndRejectUnknownFields() throws Exception {
+        String tag = UUID.randomUUID().toString().substring(0, 8);
+        String ana = JSON.readTree(request("POST", "/api/customer",
+                JSON.writeValueAsString(Map.of("displayName", "Ana " + tag))).body()).get("id").asText();
+        String beto = JSON.readTree(request("POST", "/api/customer",
+                JSON.writeValueAsString(Map.of("displayName", "Beto " + tag))).body()).get("id").asText();
+        for (String[] order : List.of(new String[] {"A1", ana, "OPEN"}, new String[] {"A2", ana, "CLOSED"},
+                new String[] {"A3", ana, "OPEN"}, new String[] {"B1", beto, "OPEN"})) {
+            assertThat(request("POST", "/api/order", JSON.writeValueAsString(Map.of("orderNumber",
+                    order[0] + "-" + tag, "customerId", order[1], "status", order[2]))).statusCode()).isEqualTo(201);
+        }
+        String byTag = "filter=" + encode("orderNumber:contains:-" + tag);
+
+        JsonNode open = JSON.readTree(request("GET", "/api/order/query?" + byTag + "&filter=status:eq:open"
+                + "&filter=" + encode("customer.displayName:eq:Ana " + tag) + "&sort=orderNumber,desc&size=1",
+                null).body());
+        assertThat(open.get("total").asLong()).isEqualTo(2);
+        assertThat(open.get("size").asInt()).isEqualTo(1);
+        assertThat(open.get("items")).hasSize(1);
+        assertThat(open.get("items").get(0).get("orderNumber").asText()).isEqualTo("A3-" + tag);
+
+        JsonNode notOpen = JSON.readTree(request("GET", "/api/order/query?" + byTag + "&filter=status:ne:OPEN",
+                null).body());
+        assertThat(notOpen.get("total").asLong()).isEqualTo(1);
+        JsonNode inStatuses = JSON.readTree(request("GET", "/api/order/query?" + byTag + "&filter="
+                + encode("status:in:OPEN|CLOSED"), null).body());
+        assertThat(inStatuses.get("total").asLong()).isEqualTo(4);
+
+        JsonNode statuses = JSON.readTree(request("GET", "/api/order/values?field=status&" + byTag, null).body());
+        assertThat(statuses.toString()).isEqualTo("[\"CLOSED\",\"OPEN\"]");
+
+        JsonNode perCustomer = JSON.readTree(request("GET", "/api/order/aggregate?op=count&groupBy="
+                + encode("customer.displayName") + "&" + byTag, null).body());
+        assertThat(perCustomer.toString()).isEqualTo("[{\"group\":\"Ana " + tag + "\",\"value\":3},"
+                + "{\"group\":\"Beto " + tag + "\",\"value\":1}]");
+        JsonNode total = JSON.readTree(request("GET", "/api/order/aggregate?op=count&" + byTag, null).body());
+        assertThat(total.get(0).get("value").asLong()).isEqualTo(4);
+
+        for (String bad : List.of("/api/order/query?filter=" + encode("secret:eq:x"),
+                "/api/order/query?filter=" + encode("status:eq:LOST"),
+                "/api/order/query?filter=" + encode("orderNumber:like:x"),
+                "/api/order/query?size=999",
+                "/api/order/values",
+                "/api/order/aggregate?op=sum&field=orderNumber")) {
+            HttpResponse<String> rejected = request("GET", bad, null);
+            assertThat(rejected.statusCode()).as(bad).isEqualTo(400);
+            assertErrorShape(JSON.readTree(rejected.body()), "INVALID_QUERY");
+        }
+    }
+
+    private static String encode(String value) {
+        return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    @Test
     void generatedApplicationAnswersHealthWithUp() throws Exception {
         HttpResponse<String> health = request("GET", "/actuator/health", null);
 
@@ -516,7 +572,7 @@ class DomainProjectEmitterTest {
                 String.join(" ", command), exitCode, durationMillis, output);
         assertThat(completed).as("nested mvn -o -B package completed within five minutes\n" + output).isTrue();
         assertThat(exitCode).as("nested mvn -o -B package output\n" + output).isZero();
-        assertThat(output).contains("Compiling 15 source files", "BUILD SUCCESS");
+        assertThat(output).contains("Compiling 16 source files", "BUILD SUCCESS");
     }
 
     private static void awaitGeneratedApplication() throws Exception {

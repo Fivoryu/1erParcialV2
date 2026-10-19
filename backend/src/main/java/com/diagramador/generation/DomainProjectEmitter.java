@@ -88,6 +88,7 @@ public final class DomainProjectEmitter {
         put(files, javaPath(target.basePackage() + ".api", "GeneratedApiExceptionHandler"),
                 generatedApiExceptionHandler(target));
         put(files, javaPath(target.basePackage(), "GeneratedApplication"), application(target));
+        put(files, javaPath(target.basePackage() + ".api", "QuerySupport"), querySupport(target));
 
         List<EntityPlan> orderedPlans = plans.values().stream()
                 .sorted((left, right) -> left.qualifiedName.compareTo(right.qualifiedName)).toList();
@@ -95,7 +96,8 @@ public final class DomainProjectEmitter {
             put(files, entityPath(plan), entitySource(plan, plans, enumPlans));
             put(files, dtoPath(plan, target.basePackage()), dtoSource(plan, target.basePackage()));
             put(files, repositoryPath(plan, target.basePackage()), repositorySource(plan, target.basePackage()));
-            put(files, servicePath(plan, target.basePackage()), serviceSource(plan, target.basePackage()));
+            put(files, servicePath(plan, target.basePackage()), serviceSource(plan, target.basePackage(),
+                    QueryFieldCatalog.fields(plan.type, ir), enumPlans));
             put(files, controllerPath(plan, target.basePackage()), controllerSource(plan, target.basePackage()));
         }
         for (EnumPlan enumPlan : enumPlans.values()) {
@@ -419,13 +421,15 @@ public final class DomainProjectEmitter {
                 "import " + plan.qualifiedName + ";",
                 "import java.util.UUID;",
                 "import org.springframework.data.jpa.repository.JpaRepository;",
+                "import org.springframework.data.jpa.repository.JpaSpecificationExecutor;",
                 "",
                 "public interface " + repositoryName + " extends JpaRepository<" + plan.type.javaName()
-                        + ", UUID> {",
+                        + ", UUID>, JpaSpecificationExecutor<" + plan.type.javaName() + "> {",
                 "}");
     }
 
-    private String serviceSource(EntityPlan plan, String rootPackage) {
+    private String serviceSource(EntityPlan plan, String rootPackage, List<QueryFieldCatalog.QueryField> queryFields,
+            Map<UUID, EnumPlan> enumPlans) {
         String packageName = rootPackage + ".service";
         String dtoName = plan.type.javaName() + "Dto";
         String repositoryName = plan.type.javaName() + "Repository";
@@ -433,30 +437,58 @@ public final class DomainProjectEmitter {
                 || !plan.owningRelationships.isEmpty();
         StringBuilder source = new StringBuilder();
         source.append("package ").append(packageName).append(";\n\n")
+                .append("import ").append(rootPackage).append(".api.QuerySupport;\n")
                 .append("import ").append(rootPackage).append(".api.dto.").append(dtoName).append(";\n")
                 .append("import ").append(rootPackage).append(".repository.").append(repositoryName).append(";\n")
                 .append("import ").append(plan.qualifiedName).append(";\n")
+                .append("import jakarta.persistence.EntityManager;\n")
+                .append("import jakarta.persistence.PersistenceContext;\n")
                 .append("import java.util.List;\n")
+                .append("import java.util.Map;\n")
                 .append("import java.util.Optional;\n")
                 .append("import java.util.UUID;\n")
+                .append("import org.springframework.data.domain.PageRequest;\n")
                 .append("import org.springframework.stereotype.Service;\n")
                 .append("import org.springframework.transaction.annotation.Transactional;\n");
         if (hasReferences) {
-            source.append("import jakarta.persistence.EntityManager;\n")
-                    .append("import jakarta.persistence.PersistenceContext;\n")
-                    .append("import ").append(rootPackage).append(".api.GeneratedApiException;\n");
+            source.append("import ").append(rootPackage).append(".api.GeneratedApiException;\n");
         }
         source.append("\n@Service\n@Transactional(readOnly = true)\npublic class ")
                 .append(plan.type.javaName()).append("Service {\n")
-                .append("    private final ").append(repositoryName).append(" repository;\n");
-        if (hasReferences) {
-            source.append("\n    @PersistenceContext\n    private EntityManager entityManager;\n");
+                .append("    private static final Map<String, QuerySupport.Field> QUERY_FIELDS = QuerySupport.index(");
+        for (int index = 0; index < queryFields.size(); index++) {
+            QueryFieldCatalog.QueryField field = queryFields.get(index);
+            String enumClass = field.enumeration() == null ? "null"
+                    : enumPlans.get(field.enumeration().sourceId()).qualifiedName() + ".class";
+            source.append(index == 0 ? "\n" : ",\n").append("            new QuerySupport.Field(")
+                    .append(javaString(field.name())).append(", ").append(javaString(field.jpaPath()))
+                    .append(", QuerySupport.Kind.").append(field.kind().name()).append(", ").append(enumClass)
+                    .append(')');
         }
+        source.append(");\n\n")
+                .append("    private final ").append(repositoryName).append(" repository;\n")
+                .append("\n    @PersistenceContext\n    private EntityManager entityManager;\n");
         source.append("\n    public ").append(plan.type.javaName()).append("Service(").append(repositoryName)
                 .append(" repository) {\n        this.repository = repository;\n    }\n")
                 .append("\n    public List<").append(dtoName).append("> list() {\n")
                 .append("        return repository.findAll().stream().map(").append(dtoName).append("::from).toList();\n")
                 .append("    }\n")
+                .append("\n    public QuerySupport.Page<").append(dtoName)
+                .append("> query(List<String> filters, String sort, Integer page, Integer size) {\n")
+                .append("        int pageNumber = QuerySupport.page(page);\n")
+                .append("        int pageSize = QuerySupport.size(size);\n")
+                .append("        var result = repository.findAll(QuerySupport.where(QUERY_FIELDS, filters),\n")
+                .append("                PageRequest.of(pageNumber, pageSize, QuerySupport.sort(QUERY_FIELDS, sort)));\n")
+                .append("        return new QuerySupport.Page<>(result.map(").append(dtoName)
+                .append("::from).getContent(), result.getTotalElements(),\n")
+                .append("                pageNumber, pageSize);\n    }\n")
+                .append("\n    public List<Object> values(String field, List<String> filters) {\n")
+                .append("        return QuerySupport.distinct(entityManager, ").append(plan.type.javaName())
+                .append(".class, QUERY_FIELDS, field, filters);\n    }\n")
+                .append("\n    public List<QuerySupport.Bucket> aggregate(String op, String field, String groupBy,")
+                .append(" List<String> filters) {\n")
+                .append("        return QuerySupport.aggregate(entityManager, ").append(plan.type.javaName())
+                .append(".class, QUERY_FIELDS, op, field, groupBy,\n                filters);\n    }\n")
                 .append("\n    public Optional<").append(dtoName).append("> findById(UUID id) {\n")
                 .append("        return repository.findById(id).map(").append(dtoName).append("::from);\n")
                 .append("    }\n")
@@ -529,7 +561,9 @@ public final class DomainProjectEmitter {
                 "import org.springframework.web.bind.annotation.PutMapping;",
                 "import org.springframework.web.bind.annotation.RequestBody;",
                 "import org.springframework.web.bind.annotation.RequestMapping;",
+                "import org.springframework.web.bind.annotation.RequestParam;",
                 "import org.springframework.web.bind.annotation.RestController;",
+                "import org.springframework.util.MultiValueMap;",
                 "",
                 "@RestController",
                 "@RequestMapping(\"/api/" + plan.type.tableName() + "\")",
@@ -543,6 +577,32 @@ public final class DomainProjectEmitter {
                 "    @GetMapping",
                 "    public List<" + dtoName + "> list() {",
                 "        return service.list();",
+                "    }",
+                "",
+                "    // Filters are read raw from the query string: a typed List<String> would split values on commas.",
+                "    @GetMapping(\"/query\")",
+                "    public QuerySupport.Page<" + dtoName + "> query(@RequestParam MultiValueMap<String, String> params,",
+                "            @RequestParam(required = false) String sort, @RequestParam(required = false) Integer page,",
+                "            @RequestParam(required = false) Integer size) {",
+                "        return service.query(filters(params), sort, page, size);",
+                "    }",
+                "",
+                "    @GetMapping(\"/values\")",
+                "    public List<Object> values(@RequestParam MultiValueMap<String, String> params,",
+                "            @RequestParam(required = false) String field) {",
+                "        return service.values(field, filters(params));",
+                "    }",
+                "",
+                "    @GetMapping(\"/aggregate\")",
+                "    public List<QuerySupport.Bucket> aggregate(@RequestParam MultiValueMap<String, String> params,",
+                "            @RequestParam(required = false) String op, @RequestParam(required = false) String field,",
+                "            @RequestParam(required = false) String groupBy) {",
+                "        return service.aggregate(op, field, groupBy, filters(params));",
+                "    }",
+                "",
+                "    private static List<String> filters(MultiValueMap<String, String> params) {",
+                "        List<String> filters = params.get(\"filter\");",
+                "        return filters == null ? List.of() : filters;",
                 "    }",
                 "",
                 "    @PostMapping",
@@ -572,6 +632,320 @@ public final class DomainProjectEmitter {
                 "    }",
                 "}");
     }
+
+    private String querySupport(TargetNames target) {
+        return QUERY_SUPPORT_TEMPLATE.replace("{{package}}", target.basePackage() + ".api")
+                .replace("{{defaultPageSize}}", Integer.toString(QueryFieldCatalog.DEFAULT_PAGE_SIZE))
+                .replace("{{maxPageSize}}", Integer.toString(QueryFieldCatalog.MAX_PAGE_SIZE))
+                .replace("{{maxValues}}", Integer.toString(QueryFieldCatalog.MAX_VALUES));
+    }
+
+    /** Generated allowlisted filtering, paging, distinct values and aggregation for the query endpoints. */
+    private static final String QUERY_SUPPORT_TEMPLATE = """
+            package {{package}};
+
+            import jakarta.persistence.EntityManager;
+            import jakarta.persistence.criteria.CriteriaBuilder;
+            import jakarta.persistence.criteria.CriteriaQuery;
+            import jakarta.persistence.criteria.Expression;
+            import jakarta.persistence.criteria.Path;
+            import jakarta.persistence.criteria.Predicate;
+            import jakarta.persistence.criteria.Root;
+            import java.math.BigDecimal;
+            import java.time.LocalDate;
+            import java.time.LocalDateTime;
+            import java.util.ArrayList;
+            import java.util.LinkedHashMap;
+            import java.util.List;
+            import java.util.Locale;
+            import java.util.Map;
+            import java.util.UUID;
+            import org.springframework.data.domain.Sort;
+            import org.springframework.data.jpa.domain.Specification;
+
+            /**
+             * Filters are {@code field:operator:value}; only allowlisted fields of the entity, its to-one reference
+             * ids and their scalars one level deep can be queried. {@code ne} also matches missing values, and
+             * {@code in} separates values with {@code |}.
+             */
+            public final class QuerySupport {
+                public enum Kind { STRING, INTEGER, LONG, DOUBLE, DECIMAL, BOOLEAN, DATE, DATETIME, UUID, ENUM }
+
+                public record Field(String name, String jpaPath, Kind kind, Class<? extends Enum<?>> enumType) {
+                }
+
+                public record Page<T>(List<T> items, long total, int page, int size) {
+                }
+
+                public record Bucket(Object group, Object value) {
+                }
+
+                public static final int DEFAULT_PAGE_SIZE = {{defaultPageSize}};
+                public static final int MAX_PAGE_SIZE = {{maxPageSize}};
+                public static final int MAX_VALUES = {{maxValues}};
+                private static final List<String> AGGREGATES = List.of("count", "sum", "avg", "min", "max");
+
+                private record Condition(Field field, String operator, String raw) {
+                }
+
+                private QuerySupport() {
+                }
+
+                public static Map<String, Field> index(Field... fields) {
+                    Map<String, Field> index = new LinkedHashMap<>();
+                    for (Field field : fields) {
+                        index.put(field.name(), field);
+                    }
+                    return index;
+                }
+
+                public static Field field(Map<String, Field> fields, String name) {
+                    Field field = name == null ? null : fields.get(name);
+                    if (field == null) {
+                        throw invalid("Unknown field '" + name + "'. Allowed: " + fields.keySet());
+                    }
+                    return field;
+                }
+
+                public static int page(Integer page) {
+                    if (page == null) {
+                        return 0;
+                    }
+                    if (page < 0) {
+                        throw invalid("page must be 0 or greater");
+                    }
+                    return page;
+                }
+
+                public static int size(Integer size) {
+                    if (size == null) {
+                        return DEFAULT_PAGE_SIZE;
+                    }
+                    if (size < 1 || size > MAX_PAGE_SIZE) {
+                        throw invalid("size must be between 1 and " + MAX_PAGE_SIZE);
+                    }
+                    return size;
+                }
+
+                public static Sort sort(Map<String, Field> fields, String sort) {
+                    if (sort == null || sort.isBlank()) {
+                        return Sort.by("id");
+                    }
+                    String[] parts = sort.split(",", 2);
+                    Field field = field(fields, parts[0].trim());
+                    String direction = parts.length == 1 ? "asc" : parts[1].trim().toLowerCase(Locale.ROOT);
+                    if (!direction.equals("asc") && !direction.equals("desc")) {
+                        throw invalid("sort direction must be asc or desc");
+                    }
+                    return Sort.by(direction.equals("asc") ? Sort.Direction.ASC : Sort.Direction.DESC, field.jpaPath())
+                            .and(Sort.by("id"));
+                }
+
+                /** Validates every filter before returning, so a bad filter is a 400 and never reaches the database. */
+                public static <T> Specification<T> where(Map<String, Field> fields, List<String> filters) {
+                    List<Condition> conditions = new ArrayList<>();
+                    for (String filter : filters == null ? List.<String>of() : filters) {
+                        conditions.add(parse(fields, filter));
+                    }
+                    return (root, query, builder) -> builder.and(conditions.stream()
+                            .map(condition -> predicate(root, builder, condition)).toArray(Predicate[]::new));
+                }
+
+                public static <T> List<Object> distinct(EntityManager entityManager, Class<T> type,
+                        Map<String, Field> fields, String name, List<String> filters) {
+                    if (name == null || name.isBlank()) {
+                        throw invalid("field is required");
+                    }
+                    Field field = field(fields, name);
+                    Specification<T> specification = where(fields, filters);
+                    CriteriaBuilder builder = entityManager.getCriteriaBuilder();
+                    CriteriaQuery<Object> query = builder.createQuery(Object.class);
+                    Root<T> root = query.from(type);
+                    Path<?> path = path(root, field.jpaPath());
+                    query.select(path).distinct(true)
+                            .where(builder.and(specification.toPredicate(root, query, builder), builder.isNotNull(path)))
+                            .orderBy(builder.asc(path));
+                    return entityManager.createQuery(query).setMaxResults(MAX_VALUES).getResultList();
+                }
+
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                public static <T> List<Bucket> aggregate(EntityManager entityManager, Class<T> type,
+                        Map<String, Field> fields, String op, String name, String groupBy, List<String> filters) {
+                    if (op == null || !AGGREGATES.contains(op)) {
+                        throw invalid("op must be one of " + AGGREGATES);
+                    }
+                    Field target = name == null || name.isBlank() ? null : field(fields, name);
+                    if (target == null && !op.equals("count")) {
+                        throw invalid(op + " needs a field");
+                    }
+                    if (target != null && (op.equals("sum") || op.equals("avg")) && !numeric(target.kind())) {
+                        throw invalid(op + " needs a numeric field, not " + target.name());
+                    }
+                    if (target != null && (op.equals("min") || op.equals("max")) && !numeric(target.kind())
+                            && target.kind() != Kind.DATE && target.kind() != Kind.DATETIME) {
+                        throw invalid(op + " needs a numeric or date field, not " + target.name());
+                    }
+                    Field group = groupBy == null || groupBy.isBlank() ? null : field(fields, groupBy);
+                    Specification<T> specification = where(fields, filters);
+                    CriteriaBuilder builder = entityManager.getCriteriaBuilder();
+                    CriteriaQuery<Object[]> query = builder.createQuery(Object[].class);
+                    Root<T> root = query.from(type);
+                    Expression<?> value;
+                    if (target == null) {
+                        value = builder.count(root);
+                    } else {
+                        Path<?> path = path(root, target.jpaPath());
+                        value = switch (op) {
+                            case "count" -> builder.count(path);
+                            case "sum" -> builder.sum((Expression<Number>) path);
+                            case "avg" -> builder.avg((Expression<Number>) path);
+                            case "min" -> builder.least((Expression<Comparable>) path);
+                            default -> builder.greatest((Expression<Comparable>) path);
+                        };
+                    }
+                    query.where(specification.toPredicate(root, query, builder));
+                    List<Bucket> buckets = new ArrayList<>();
+                    if (group == null) {
+                        query.select(builder.array(value));
+                        Object[] row = entityManager.createQuery(query).getSingleResult();
+                        buckets.add(new Bucket(null, row[0]));
+                        return buckets;
+                    }
+                    Path<?> groupPath = path(root, group.jpaPath());
+                    query.select(builder.array(groupPath, value)).groupBy(groupPath).orderBy(builder.asc(groupPath));
+                    for (Object[] row : entityManager.createQuery(query).setMaxResults(MAX_VALUES).getResultList()) {
+                        buckets.add(new Bucket(row[0], row[1]));
+                    }
+                    return buckets;
+                }
+
+                private static Condition parse(Map<String, Field> fields, String filter) {
+                    String[] parts = filter == null ? new String[0] : filter.split(":", 3);
+                    if (parts.length != 3) {
+                        throw invalid("filter must be field:operator:value, got '" + filter + "'");
+                    }
+                    Field field = field(fields, parts[0]);
+                    String operator = parts[1];
+                    switch (operator) {
+                        case "eq", "ne", "in", "is_null" -> {
+                        }
+                        case "gt", "gte", "lt", "lte" -> {
+                            if (field.kind() == Kind.BOOLEAN || field.kind() == Kind.UUID || field.kind() == Kind.ENUM) {
+                                throw invalid(operator + " does not apply to " + field.name());
+                            }
+                        }
+                        case "contains" -> {
+                            if (field.kind() != Kind.STRING) {
+                                throw invalid("contains only applies to text fields, not " + field.name());
+                            }
+                        }
+                        default -> throw invalid("Unknown operator '" + operator
+                                + "'. Allowed: eq, ne, gt, gte, lt, lte, contains, in, is_null");
+                    }
+                    Condition condition = new Condition(field, operator, parts[2]);
+                    values(condition);
+                    return condition;
+                }
+
+                private static List<Object> values(Condition condition) {
+                    if (condition.operator().equals("is_null")) {
+                        if (!condition.raw().equals("true") && !condition.raw().equals("false")) {
+                            throw invalid("is_null takes true or false");
+                        }
+                        return List.of();
+                    }
+                    if (condition.operator().equals("contains")) {
+                        return List.of(condition.raw());
+                    }
+                    String[] raws = condition.operator().equals("in")
+                            ? condition.raw().split("\\\\|")
+                            : new String[] {condition.raw()};
+                    List<Object> values = new ArrayList<>();
+                    for (String raw : raws) {
+                        values.add(convert(condition.field(), raw));
+                    }
+                    return values;
+                }
+
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                private static Predicate predicate(Root<?> root, CriteriaBuilder builder, Condition condition) {
+                    Path<?> path = path(root, condition.field().jpaPath());
+                    List<Object> values = values(condition);
+                    Expression<Comparable> comparable = (Expression<Comparable>) path;
+                    return switch (condition.operator()) {
+                        case "eq" -> builder.equal(path, values.get(0));
+                        case "ne" -> builder.or(builder.notEqual(path, values.get(0)), builder.isNull(path));
+                        case "gt" -> builder.greaterThan(comparable, (Comparable) values.get(0));
+                        case "gte" -> builder.greaterThanOrEqualTo(comparable, (Comparable) values.get(0));
+                        case "lt" -> builder.lessThan(comparable, (Comparable) values.get(0));
+                        case "lte" -> builder.lessThanOrEqualTo(comparable, (Comparable) values.get(0));
+                        case "in" -> path.in(values);
+                        case "is_null" -> condition.raw().equals("true") ? builder.isNull(path) : builder.isNotNull(path);
+                        default -> builder.like(builder.lower(path.as(String.class)),
+                                "%" + escape(condition.raw().toLowerCase(Locale.ROOT)) + "%", '\\\\');
+                    };
+                }
+
+                private static Path<?> path(Root<?> root, String jpaPath) {
+                    Path<?> path = root;
+                    for (String part : jpaPath.split("\\\\.")) {
+                        path = path.get(part);
+                    }
+                    return path;
+                }
+
+                private static Object convert(Field field, String raw) {
+                    try {
+                        return switch (field.kind()) {
+                            case STRING -> raw;
+                            case INTEGER -> Integer.valueOf(raw.trim());
+                            case LONG -> Long.valueOf(raw.trim());
+                            case DOUBLE -> Double.valueOf(raw.trim());
+                            case DECIMAL -> new BigDecimal(raw.trim());
+                            case BOOLEAN -> {
+                                if (!raw.equals("true") && !raw.equals("false")) {
+                                    throw invalid(field.name() + " takes true or false");
+                                }
+                                yield Boolean.valueOf(raw);
+                            }
+                            case DATE -> LocalDate.parse(raw.trim());
+                            case DATETIME -> LocalDateTime.parse(raw.trim());
+                            case UUID -> UUID.fromString(raw.trim());
+                            case ENUM -> literal(field, raw.trim());
+                        };
+                    } catch (RuntimeException exception) {
+                        if (exception instanceof GeneratedApiException generated) {
+                            throw generated;
+                        }
+                        throw invalid("'" + raw + "' is not a valid " + field.kind().name().toLowerCase(Locale.ROOT)
+                                + " for " + field.name());
+                    }
+                }
+
+                private static Object literal(Field field, String raw) {
+                    List<String> allowed = new ArrayList<>();
+                    for (Enum<?> constant : field.enumType().getEnumConstants()) {
+                        if (constant.name().equalsIgnoreCase(raw)) {
+                            return constant;
+                        }
+                        allowed.add(constant.name());
+                    }
+                    throw invalid("'" + raw + "' is not a value of " + field.name() + ". Allowed: " + allowed);
+                }
+
+                private static boolean numeric(Kind kind) {
+                    return kind == Kind.INTEGER || kind == Kind.LONG || kind == Kind.DOUBLE || kind == Kind.DECIMAL;
+                }
+
+                private static String escape(String value) {
+                    return value.replace("\\\\", "\\\\\\\\").replace("%", "\\\\%").replace("_", "\\\\_");
+                }
+
+                private static GeneratedApiException invalid(String detail) {
+                    return GeneratedApiException.invalidQuery(detail);
+                }
+            }
+            """;
 
     private String apiErrorResponse(TargetNames target) {
         return lines(
@@ -607,6 +981,11 @@ public final class DomainProjectEmitter {
                 "    public static GeneratedApiException notFound(String detail) {",
                 "        return new GeneratedApiException(HttpStatus.NOT_FOUND, \"NOT_FOUND\",",
                 "                \"The requested resource was not found.\", detail);",
+                "    }",
+                "",
+                "    public static GeneratedApiException invalidQuery(String detail) {",
+                "        return new GeneratedApiException(HttpStatus.BAD_REQUEST, \"INVALID_QUERY\",",
+                "                \"The query uses an unknown field, operator or value.\", detail);",
                 "    }",
                 "",
                 "    public static GeneratedApiException invalidReference(String detail) {",
