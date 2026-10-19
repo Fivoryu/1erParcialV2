@@ -1,3 +1,6 @@
+import 'package:diagrammer_mobile/domain/agent_contract.dart';
+import 'package:diagrammer_mobile/domain/models.dart';
+
 /// OpenAPI contract in the exact shape the platform generator emits
 /// (GenerationArtifactBundleBuilder): CRUD routes, /query, /values and
 /// /aggregate helper routes, x-display-fields, x-query-fields and
@@ -139,3 +142,8 @@ Map<String, dynamic> colegioContract({bool queryCapable = true}) {
     },
   };
 }
+
+/// The school contract wrapped as the agent sees one connected backend.
+AgentContract colegio() => AgentContract(
+  BackendContract(deploymentId: 'd', runId: 'r', contractHash: 'h', openApi: colegioContract()),
+);

@@ -1,17 +1,11 @@
 import 'dart:convert';
 
-import 'package:diagrammer_mobile/domain/agent_contract.dart';
 import 'package:diagrammer_mobile/domain/agent_models.dart';
 import 'package:diagrammer_mobile/domain/agent_runner.dart';
-import 'package:diagrammer_mobile/domain/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fixtures/colegio_contract.dart';
 import 'fixtures/fake_backend.dart';
-
-AgentContract colegio() => AgentContract(
-  BackendContract(deploymentId: 'd', runId: 'r', contractHash: 'h', openApi: colegioContract()),
-);
 
 void main() {
   test('a list request takes one model call and renders the result from a template', () async {

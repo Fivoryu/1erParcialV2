@@ -60,6 +60,75 @@ class AgentRunner {
   };
   bool _cancelled = false, _busy = false;
 
+  static const int maxBulkDelete = 20;
+
+  /// Delete targets named by their values ("borrá a Juan Pérez"): exactly one
+  /// match previews it; several ask which one (with row refs) unless the user
+  /// asked for all of them, which previews them together up to a cap. Every
+  /// target still needs the explicit confirmation of the delete flow.
+  Future<AgentRunResult> _deleteByMatch(AgentAction action, QueryPlanner planner) async {
+    final QueryOutcome outcome;
+    try {
+      final spec = QuerySpec.fromModel({
+        'tag': 'query',
+        'entity': action.payload['entity'],
+        'filter': action.payload['match'],
+        'limit': maxBulkDelete + 1,
+      }, contract.schema);
+      outcome = await planner.run(spec);
+    } on QueryClarification catch (clarification) {
+      return AgentRunResult(AgentRunStatus.clarification, clarification.message);
+    }
+    final entity = outcome.spec.entity;
+    final total = outcome.total ?? outcome.records.length;
+    if (outcome.records.isEmpty) {
+      return AgentRunResult(AgentRunStatus.clarification,
+          'No encontré registros de ${entity.name} para borrar con esos datos.');
+    }
+    final rowRefs = [
+      for (final record in outcome.records)
+        _refFor(record['id'] as String?, entity.name) ?? '',
+    ];
+    if (outcome.records.length > 1 && action.payload['all'] != true) {
+      return AgentRunResult(AgentRunStatus.clarification,
+          'Encontré $total registros de ${entity.name}. ¿Cuál querés borrar? Decime su número, o pedí borrarlos todos.\n\n'
+          '${presenter.render(outcome, rowRefs: rowRefs)}');
+    }
+    if (total > maxBulkDelete) {
+      return AgentRunResult(AgentRunStatus.clarification,
+          'Son $total registros de ${entity.name}; por seguridad borro como máximo $maxBulkDelete por vez. Acotá el pedido.');
+    }
+    final proposals = [
+      for (final record in outcome.records)
+        contract.operation(AgentAction.parse(jsonEncode({
+          'tag': 'delete_preview',
+          'entity': entity.name,
+          'id': record['id'],
+        }))),
+    ];
+    final labels = [for (final record in outcome.records) QueryPlanner.label(entity, record)];
+    return AgentRunResult(
+      AgentRunStatus.deletePending,
+      proposals.length == 1
+          ? 'Confirmá que querés borrar: ${labels.single}.'
+          : 'Confirmá que querés borrar estos ${proposals.length} registros de ${entity.name}: ${labels.join(', ')}.',
+      deletePreview: proposals.length == 1 ? proposals.single : null,
+      deletePreviews: proposals.length > 1 ? proposals : const [],
+      deleteLabels: labels,
+    );
+  }
+
+  /// Ref number ("2" for "#2") of a record, assigning one when new.
+  String? _refFor(String? id, String entity) {
+    if (id is! String || !AgentContract.uuid.hasMatch(id)) return null;
+    final existing = _refByUuid[id];
+    if (existing != null) return existing.substring(1);
+    final alias = '#${_refs.length + 1}';
+    _refs[alias] = RecordRef(id, entity);
+    _refByUuid[id] = alias;
+    return alias.substring(1);
+  }
+
   static bool _asksForIdentifiers(String request) =>
       RegExp(r'\b(uuids?|ids?|identificador(es)?)\b', caseSensitive: false).hasMatch(request);
 
@@ -106,14 +175,8 @@ class AgentRunner {
     final refs = _refs;
     final refByUuid = _refByUuid;
     RecordRef? refFor(String? id, String entity) {
-      if (id is! String || !AgentContract.uuid.hasMatch(id)) return null;
-      final existing = refByUuid[id];
-      if (existing != null) return refs[existing];
-      final ref = RecordRef(id, entity);
-      final alias = '#${refs.length + 1}';
-      refs[alias] = ref;
-      refByUuid[id] = alias;
-      return ref;
+      final number = _refFor(id, entity);
+      return number == null ? null : refs['#$number'];
     }
 
     /// View of one tool result for the model: lists and single records become
@@ -154,6 +217,23 @@ class AgentRunner {
         'committed': result.committed,
       };
     }
+    /// Planner whose backend calls count against this run's tool budget and
+    /// stop when the run is cancelled, expired or the backend changed.
+    QueryPlanner planner() => QueryPlanner(
+      schema: contract.schema,
+      refs: refs,
+      now: now,
+      gateway: (proposal) async {
+        if (++toolCalls > maxToolCalls) throw StateError('Tool limit reached.');
+        if (!allowed()) throw StateError('Request stopped before tool dispatch.');
+        event('tool_started', tool: proposal.method);
+        final toolStart = now();
+        final result = await gateway(proposal);
+        if (!allowed()) throw StateError('Late tool result discarded.');
+        event('tool_finished', tool: proposal.method, duration: now().difference(toolStart));
+        return result;
+      },
+    );
     final trusted = authorization ?? contract.authorize(request);
     try {
       for (var step = 0; step < maxSteps; step++) {
@@ -251,21 +331,7 @@ class AgentRunner {
           final QueryOutcome outcome;
           try {
             final spec = QuerySpec.fromModel(Map<String, dynamic>.from(action.payload), contract.schema);
-            outcome = await QueryPlanner(
-              schema: contract.schema,
-              refs: refs,
-              now: now,
-              gateway: (proposal) async {
-                if (++toolCalls > maxToolCalls) throw StateError('Tool limit reached.');
-                if (!allowed()) throw StateError('Request stopped before tool dispatch.');
-                event('tool_started', tool: proposal.method);
-                final toolStart = now();
-                final result = await gateway(proposal);
-                if (!allowed()) throw StateError('Late tool result discarded.');
-                event('tool_finished', tool: proposal.method, duration: now().difference(toolStart));
-                return result;
-              },
-            ).run(spec);
+            outcome = await planner().run(spec);
           } on QueryClarification catch (clarification) {
             event('finished');
             final options = clarification.options.isEmpty
@@ -275,9 +341,7 @@ class AgentRunner {
           }
           final rowRefs = [
             for (final record in outcome.records)
-              refFor(record['id'] as String?, outcome.spec.entity.name) == null
-                  ? ''
-                  : refByUuid[record['id']]!.substring(1),
+              _refFor(record['id'] as String?, outcome.spec.entity.name) ?? '',
           ];
           final rendered = presenter.render(outcome, rowRefs: rowRefs);
           if (outcome.spec.respond == 'show') {
@@ -321,6 +385,9 @@ class AgentRunner {
           });
           event('calculation_finished');
           continue;
+        }
+        if (action.tag == 'delete_preview' && action.payload.containsKey('match')) {
+          return await _deleteByMatch(action, planner());
         }
         final proposal = contract.operation(action, refs: refs);
         if (action.tag == 'delete_preview') {
@@ -384,6 +451,8 @@ class AgentRunner {
         AgentRunStatus.stopped,
         'Step limit reached.',
       );
+    } on BackendRejection catch (rejection) {
+      return AgentRunResult(AgentRunStatus.failed, rejection.message);
     } on AgentModelTimeout {
       return const AgentRunResult(
         AgentRunStatus.failed,
