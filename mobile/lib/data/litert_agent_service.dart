@@ -18,7 +18,7 @@ class LiteRtAgentStatus {
 }
 
 /// Thrown when a native generation exceeded its bounded wait.
-class LiteRtTimeoutException implements Exception {
+class LiteRtTimeoutException implements AgentModelTimeout {
   const LiteRtTimeoutException(this.message);
   final String message;
   @override
@@ -35,6 +35,7 @@ abstract interface class LiteRtAgentService {
 
 abstract interface class LiteRtStreamingAgentService
     implements LiteRtAgentService {
+  @override
   Future<String> generateAgent({
     required String prompt,
     int maxTokens = 512,

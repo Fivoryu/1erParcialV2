@@ -45,6 +45,10 @@ class ChatController extends ChangeNotifier {
   bool get agentConnected => model != null && _contract != null;
   BackendContract? _contract;
   AgentRunner? _runner;
+
+  /// Record refs per backend scope, so "borrá el 2" resolves against rows
+  /// shown in an earlier message of the same backend.
+  final _refsByScope = <String, Map<String, RecordRef>>{};
   bool _requestCancelled = false;
   List<AgentProgress> progress = const [];
   Map<String, dynamic>? deletePreview;
@@ -231,10 +235,15 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
     final runner = AgentRunner(
       contract: AgentContract(selectedContract),
+      refs: _refsByScope.putIfAbsent(
+        '${repository.scope.namespace}:${selectedContract.contractHash}',
+        () => <String, RecordRef>{},
+      ),
       model: (prompt) async {
         final input = jsonDecode(prompt) as Map<String, dynamic>;
+        // Few recent turns: the prompt stays small, so prefill stays fast.
         input['conversation'] = local
-            .skip(local.length > 12 ? local.length - 12 : 0)
+            .skip(local.length > 4 ? local.length - 4 : 0)
             .map((m) => {'role': m.role, 'content': m.content})
             .toList();
         final modelInput = jsonEncode(input);

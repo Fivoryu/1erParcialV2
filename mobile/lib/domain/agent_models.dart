@@ -4,6 +4,10 @@ import 'operation_proposal.dart';
 
 enum AgentRunStatus { answered, clarification, deletePending, stopped, failed }
 
+/// Raised by a model adapter when generation ran past its budget and was
+/// cancelled; the runner reports it instead of waiting forever.
+abstract interface class AgentModelTimeout implements Exception {}
+
 class AgentAction {
   AgentAction._(this.tag, this.payload);
   final String tag;
@@ -23,6 +27,9 @@ class AgentAction {
       'update': {'tag', 'entity', 'id', 'values'},
       'delete_preview': {'tag', 'entity', 'id'},
       'calculate': {'tag', 'calculation'},
+      // Reads and reports are validated against the contract by QuerySpec.
+      'query': {'tag', 'entity', 'filter', 'sort', 'desc', 'limit', 'respond'},
+      'report': {'tag', 'entity', 'metric', 'field', 'groupBy', 'filter', 'respond'},
     };
     final tag = value['tag'];
     if (tag is! String ||
@@ -37,6 +44,13 @@ class AgentAction {
     } else if (tag == 'calculate') {
       if (value['calculation'] is! Map<String, dynamic>) {
         throw const FormatException('Missing calculation.');
+      }
+    } else if (tag == 'query' || tag == 'report') {
+      if (value['entity'] is! String) {
+        throw const FormatException('Missing entity.');
+      }
+      if (value.containsKey('filter') && value['filter'] is! List) {
+        throw const FormatException('filter must be a list.');
       }
     } else {
       if (value['entity'] is! String) {

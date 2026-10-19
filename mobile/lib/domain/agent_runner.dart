@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'agent_models.dart';
 import 'agent_contract.dart';
 import 'agent_calculator.dart';
+import 'agent_presenter.dart';
+import 'agent_query.dart';
 import 'operation_proposal.dart';
 
 typedef AgentModel = Future<String> Function(String prompt);
@@ -18,13 +20,16 @@ class AgentRunner {
     required this.scopeGuard,
     DateTime Function()? now,
     this.onProgress,
-    this.maxSteps = 12,
-    this.maxModelCalls = 8,
-    this.maxToolCalls = 8,
+    this.maxSteps = 6,
+    this.maxModelCalls = 3,
+    this.maxToolCalls = 16,
     this.maxPromptChars = 32768,
     this.maxRecords = 1000,
-    Duration budget = const Duration(minutes: 5),
+    this.presenter = const AgentPresenter(),
+    Map<String, RecordRef>? refs,
+    Duration budget = const Duration(minutes: 2),
   }) : now = now ?? DateTime.now,
+       _refs = refs ?? <String, RecordRef>{},
        budget = budget > const Duration(minutes: 5)
            ? const Duration(minutes: 5)
            : budget {
@@ -47,7 +52,19 @@ class AgentRunner {
   final int maxSteps, maxModelCalls, maxToolCalls, maxPromptChars, maxRecords;
   static const int maxObservationRecords = 20;
   final Duration budget;
+  final AgentPresenter presenter;
+  /// Shared with the caller when given, so refs outlive one runner.
+  final Map<String, RecordRef> _refs;
+  late final _refByUuid = <String, String>{
+    for (final entry in _refs.entries) entry.value.id: entry.key,
+  };
   bool _cancelled = false, _busy = false;
+
+  static bool _asksForIdentifiers(String request) =>
+      RegExp(r'\b(uuids?|ids?|identificador(es)?)\b', caseSensitive: false).hasMatch(request);
+
+  /// Record refs handed out so far ("#1" -> record), shared across runs.
+  Map<String, RecordRef> get refs => Map.unmodifiable(_refs);
   bool get inFlight => _busy;
   void cancel() => _cancelled = true;
   Future<AgentRunResult> run(
@@ -82,10 +99,12 @@ class AgentRunner {
     var writeDispatched = false;
     final observations = <Map<String, dynamic>>[];
     final completedCalculations = <String, num>{};
-    // T2/L52: per-run record aliasing. The model references records by short
-    // refs ("#1"); exact UUIDs stay out of the prompt and the answers.
-    final refs = <String, RecordRef>{};
-    final refByUuid = <String, String>{};
+    // T2/L52 record aliasing. The model references records by short refs
+    // ("#1"); exact UUIDs stay out of the prompt and the answers. Refs live on
+    // the runner, so a follow-up ("borrá el 2") resolves against the records
+    // shown in an earlier message of the same backend conversation.
+    final refs = _refs;
+    final refByUuid = _refByUuid;
     RecordRef? refFor(String? id, String entity) {
       if (id is! String || !AgentContract.uuid.hasMatch(id)) return null;
       final existing = refByUuid[id];
@@ -151,6 +170,15 @@ class AgentRunner {
               'Use "tag", never "type" or a key named after the action. '
               'Examples show JSON decisions, not requests to execute those examples. '
               'Answer and clarify: {"tag":"answer","text":"..."} or {"tag":"clarify","text":"..."}. '
+              'To list or find records prefer query; to count, sum, average or get min/max use report: '
+              '{"tag":"query","entity":"...","filter":[{"field":"...","op":"eq","value":"..."}],"sort":"...","desc":false,"limit":20,"respond":"show"} '
+              '{"tag":"report","entity":"...","metric":"count","field":"...","groupBy":"...","filter":[],"respond":"show"}; '
+              'metric is count, sum, avg, min or max. Filter op is eq, ne, gt, gte, lt, lte, contains, in (value is a list) or is_null (value true/false). '
+              'Use the user words as values ("mañana", "1ro"); the app maps them to real values. '
+              'Split compound values into their fields ("1ro A" is grado 1 and seccion A). '
+              'Dates relative to today use value {"relative":"today"} (also yesterday, tomorrow, this_week, last_week, this_month, last_month, this_year, last_year) or {"last_days":7}. '
+              'respond "show" displays the result; use "answer" only when the user asks a question that needs reasoning over it. '
+              'A follow-up like "the second one" refers to ref "#2" of the last result. '
               'Read: {"tag":"read","entity":"..."}, optionally with "id". '
               'Create: {"tag":"create","entity":"...","values":{}}. '
               'Update: {"tag":"update","entity":"...","id":"...","values":{}}. '
@@ -213,9 +241,55 @@ class AgentRunner {
             action.tag == 'answer'
                 ? AgentRunStatus.answered
                 : AgentRunStatus.clarification,
-            action.payload['text'] as String,
+            // Quality gate: model text never shows a record identifier.
+            AgentPresenter.sanitize(action.payload['text'] as String,
+                identifiersRequested: _asksForIdentifiers(request)),
             data: observations,
           );
+        }
+        if (action.tag == 'query' || action.tag == 'report') {
+          final QueryOutcome outcome;
+          try {
+            final spec = QuerySpec.fromModel(Map<String, dynamic>.from(action.payload), contract.schema);
+            outcome = await QueryPlanner(
+              schema: contract.schema,
+              refs: refs,
+              now: now,
+              gateway: (proposal) async {
+                if (++toolCalls > maxToolCalls) throw StateError('Tool limit reached.');
+                if (!allowed()) throw StateError('Request stopped before tool dispatch.');
+                event('tool_started', tool: proposal.method);
+                final toolStart = now();
+                final result = await gateway(proposal);
+                if (!allowed()) throw StateError('Late tool result discarded.');
+                event('tool_finished', tool: proposal.method, duration: now().difference(toolStart));
+                return result;
+              },
+            ).run(spec);
+          } on QueryClarification catch (clarification) {
+            event('finished');
+            final options = clarification.options.isEmpty
+                ? ''
+                : '\n\nOpciones: ${clarification.options.map(AgentPresenter.literal).join(', ')}';
+            return AgentRunResult(AgentRunStatus.clarification, '${clarification.message}$options');
+          }
+          final rowRefs = [
+            for (final record in outcome.records)
+              refFor(record['id'] as String?, outcome.spec.entity.name) == null
+                  ? ''
+                  : refByUuid[record['id']]!.substring(1),
+          ];
+          final rendered = presenter.render(outcome, rowRefs: rowRefs);
+          if (outcome.spec.respond == 'show') {
+            event('finished');
+            return AgentRunResult(AgentRunStatus.answered, rendered, data: outcome);
+          }
+          observations.add({
+            'query': presenter.interpretation(outcome),
+            'result': rendered.length > 4000 ? rendered.substring(0, 4000) : rendered,
+            'complete': outcome.complete,
+          });
+          continue;
         }
         if (action.tag == 'calculate') {
           final calculation = Map<String, dynamic>.from(
@@ -309,6 +383,11 @@ class AgentRunner {
       return const AgentRunResult(
         AgentRunStatus.stopped,
         'Step limit reached.',
+      );
+    } on AgentModelTimeout {
+      return const AgentRunResult(
+        AgentRunStatus.failed,
+        'La IA local tardó demasiado y se canceló. Probá de nuevo o con un pedido más corto.',
       );
     } on FormatException catch (error) {
       return AgentRunResult(

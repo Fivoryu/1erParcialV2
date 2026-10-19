@@ -26,9 +26,11 @@ class AgentPresenter {
     return 'Entendí: ${parts.join(' · ')}';
   }
 
-  String render(QueryOutcome outcome) {
+  /// [rowRefs] are the record refs ("2" for "#2") shown in the `#` column,
+  /// so a follow-up can name a row; rows are numbered 1..n without them.
+  String render(QueryOutcome outcome, {List<String> rowRefs = const []}) {
     final body = switch (outcome.spec.shape) {
-      QueryShape.list => _list(outcome),
+      QueryShape.list => _list(outcome, rowRefs),
       QueryShape.count || QueryShape.aggregate => _buckets(outcome),
     };
     final notes = outcome.notes.map((note) => '_${note}_').join('\n');
@@ -52,7 +54,7 @@ class AgentPresenter {
     return result.take(maxColumns).toList();
   }
 
-  String _list(QueryOutcome outcome) {
+  String _list(QueryOutcome outcome, List<String> rowRefs) {
     final entity = outcome.spec.entity;
     if (outcome.records.isEmpty) {
       return outcome.filters.isEmpty
@@ -65,7 +67,7 @@ class AgentPresenter {
     for (var index = 0; index < outcome.records.length; index++) {
       final record = outcome.records[index];
       rows.add([
-        '${index + 1}',
+        index < rowRefs.length && rowRefs[index].isNotEmpty ? rowRefs[index] : '${index + 1}',
         for (final column in columns) cell(_display(outcome, entity, column, record[column])),
       ]);
     }

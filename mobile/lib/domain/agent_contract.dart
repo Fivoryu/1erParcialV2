@@ -277,12 +277,24 @@ class AgentContract {
           if (method is String && httpMethods.contains(method)) methods.add(method.toUpperCase());
         }
       }
-      final schema = _bodySchema(baseItem) ?? _bodySchema(idItem);
+      final fromBase = _bodySchema(baseItem);
+      // An entity whose only body is the item PUT still advertises its fields.
+      final schema = fromBase.fields.isEmpty ? _bodySchema(idItem) : fromBase;
+      final described = this.schema.entity(entry.key);
       result.add({
         'entity': entry.key,
         'methods': methods.toList()..sort(),
         'fields': schema.fields,
         'required': schema.required,
+        // Queryable fields, relation paths and enum literals the model may
+        // filter, group or sort by; absent for backends without /query.
+        if (described != null && described.queryFields.isNotEmpty)
+          'query': {
+            for (final field in described.queryFields.values)
+              if (field.name != 'id')
+                field.name: field.literals.isNotEmpty ? field.literals : field.kind.name,
+          },
+        if (described != null && described.displayFields.isNotEmpty) 'label': described.displayFields,
       });
     }
     return result;
