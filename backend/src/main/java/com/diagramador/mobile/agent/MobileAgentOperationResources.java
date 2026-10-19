@@ -1,8 +1,10 @@
 package com.diagramador.mobile.agent;
 
+import com.diagramador.mobile.MobileGatewayResources.QueryParameter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -10,6 +12,7 @@ import jakarta.validation.constraints.Size;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -18,7 +21,13 @@ public final class MobileAgentOperationResources {
     public record Request(@NotNull UUID operationId, @NotBlank @Size(min = 64, max = 64)
             @Pattern(regexp = "[a-f0-9]{64}") String contractHash,
             @NotBlank @Pattern(regexp = "GET|POST|PUT|DELETE") String method,
-            @NotBlank @Size(max = 512) String path, JsonNode body, @Size(max = 64) String confirmationToken) { }
+            @NotBlank @Size(max = 512) String path, JsonNode body, @Size(max = 64) String confirmationToken,
+            @Size(max = 24) List<@Valid QueryParameter> query) {
+        public Request(UUID operationId, String contractHash, String method, String path, JsonNode body,
+                String confirmationToken) {
+            this(operationId, contractHash, method, path, body, confirmationToken, null);
+        }
+    }
     public record Receipt(UUID operationId, String contractHash, String method, String path, JsonNode body,
             String state, String confirmationToken, Integer status, JsonNode result, String error) { }
 
@@ -28,6 +37,12 @@ public final class MobileAgentOperationResources {
         value.put("method", request.method());
         value.put("path", request.path());
         value.set("body", sorted(json, request.body() == null ? json.nullNode() : request.body()));
+        // Added only when present, so intents persisted before structured queries keep their canonical form.
+        if (request.query() != null && !request.query().isEmpty()) {
+            var query = value.putArray("query");
+            request.query().forEach(parameter -> query.addObject()
+                    .put("name", parameter.name()).put("value", parameter.value()));
+        }
         return value.toString();
     }
 

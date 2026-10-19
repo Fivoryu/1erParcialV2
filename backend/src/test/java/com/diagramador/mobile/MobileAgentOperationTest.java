@@ -16,4 +16,19 @@ class MobileAgentOperationTest {
         assertThat(MobileAgentOperationResources.canonical(json, a))
                 .isEqualTo(MobileAgentOperationResources.canonical(json, b));
     }
+
+    @Test void queryIsPartOfTheIntentOnlyWhenPresent() {
+        var json = new ObjectMapper();
+        var id = UUID.randomUUID();
+        var plain = new Request(id, "a".repeat(64), "GET", "/items", null, null);
+        assertThat(MobileAgentOperationResources.canonical(json, plain)).isEqualTo(
+                "{\"contractHash\":\"" + "a".repeat(64) + "\",\"method\":\"GET\",\"path\":\"/items\",\"body\":null}");
+        assertThat(MobileAgentOperationResources.canonical(json,
+                new Request(id, plain.contractHash(), "GET", "/items", null, null, java.util.List.of())))
+                .isEqualTo(MobileAgentOperationResources.canonical(json, plain));
+        var filtered = new Request(id, plain.contractHash(), "GET", "/items/query", null, null,
+                java.util.List.of(new MobileGatewayResources.QueryParameter("filter", "status:eq:OPEN")));
+        assertThat(MobileAgentOperationResources.canonical(json, filtered))
+                .endsWith(",\"query\":[{\"name\":\"filter\",\"value\":\"status:eq:OPEN\"}]}");
+    }
 }

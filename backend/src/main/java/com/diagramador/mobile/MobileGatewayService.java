@@ -27,6 +27,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -50,6 +51,9 @@ public class MobileGatewayService {
     private static final int FIRST_GENERATED_HTTP_PORT = 19001;
     private static final int LAST_GENERATED_HTTP_PORT = 19010;
     private static final int MAX_OPERATION_BODY_BYTES = 65_536;
+    private static final int MAX_QUERY_PARAMETERS = 24;
+    private static final int MAX_QUERY_VALUE_LENGTH = 256;
+    private static final Pattern CONTROL_CHARACTER = Pattern.compile("\\p{Cntrl}");
 
     private final DeploymentRepository deployments;
     private final UmlModelRepository models;
@@ -100,10 +104,10 @@ public class MobileGatewayService {
             if (isWrite(request.method())) authorization.requireEditor(projectId); else authorization.requireMember(projectId);
             Frozen frozen = requireFrozenUpDeployment(projectId, deploymentId);
             if (!frozen.contractHash().equals(request.contractHash())) throw rejected("CONTRACT_MISMATCH", HttpStatus.CONFLICT);
-            validateOperation(frozen.openApi(), request);
+            String query = validateOperation(frozen.openApi(), request);
             if (isWrite(request.method()) && !request.confirmed()) throw rejected("CONFIRMATION_REQUIRED", HttpStatus.CONFLICT);
             if (!properties.isEnabled()) throw rejected("MOBILE_GATEWAY_DISABLED", HttpStatus.SERVICE_UNAVAILABLE);
-            URI target = upstreamUri(frozen.deployment().getHttpHostPort(), request.path());
+            URI target = upstreamUri(frozen.deployment().getHttpHostPort(), request.path() + query);
             UpstreamResponse response = forwardOnce(target, request);
             audit(user, projectId, deploymentId, request.method(), request.path(), response.status());
             return new OperationResource(response.status(), response.body());
@@ -120,9 +124,9 @@ public class MobileGatewayService {
         Frozen frozen = requireFrozenUpDeployment(projectId, deploymentId);
         if (!frozen.contractHash().equals(request.contractHash())) throw rejected("CONTRACT_MISMATCH", HttpStatus.CONFLICT);
         if (!List.of("GET", "POST", "PUT", "DELETE").contains(request.method())) throw rejected("UNSUPPORTED_OPERATION", HttpStatus.BAD_REQUEST);
-        validateOperation(frozen.openApi(), request);
+        String query = validateOperation(frozen.openApi(), request);
         if (!properties.isEnabled()) throw rejected("MOBILE_GATEWAY_DISABLED", HttpStatus.SERVICE_UNAVAILABLE);
-        URI target = upstreamUri(frozen.deployment().getHttpHostPort(), request.path());
+        URI target = upstreamUri(frozen.deployment().getHttpHostPort(), request.path() + query);
         try { upstreamRequest(target, request); }
         catch (IOException exception) { throw rejected("INVALID_OPERATION_BODY", HttpStatus.BAD_REQUEST); }
         return new PreparedAgentOperation(user.userId(), projectId, deploymentId, target, request);
@@ -167,11 +171,14 @@ public class MobileGatewayService {
         catch (IOException exception) { throw rejected("BACKEND_CONTRACT_UNAVAILABLE", HttpStatus.CONFLICT); }
     }
 
-    private void validateOperation(JsonNode openApi, OperationRequest request) {
+    /** Returns the encoded query suffix ({@code ""} or {@code "?a=b"}) after validating path, body and query. */
+    private String validateOperation(JsonNode openApi, OperationRequest request) {
         String template = allowedPath(openApi.path("paths"), request.path());
         if (template == null || !openApi.path("paths").path(template).has(request.method().toLowerCase())) {
             throw rejected("UNSUPPORTED_OPERATION", HttpStatus.BAD_REQUEST);
         }
+        String query = validateQuery(openApi.path("paths").path(template).path(request.method().toLowerCase()),
+                request);
         JsonNode schema = openApi.path("paths").path(template).path(request.method().toLowerCase())
                 .path("requestBody").path("content").path("application/json").path("schema");
         boolean requiresBody = !schema.isMissingNode();
@@ -184,6 +191,62 @@ public class MobileGatewayService {
         if (requiresBody && !bodyMatches(schema, request.body(), openApi)) {
             throw rejected("INVALID_OPERATION_BODY", HttpStatus.BAD_REQUEST);
         }
+        return query;
+    }
+
+    /**
+     * Only parameters the frozen operation declares {@code in: query} are admitted, only on GET; a non-array
+     * parameter appears once, enum and integer bounds are enforced, and the gateway does the encoding.
+     */
+    private static String validateQuery(JsonNode operation, OperationRequest request) {
+        List<MobileGatewayResources.QueryParameter> query = request.query() == null ? List.of() : request.query();
+        Map<String, JsonNode> declared = new java.util.LinkedHashMap<>();
+        for (JsonNode parameter : operation.path("parameters")) {
+            if ("query".equals(parameter.path("in").asText())) declared.put(parameter.path("name").asText(), parameter);
+        }
+        if (query.isEmpty() && declared.values().stream().noneMatch(parameter -> parameter.path("required").asBoolean())) {
+            return "";
+        }
+        if (!"GET".equals(request.method()) || query.size() > MAX_QUERY_PARAMETERS) throw invalidQuery();
+        Map<String, Integer> counts = new java.util.HashMap<>();
+        StringBuilder encoded = new StringBuilder();
+        for (MobileGatewayResources.QueryParameter parameter : query) {
+            if (parameter == null || parameter.name() == null || parameter.value() == null
+                    || parameter.value().length() > MAX_QUERY_VALUE_LENGTH
+                    || CONTROL_CHARACTER.matcher(parameter.value()).find()) throw invalidQuery();
+            JsonNode declaration = declared.get(parameter.name());
+            if (declaration == null) throw invalidQuery();
+            JsonNode schema = declaration.path("schema");
+            boolean repeatable = "array".equals(schema.path("type").asText());
+            if (counts.merge(parameter.name(), 1, Integer::sum) > 1 && !repeatable) throw invalidQuery();
+            if (!valueMatches(repeatable ? schema.path("items") : schema, parameter.value())) throw invalidQuery();
+            encoded.append(encoded.isEmpty() ? '?' : '&')
+                    .append(java.net.URLEncoder.encode(parameter.name(), java.nio.charset.StandardCharsets.UTF_8))
+                    .append('=')
+                    .append(java.net.URLEncoder.encode(parameter.value(), java.nio.charset.StandardCharsets.UTF_8));
+        }
+        for (var entry : declared.entrySet()) {
+            if (entry.getValue().path("required").asBoolean() && !counts.containsKey(entry.getKey())) throw invalidQuery();
+        }
+        return encoded.toString();
+    }
+
+    private static boolean valueMatches(JsonNode schema, String value) {
+        if (schema.has("enum")) {
+            for (JsonNode allowed : schema.path("enum")) if (allowed.asText().equals(value)) return true;
+            return false;
+        }
+        if ("integer".equals(schema.path("type").asText())) {
+            if (!value.matches("-?\\d{1,9}")) return false;
+            long number = Long.parseLong(value);
+            return (!schema.has("minimum") || number >= schema.path("minimum").asLong())
+                    && (!schema.has("maximum") || number <= schema.path("maximum").asLong());
+        }
+        return "string".equals(schema.path("type").asText());
+    }
+
+    private static ApiException invalidQuery() {
+        return rejected("INVALID_OPERATION_QUERY", HttpStatus.BAD_REQUEST);
     }
 
     private static String allowedPath(JsonNode paths, String path) {

@@ -43,6 +43,8 @@ class MobileGatewayServiceTest {
     private static final UUID RUN_ID = UUID.fromString("123e4567-e89b-12d3-a456-426614174012");
     private static final String HASH = "b".repeat(64);
     private static final AtomicInteger REQUESTS = new AtomicInteger();
+    private static final java.util.concurrent.atomic.AtomicReference<String> LAST_QUERY =
+            new java.util.concurrent.atomic.AtomicReference<>();
     private static HttpServer upstream;
 
     private final ObjectMapper json = new ObjectMapper();
@@ -55,6 +57,7 @@ class MobileGatewayServiceTest {
         upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 19001), 0);
         upstream.createContext("/orders", exchange -> {
             REQUESTS.incrementAndGet();
+            LAST_QUERY.set(exchange.getRequestURI().getRawQuery());
             assertThat(exchange.getRequestHeaders().getFirst("Authorization")).isNull();
             assertThat(exchange.getRequestHeaders().getFirst("Cookie")).isNull();
             byte[] payload = ("DELETE".equals(exchange.getRequestMethod()) ? "{\"code\":\"VALIDATION\"}" : "{}").getBytes();
@@ -204,6 +207,51 @@ class MobileGatewayServiceTest {
         return new OperationRequest(HASH, method, path, body == null ? null : json.readTree(body), confirmed);
     }
 
+    private OperationRequest query(String path, String... pairs) {
+        java.util.List<MobileGatewayResources.QueryParameter> query = new java.util.ArrayList<>();
+        for (int index = 0; index < pairs.length; index += 2) {
+            query.add(new MobileGatewayResources.QueryParameter(pairs[index], pairs[index + 1]));
+        }
+        return new OperationRequest(HASH, "GET", path, null, false, query);
+    }
+
+    @Test
+    void structuredQueryIsValidatedAgainstTheFrozenContractAndEncodedByTheGateway() throws Exception {
+        int before = REQUESTS.get();
+        var prepared = service.prepareAgent(PROJECT_ID, DEPLOYMENT_ID, query("/orders/query",
+                "filter", "status:eq:OPEN", "filter", "customer.name:contains:a b&c=d", "size", "10"));
+        assertThat(prepared.target().toString()).isEqualTo("http://127.0.0.1:19001/orders/query"
+                + "?filter=status%3Aeq%3AOPEN&filter=customer.name%3Acontains%3Aa+b%26c%3Dd&size=10");
+        assertThat(service.dispatchAgent(prepared).status()).isEqualTo(200);
+        assertThat(LAST_QUERY.get()).isEqualTo("filter=status%3Aeq%3AOPEN&filter=customer.name%3Acontains%3Aa+b%26c%3Dd&size=10");
+        service.forward(PROJECT_ID, DEPLOYMENT_ID, query("/orders/aggregate", "op", "count", "groupBy", "status"));
+        assertThat(LAST_QUERY.get()).isEqualTo("op=count&groupBy=status");
+        assertThat(REQUESTS.get()).isEqualTo(before + 2);
+
+        java.util.List<OperationRequest> rejected = java.util.List.of(
+                query("/orders/query", "secret", "x"),
+                query("/orders/query", "size", "999"),
+                query("/orders/query", "size", "ten"),
+                query("/orders/query", "size", "1", "size", "2"),
+                query("/orders/query", "filter", "status:eq:OPEN\nX-Injected: 1"),
+                query("/orders/query", "filter", "x".repeat(257)),
+                query("/orders/aggregate", "op", "drop"),
+                query("/orders/aggregate", "groupBy", "status"),
+                query("/orders", "filter", "status:eq:OPEN"),
+                new OperationRequest(HASH, "POST", "/orders", json.readTree("{\"quantity\":1}"), true,
+                        java.util.List.of(new MobileGatewayResources.QueryParameter("size", "1"))));
+        for (OperationRequest request : rejected) {
+            assertThatThrownBy(() -> service.prepareAgent(PROJECT_ID, DEPLOYMENT_ID, request))
+                    .as(String.valueOf(request.query())).isInstanceOf(ApiException.class)
+                    .extracting("code").isEqualTo("INVALID_OPERATION_QUERY");
+            assertThatThrownBy(() -> service.forward(PROJECT_ID, DEPLOYMENT_ID, request))
+                    .isInstanceOf(ApiException.class).extracting("code").isEqualTo("INVALID_OPERATION_QUERY");
+        }
+        assertThatThrownBy(() -> service.forward(PROJECT_ID, DEPLOYMENT_ID, request("GET", "/orders/query?size=1", null, true)))
+                .isInstanceOf(ApiException.class).extracting("code").isEqualTo("UNSUPPORTED_OPERATION");
+        assertThat(REQUESTS.get()).isEqualTo(before + 2);
+    }
+
     @Test
     void additiveIntentPreparationDoesNotForwardOrRelaxLegacyWriteConfirmation() throws Exception {
         int before = REQUESTS.get();
@@ -241,7 +289,7 @@ class MobileGatewayServiceTest {
 
     private static String openApi() {
         return """
-                {"openapi":"3.0.3","paths":{"/orders":{"get":{},"post":{"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Order"}}}}}},"/orders/{id}":{"put":{"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Order"}}}}},"delete":{}}},"components":{"schemas":{"Order":{"type":"object","required":["quantity"],"properties":{"quantity":{"type":"integer"},"customerId":{"type":"string","format":"uuid","nullable":true},"tags":{"type":"array","items":{"type":"string"}}}}}}}
+                {"openapi":"3.0.3","paths":{"/orders/query":{"get":{"parameters":[{"name":"filter","in":"query","required":false,"schema":{"type":"array","items":{"type":"string"}},"style":"form","explode":true},{"name":"sort","in":"query","required":false,"schema":{"type":"string"}},{"name":"size","in":"query","required":false,"schema":{"type":"integer","minimum":1,"maximum":200}}]}},"/orders/aggregate":{"get":{"parameters":[{"name":"op","in":"query","required":true,"schema":{"type":"string","enum":["count","sum"]}},{"name":"groupBy","in":"query","required":false,"schema":{"type":"string","enum":["status"]}}]}},"/orders":{"get":{},"post":{"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Order"}}}}}},"/orders/{id}":{"put":{"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Order"}}}}},"delete":{}}},"components":{"schemas":{"Order":{"type":"object","required":["quantity"],"properties":{"quantity":{"type":"integer"},"customerId":{"type":"string","format":"uuid","nullable":true},"tags":{"type":"array","items":{"type":"string"}}}}}}}
                 """;
     }
 }
