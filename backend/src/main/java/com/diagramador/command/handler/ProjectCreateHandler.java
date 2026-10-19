@@ -86,6 +86,19 @@ public class ProjectCreateHandler implements CommandHandler {
                 .setParameter("name", defaultViewName)
                 .executeUpdate();
 
+        // The compatibility chat session lives on the default view from birth (PD-02/L33): the
+        // legacy project-level chat endpoints serve it, so every project has it before any call.
+        context.entityManager().createNativeQuery("""
+                INSERT INTO diagrammer.chat_session
+                    (view_id, title, created_by_user_id, is_default, created_at)
+                SELECT dv.view_id, 'General', CAST(:ownerId AS uuid), TRUE, now()
+                FROM diagrammer.diagram_view dv
+                WHERE dv.model_id = CAST(:modelId AS uuid) AND dv.is_default
+                """)
+                .setParameter("modelId", context.envelope().modelId())
+                .setParameter("ownerId", context.envelope().author().userId())
+                .executeUpdate();
+
         return Outcome.none();
     }
 }

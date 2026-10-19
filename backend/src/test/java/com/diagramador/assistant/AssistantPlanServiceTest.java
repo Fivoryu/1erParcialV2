@@ -115,7 +115,8 @@ class AssistantPlanServiceTest {
     }
 
     private AssistantPlanService service(AiAssistantProvider provider) {
-        return new AssistantPlanService(projectApiService, authorizationService, provider, validator, objectMapper);
+        return new AssistantPlanService(projectApiService, authorizationService, provider, validator,
+                new DiagramContextRenderer(objectMapper), objectMapper);
     }
 
     private static ModelResource model(long revision) {

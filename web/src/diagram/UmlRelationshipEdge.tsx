@@ -7,8 +7,20 @@ import {
   type Edge,
   type EdgeProps,
 } from '@xyflow/react';
-import type { RelationshipEndResource, RelationshipResource } from '../api/types';
-import { orthogonalWaypoints, roundedOrthogonalPath } from './orthogonal-routing';
+import type { RelationshipEndResource, RelationshipResource, RouteAdjustmentResource } from '../api/types';
+import {
+  ORTHO_GRID,
+  addJog,
+  defaultJogLevelOffset,
+  dragAnchorHandle,
+  dragOrthoHandle,
+  orthogonalRoute,
+  removeJog,
+  roundedOrthogonalPath,
+  roundToOrthoGrid,
+  type OrthoAdjustment,
+  type OrthoHandle,
+} from './orthogonal-routing';
 import { endOrdinalForLabelSide } from './contextMenuBehavior';
 import { formatRelationshipEndLabel } from './uml-format';
 
@@ -441,6 +453,8 @@ export interface RelationshipEdgeStyle {
   cornerRadius: number;
   strokeWidth: number;
   dashed: boolean;
+  /** ROR-02: persisted auto-route-relative adjustment; null means the auto route. */
+  routeAdjustment: RouteAdjustmentResource | null;
 }
 
 export const DEFAULT_EDGE_STYLE: RelationshipEdgeStyle = {
@@ -448,6 +462,7 @@ export const DEFAULT_EDGE_STYLE: RelationshipEdgeStyle = {
   cornerRadius: 0,
   strokeWidth: 2,
   dashed: false,
+  routeAdjustment: null,
 };
 
 export interface RelationshipEdgeData extends Record<string, unknown> {
@@ -470,6 +485,12 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
   ) => void;
   /** Reports this edge's endpoint anchors so a line right-click can preselect the nearest end. */
   onEdgeEndpointsChange?: (relationshipId: string, source: EdgePoint, target: EdgePoint) => void;
+  /** ROR-06: applies one orthogonal handle drag/jog; settled when the pointer is released. */
+  onRouteAdjustmentChange?: (
+    relationshipId: string,
+    adjustment: RouteAdjustmentResource | null,
+    settled: boolean,
+  ) => void;
 }
 
 export type RelationshipFlowEdge = Edge<RelationshipEdgeData, 'umlRelationship'>;
@@ -576,10 +597,6 @@ function rectangleForInternalNode(node: {
   return { x: position.x, y: position.y, width, height };
 }
 
-function roundToGrid(value: number): number {
-  return Math.round(value / 24) * 24;
-}
-
 export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdge>) {
   const { screenToFlowPosition } = useReactFlow();
   const sourceNode = useInternalNode(props.source);
@@ -594,11 +611,35 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
   const waypointsRef = useRef(waypoints);
   const orderedEnds = [data.sourceEnd, data.targetEnd];
   const markers = relationshipMarkerPresentation(relationship.kind, orderedEnds);
+  // ROR-06: local adjustment state so a drag re-renders from the pointer while a model
+  // refresh re-syncs through the effect instead of fighting it (same pattern as waypoints).
+  const [adjustment, setAdjustment] = useState<OrthoAdjustment | null>(data.style?.routeAdjustment ?? null);
+  const adjustmentRef = useRef(adjustment);
+  // A drag gesture is identified by a stable primitive key (`kind:index`), not by handle
+  // object identity: orthogonalRoute(...) rebuilds the handle objects on every render, so
+  // after the first move commits a re-render the next pointermove runs with a NEW handle
+  // object and an identity check would reject it, freezing the route after a single step.
+  const routeDragKey = (handle: OrthoHandle): string => `${handle.kind}:${handle.index}`;
+  // The anchor dots share the same guard ref with a distinct key namespace: one stable
+  // primitive per draggable thing, so the first committed re-render cannot freeze a drag.
+  const anchorDragKey = (end: 'source' | 'target'): string => `anchor:${end}`;
+  const routeDragHandle = useRef<string | null>(null);
 
   useEffect(() => {
     setWaypoints(data.waypoints);
     waypointsRef.current = data.waypoints;
   }, [data.waypoints]);
+
+  useEffect(() => {
+    // While a drag gesture is in flight the live pointer owns the adjustment: a model
+    // refresh landing mid-drag with the pre-drag value must not rewind the base the next
+    // pointer step is computed from (the route would snap back). Every other case re-syncs.
+    if (routeDragHandle.current !== null) {
+      return;
+    }
+    setAdjustment(data.style?.routeAdjustment ?? null);
+    adjustmentRef.current = data.style?.routeAdjustment ?? null;
+  }, [data.style?.routeAdjustment]);
 
   const points: EdgePoint[] = [
     { x: props.sourceX, y: props.sourceY },
@@ -619,11 +660,13 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
   const style = data.style ?? DEFAULT_EDGE_STYLE;
   const sourceRectangle = rectangleForInternalNode(sourceNode);
   const targetRectangle = rectangleForInternalNode(targetNode);
-  // Orthogonal routing regenerates the polyline client-side from the node rectangles;
-  // STRAIGHT and FREE render the persisted waypoint polyline (existing behavior).
-  const orthogonalPoints = style.routing === 'ORTHOGONAL' && sourceRectangle && targetRectangle
-    ? orthogonalWaypoints(sourceRectangle, targetRectangle)
+  // Orthogonal routing regenerates the polyline client-side from the node rectangles and
+  // the current hand adjustment; STRAIGHT and FREE render the persisted waypoint polyline
+  // (existing behavior).
+  const route = style.routing === 'ORTHOGONAL' && sourceRectangle && targetRectangle
+    ? orthogonalRoute(sourceRectangle, targetRectangle, adjustment)
     : null;
+  const orthogonalPoints = route?.points ?? null;
   const path = orthogonalPoints
     ? roundedOrthogonalPath(orthogonalPoints, style.cornerRadius)
     : buildRelationshipEdgePath(points);
@@ -646,7 +689,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     }
     const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
     const next = waypointsRef.current.map((point, pointIndex) => pointIndex === index
-      ? { x: roundToGrid(position.x), y: roundToGrid(position.y) }
+      ? { x: roundToOrthoGrid(position.x), y: roundToOrthoGrid(position.y) }
       : point);
     waypointsRef.current = next;
     setWaypoints(next);
@@ -660,10 +703,66 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
   }
 
   function addWaypoint(): void {
-    const next = [...waypointsRef.current, { x: roundToGrid(middle.x), y: roundToGrid(middle.y) }];
+    const next = [...waypointsRef.current, { x: roundToOrthoGrid(middle.x), y: roundToOrthoGrid(middle.y) }];
     waypointsRef.current = next;
     setWaypoints(next);
     data.onWaypointsChange?.(relationship.id, next, true);
+  }
+
+  function updateRouteHandle(event: PointerEvent<HTMLButtonElement>, handle: OrthoHandle): void {
+    // Compare by stable key, not object identity: the handle object is rebuilt on every
+    // render, so identity would stop the gesture after the first committed move.
+    if (!route || routeDragHandle.current !== routeDragKey(handle)) {
+      return;
+    }
+    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const next = dragOrthoHandle(route, adjustmentRef.current, handle, position);
+    adjustmentRef.current = next;
+    setAdjustment(next);
+    data.onRouteAdjustmentChange?.(relationship.id, next, false);
+  }
+
+  /** ANC-03: one anchor dot per end, projected onto that end's own class border. */
+  function updateAnchorHandle(
+    event: PointerEvent<HTMLButtonElement>,
+    end: 'source' | 'target',
+    rectangle: EdgeRectangle,
+  ): void {
+    // Same stable-key guard as the corridor/level handles (see updateRouteHandle).
+    if (!route || routeDragHandle.current !== anchorDragKey(end)) {
+      return;
+    }
+    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const next = dragAnchorHandle(route, adjustmentRef.current, end, position, rectangle);
+    adjustmentRef.current = next;
+    setAdjustment(next);
+    data.onRouteAdjustmentChange?.(relationship.id, next, false);
+  }
+
+  function settleRouteAdjustment(): void {
+    routeDragHandle.current = null;
+    data.onRouteAdjustmentChange?.(relationship.id, adjustmentRef.current, true);
+  }
+
+  function addRouteBend(): void {
+    if (!route) {
+      return;
+    }
+    const next = addJog(adjustmentRef.current, route.axis, defaultJogLevelOffset(route));
+    adjustmentRef.current = next;
+    setAdjustment(next);
+    data.onRouteAdjustmentChange?.(relationship.id, next, true);
+  }
+
+  function removeRouteBend(): void {
+    const current = adjustmentRef.current;
+    if (!current || current.corridors.length <= 1) {
+      return;
+    }
+    const next = removeJog(current);
+    adjustmentRef.current = next;
+    setAdjustment(next);
+    data.onRouteAdjustmentChange?.(relationship.id, next, true);
   }
 
   return (
@@ -764,6 +863,76 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
                 type="button"
               />
             ))}
+          </>
+        )}
+        {props.selected && style.routing === 'ORTHOGONAL' && sourceRectangle && targetRectangle && route && (
+          <>
+            <button
+              aria-label="Add connector bend"
+              className="uml-waypoint-add nodrag nopan"
+              onClick={addRouteBend}
+              style={{ transform: `translate(-50%, -50%) translate(${route.addBendAnchor.x}px, ${route.addBendAnchor.y}px)` }}
+              type="button"
+            >+</button>
+            {route.corridors.length > 1 && (
+              <button
+                aria-label="Remove connector bend"
+                className="uml-waypoint-add nodrag nopan"
+                onClick={removeRouteBend}
+                style={{
+                  transform: `translate(-50%, -50%) translate(${
+                    route.axis === 'H'
+                      ? route.addBendAnchor.x
+                      : route.addBendAnchor.x - ORTHO_GRID
+                  }px, ${
+                    route.axis === 'H'
+                      ? route.addBendAnchor.y - ORTHO_GRID
+                      : route.addBendAnchor.y
+                  }px)`,
+                }}
+                type="button"
+              >−</button>
+            )}
+            {[...route.corridorHandles, ...route.levelHandles].map((handle) => (
+              <button
+                aria-label={handle.kind === 'corridor' ? 'Move orthogonal corridor' : 'Move orthogonal level'}
+                className="uml-waypoint-handle nodrag nopan"
+                key={`${handle.kind}-${handle.index}`}
+                onPointerCancel={settleRouteAdjustment}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  routeDragHandle.current = routeDragKey(handle);
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerMove={(event) => updateRouteHandle(event, handle)}
+                onPointerUp={settleRouteAdjustment}
+                style={{ transform: `translate(-50%, -50%) translate(${handle.x}px, ${handle.y}px)` }}
+                type="button"
+              />
+            ))}
+            {(['source', 'target'] as const).map((end) => {
+              const anchor = end === 'source' ? route.sourceAnchor : route.targetAnchor;
+              const rectangle = end === 'source' ? sourceRectangle : targetRectangle;
+              return (
+                <button
+                  aria-label={end === 'source' ? 'Move source end anchor' : 'Move target end anchor'}
+                  className="uml-waypoint-handle uml-anchor-handle nodrag nopan"
+                  key={`anchor-${end}`}
+                  onPointerCancel={settleRouteAdjustment}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    routeDragHandle.current = anchorDragKey(end);
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                  }}
+                  onPointerMove={(event) => updateAnchorHandle(event, end, rectangle)}
+                  onPointerUp={settleRouteAdjustment}
+                  style={{ transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)` }}
+                  type="button"
+                />
+              );
+            })}
           </>
         )}
       </EdgeLabelRenderer>

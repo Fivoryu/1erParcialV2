@@ -16,11 +16,11 @@ import {
 import type { SpeechRecognitionErrorReason } from './speechRecognition';
 import { createAssistantController, type AssistantControllerDeps } from './assistantController';
 import {
-  appendTranscript,
   AssistantPanelView,
   voiceErrorMessage,
   type AssistantVoiceProps,
 } from './AssistantPanel';
+import { appendTranscript } from './speechTranscript';
 
 const projectId = '22222222-2222-4222-8222-222222222222';
 

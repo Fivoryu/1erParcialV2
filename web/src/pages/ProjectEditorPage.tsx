@@ -11,15 +11,29 @@ import { ApiTransportError, createApiClient } from '../api/client';
 import { loadSession } from '../api/session';
 import type {
   ChatMessageResource,
-  MessagePostedPayload,
+  ChatSessionResource,
+  ContextMeterResource,
+  DiagramMemoryResource,
+  MemberRole,
   ModelResource,
   OperationEnvelope,
   PresenceCursorUpdatePayload,
   PresencePerson,
   PresenceUpdatedPayload,
   ProjectResource,
+  Uuid,
 } from '../api/types';
 import ChatPanel from '../collaboration/ChatPanel';
+import { activeSessionFor } from '../collaboration/sessionSelection';
+import {
+  appendMessageToSession,
+  attachmentIdsFromHistory,
+  chatAiStatusFromProjectEvent,
+  mergeSessionHistory,
+  messageFromProjectEvent,
+  updateSessionAiStatus,
+  type SessionAiStatus,
+} from '../collaboration/chatState';
 import PresencePanel from '../collaboration/PresencePanel';
 import { createCursorCoalescer, type CursorCoalescer } from '../collaboration/cursorCoalescer';
 import { buildRemoteCursorMarkers } from '../collaboration/remoteCursors';
@@ -45,6 +59,15 @@ import {
 import type { CanvasSelection } from '../diagram/selection';
 import { groupTouchesByElement } from '../diagram/touch-highlight';
 import { loginErrorMessage } from './LoginPage';
+import HelpGuide from '../help/HelpGuideWidget';
+import TourOverlay from '../help/TourOverlay';
+import { createTourProgress } from '../help/tourProgress';
+import {
+  clampTourStepIndex,
+  getTourStep,
+  nextTourStepIndex,
+  previousTourStepIndex,
+} from '../help/tourSteps';
 import { findEditorSection, nextActiveSection, type EditorSectionId } from './editorSections';
 import EditorOptionsBar from './EditorOptionsBar';
 import FloatingAssistantButton from '../ui/FloatingAssistantButton';
@@ -120,23 +143,6 @@ function cursorsFromSnapshot(
   return cursors;
 }
 
-function postedMessage(data: unknown): ChatMessageResource | null {
-  if (typeof data !== 'object' || data === null) {
-    return null;
-  }
-
-  const payload = (data as { payload?: MessagePostedPayload }).payload;
-  const message = payload?.message;
-  if (typeof message?.id !== 'string'
-    || typeof message.authorUserId !== 'string'
-    || typeof message.authorDisplayName !== 'string'
-    || typeof message.body !== 'string'
-    || typeof message.createdAt !== 'string') {
-    return null;
-  }
-  return message;
-}
-
 interface PendingCommand {
   sequence: number;
   envelope: OperationEnvelope;
@@ -154,7 +160,25 @@ export default function ProjectEditorPage() {
   const [chatHistory, setChatHistory] = useState<ChatMessageResource[]>([]);
   const [chatLoading, setChatLoading] = useState(true);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [chatHistoryMessage, setChatHistoryMessage] = useState<string | null>(null);
   const [chatDraft, setChatDraft] = useState('');
+  const [chatSessions, setChatSessions] = useState<ChatSessionResource[]>([]);
+  const [chatSessionsLoading, setChatSessionsLoading] = useState(true);
+  const [chatSessionActionBusy, setChatSessionActionBusy] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState<Uuid | null>(null);
+  const [chatAiStatuses, setChatAiStatuses] = useState<Record<Uuid, SessionAiStatus>>({});
+  const [contextMeter, setContextMeter] = useState<ContextMeterResource | null>(null);
+  const [contextMeterLoading, setContextMeterLoading] = useState(false);
+  const [contextError, setContextError] = useState<string | null>(null);
+  const [compactBusy, setCompactBusy] = useState(false);
+  const [compactMessage, setCompactMessage] = useState<string | null>(null);
+  const [memories, setMemories] = useState<DiagramMemoryResource[]>([]);
+  const [memoriesLoading, setMemoriesLoading] = useState(false);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [memoryMessage, setMemoryMessage] = useState<string | null>(null);
+  const [memoryActionBusy, setMemoryActionBusy] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<MemberRole | null>(null);
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<Uuid, string>>({});
   const [chatBusy, setChatBusy] = useState(false);
   const [remoteCursorPositions, setRemoteCursors] = useState<Map<string, { x: number; y: number }>>(() => new Map());
   const [loading, setLoading] = useState(true);
@@ -162,6 +186,8 @@ export default function ProjectEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [openSection, setOpenSection] = useState<EditorSectionId | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourStepIndex, setTourStepIndex] = useState(0);
   const modelRef = useRef<ModelResource | null>(null);
   const canonicalModelRef = useRef<ModelResource | null>(null);
   const revisionRef = useRef<number | null>(null);
@@ -175,7 +201,14 @@ export default function ProjectEditorPage() {
   }, [projectId]);
   const sequenceRef = useRef(0);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const chatSessionIdRef = useRef(chatSessionId);
+  useLayoutEffect(() => {
+    chatSessionIdRef.current = chatSessionId;
+  }, [chatSessionId]);
+  const attachmentRequestKeysRef = useRef(new Set<string>());
+  const attachmentObjectUrlsRef = useRef<string[]>([]);
   const currentUserId = loadSession()?.userId ?? null;
+  const defaultViewId = model?.views.find((view) => view.is_default)?.id ?? null;
   const editingLease = useEditingLease(projectId, currentUserId);
   const cursorCoalescerRef = useRef<CursorCoalescer<{ x: number; y: number }> | null>(null);
 
@@ -246,50 +279,6 @@ export default function ProjectEditorPage() {
     };
   }, [projectId, publishModel]);
 
-  useEffect(() => {
-    let active = true;
-    setChatHistory([]);
-    setChatLoading(Boolean(projectId));
-    setChatError(null);
-    setChatDraft('');
-    setChatBusy(false);
-    if (!projectId) {
-      return () => {
-        active = false;
-      };
-    }
-
-    void api.listProjectMessages(projectId)
-      .then((history) => {
-        if (!active) {
-          return;
-        }
-        setChatHistory((current) => {
-          const messagesById = new Map(current.map((message) => [message.id, message]));
-          for (const message of history) {
-            if (!messagesById.has(message.id)) {
-              messagesById.set(message.id, message);
-            }
-          }
-          return [...messagesById.values()];
-        });
-      })
-      .catch((cause: unknown) => {
-        if (active) {
-          setChatError(loginErrorMessage(cause));
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setChatLoading(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [projectId]);
-
   const reconcileAfterCommand = useCallback(async (sequence: number, envelope: OperationEnvelope, resultRevision?: number | null) => {
     let canonical = canonicalModelRef.current;
     try {
@@ -353,6 +342,233 @@ export default function ProjectEditorPage() {
     }
   }, [projectId, publishModel]);
 
+  const refreshContextMeter = useCallback(async (sessionId: Uuid): Promise<void> => {
+    if (!projectId) {
+      return;
+    }
+    setContextMeterLoading(true);
+    try {
+      const report = await api.getContextMeter(projectId, sessionId);
+      if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
+        setContextMeter(report);
+        setContextError(null);
+      }
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
+        setContextError(loginErrorMessage(cause));
+      }
+    } finally {
+      if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
+        setContextMeterLoading(false);
+      }
+    }
+  }, [projectId]);
+
+  const modelLoaded = model !== null;
+  useEffect(() => {
+    if (!projectId || !modelLoaded || project?.id !== projectId) {
+      return;
+    }
+
+    const progress = createTourProgress(projectId, window.localStorage);
+    setTourStepIndex(0);
+    setTourOpen(progress.shouldShow());
+  }, [modelLoaded, project?.id, projectId]);
+
+  useEffect(() => {
+    let active = true;
+    setChatSessions([]);
+    setChatSessionId(null);
+    setChatHistory([]);
+    setChatAiStatuses({});
+    setChatError(null);
+    setChatHistoryMessage(null);
+    setChatLoading(Boolean(projectId && defaultViewId));
+    setChatSessionsLoading(Boolean(projectId && defaultViewId));
+    setChatSessionActionBusy(false);
+    setChatBusy(false);
+    setCompactBusy(false);
+    setMemoryActionBusy(false);
+    setContextMeter(null);
+    setContextMeterLoading(false);
+    setContextError(null);
+    setCompactMessage(null);
+
+    if (!projectId || !defaultViewId) {
+      setChatSessionsLoading(false);
+      setChatLoading(false);
+      if (projectId && modelLoaded) {
+        setChatError('This diagram has no default view for chat sessions.');
+      }
+      return () => {
+        active = false;
+      };
+    }
+
+    void api.listSessions(projectId, defaultViewId)
+      .then((sessions) => {
+        if (!active || currentProjectIdRef.current !== projectId) {
+          return;
+        }
+        setChatSessions(sessions);
+        const session = activeSessionFor(
+          [{ id: defaultViewId, isDefault: true }],
+          sessions,
+          chatSessionIdRef.current,
+        );
+        setChatSessionId(session?.id ?? null);
+        setChatError(session ? null : 'No chat session is available for this diagram yet.');
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setChatError(loginErrorMessage(cause));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setChatSessionsLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [defaultViewId, modelLoaded, projectId]);
+
+  useEffect(() => {
+    let active = true;
+    setChatHistory([]);
+    setChatDraft('');
+    setChatHistoryMessage(null);
+    setChatLoading(Boolean(projectId && chatSessionId));
+    setContextMeter(null);
+    setContextError(null);
+    setContextMeterLoading(Boolean(projectId && chatSessionId));
+    setCompactMessage(null);
+    if (!projectId || !chatSessionId) {
+      setChatLoading(false);
+      setContextMeterLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    void api.listSessionMessages(projectId, chatSessionId)
+      .then((history) => {
+        if (active && currentProjectIdRef.current === projectId) {
+          setChatHistory((current) => mergeSessionHistory(current, history, chatSessionId));
+        }
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setChatError(loginErrorMessage(cause));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setChatLoading(false);
+        }
+      });
+    void refreshContextMeter(chatSessionId);
+
+    return () => {
+      active = false;
+    };
+  }, [chatSessionId, projectId, refreshContextMeter]);
+
+  useEffect(() => {
+    let active = true;
+    setMemories([]);
+    setMemoryError(null);
+    setMemoryMessage(null);
+    setMemoriesLoading(Boolean(projectId && defaultViewId));
+    if (!projectId || !defaultViewId) {
+      setMemoriesLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+    void api.listMemories(projectId, defaultViewId)
+      .then((items) => {
+        if (active && currentProjectIdRef.current === projectId) {
+          setMemories(items);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setMemoryError(loginErrorMessage(cause));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setMemoriesLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [defaultViewId, projectId]);
+
+  useEffect(() => {
+    let active = true;
+    setCurrentUserRole(null);
+    if (!projectId || !currentUserId) {
+      return () => {
+        active = false;
+      };
+    }
+    void api.listProjectMembers(projectId)
+      .then((members) => {
+        if (active && currentProjectIdRef.current === projectId) {
+          setCurrentUserRole(members.find((member) => member.userId === currentUserId)?.role ?? null);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCurrentUserRole(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentUserId, projectId]);
+
+  useEffect(() => {
+    for (const attachmentId of attachmentIdsFromHistory(chatHistory)) {
+      if (!projectId || !chatSessionId) {
+        continue;
+      }
+      const requestKey = `${projectId}/${chatSessionId}/${attachmentId}`;
+      if (attachmentRequestKeysRef.current.has(requestKey)) {
+        continue;
+      }
+      attachmentRequestKeysRef.current.add(requestKey);
+      void api.getAttachmentBytes(projectId, chatSessionId, attachmentId)
+        .then((bytes) => {
+          if (currentProjectIdRef.current !== projectId || typeof URL.createObjectURL !== 'function') {
+            return;
+          }
+          const objectUrl = URL.createObjectURL(bytes);
+          attachmentObjectUrlsRef.current.push(objectUrl);
+          setAttachmentUrls((current) => ({ ...current, [attachmentId]: objectUrl }));
+        })
+        .catch(() => {
+          // Keep the message visible if an attachment cannot be downloaded.
+        });
+    }
+  }, [chatHistory, chatSessionId, projectId]);
+
+  useEffect(() => {
+    setAttachmentUrls({});
+    return () => {
+      for (const objectUrl of attachmentObjectUrlsRef.current) {
+        URL.revokeObjectURL(objectUrl);
+      }
+      attachmentObjectUrlsRef.current = [];
+      attachmentRequestKeysRef.current.clear();
+    };
+  }, [projectId]);
+
   const undoRedo = useUndoRedoShortcuts({
     projectId,
     onApplied: () => {
@@ -400,22 +616,24 @@ export default function ProjectEditorPage() {
             setRemoteCursors(cursorsFromSnapshot(snapshot, currentUserId));
           }
         } else if (event.type === 'message.posted') {
-          const message = postedMessage(event.data);
+          const message = messageFromProjectEvent(event.data);
           if (message) {
-            setChatHistory((current) => {
-              // The poster receives their own event after POST, so deduplicate messages by id.
-              if (current.some((item) => item.id === message.id)) {
-                return current;
-              }
-              return [...current, message];
-            });
+            setChatHistory((current) => appendMessageToSession(current, message, chatSessionIdRef.current));
+            if (message.sessionId === chatSessionIdRef.current) {
+              void refreshContextMeter(message.sessionId);
+            }
+          }
+        } else if (event.type === 'chat.ai.status') {
+          const status = chatAiStatusFromProjectEvent(event.data);
+          if (status) {
+            setChatAiStatuses((current) => updateSessionAiStatus(current, status));
           }
         } else if (event.type === 'operation.applied') {
           void refreshModelFromEvent();
         }
       },
     });
-  }, [currentUserId, projectId, refreshModelFromEvent]);
+  }, [currentUserId, projectId, refreshContextMeter, refreshModelFromEvent]);
 
   const dispatchEnvelope = useCallback((envelope: OperationEnvelope): void => {
     if (!projectId || !modelRef.current) {
@@ -495,7 +713,28 @@ export default function ProjectEditorPage() {
   const handleOpenSection = useCallback((id: EditorSectionId) => {
     setOpenSection((current) => nextActiveSection(current, id));
   }, []);
+  const handleNavigateToSection = useCallback((id: EditorSectionId) => {
+    setOpenSection(findEditorSection(id).id);
+  }, []);
   const closeSection = useCallback(() => setOpenSection(null), []);
+  const openTour = useCallback(() => {
+    setTourStepIndex(0);
+    setOpenSection(null);
+    setAssistantOpen(false);
+    setTourOpen(true);
+  }, []);
+  const changeTourStep = useCallback((requestedIndex: number) => {
+    const nextIndex = clampTourStepIndex(requestedIndex);
+    setTourStepIndex(nextIndex);
+    setOpenSection(getTourStep(nextIndex).section ?? null);
+    setAssistantOpen(false);
+  }, []);
+  const finishTour = useCallback(() => {
+    if (projectId) {
+      createTourProgress(projectId, window.localStorage).markSeen();
+    }
+    setTourOpen(false);
+  }, [projectId]);
 
   // `openSection` and `assistantOpen` are independent, so opening the assistant
   // from the floating button must close any open section dialog first: two open
@@ -519,30 +758,220 @@ export default function ProjectEditorPage() {
     });
   }, [projectId, targetElementId]);
 
-  async function sendMessage(body: string): Promise<void> {
-    const trimmedBody = body.trim();
-    if (!projectId || !trimmedBody || chatBusy) {
+  async function createChatSession(): Promise<void> {
+    if (!projectId || !defaultViewId || chatSessionActionBusy) {
       return;
     }
-
-    setChatBusy(true);
+    setChatSessionActionBusy(true);
     setChatError(null);
     try {
-      const message = await api.postProjectMessage(projectId, trimmedBody);
+      const created = await api.createSession(projectId, defaultViewId, `Session ${chatSessions.length + 1}`);
       if (currentProjectIdRef.current !== projectId) {
         return;
       }
-      setChatHistory((current) => current.some((item) => item.id === message.id)
+      setChatSessions((current) => current.some((session) => session.id === created.id)
         ? current
-        : [...current, message]);
-      setChatDraft('');
+        : [...current, created]);
+      setChatSessionId(created.id);
     } catch (cause: unknown) {
       if (currentProjectIdRef.current === projectId) {
         setChatError(loginErrorMessage(cause));
       }
     } finally {
       if (currentProjectIdRef.current === projectId) {
+        setChatSessionActionBusy(false);
+      }
+    }
+  }
+
+  function changeChatSession(sessionId: Uuid): void {
+    if (chatSessions.some((session) => session.id === sessionId)) {
+      setChatSessionId(sessionId);
+      setChatError(null);
+      setChatHistoryMessage(null);
+    }
+  }
+
+  async function sendMessage(body: string, images: File[]): Promise<boolean> {
+    const trimmedBody = body.trim();
+    const sessionId = chatSessionId;
+    if (!projectId || !trimmedBody || chatBusy || !sessionId) {
+      return false;
+    }
+
+    setChatBusy(true);
+    setChatError(null);
+    try {
+      const uploaded = await Promise.all(images.map((file) => api.uploadAttachment(projectId, sessionId, file)));
+      const message = await api.postSessionMessage(
+        projectId,
+        sessionId,
+        trimmedBody,
+        uploaded.map((attachment) => attachment.attachmentId),
+      );
+      if (currentProjectIdRef.current !== projectId) {
+        return false;
+      }
+      setChatHistory((current) => appendMessageToSession(current, message, chatSessionIdRef.current));
+      if (chatSessionIdRef.current === sessionId) {
+        setChatDraft('');
+        void refreshContextMeter(sessionId);
+      }
+      return true;
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId) {
+        setChatError(loginErrorMessage(cause));
+      }
+      return false;
+    } finally {
+      if (currentProjectIdRef.current === projectId) {
         setChatBusy(false);
+      }
+    }
+  }
+
+  async function compactChatContext(): Promise<void> {
+    if (!projectId || !chatSessionId || compactBusy) {
+      return;
+    }
+    const sessionId = chatSessionId;
+    setCompactBusy(true);
+    setCompactMessage(null);
+    setContextError(null);
+    try {
+      const outcome = await api.compactSession(projectId, sessionId);
+      if (currentProjectIdRef.current !== projectId || chatSessionIdRef.current !== sessionId) {
+        return;
+      }
+      setCompactMessage(outcome.compacted
+        ? 'Context compacted. Original messages remain available.'
+        : outcome.reason);
+      await refreshContextMeter(sessionId);
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
+        setContextError(loginErrorMessage(cause));
+      }
+    } finally {
+      if (currentProjectIdRef.current === projectId) {
+        setCompactBusy(false);
+      }
+    }
+  }
+
+  async function refreshDiagramMemories(): Promise<void> {
+    if (!projectId || !defaultViewId) {
+      return;
+    }
+    setMemoriesLoading(true);
+    try {
+      const items = await api.listMemories(projectId, defaultViewId);
+      if (currentProjectIdRef.current === projectId) {
+        setMemories(items);
+        setMemoryError(null);
+      }
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId) {
+        setMemoryError(loginErrorMessage(cause));
+      }
+    } finally {
+      if (currentProjectIdRef.current === projectId) {
+        setMemoriesLoading(false);
+      }
+    }
+  }
+
+  async function extractDiagramMemories(): Promise<void> {
+    if (!projectId || !defaultViewId || memoryActionBusy) {
+      return;
+    }
+    setMemoryActionBusy(true);
+    setMemoryError(null);
+    setMemoryMessage(null);
+    try {
+      const result = await api.extractMemories(projectId, defaultViewId);
+      if (currentProjectIdRef.current !== projectId) {
+        return;
+      }
+      setMemoryMessage(result.consumed
+        ? `Extraction complete: ${result.memoriesCreated} memories created, ${result.conflictsMarked} conflicts, ${result.replacements} replacements.`
+        : 'No pending material was available to extract.');
+      await refreshDiagramMemories();
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId) {
+        setMemoryError(loginErrorMessage(cause));
+      }
+    } finally {
+      if (currentProjectIdRef.current === projectId) {
+        setMemoryActionBusy(false);
+      }
+    }
+  }
+
+  async function forgetDiagramMemory(memoryId: Uuid): Promise<void> {
+    if (!projectId || !defaultViewId || currentUserRole !== 'OWNER') {
+      return;
+    }
+    if (!window.confirm('Forget this diagram memory? Chat history will remain unchanged.')) {
+      return;
+    }
+    setMemoryError(null);
+    setMemoryMessage(null);
+    try {
+      const result = await api.forgetMemory(projectId, defaultViewId, memoryId);
+      if (currentProjectIdRef.current === projectId) {
+        setMemoryMessage(`${result.deletedMemories} diagram memory forgotten. Chat history was not changed.`);
+        await refreshDiagramMemories();
+      }
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId) {
+        setMemoryError(loginErrorMessage(cause));
+      }
+    }
+  }
+
+  async function forgetAllDiagramMemories(): Promise<void> {
+    if (!projectId || !defaultViewId || currentUserRole !== 'OWNER') {
+      return;
+    }
+    if (!window.confirm('Forget all memory for this diagram? Chat history will remain unchanged.')) {
+      return;
+    }
+    setMemoryError(null);
+    setMemoryMessage(null);
+    try {
+      const result = await api.forgetAllMemories(projectId, defaultViewId);
+      if (currentProjectIdRef.current === projectId) {
+        setMemoryMessage(`${result.deletedMemories} diagram memories forgotten. Chat history was not changed.`);
+        await refreshDiagramMemories();
+      }
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId) {
+        setMemoryError(loginErrorMessage(cause));
+      }
+    }
+  }
+
+  async function deleteChatHistory(): Promise<void> {
+    if (!projectId || !chatSessionId || currentUserRole !== 'OWNER') {
+      return;
+    }
+    const sessionId = chatSessionId;
+    if (!window.confirm('Delete history for this session? Diagram memory will remain unchanged.')) {
+      return;
+    }
+    setChatError(null);
+    setChatHistoryMessage(null);
+    try {
+      const result = await api.deleteSessionHistory(projectId, sessionId);
+      if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
+        setChatHistory([]);
+        setChatHistoryMessage(`${result.deletedMessages} messages deleted. Diagram memory was not changed.`);
+        setChatDraft('');
+        void refreshContextMeter(sessionId);
+      }
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
+        setChatError(loginErrorMessage(cause));
       }
     }
   }
@@ -653,6 +1082,11 @@ export default function ProjectEditorPage() {
               onOpenSection={handleOpenSection}
               badges={{ collaboration: presence.length }}
             />
+            {!tourOpen && (
+              <button className="text-button" onClick={openTour} type="button">
+                Show editor tour
+              </button>
+            )}
 
             <div className="editor-workspace">
               <UmlCanvas
@@ -695,13 +1129,39 @@ export default function ProjectEditorPage() {
             >
               <PresencePanel entries={presence} userId={currentUserId} />
               <ChatPanel
+                activeSessionId={chatSessionId}
+                aiStatus={chatSessionId ? chatAiStatuses[chatSessionId] ?? null : null}
+                attachmentUrls={attachmentUrls}
                 busy={chatBusy}
+                canDeleteHistory={currentUserRole === 'OWNER'}
+                canManageMemory={currentUserRole === 'OWNER'}
+                compactBusy={compactBusy}
+                compactMessage={compactMessage}
+                contextError={contextError}
+                contextMeter={contextMeter}
+                contextMeterLoading={contextMeterLoading}
                 draft={chatDraft}
                 error={chatError}
+                extractBusy={memoryActionBusy}
                 history={chatHistory}
+                historyMessage={chatHistoryMessage}
                 loading={chatLoading}
+                memories={memories}
+                memoriesLoading={memoriesLoading}
+                memoryError={memoryError}
+                memoryMessage={memoryMessage}
+                onCompact={() => void compactChatContext()}
+                onCreateSession={() => void createChatSession()}
+                onDeleteHistory={() => void deleteChatHistory()}
                 onDraftChange={setChatDraft}
-                onSend={(body) => void sendMessage(body)}
+                onExtractMemories={() => void extractDiagramMemories()}
+                onForgetAllMemories={() => void forgetAllDiagramMemories()}
+                onForgetMemory={(memoryId) => void forgetDiagramMemory(memoryId)}
+                onSend={(body, images) => sendMessage(body, images)}
+                onSessionChange={changeChatSession}
+                sessionActionBusy={chatSessionActionBusy}
+                sessions={chatSessions}
+                sessionsLoading={chatSessionsLoading}
                 userId={currentUserId}
               />
             </Modal>
@@ -743,6 +1203,20 @@ export default function ProjectEditorPage() {
             </Modal>
 
             <FloatingAssistantButton open={assistantOpen} onOpen={handleOpenAssistant} />
+            <HelpGuide
+              api={api}
+              openSection={openSection}
+              onNavigateToSection={handleNavigateToSection}
+            />
+            {tourOpen && project.id === projectId && (
+              <TourOverlay
+                stepIndex={tourStepIndex}
+                onPrevious={() => changeTourStep(previousTourStepIndex(tourStepIndex))}
+                onNext={() => changeTourStep(nextTourStepIndex(tourStepIndex))}
+                onFinish={finishTour}
+                onReopenHelp={openTour}
+              />
+            )}
           </>
         ) : null}
       </div>

@@ -11,6 +11,8 @@ import type {
   OperationResource,
   ParameterResource,
   RelationshipResource,
+  RouteAdjustmentResource,
+  ViewStyleResource,
 } from '../api/types';
 
 export type ClassifierKind = 'CLASS' | 'ABSTRACT_CLASS' | 'INTERFACE' | 'PACKAGE';
@@ -233,14 +235,38 @@ export function buildGeometrySetRequest(payload: GeometryUpdate): ModelCommandRe
 
 export type RoutingMode = 'STRAIGHT' | 'FREE' | 'ORTHOGONAL';
 
-/** IA4-07: per-view relationship style payload for the versioned style.set command. */
-export interface ViewStyleUpdate {
-  viewId: string;
-  targetId: string;
+/** The appearance fields plus the adjustment, without the (view, target) identity. */
+export interface ViewStyleValues {
   routing: RoutingMode;
   cornerRadius: number;
   strokeWidth: number;
   dashed: boolean;
+  routeAdjustment: RouteAdjustmentResource | null;
+}
+
+/** IA4-07/ROR-05: per-view relationship style payload for the versioned style.set command. */
+export interface ViewStyleUpdate extends ViewStyleValues {
+  viewId: string;
+  targetId: string;
+}
+
+/**
+ * Merges a style change over the row read from the model, keeping viewId/targetId
+ * authoritative. When the merged routing leaves ORTHOGONAL the adjustment is nulled:
+ * the backend rejects a non-orthogonal style.set that carries one (ROR-05), so without
+ * this rule the user could not leave orthogonal mode while an adjustment is stored.
+ */
+export function mergeViewStyleUpdate(
+  viewId: string,
+  targetId: string,
+  current: ViewStyleValues,
+  override: Partial<ViewStyleValues>,
+): ViewStyleUpdate {
+  const merged = { ...current, ...override, viewId, targetId };
+  if (merged.routing !== 'ORTHOGONAL') {
+    merged.routeAdjustment = null;
+  }
+  return merged;
 }
 
 export function buildStyleSetRequest(payload: ViewStyleUpdate): ModelCommandRequest {
@@ -292,6 +318,11 @@ function payloadString(envelope: OperationEnvelope, key: string): string | null 
 function payloadBoolean(envelope: OperationEnvelope, key: string): boolean | null {
   const value = envelope.payload[key];
   return typeof value === 'boolean' ? value : null;
+}
+
+function payloadNumber(envelope: OperationEnvelope, key: string): number | null {
+  const value = envelope.payload[key];
+  return typeof value === 'number' ? value : null;
 }
 
 function targetId(envelope: OperationEnvelope, scope: string): string | null {
@@ -742,6 +773,36 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         }
         return { ...classifier, operations: classifier.operations.filter((operation) => operation.id !== removedId) };
       });
+    }
+    case 'style.set': {
+      // Server upsert semantics (StyleSetHandler): one view_style row per (viewId, targetId),
+      // applied locally so the optimistic model already carries the adjustment and the next
+      // model sync cannot rewind a just-dragged route back to the auto geometry.
+      const viewId = payloadString(envelope, 'viewId');
+      const styleTargetId = payloadString(envelope, 'targetId');
+      if (!viewId || !styleTargetId) {
+        return model;
+      }
+      const routing = payloadString(envelope, 'routing');
+      const styleRow: ViewStyleResource = {
+        viewId,
+        targetId: styleTargetId,
+        routing: routing === 'FREE' || routing === 'ORTHOGONAL' ? routing : 'STRAIGHT',
+        cornerRadius: payloadNumber(envelope, 'cornerRadius') ?? 0,
+        strokeWidth: payloadNumber(envelope, 'strokeWidth') ?? 2,
+        dashed: payloadBoolean(envelope, 'dashed') ?? false,
+        routeAdjustment: envelope.payload.routeAdjustment
+          ? (envelope.payload.routeAdjustment as RouteAdjustmentResource)
+          : null,
+      };
+      const existingRow = (model.view_style ?? []).find((candidate) =>
+        candidate.viewId === viewId && candidate.targetId === styleTargetId);
+      return {
+        ...model,
+        view_style: existingRow
+          ? (model.view_style ?? []).map((candidate) => (candidate === existingRow ? styleRow : candidate))
+          : [...(model.view_style ?? []), styleRow],
+      };
     }
     default:
       return model;

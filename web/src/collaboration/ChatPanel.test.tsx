@@ -6,6 +6,37 @@ import { formatMessageTime } from './messageTime';
 import ChatPanel, { type ChatPanelProps } from './ChatPanel';
 
 const readerId = '11111111-1111-4111-8111-111111111111';
+const session = {
+  id: '77777777-7777-4777-8777-777777777777',
+  viewId: '66666666-6666-4666-8666-666666666666',
+  title: 'General',
+  createdByUserId: readerId,
+  createdAt: '2026-02-01T14:00:00Z',
+};
+const meter = {
+  contextWindow: 4096,
+  reservedForResponse: 512,
+  promptBudget: 3584,
+  instructions: 80,
+  diagramData: 300,
+  memories: 40,
+  history: 2900,
+  images: 600,
+  totalUsed: 3920,
+  promptThreshold: 2868,
+  compactionPending: true,
+  percent: 109,
+};
+const memory = {
+  memoryId: '88888888-8888-4888-8888-888888888888',
+  kind: 'DECISION' as const,
+  status: 'ACTIVE' as const,
+  content: 'Keep the actor outside the system boundary.',
+  sourceSessionId: session.id,
+  sourceMessageId: '99999999-9999-4999-8999-999999999999',
+  replacedBy: null,
+  createdAt: '2026-02-01T14:30:00Z',
+};
 const history: ChatMessageResource[] = [
   {
     id: '22222222-2222-4222-8222-222222222222',
@@ -33,6 +64,32 @@ function render(overrides: Partial<ChatPanelProps> = {}): string {
     busy: false,
     onDraftChange: () => undefined,
     onSend: () => undefined,
+    sessions: [session],
+    sessionsLoading: false,
+    activeSessionId: session.id,
+    sessionActionBusy: false,
+    onSessionChange: () => undefined,
+    onCreateSession: () => undefined,
+    aiStatus: null,
+    contextMeter: null,
+    contextMeterLoading: false,
+    contextError: null,
+    compactBusy: false,
+    compactMessage: null,
+    onCompact: () => undefined,
+    memories: [],
+    memoriesLoading: false,
+    memoryError: null,
+    memoryMessage: null,
+    extractBusy: false,
+    onExtractMemories: () => undefined,
+    canManageMemory: false,
+    onForgetMemory: () => undefined,
+    onForgetAllMemories: () => undefined,
+    canDeleteHistory: false,
+    onDeleteHistory: () => undefined,
+    historyMessage: null,
+    attachmentUrls: {},
     ...overrides,
   };
   return renderToStaticMarkup(createElement(ChatPanel, props));
@@ -103,5 +160,72 @@ describe('ChatPanel', () => {
     const sendButton = markup.match(/<button\b[^>]*>Send<\/button>/)?.[0] ?? '';
 
     expect(sendButton).toContain('disabled=""');
+  });
+
+  it('renders the session selector with the active session and a create action', () => {
+    const review = { ...session, id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', title: 'Review' };
+    const markup = render({ sessions: [session, review] });
+
+    expect(markup).toContain('for="chat-session-selector">Chat session</label>');
+    expect(markup).toContain('<option value="77777777-7777-4777-8777-777777777777" selected="">General</option>');
+    expect(markup).toContain('<option value="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">Review</option>');
+    expect(markup).toContain('New session');
+  });
+
+  it('shows the actual AI request state and reason', () => {
+    const markup = render({ aiStatus: { sessionId: session.id, state: 'FAILED', reason: 'Provider unavailable' } });
+
+    expect(markup).toContain('AI request failed: Provider unavailable');
+    expect(markup).toContain('chat-ai-status--failed');
+  });
+
+  it('renders context budget components, threshold state, and the explicit compact action', () => {
+    const markup = render({ contextMeter: meter });
+
+    expect(markup).toContain('109% of the input budget (3920 / 3584 tokens)');
+    expect(markup).toContain('<dt>Images</dt><dd>600</dd>');
+    expect(markup).toContain('<dt>Compaction threshold</dt><dd>2868</dd>');
+    expect(markup).toContain('data-threshold-reached="true"');
+    expect(markup).toContain('accent-color:#b42318');
+    expect(markup).toContain('Compact this session context');
+  });
+
+  it('lists memory kind, status, and evidence with distinct owner-only forget controls', () => {
+    const markup = render({ memories: [memory], canManageMemory: true, canDeleteHistory: true });
+
+    expect(markup).toContain('DECISION');
+    expect(markup).toContain('ACTIVE');
+    expect(markup).toContain(`session ${session.id}`);
+    expect(markup).toContain('Sources:');
+    expect(markup).toContain('Extract memories');
+    expect(markup).toContain('Forget this memory');
+    expect(markup).toContain('Forget all diagram memories');
+    expect(markup).toContain('Delete history for this session');
+  });
+
+  it('does not expose forget controls to non-owners and keeps history deletion separate', () => {
+    const markup = render({ memories: [memory], canManageMemory: false, canDeleteHistory: false });
+
+    expect(markup).toContain('Only the project OWNER can forget diagram memories.');
+    expect(markup).not.toContain('Forget this memory');
+    expect(markup).not.toContain('Forget all diagram memories');
+    expect(markup).not.toContain('Delete history for this session');
+    expect(markup).toContain('Deleting chat history does not forget memory.');
+  });
+
+  it('renders authorized image bytes as a thumbnail on the associated message', () => {
+    const imageMessage: ChatMessageResource = {
+      ...history[0]!,
+      attachments: ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],
+    };
+    const markup = render({
+      history: [imageMessage],
+      attachmentUrls: { 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb': 'blob:chat-image' },
+    });
+
+    expect(markup).toContain('src="blob:chat-image"');
+    expect(markup).toContain('alt="Image attached by Casey Collaborator"');
+    expect(markup).toContain('Attach images');
+    expect(markup).toContain('accept="image/jpeg,image/png,image/webp"');
   });
 });

@@ -47,7 +47,11 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("invitation", Set.of("invitation_id", "project_id", "invited_by_user_id", "invitee_user_id",
                     "role", "status", "created_at", "updated_at")),
             Map.entry("uml_model", Set.of("model_id", "project_id", "name", "current_revision", "created_at")),
-            Map.entry("diagram_message", Set.of("message_id", "model_id", "author_user_id", "body", "created_at")),
+            Map.entry("diagram_message", Set.of("message_id", "model_id", "session_id", "kind", "author_user_id", "reply_to_message_id", "memory_extracted", "body", "created_at")),
+            Map.entry("diagram_memory", Set.of("memory_id", "view_id", "kind", "status", "content", "source_session_id", "source_message_id", "source_command_id", "replaced_by", "created_by_user_id", "created_at")),
+            Map.entry("chat_session_compaction", Set.of("session_id", "summary", "up_to_message_id", "created_at", "updated_at")),
+            Map.entry("chat_attachment", Set.of("attachment_id", "session_id", "message_id", "filename", "content_type", "size_bytes", "data", "sha256", "created_by_user_id", "created_at")),
+            Map.entry("chat_session", Set.of("session_id", "view_id", "title", "created_by_user_id", "is_default", "created_at")),
             Map.entry("agent_operation", Set.of("operation_id", "user_id", "project_id", "deployment_id", "contract_hash", "canonical_payload", "state", "response_status", "response_body", "error_code", "created_at", "updated_at")),
             Map.entry("agent_conversation", Set.of("conversation_id", "user_id", "project_id", "deployment_id",
                     "contract_hash", "title", "created_at", "updated_at", "next_sequence")),
@@ -56,6 +60,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("model_version", Set.of("version_id", "model_id", "revision", "parent_revision", "state_hash",
                     "validation_state", "created_by_user_id", "created_at")),
             Map.entry("model_command", Set.of("command_id", "model_id", "author_user_id", "base_revision",
+                    "knowledge_pending",
                     "result_revision", "operation", "target_type", "target_id", "payload", "origin",
                     "authorization_classification", "inverse_of_command_id", "causal_parent_operation_id",
                     "idempotency_key", "created_at")),
@@ -106,7 +111,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("undo_log", Set.of("id", "model_id", "user_id", "command_id", "type", "pre_snapshot",
                     "undone_at", "redone_at", "created_at")),
             Map.entry("view_style", Set.of("style_id", "view_id", "target_type", "target_id", "routing",
-                    "corner_radius", "stroke_width", "dashed", "created_at", "updated_at")));
+                    "corner_radius", "stroke_width", "dashed", "route_adjustment", "created_at", "updated_at")));
 
     private static final Set<String> TABLES_RESERVED_FOR_LATER_TASKS = Set.of(
             "model_conflict",
@@ -124,6 +129,9 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("agent_conversation", Set.of("idx_agent_conversation_scope")),
             Map.entry("agent_operation", Set.of("idx_agent_operation_scope")),
             Map.entry("agent_message", Set.of()),
+            Map.entry("chat_session", Set.of("idx_chat_session_view", "uq_chat_session_default_view")),
+            Map.entry("diagram_memory", Set.of("idx_diagram_memory_view")),
+            Map.entry("chat_attachment", Set.of("idx_chat_attachment_session", "uq_chat_attachment_message")),
             Map.entry("model_version", Set.of("idx_version_model_rev")),
             Map.entry("model_command", Set.of("idx_command_model_rev", "idx_command_author")),
             Map.entry("cascade_group", Set.of()),

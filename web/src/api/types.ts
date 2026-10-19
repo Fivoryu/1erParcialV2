@@ -28,12 +28,73 @@ export interface PresencePerson {
   cursorY: number | null;
 }
 
+export type ChatMessageKind = 'HUMAN' | 'AI';
+
 export interface ChatMessageResource {
   id: Uuid;
-  authorUserId: Uuid;
+  /** Present on session chat responses; optional for legacy project-level chat payloads. */
+  sessionId?: Uuid;
+  kind?: ChatMessageKind;
+  authorUserId: Uuid | null;
   authorDisplayName: string;
   body: string;
   createdAt: string;
+  replyTo?: Uuid | null;
+  /** Attachment ids are resolved through the authorized session attachment endpoint. */
+  attachments?: Uuid[];
+}
+
+export interface ChatAttachmentResource {
+  attachmentId: Uuid;
+  filename: string;
+  sizeBytes: number;
+  contentType: string;
+}
+
+export interface ContextMeterResource {
+  contextWindow: number;
+  reservedForResponse: number;
+  promptBudget: number;
+  instructions: number;
+  diagramData: number;
+  memories: number;
+  history: number;
+  images: number;
+  totalUsed: number;
+  promptThreshold: number;
+  compactionPending: boolean;
+  percent: number;
+}
+
+export interface CompactionOutcomeResource {
+  compacted: boolean;
+  reason: string;
+}
+
+export interface DiagramMemoryResource {
+  memoryId: Uuid;
+  kind: 'DECISION' | 'HYPOTHESIS';
+  status: 'ACTIVE' | 'CONFLICTED' | 'REPLACED';
+  content: string;
+  sourceSessionId: Uuid | null;
+  sourceMessageId: Uuid | null;
+  replacedBy: Uuid | null;
+  createdAt: string;
+}
+
+export interface MemoryExtractionResource {
+  memoriesCreated: number;
+  conflictsMarked: number;
+  replacements: number;
+  consumed: boolean;
+}
+
+export interface DeletedSessionHistoryResource {
+  deletedMessages: number;
+}
+
+export interface ForgottenMemoriesResource {
+  deletedMemories: number;
 }
 
 export interface MessagePostedPayload {
@@ -110,6 +171,29 @@ export interface ApiErrorResource {
   operationId: Uuid | null;
 }
 
+export interface HelpGuideTopicContext {
+  slug: string;
+  title: string;
+  summary: string;
+}
+
+export interface HelpGuideEditorState {
+  openSection: string | null;
+  sections: string[];
+}
+
+export interface HelpGuideRequest {
+  question: string;
+  topics: HelpGuideTopicContext[];
+  editorState: HelpGuideEditorState;
+}
+
+export interface HelpGuideResponse {
+  schemaVersion: 1;
+  answer: string;
+  suggestedSlugs: string[];
+}
+
 export interface ModelResource {
   id: Uuid;
   projectId: Uuid;
@@ -177,6 +261,26 @@ export interface XmiImportResource {
   disagreements: XmiDisagreementResource[];
 }
 
+export interface RouteAdjustmentResource {
+  axis: 'H' | 'V';
+  corridors: number[];
+  levels: number[];
+  /** ANC-01: optional/nullable so an older backend or a fixture without the field still compiles. */
+  anchors?: RouteAnchorsResource | null;
+}
+
+/** ANC-02: one anchor end; the signed px offset is measured from the centre of the side. */
+export interface RelationshipAnchorResource {
+  side: 'N' | 'E' | 'S' | 'W';
+  offset: number;
+}
+
+/** ANC-01: the per-end anchors of the orthogonal route. */
+export interface RouteAnchorsResource {
+  source: RelationshipAnchorResource;
+  target: RelationshipAnchorResource;
+}
+
 export interface ViewStyleResource {
   viewId: Uuid;
   targetId: Uuid;
@@ -184,6 +288,17 @@ export interface ViewStyleResource {
   cornerRadius: number;
   strokeWidth: number;
   dashed: boolean;
+  /** Optional so an older backend or a fixture without the field still reads as undefined/null. */
+  routeAdjustment?: RouteAdjustmentResource | null;
+}
+
+/** One conversation session inside a diagram view; T9 lets collaborators switch between them. */
+export interface ChatSessionResource {
+  id: Uuid;
+  viewId: Uuid;
+  title: string;
+  createdByUserId: Uuid;
+  createdAt: string;
 }
 
 export interface ViewResource {
