@@ -18,9 +18,9 @@ const overlayStyle: CSSProperties = {
   position: 'fixed',
   zIndex: 50,
   right: '24px',
-  bottom: '24px',
+  bottom: '96px',
   width: 'min(28rem, calc(100vw - 48px))',
-  maxHeight: 'calc(100vh - 48px)',
+  maxHeight: 'calc(100vh - 120px)',
   overflowY: 'auto',
 };
 
