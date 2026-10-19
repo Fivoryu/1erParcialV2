@@ -1,0 +1,64 @@
+# Agente IA del teléfono: CRUD + reportes sobre el backend conectado
+
+Objetivo: que el agente local (Gemma 4 E2B, LiteRT-LM) maneje el backend generado conectado — consultar, mostrar, editar, borrar y reportes — rápido, sin cuelgues y con respuestas legibles. Rama `feat/agente-ia-reportes`. Entrega: ask-on-risk. Runners: `flutter test` (mobile/), Gradle/Maven del backend (a confirmar en T0).
+
+## Specs
+
+S1. "Yo quiero que sea capaz de hacer las peticiones del usuario como un agente. Donde será capaz de consultar, mostrar, editar, borrar, etc. En cualquier base de datos." — alcance aclarado: "El diagramador crea el diagrama, dicho diagrama se genera el backend springboot. El teléfono se conecta al backend seleccionado y el agente es capaz de manejar dicho backend. Yo como usuario puedo conectarme con un backend a la vez, la IA no debe de conocer lo demás. Si entro a un backend la IA es capaz de entender donde estamos trabajando". Genérico por dominio (gimnasio, colegio…) sin código específico por dominio.
+
+S2. "el modelo de Gemma a veces se cuelga y no es tan rápido para responder a cosas tan simples." → (a) ninguna espera nativa sin timeout (`LiteRtAgentBridge.kt` `completed.await()`), error claro al usuario; (b) una llamada al modelo por pedido simple: Gemma decide, el código ejecuta y renderiza; segunda llamada solo con `"respond":"answer"` (preguntas que requieren razonar sobre datos acotados); (c) conversación persistente por backend con el contrato en `systemInstruction`, descartada al cambiar de backend; (d) GPU con fallback a CPU.
+
+S3. El entendimiento queda en el LLM, no en un router determinístico: "El router determenistico no será capaz de entender bien el lenguaje humano, ya que otra feature será mandar audio (audio a texto)". El set de evaluación usa lenguaje coloquial / transcripción de voz.
+
+S4. "También quiero que sea capaz de hacer reportes de todo tipo" + "Solo se queda en el chat. PDf/CSV será un post-mvp". Gemma emite una especificación de reporte (entity, filter[], group_by, metric{op,field}, sort, limit, respond); el código la valida contra el contrato y calcula de forma determinística; render markdown en el chat. Exportación fuera de alcance.
+
+S5. "hay que medir que reporte va a dar, por si le pregunto un día (supongamos que estamos en un gimnasio) le pido que me liste la cantidad de ejercicios para el pecho y me de solo las uuids o algo así" → presentación legible: campo de etiqueta por entidad (del diagrama, `x-display-field`), relaciones resueltas a su etiqueta, columnas técnicas (id, UUID, FK) ocultas salvo pedido explícito; puerta de calidad determinística antes de mostrar (sin UUIDs no pedidos, al menos una columna legible); el tipo de respuesta sale de la spec (count/list/group_by).
+
+S6. "que pasa si estamos en un colegio y le pido los alumnos del 1ro A del turno de la mañana?" → filtros AND con ruta de relación (`curso.grado`, `curso.seccion`, `curso.turno`) validados contra el contrato; valores normalizados (acentos, mayúsculas, "1ro"="1°"=1, enums en lenguaje natural) y anclados a valores reales (enum del contrato o valores distintos); distinguir "existe pero vacío" de "valor inexistente" (ofrecer opciones reales).
+
+S7. "BUsca más huecos para que la IA haga bien su trabajo" → huecos aceptados en el alcance: seguimiento entre mensajes (refs persistentes en la conversación: "¿y los de la tarde?", "borrá el segundo"); fechas relativas resueltas por código; sinónimos de entidades; valor como pista de campo ("pecho" → grupoMuscular); operadores ne/gt/gte/lt/lte/contains/in/is_null; pedidos múltiples encadenados o aclarados; escritura por etiqueta con desambiguación; crear con FK resuelta por etiqueta; escrituras masivas con preview de cantidad + confirmación + tope; errores 400/409 traducidos; preselección de entidades cuando el contrato no entra en contexto; un reintento de reparación de JSON; precarga del modelo al conectar; mostrar "Entendí: …" con la spec interpretada; set de evaluación generado desde el diagrama.
+
+S9. Enums dentro de esta feature ("Si dale" a: "¿Agregamos soporte de enums al diagramador y al generador (los literales en el diagrama, un enum Java, y `enum` en el contrato) como parte de esta feature?"). Etiqueta por heurística del generador (`x-display-field`), sin cambio de modelo del diagrama.
+
+S8. "SI vamos con el backend" → el generador Spring Boot emite listado con filtros + paginación del lado del servidor y metadatos OpenAPI (enum, relaciones, campo de etiqueta). El teléfono detecta la capacidad en el contrato; backends viejos → filtrado en el teléfono con tope y aviso de reporte posiblemente incompleto.
+
+## Tasks
+
+Forecast: ~4500-6000 líneas autoradas. Estrategia de entrega: `exception-ok` — un solo PR con excepción de tamaño (L13); commits por unidad igual.
+
+T0 (—) mapeo generador/contrato/gateway — delegated explore — DONE (ver L10).
+T1 (S6, S9) enums en el modelo de plataforma: literales de ENUMERATION como uml_attribute kind=LITERAL sin tipo (sin migración: mismo formato que XmiReader) + validación de identificador — inline — DONE ed4b60d (T3a 11/11, T5 13/13; RED observado: "Classifier kind ENUMERATION is unsupported")
+T2 (S9) editor web de literales de enumeración en el diagramador — inline — DONE 25ebb41 (web 624 + 4 live skipped)
+T3 (S6, S9) generador: enum Java + `@Enumerated(STRING)` + columna/CHECK SQL + DTO + `enum` en openapi.json; quitar diagnóstico bloqueante — inline — DONE 1b00940 (E2E contra Postgres: CHECK, 400 en literal desconocido; EMPTY_ENUMERATION bloqueante; baseline BL-CLS-04/05 soportados, GAP-02 cerrado; contract-tests 15/15)
+T4 (S5) `x-display-field` por entidad (heurística nombre/titulo/name/descripcion/primer string requerido) en openapi.json — inline — DONE d5af6d1 (`x-display-fields`: nombre+apellido, titulo, primer String requerido, [] si no hay texto)
+T5 (S6, S8) generador: listado con filtros (eq/ne/gt/gte/lt/lte/contains/in/is_null, ruta de relación de un nivel), paginación, orden vía JpaSpecificationExecutor; endpoints `values` y `aggregate` (count/sum/avg/min/max + group_by); parámetros y `x-agent-capabilities` en openapi.json — inline — Risk item 3 — DONE 4dc77a6 (endpoints aditivos /query /values /aggregate; GET /api/x intacto; QueryFieldCatalog compartido emisor/OpenAPI; E2E Postgres: filtros enum/relación/ne/in, sort+size, values, aggregate groupBy, 6 rechazos 400 INVALID_QUERY)
+T6 (S8) gateway de plataforma: aceptar query strings validados contra los parámetros del contrato congelado — inline — Risk item 2 — DONE c6d4bfc (query estructurado [{name,value}] solo GET, nombres declarados en el contrato, enum/rango/longitud/sin control, encoding en el gateway; `?` en path sigue rechazado; canonical del agente sin cambios cuando no hay query)
+T6b (—) test inestable MobileAgentOperationPersistenceTest (también en main) — DONE fd71a10 (pool Hikari que espera la 1.ª conexión real en 127.0.0.1; 6/6 verdes)
+T7 (S2) puente nativo: timeout en await + cancelación, GPU→CPU fallback, conversación persistente por backend (contrato en systemInstruction), precarga al conectar — delegated (writer reason: unidad paralela con superficie disjunta Kotlin+servicio LiteRT) — Risk item 4 — DONE 48aa553 (13 tests Dart, 24 checks Kotlin; Backend.GPU() confirmado con javap; precarga al conectar: pendiente, la sesión se abre en el primer mensaje)
+T8 (S5, S6, S7, S8) contrato móvil: enums, relaciones, display field, capacidades — inline — DONE bb5655d (+69d3f7d backend: `id` consultable y `references`); preselección de entidades pasa a T10
+T9 (S4, S6, S7) spec de reporte: validación contra contrato, normalización/anclaje de valores, fechas relativas, operadores, consulta server-side + fallback en teléfono con tope y aviso — inline — DONE 33cc94a (8 tests: colegio 1ro A mañana, inexistente con opciones, existe-pero-vacío, count/avg/groupBy, ne/in, this_week, fallback local)
+T10 (S2, S7) runner: una llamada, `respond` show|answer, "Entendí: …", refs persistentes entre mensajes — inline — DONE 890825e (sesión persistente vía workspace_controller; límites 3 llamadas/2 min). Pendiente: reintento de reparación JSON, pedidos múltiples, preselección de entidades cuando el contrato no entra en el contexto (movida desde T8, sin implementar).
+T11 (S5) presentación: plantillas markdown, etiquetas y FK resueltas, puerta de calidad sin UUIDs — inline — DONE 65aa04b (6 tests)
+T12 (S7) escrituras — inline — PARCIAL a48894a: borrar por etiqueta con desambiguación, masivo ≤20 con una confirmación, errores traducidos, tarjeta sin UUIDs. Pendiente decisión del usuario: crear/editar por etiqueta y FK por etiqueta chocan con la garantía "valores solo del texto del usuario" (authorize exige UUID para update).
+T13 (S3, S7) set de evaluación generado desde el diagrama + métricas — inline — DONE 49b6c42 (generador + scorer; medición con Gemma real pendiente de T14)
+T14 (S2) build release + instalar en el dispositivo y verificar extremo a extremo — inline — Risk item 5 — TODO
+
+## Log
+
+L1 (pedido original, verbatim): "Ahora mismo estamos mirando lo capaz que es la ia local del teléfono pero se cuelga. Yo quiero que sea capaz de hacer las peticiones del usuario como un agente. Donde será capaz de consultar, mostrar, editar, borrar, etc. En cualquier base de datos. Y el modelo de Gemma a veces se cuelga y no es tan rápido para responder a cosas tan simples."
+L2: alcance del flujo (ver S1, verbatim).
+L3: "El router determenistico no será capaz de entender bien el lenguaje humano, ya que otra feature será mandar audio (audio a texto)" → descartado router por reglas.
+L4: "EN terminos de calidad, se ve bien ese atajo?" → acordado `respond: show|answer`.
+L5: "También quiero que sea capaz de hacer reportes de todo tipo"; "Solo se queda en el chat. PDf/CSV será un post-mvp"; ejemplo gimnasio/UUIDs (S5).
+L6: ejemplo colegio (S6). L7: "BUsca más huecos para que la IA haga bien su trabajo" (S7).
+L8: "Cuál hará para que la IA lo haga más rápido sin perder calidad?" → recomendado backend + metadatos + fallback; "SI vamos con el backend".
+L9 diagnóstico (evidencia): CPU 2 hilos `LiteRtAgentBridge.kt:151`; conversación nueva por llamada `:172`; `completed.await()` sin timeout `:232`; prompt completo reenviado por paso `agent_runner.dart:147`; hasta 8 llamadas / 5 min `agent_runner.dart:21-26`; listado generado sin filtros `DomainProjectEmitter.java:417`; contrato sin enum/relaciones.
+L10 mapeo: openapi.json lo arma la plataforma desde el IR (`GenerationArtifactBundleBuilder.openApiDocument` :103-142, ya con `x-uml-relationships`), servido congelado por `MobileGatewayService.frozen()` :161; ENUMERATION → diagnóstico bloqueante `DomainModelIRMapper.java:161`, sin literales persistidos; relaciones solo 1-N; DTO expone FK como `<campo>Id`; gateway `allowedPath` :189 y `agent_contract.dart:70` rechazan `?`; sin concepto de etiqueta; Postgres + Flyway; runners `mvn test` (backend/), `flutter test` (mobile/).
+L11: "Si dale" → enums dentro del alcance (S9); etiqueta por heurística aceptada.
+L12: preferencia de subagentes: Explore=haiku, resto=sonnet effort medium.
+L13 (2026-10-19): "Single PR size exception" → estrategia exception-ok.
+L14 advisory (preexistente, fuera de alcance): el `applyRequest` generado copia null sobre el valor por defecto de campos opcionales en POST (también para String), así que el default solo aplica si el cliente lo manda. No causado por T3.
+L15 (2026-10-19): "Haz que los tests pasen al 100%" → incluye arreglar el test inestable preexistente (T6b). Estado: mobile 130/130, web 621 + 4 skipped (live, requieren backend levantado), contract-tests 15/15.
+L16 nota de compatibilidad: el contrato nuevo agrega rutas /query /values /aggregate; el `AgentContract.entities` actual del teléfono las tomaría como entidades → T8 debe filtrarlas (mismo PR).
+L17 (2026-10-19): T7 integrado (48aa553). Live tests: FiveUsersLiveTest requiere llama-server en 127.0.0.1:8099 (no levantado); web live requiere VITE_API_BASE_URL contra plataforma; la plataforma en 18090 es un stack de verificación anterior (local-ai-verification-82aa3d6e).
+L18 verificador independiente (fin de feature): sin blockers. Ítem 2 sin bypass; ítem 3 salida del generador aditiva vs 65c5977 (probe con fixture sin enums); ítem 4 esperas acotadas. Advisories: Receipt del agente no ecoa `query` (el canonical sí); un mismatch de scope no descarta la sesión vieja (el siguiente openSession la reemplaza); hueco de documentación de la preselección, corregido.
