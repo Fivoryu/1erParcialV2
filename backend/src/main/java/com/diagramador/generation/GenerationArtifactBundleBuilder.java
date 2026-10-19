@@ -10,6 +10,7 @@ import com.diagramador.domain.GenerationRun;
 import com.diagramador.domain.GenerationTarget;
 import com.diagramador.domain.TemplateVersion;
 import com.diagramador.domain.VerificationState;
+import com.diagramador.generation.DomainModelIR.EnumDeclaration;
 import com.diagramador.generation.DomainModelIR.FieldDeclaration;
 import com.diagramador.generation.DomainModelIR.OperationSignature;
 import com.diagramador.generation.DomainModelIR.RelationshipDescriptor;
@@ -236,14 +237,19 @@ public final class GenerationArtifactBundleBuilder {
         ArrayNode required = schema.putArray("required");
         for (FieldDeclaration field : type.fields()) {
             String name = field.javaName();
-            boolean entityReference = field.type().sourceClassifierId() != null;
+            boolean collection = field.collectionIntent() == DomainModelIR.CollectionIntent.COLLECTION;
+            EnumDeclaration enumeration = ir.enums().stream()
+                    .filter(candidate -> candidate.sourceId().equals(field.type().sourceClassifierId()))
+                    .findFirst().orElse(null);
+            boolean entityReference = field.type().sourceClassifierId() != null && enumeration == null;
             if (entityReference) {
                 name += "Id";
             }
             ObjectNode property = properties.putObject(name);
             ObjectNode valueSchema = entityReference
                     ? uuidSchema()
-                    : typeSchema(field.type(), field.collectionIntent() == DomainModelIR.CollectionIntent.COLLECTION);
+                    : enumeration != null ? enumSchema(enumeration, collection)
+                    : typeSchema(field.type(), collection);
             property.setAll(valueSchema);
             if (field.nullable()) {
                 property.put("nullable", true);
@@ -266,6 +272,21 @@ public final class GenerationArtifactBundleBuilder {
         schema.set("x-uml-operations", operationsExtension(type));
         schema.set("x-uml-relationships", relationshipsExtension(type, ir));
         return schema;
+    }
+
+    private ObjectNode enumSchema(EnumDeclaration enumeration, boolean collection) {
+        ObjectNode literal = objectMapper.createObjectNode();
+        literal.put("type", "string");
+        ArrayNode values = literal.putArray("enum");
+        enumeration.literals().forEach(values::add);
+        literal.put("x-enum-name", enumeration.javaName());
+        if (!collection) {
+            return literal;
+        }
+        ObjectNode array = objectMapper.createObjectNode();
+        array.put("type", "array");
+        array.set("items", literal);
+        return array;
     }
 
     private ObjectNode uuidSchema() {

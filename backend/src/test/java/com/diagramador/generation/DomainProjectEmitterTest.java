@@ -40,6 +40,8 @@ class DomainProjectEmitterTest {
     private static final UUID MANY_END_ID = id(11);
     private static final UUID ONE_END_ID = id(12);
     private static final UUID STRING_REFERENCE_ID = id(20);
+    private static final UUID ORDER_STATUS_ID = id(3);
+    private static final UUID STATUS_REFERENCE_ID = id(21);
     private static final Pattern HOST_PATH = Pattern.compile(
             "(?i)(?:\\b[A-Z]:[\\\\/][^\\s\"'<>]*|(?:^|[\\s\"'=])/(?:home|Users|tmp|var/tmp|workspace|workspaces|mnt)/[^\\s\"'<>]*)");
     private static final Pattern UUID_LITERAL = Pattern.compile(
@@ -111,6 +113,7 @@ class DomainProjectEmitterTest {
                 "src/main/java/com/generated/course/store/api/dto/OrderDto.java",
                 "src/main/java/com/generated/course/store/domain/Customer.java",
                 "src/main/java/com/generated/course/store/domain/Order.java",
+                "src/main/java/com/generated/course/store/domain/OrderStatus.java",
                 "src/main/java/com/generated/course/store/repository/CustomerRepository.java",
                 "src/main/java/com/generated/course/store/repository/OrderRepository.java",
                 "src/main/java/com/generated/course/store/service/CustomerService.java",
@@ -141,6 +144,41 @@ class DomainProjectEmitterTest {
                 .contains("private String displayName =", "Guest");
         assertThat(files.get("src/main/resources/db/migration/V1__init.sql"))
                 .contains("display_name", "VARCHAR(255)", "DEFAULT 'Guest' NOT NULL");
+    }
+
+    @Test
+    void enumerationWithoutValidLiteralsIsABlockingDiagnostic() {
+        InputSnapshot full = snapshot(false);
+        InputSnapshot withoutLiterals = new InputSnapshot(full.source(), full.modelId(), full.versionId(),
+                full.revision(), full.modelStateHash(), full.validationState(), full.snapshotHash(),
+                full.classifiers(), full.attributes().stream().filter(a -> !"LITERAL".equals(a.kind())).toList(),
+                full.operations(), full.parameters(), full.typeReferences(), full.relationships(),
+                full.relationshipEnds(), full.constraints(), full.canonicalProjection());
+
+        DomainModelIR ir = mapper.map(withoutLiterals);
+
+        assertThat(ir.hasBlockingDiagnostics()).isTrue();
+        assertThat(ir.diagnostics()).anyMatch(diagnostic -> diagnostic.code().equals("EMPTY_ENUMERATION")
+                && diagnostic.elementId().equals(ORDER_STATUS_ID));
+    }
+
+    @Test
+    void enumerationBecomesJavaEnumStoredAsCheckedString() {
+        Map<String, String> files = emitter.emit("course-store", mapper.map(snapshot(false)));
+
+        assertThat(files.get("src/main/java/com/generated/course/store/domain/OrderStatus.java"))
+                .isEqualTo("package com.generated.course.store.domain;\n\npublic enum OrderStatus {\n"
+                        + "    OPEN,\n    CLOSED\n}\n");
+        assertThat(files.get("src/main/java/com/generated/course/store/domain/Order.java"))
+                .contains("@Enumerated(EnumType.STRING)",
+                        "private com.generated.course.store.domain.OrderStatus status = "
+                                + "com.generated.course.store.domain.OrderStatus.OPEN;")
+                .doesNotContain("order_status_id");
+        assertThat(files.get("src/main/java/com/generated/course/store/api/dto/OrderDto.java"))
+                .contains("OrderStatus status");
+        assertThat(files.get("src/main/resources/db/migration/V1__init.sql"))
+                .contains("\"status\" VARCHAR(64) DEFAULT 'OPEN'",
+                        "CHECK (\"status\" IN ('OPEN', 'CLOSED'))");
     }
 
     @Test
@@ -322,20 +360,28 @@ class DomainProjectEmitterTest {
         String parentId = JSON.readTree(createdCustomer.body()).get("id").asText();
 
         HttpResponse<String> createdOrder = request("POST", "/api/order",
-                JSON.writeValueAsString(Map.of("orderNumber", "Order " + suffix, "customerId", parentId)));
+                JSON.writeValueAsString(Map.of("orderNumber", "Order " + suffix, "customerId", parentId,
+                        "status", "OPEN")));
         assertThat(createdOrder.statusCode()).isEqualTo(201);
         JsonNode createdBody = JSON.readTree(createdOrder.body());
         String orderId = createdBody.get("id").asText();
         assertThat(createdBody.get("customerId").asText()).isEqualTo(parentId);
+        assertThat(createdBody.get("status").asText()).isEqualTo("OPEN");
+        HttpResponse<String> unknownStatus = request("POST", "/api/order", JSON.writeValueAsString(
+                Map.of("orderNumber", "Bad " + suffix, "customerId", parentId, "status", "LOST")));
+        assertThat(unknownStatus.statusCode()).isEqualTo(400);
+        assertErrorShape(JSON.readTree(unknownStatus.body()), "INVALID_REQUEST");
 
         HttpResponse<String> readOrder = request("GET", "/api/order/" + orderId, null);
         assertThat(readOrder.statusCode()).isEqualTo(200);
         assertThat(JSON.readTree(readOrder.body()).get("customerId").asText()).isEqualTo(parentId);
 
         HttpResponse<String> updatedOrder = request("PUT", "/api/order/" + orderId,
-                JSON.writeValueAsString(Map.of("orderNumber", "Updated " + suffix, "customerId", parentId)));
+                JSON.writeValueAsString(Map.of("orderNumber", "Updated " + suffix, "customerId", parentId,
+                        "status", "CLOSED")));
         assertThat(updatedOrder.statusCode()).isEqualTo(200);
         assertThat(JSON.readTree(updatedOrder.body()).get("customerId").asText()).isEqualTo(parentId);
+        assertThat(JSON.readTree(updatedOrder.body()).get("status").asText()).isEqualTo("CLOSED");
 
         HttpResponse<String> deletedOrder = request("DELETE", "/api/order/" + orderId, null);
         assertThat(deletedOrder.statusCode()).isEqualTo(204);
@@ -419,15 +465,24 @@ class DomainProjectEmitterTest {
                 InputSnapshotFactory.sha256(projection),
                 List.of(
                         new InputSnapshot.ClassifierElement(CUSTOMER_ID, null, ClassifierKind.CLASS, "Customer", false),
-                        new InputSnapshot.ClassifierElement(ORDER_ID, null, ClassifierKind.CLASS, "Order", false)),
+                        new InputSnapshot.ClassifierElement(ORDER_ID, null, ClassifierKind.CLASS, "Order", false),
+                        new InputSnapshot.ClassifierElement(ORDER_STATUS_ID, null, ClassifierKind.ENUMERATION,
+                                "OrderStatus", false)),
                 List.of(
                         new InputSnapshot.AttributeElement(id(30), CUSTOMER_ID, STRING_REFERENCE_ID, "displayName",
                                 "ATTRIBUTE", "PRIVATE", MultiplicityKind.EXACTLY_ONE, "Guest", 0),
                         new InputSnapshot.AttributeElement(id(31), ORDER_ID, STRING_REFERENCE_ID, "orderNumber",
-                                "ATTRIBUTE", "PRIVATE", MultiplicityKind.EXACTLY_ONE, null, 0)),
+                                "ATTRIBUTE", "PRIVATE", MultiplicityKind.EXACTLY_ONE, null, 0),
+                        new InputSnapshot.AttributeElement(id(32), ORDER_ID, STATUS_REFERENCE_ID, "status",
+                                "ATTRIBUTE", "PRIVATE", MultiplicityKind.ZERO_OR_ONE, "OPEN", 1),
+                        new InputSnapshot.AttributeElement(id(33), ORDER_STATUS_ID, null, "OPEN",
+                                "LITERAL", "PUBLIC", MultiplicityKind.EXACTLY_ONE, null, 0),
+                        new InputSnapshot.AttributeElement(id(34), ORDER_STATUS_ID, null, "CLOSED",
+                                "LITERAL", "PUBLIC", MultiplicityKind.EXACTLY_ONE, null, 1)),
                 List.of(),
                 List.of(),
-                List.of(new InputSnapshot.TypeReferenceElement(STRING_REFERENCE_ID, null, "String")),
+                List.of(new InputSnapshot.TypeReferenceElement(STRING_REFERENCE_ID, null, "String"),
+                        new InputSnapshot.TypeReferenceElement(STATUS_REFERENCE_ID, ORDER_STATUS_ID, null)),
                 List.of(new InputSnapshot.RelationshipElement(RELATIONSHIP_ID, RelationshipKind.ASSOCIATION,
                         "CustomerOrders")),
                 List.of(
@@ -461,7 +516,7 @@ class DomainProjectEmitterTest {
                 String.join(" ", command), exitCode, durationMillis, output);
         assertThat(completed).as("nested mvn -o -B package completed within five minutes\n" + output).isTrue();
         assertThat(exitCode).as("nested mvn -o -B package output\n" + output).isZero();
-        assertThat(output).contains("Compiling 14 source files", "BUILD SUCCESS");
+        assertThat(output).contains("Compiling 15 source files", "BUILD SUCCESS");
     }
 
     private static void awaitGeneratedApplication() throws Exception {

@@ -6,6 +6,7 @@ import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.SeverityKind;
 import com.diagramador.generation.DomainModelIR.CollectionIntent;
+import com.diagramador.generation.DomainModelIR.EnumDeclaration;
 import com.diagramador.generation.DomainModelIR.FieldDeclaration;
 import com.diagramador.generation.DomainModelIR.LifecycleIntent;
 import com.diagramador.generation.DomainModelIR.MultiplicityBounds;
@@ -105,11 +106,13 @@ public final class DomainModelIRMapper {
                 typeNamesById, primitiveTypes, diagnostics);
         RelationshipMapping relationshipMapping = buildRelationships(snapshot, classifiersById, typeNamesById,
                 diagnostics);
+        List<EnumDeclaration> enums = buildEnums(snapshot, classifiers, classifiersById, typeNamesById, diagnostics);
         rejectUnmappedConstraints(snapshot, diagnostics);
 
         List<SourceArtifactMapping> sourceToArtifacts = buildSourceArtifactMappings(snapshot, types,
                 relationshipMapping, packages);
-        return new DomainModelIR(packages, types, relationshipMapping.relationships(), sourceToArtifacts, diagnostics);
+        return new DomainModelIR(packages, types, relationshipMapping.relationships(), sourceToArtifacts, diagnostics,
+                enums);
     }
 
     private List<PackageDeclaration> buildPackages(
@@ -158,12 +161,13 @@ public final class DomainModelIRMapper {
                 snapshot.operations().stream().sorted(OPERATION_ORDER).toList(), OperationElement::id);
 
         for (ClassifierElement classifier : classifiers) {
-            if (classifier.kind() == ClassifierKind.INTERFACE || classifier.kind() == ClassifierKind.ENUMERATION) {
+            if (classifier.kind() == ClassifierKind.INTERFACE) {
                 addDiagnostic(diagnostics, "UNSUPPORTED_UML_FEATURE", classifier.id(), classifier.kind().name(),
                         "The Increment 2 subset does not map classifier feature '" + classifier.kind().name() + "'.");
             } else if (classifier.kind() != ClassifierKind.CLASS
                     && classifier.kind() != ClassifierKind.ABSTRACT_CLASS
-                    && classifier.kind() != ClassifierKind.PACKAGE) {
+                    && classifier.kind() != ClassifierKind.PACKAGE
+                    && classifier.kind() != ClassifierKind.ENUMERATION) {
                 addDiagnostic(diagnostics, "UNSUPPORTED_UML_FEATURE", classifier.id(), "classifierKind",
                         "The classifier kind cannot be mapped by the Increment 2 subset.");
             }
@@ -172,6 +176,9 @@ public final class DomainModelIRMapper {
         Map<UUID, List<FieldDeclaration>> fieldsByClassifier = new HashMap<>();
         List<AttributeElement> attributes = snapshot.attributes().stream().sorted(ATTRIBUTE_ORDER).toList();
         for (AttributeElement attribute : attributes) {
+            if (isEnumerationLiteral(attribute, classifiersById)) {
+                continue;
+            }
             TypeUse type = resolveType(attribute.typeReferenceId(), attribute.id(), "type",
                     typeReferencesById, classifiersById, typeNamesById, primitiveTypes, diagnostics, false);
             String visibility = normalizedVisibility(attribute.visibility(), attribute.id(), diagnostics);
@@ -255,6 +262,51 @@ public final class DomainModelIRMapper {
                     signaturesByClassifier.getOrDefault(classifier.id(), List.of())));
         }
         return types;
+    }
+
+    private static boolean isEnumerationLiteral(AttributeElement attribute, Map<UUID, ClassifierElement> classifiersById) {
+        ClassifierElement owner = classifiersById.get(attribute.classifierId());
+        return owner != null && owner.kind() == ClassifierKind.ENUMERATION && "LITERAL".equals(attribute.kind());
+    }
+
+    private List<EnumDeclaration> buildEnums(
+            InputSnapshot snapshot,
+            List<ClassifierElement> classifiers,
+            Map<UUID, ClassifierElement> classifiersById,
+            Map<UUID, TypeName> typeNamesById,
+            List<GenerationDiagnostic> diagnostics) {
+        Map<UUID, List<AttributeElement>> attributesByClassifier = group(
+                snapshot.attributes().stream().sorted(ATTRIBUTE_ORDER).toList(), AttributeElement::classifierId);
+        List<EnumDeclaration> enums = new ArrayList<>();
+        for (ClassifierElement classifier : classifiers) {
+            if (classifier.kind() != ClassifierKind.ENUMERATION) {
+                continue;
+            }
+            List<String> literals = new ArrayList<>();
+            for (AttributeElement attribute : attributesByClassifier.getOrDefault(classifier.id(), List.of())) {
+                if (!isEnumerationLiteral(attribute, classifiersById)) {
+                    addDiagnostic(diagnostics, "UNSUPPORTED_UML_FEATURE", attribute.id(), "enumerationAttribute",
+                            "Enumeration '" + safeName(classifier.name(), "unnamed")
+                                    + "' can only own literals, not attribute '" + safeName(attribute.name(), "unnamed")
+                                    + "'.");
+                } else if (attribute.name() == null || !attribute.name().matches("[A-Za-z_][A-Za-z0-9_]*")
+                        || literals.contains(attribute.name())) {
+                    addDiagnostic(diagnostics, "INVALID_ENUMERATION_LITERAL", attribute.id(), "name",
+                            "Enumeration literal '" + safeName(attribute.name(), "unnamed")
+                                    + "' must be a unique identifier.");
+                } else {
+                    literals.add(attribute.name());
+                }
+            }
+            if (literals.isEmpty()) {
+                addDiagnostic(diagnostics, "EMPTY_ENUMERATION", classifier.id(), "literals",
+                        "Enumeration '" + safeName(classifier.name(), "unnamed") + "' needs at least one literal.");
+            }
+            TypeName typeName = typeNamesById.get(classifier.id());
+            enums.add(new EnumDeclaration(classifier.id(), typeName.sourceName(), typeName.javaName(),
+                    typeName.javaPackageName(), literals));
+        }
+        return enums;
     }
 
     private RelationshipMapping buildRelationships(
@@ -410,7 +462,9 @@ public final class DomainModelIRMapper {
             return TypeUse.unresolved(typeReferenceId);
         }
         String javaType = qualifiedType(typeName.javaPackageName(), typeName.javaName());
-        return new TypeUse(typeReferenceId, classifier.id(), typeName.sourceName(), javaType, null, true);
+        // An enumeration is a scalar column (its literal name), not a foreign key.
+        String sqlType = classifier.kind() == ClassifierKind.ENUMERATION ? "VARCHAR(64)" : null;
+        return new TypeUse(typeReferenceId, classifier.id(), typeName.sourceName(), javaType, sqlType, true);
     }
 
     private List<SourceArtifactMapping> buildSourceArtifactMappings(

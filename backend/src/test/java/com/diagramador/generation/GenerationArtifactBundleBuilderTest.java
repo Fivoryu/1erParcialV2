@@ -157,6 +157,35 @@ class GenerationArtifactBundleBuilderTest {
     }
 
     @Test
+    void openApiPublishesEnumerationLiteralsInsteadOfAForeignKey() throws Exception {
+        InputSnapshot snapshot = snapshot("Guest");
+        DomainModelIR base = ir("displayName", "Guest", false);
+        UUID statusId = id(701);
+        TypeUse statusType = new TypeUse(id(702), statusId, "OrderStatus", "OrderStatus", "VARCHAR(64)", true);
+        FieldDeclaration status = new FieldDeclaration(id(703), "status", "status", statusType, "PRIVATE",
+                MultiplicityKind.ZERO_OR_ONE, new MultiplicityBounds(0, 1), true, CollectionIntent.SINGLE_VALUE,
+                null, 1);
+        List<TypeDeclaration> types = base.types().stream().map(type -> !type.sourceId().equals(ORDER_ID) ? type
+                : new TypeDeclaration(type.sourceId(), null, type.classifierKind(), type.sourceName(),
+                        type.javaName(), type.javaPackageName(), type.tableName(), false,
+                        java.util.stream.Stream.concat(type.fields().stream(), java.util.stream.Stream.of(status))
+                                .toList(), type.operations())).toList();
+        DomainModelIR ir = new DomainModelIR(base.packages(), types, base.relationships(), List.of(),
+                base.diagnostics(), List.of(new DomainModelIR.EnumDeclaration(statusId, "OrderStatus",
+                        "OrderStatus", "", List.of("OPEN", "CLOSED"))));
+
+        GeneratedArtifactBundle bundle = builder.build(identity("course-store", snapshot, 1), snapshot, ir,
+                VerificationState.NOT_RUN);
+        JsonNode openApi = JSON.readTree(bundle.files().get(GenerationArtifactBundleBuilder.OPENAPI_PATH));
+
+        JsonNode property = openApi.at("/components/schemas/OrderDto/properties/status");
+        assertThat(property.path("type").asText()).isEqualTo("string");
+        assertThat(property.path("enum").toString()).isEqualTo("[\"OPEN\",\"CLOSED\"]");
+        assertThat(property.path("x-enum-name").asText()).isEqualTo("OrderStatus");
+        assertThat(openApi.at("/components/schemas/OrderDto/properties/statusId").isMissingNode()).isTrue();
+    }
+
+    @Test
     void provenanceRecordsFrozenIdentitiesDiagnosticsManifestAndVerificationStatus() throws Exception {
         InputSnapshot snapshot = snapshot("Guest");
         GeneratedArtifactBundle bundle = builder.build(identity("course-store", snapshot, 1), snapshot,

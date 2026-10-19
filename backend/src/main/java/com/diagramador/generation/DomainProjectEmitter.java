@@ -1,6 +1,7 @@
 package com.diagramador.generation;
 
 import com.diagramador.generation.DomainModelIR.CollectionIntent;
+import com.diagramador.generation.DomainModelIR.EnumDeclaration;
 import com.diagramador.generation.DomainModelIR.FieldDeclaration;
 import com.diagramador.generation.DomainModelIR.LifecycleIntent;
 import com.diagramador.generation.DomainModelIR.OperationSignature;
@@ -65,7 +66,8 @@ public final class DomainProjectEmitter {
         }
 
         TargetNames target = targetNames(targetKey);
-        Map<UUID, EntityPlan> plans = createPlans(target.basePackage(), ir.types());
+        Map<UUID, EnumPlan> enumPlans = createEnumPlans(target.basePackage(), ir.enums());
+        Map<UUID, EntityPlan> plans = createPlans(target.basePackage(), ir.types(), enumPlans);
         attachRelationships(plans, ir.relationships());
         validatePlans(plans.values());
 
@@ -90,11 +92,14 @@ public final class DomainProjectEmitter {
         List<EntityPlan> orderedPlans = plans.values().stream()
                 .sorted((left, right) -> left.qualifiedName.compareTo(right.qualifiedName)).toList();
         for (EntityPlan plan : orderedPlans) {
-            put(files, entityPath(plan), entitySource(plan, plans));
+            put(files, entityPath(plan), entitySource(plan, plans, enumPlans));
             put(files, dtoPath(plan, target.basePackage()), dtoSource(plan, target.basePackage()));
             put(files, repositoryPath(plan, target.basePackage()), repositorySource(plan, target.basePackage()));
             put(files, servicePath(plan, target.basePackage()), serviceSource(plan, target.basePackage()));
             put(files, controllerPath(plan, target.basePackage()), controllerSource(plan, target.basePackage()));
+        }
+        for (EnumPlan enumPlan : enumPlans.values()) {
+            put(files, javaPath(enumPlan.packageName(), enumPlan.declaration().javaName()), enumSource(enumPlan));
         }
         put(files, "src/main/resources/application.yml", applicationYaml());
         put(files, "src/main/resources/db/migration/V1__init.sql", migration(orderedPlans));
@@ -110,7 +115,29 @@ public final class DomainProjectEmitter {
         return Collections.unmodifiableMap(new LinkedHashMap<>(files));
     }
 
-    private Map<UUID, EntityPlan> createPlans(String rootPackage, List<TypeDeclaration> types) {
+    private Map<UUID, EnumPlan> createEnumPlans(String rootPackage, List<EnumDeclaration> enums) {
+        Map<UUID, EnumPlan> plans = new LinkedHashMap<>();
+        for (EnumDeclaration declaration : enums) {
+            requireJavaIdentifier(declaration.javaName(), "enumeration name");
+            if (declaration.literals().isEmpty()) {
+                throw new IllegalArgumentException("Cannot emit an enumeration without literals: "
+                        + declaration.javaName());
+            }
+            declaration.literals().forEach(literal -> requireJavaIdentifier(literal, "enumeration literal"));
+            String packageName = entityPackage(rootPackage, declaration.javaPackageName());
+            plans.put(declaration.sourceId(), new EnumPlan(declaration, packageName,
+                    packageName + "." + declaration.javaName()));
+        }
+        return plans;
+    }
+
+    private static String enumSource(EnumPlan plan) {
+        return "package " + plan.packageName() + ";\n\npublic enum " + plan.declaration().javaName() + " {\n    "
+                + String.join(",\n    ", plan.declaration().literals()) + "\n}\n";
+    }
+
+    private Map<UUID, EntityPlan> createPlans(String rootPackage, List<TypeDeclaration> types,
+            Map<UUID, EnumPlan> enumPlans) {
         Map<UUID, EntityPlan> plans = new HashMap<>();
         for (TypeDeclaration type : types) {
             requireJavaIdentifier(type.javaName(), "class name");
@@ -125,7 +152,10 @@ public final class DomainProjectEmitter {
         for (EntityPlan plan : plans.values()) {
             for (FieldDeclaration field : plan.type.fields()) {
                 requireJavaIdentifier(field.javaName(), "attribute name");
-                EntityPlan referencedType = field.type().sourceClassifierId() == null
+                EnumPlan enumType = field.type().sourceClassifierId() == null
+                        ? null
+                        : enumPlans.get(field.type().sourceClassifierId());
+                EntityPlan referencedType = field.type().sourceClassifierId() == null || enumType != null
                         ? null
                         : requirePlan(plans, field.type().sourceClassifierId());
                 if (!field.type().resolved()) {
@@ -137,15 +167,18 @@ public final class DomainProjectEmitter {
                 if (field.collectionIntent() == CollectionIntent.COLLECTION && referencedType != null) {
                     throw new IllegalArgumentException("Entity-valued collection attributes need a relationship descriptor");
                 }
-                String javaType = referencedType == null
+                String javaType = enumType != null ? enumType.qualifiedName()
+                        : referencedType == null
                         ? requireJavaType(field.type().javaTypeName(), field.javaName())
                         : referencedType.qualifiedName;
                 String sqlType = referencedType == null ? requireSqlType(field.type().sqlTypeName(), field.javaName())
                         : "UUID";
                 String columnName = snakeCase(field.javaName());
                 requireSqlIdentifier(columnName, "attribute column");
+                String javaDefault = enumType != null ? enumDefault(field, enumType)
+                        : javaDefaultValue(field, javaType, referencedType);
                 plan.attributes.add(new AttributePlan(field, javaType, sqlType, columnName, referencedType,
-                        javaDefaultValue(field, javaType, referencedType), sqlDefaultValue(field, sqlType, referencedType)));
+                        javaDefault, sqlDefaultValue(field, sqlType, referencedType), enumType));
             }
         }
         return plans;
@@ -183,7 +216,8 @@ public final class DomainProjectEmitter {
         }
     }
 
-    private String entitySource(EntityPlan plan, Map<UUID, EntityPlan> plans) {
+    private String entitySource(EntityPlan plan, Map<UUID, EntityPlan> plans,
+            Map<UUID, EnumPlan> enumPlans) {
         TreeSet<String> imports = new TreeSet<>(Set.of(
                 "jakarta.persistence.Column", "jakarta.persistence.Entity", "jakarta.persistence.FetchType",
                 "jakarta.persistence.GeneratedValue", "jakarta.persistence.GenerationType", "jakarta.persistence.Id",
@@ -200,6 +234,10 @@ public final class DomainProjectEmitter {
         if (plan.attributes.stream().anyMatch(attribute -> attribute.source().collectionIntent() == CollectionIntent.COLLECTION)) {
             imports.add("jakarta.persistence.CollectionTable");
             imports.add("jakarta.persistence.ElementCollection");
+        }
+        if (plan.attributes.stream().anyMatch(attribute -> attribute.enumType() != null)) {
+            imports.add("jakarta.persistence.EnumType");
+            imports.add("jakarta.persistence.Enumerated");
         }
         plan.attributes.stream().filter(attribute -> attribute.referencedType() != null)
                 .forEach(attribute -> imports.add(attribute.referencedType().qualifiedName));
@@ -242,6 +280,9 @@ public final class DomainProjectEmitter {
             } else {
                 source.append("    @Column(name = ").append(javaString(quoted(attribute.columnName())))
                         .append(", nullable = ").append(field.nullable()).append(")\n");
+            }
+            if (attribute.enumType() != null) {
+                source.append("    @Enumerated(EnumType.STRING)\n");
             }
             String declarationType = field.collectionIntent() == CollectionIntent.COLLECTION
                     ? "List<" + boxed(attribute.javaType()) + ">"
@@ -295,7 +336,7 @@ public final class DomainProjectEmitter {
             appendGetter(source, "List<" + relation.owning().qualifiedName + ">",
                     relation.descriptor().inverseCollectionFieldName());
         }
-        appendOperationStubs(source, plan, plans);
+        appendOperationStubs(source, plan, plans, enumPlans);
         source.append("}\n");
         return source.toString();
     }
@@ -890,7 +931,8 @@ public final class DomainProjectEmitter {
                         : attribute.columnName() + "_id";
                 columns.add(quoted(columnName) + " " + attribute.sqlType()
                         + (attribute.sqlDefaultValue() == null ? "" : " DEFAULT " + attribute.sqlDefaultValue())
-                        + (attribute.source().nullable() ? "" : " NOT NULL"));
+                        + (attribute.source().nullable() ? "" : " NOT NULL")
+                        + enumCheck(attribute));
             }
             for (OwningRelationshipPlan relationship : plan.owningRelationships) {
                 RelationshipDescriptor descriptor = relationship.descriptor();
@@ -926,17 +968,32 @@ public final class DomainProjectEmitter {
                         + quoted(plan.type.tableName() + "_id") + " UUID NOT NULL REFERENCES "
                         + quoted(plan.type.tableName()) + " (" + quoted("id") + "),\n  "
                         + quoted("value") + " " + attribute.sqlType()
-                        + (attribute.source().nullable() ? "" : " NOT NULL") + "\n);");
+                        + (attribute.source().nullable() ? "" : " NOT NULL") + enumCheck(attribute, "value") + "\n);");
             }
         }
         return lines(statements.toArray(String[]::new));
     }
 
-    private void appendOperationStubs(StringBuilder source, EntityPlan plan, Map<UUID, EntityPlan> plans) {
+    private static String enumCheck(AttributePlan attribute) {
+        return enumCheck(attribute, attribute.columnName());
+    }
+
+    private static String enumCheck(AttributePlan attribute, String columnName) {
+        if (attribute.enumType() == null) {
+            return "";
+        }
+        return " CHECK (" + quoted(columnName) + " IN ("
+                + String.join(", ", attribute.enumType().declaration().literals().stream()
+                        .map(literal -> "'" + literal + "'").toList())
+                + "))";
+    }
+
+    private void appendOperationStubs(StringBuilder source, EntityPlan plan, Map<UUID, EntityPlan> plans,
+            Map<UUID, EnumPlan> enumPlans) {
         for (OperationSignature operation : plan.type.operations()) {
-            String returnType = operationType(operation.returnType(), plans);
+            String returnType = operationType(operation.returnType(), plans, enumPlans);
             List<String> parameters = operation.parameters().stream()
-                    .map(parameter -> operationType(parameter.type(), plans) + " " + parameter.javaName()).toList();
+                    .map(parameter -> operationType(parameter.type(), plans, enumPlans) + " " + parameter.javaName()).toList();
             String visibility = switch (operation.visibility().toUpperCase(Locale.ROOT)) {
                 case "PRIVATE" -> "private";
                 case "PROTECTED" -> "protected";
@@ -959,9 +1016,12 @@ public final class DomainProjectEmitter {
         }
     }
 
-    private String operationType(TypeUse type, Map<UUID, EntityPlan> plans) {
+    private String operationType(TypeUse type, Map<UUID, EntityPlan> plans, Map<UUID, EnumPlan> enumPlans) {
         if (!type.resolved()) {
             throw new IllegalArgumentException("Cannot emit an operation with an unresolved type");
+        }
+        if (type.sourceClassifierId() != null && enumPlans.containsKey(type.sourceClassifierId())) {
+            return enumPlans.get(type.sourceClassifierId()).qualifiedName();
         }
         if (type.sourceClassifierId() != null) {
             return requirePlan(plans, type.sourceClassifierId()).qualifiedName;
@@ -1035,6 +1095,21 @@ public final class DomainProjectEmitter {
         }
         String slug = String.join("-", parts);
         return new TargetNames(slug, "com.generated." + String.join(".", parts));
+    }
+
+    private static String enumDefault(FieldDeclaration field, EnumPlan enumType) {
+        String value = field.defaultValue();
+        if (value == null) {
+            return null;
+        }
+        if (field.collectionIntent() == CollectionIntent.COLLECTION) {
+            throw new IllegalArgumentException("Default values for collections are unsupported: " + field.javaName());
+        }
+        if (!enumType.declaration().literals().contains(value)) {
+            throw new IllegalArgumentException("Default value of " + field.javaName() + " is not a literal of "
+                    + enumType.declaration().javaName() + ": " + value);
+        }
+        return enumType.qualifiedName() + "." + value;
     }
 
     private static String javaDefaultValue(FieldDeclaration field, String javaType, EntityPlan referencedType) {
@@ -1283,7 +1358,10 @@ public final class DomainProjectEmitter {
     }
 
     private record AttributePlan(FieldDeclaration source, String javaType, String sqlType, String columnName,
-            EntityPlan referencedType, String javaDefaultValue, String sqlDefaultValue) {
+            EntityPlan referencedType, String javaDefaultValue, String sqlDefaultValue, EnumPlan enumType) {
+    }
+
+    private record EnumPlan(EnumDeclaration declaration, String packageName, String qualifiedName) {
     }
 
     private record OwningRelationshipPlan(RelationshipDescriptor descriptor, EntityPlan referenced) {
