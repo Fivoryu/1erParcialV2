@@ -48,6 +48,17 @@ public final class GenerationResources {
             int templateRevision) {
     }
 
+    public record GenerationReadinessResource(
+            UUID versionId,
+            String profile,
+            boolean ready,
+            List<GenerationDiagnostic> diagnostics) {
+
+        public GenerationReadinessResource {
+            diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        }
+    }
+
     public record CreateGenerationRequest(
             @NotNull UUID modelId,
             @NotNull UUID versionId,

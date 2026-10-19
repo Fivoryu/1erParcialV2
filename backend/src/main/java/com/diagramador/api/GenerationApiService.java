@@ -4,6 +4,7 @@ import static com.diagramador.api.GenerationResources.ArtifactDownload;
 import static com.diagramador.api.GenerationResources.CreateGenerationRequest;
 import static com.diagramador.api.GenerationResources.CreateGenerationTargetRequest;
 import static com.diagramador.api.GenerationResources.GenerationProfileResource;
+import static com.diagramador.api.GenerationResources.GenerationReadinessResource;
 import static com.diagramador.api.GenerationResources.GenerationRunResource;
 import static com.diagramador.api.GenerationResources.GenerationTargetResource;
 import static com.diagramador.api.GenerationResources.OperationOutcomeResource;
@@ -86,6 +87,15 @@ public class GenerationApiService {
         UmlModel model = requireMemberModel(projectId);
         return identityService.listTargets(model.getId()).stream()
                 .map(target -> targetResource(target, model.getId())).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public GenerationReadinessResource checkReadiness(UUID projectId, UUID versionId) {
+        requireMemberModel(projectId);
+        var readiness = identityService.preflight(projectId, versionId)
+                .orElseThrow(() -> notFound("Model version was not found."));
+        return new GenerationReadinessResource(readiness.versionId(), readiness.profile(), readiness.ready(),
+                readiness.diagnostics());
     }
 
     public List<GenerationProfileResource> listProfiles(UUID projectId) {

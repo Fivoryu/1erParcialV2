@@ -4,12 +4,14 @@ import static com.diagramador.api.GenerationResources.ArtifactDownload;
 import static com.diagramador.api.GenerationResources.CreateGenerationRequest;
 import static com.diagramador.api.GenerationResources.CreateGenerationTargetRequest;
 import static com.diagramador.api.GenerationResources.GenerationProfileResource;
+import static com.diagramador.api.GenerationResources.GenerationReadinessResource;
 import static com.diagramador.api.GenerationResources.OperationOutcomeResource;
 
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -45,6 +48,29 @@ public class GenerationController {
     @GetMapping("/{projectId}/generation-profiles")
     public List<GenerationProfileResource> listProfiles(@PathVariable("projectId") UUID projectId) {
         return generationApiService.listProfiles(projectId);
+    }
+
+    @GetMapping("/{projectId}/generation-readiness")
+    public GenerationReadinessResource checkReadiness(@PathVariable("projectId") UUID projectId,
+            @RequestParam(name = "versionId", required = false) String versionId) {
+        return generationApiService.checkReadiness(projectId, parseVersionId(versionId));
+    }
+
+    private static UUID parseVersionId(String versionId) {
+        if (versionId == null || versionId.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PAYLOAD",
+                    "Query parameter 'versionId' is required.", List.of(), null);
+        }
+        try {
+            UUID parsed = UUID.fromString(versionId);
+            if (!parsed.toString().equalsIgnoreCase(versionId)) {
+                throw new IllegalArgumentException("Non-canonical UUID");
+            }
+            return parsed;
+        } catch (IllegalArgumentException malformed) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PAYLOAD",
+                    "Query parameter 'versionId' must be a valid UUID.", List.of(), null);
+        }
     }
 
     @PostMapping(path = "/{projectId}/generations", consumes = MediaType.APPLICATION_JSON_VALUE)
