@@ -25,8 +25,11 @@ public final class QueryFieldCatalog {
         STRING, INTEGER, LONG, DOUBLE, DECIMAL, BOOLEAN, DATE, DATETIME, UUID, ENUM
     }
 
-    /** {@code enumeration} is set only for {@link Kind#ENUM}. */
-    public record QueryField(String name, String jpaPath, Kind kind, EnumDeclaration enumeration) {
+    /**
+     * {@code enumeration} is set only for {@link Kind#ENUM}; {@code references} is the table name of the entity a
+     * reference id points to, so a client can resolve its display fields.
+     */
+    public record QueryField(String name, String jpaPath, Kind kind, EnumDeclaration enumeration, String references) {
     }
 
     public static final List<String> OPERATORS = List.of("eq", "ne", "gt", "gte", "lt", "lte", "contains", "in",
@@ -44,7 +47,9 @@ public final class QueryFieldCatalog {
                 .collect(Collectors.toMap(TypeDeclaration::sourceId, Function.identity(), (left, right) -> left));
         Map<UUID, EnumDeclaration> enums = ir.enums().stream()
                 .collect(Collectors.toMap(EnumDeclaration::sourceId, Function.identity(), (left, right) -> left));
-        List<QueryField> fields = new ArrayList<>(scalars(type, enums, ""));
+        List<QueryField> fields = new ArrayList<>();
+        fields.add(new QueryField("id", "id", Kind.UUID, null, null));
+        fields.addAll(scalars(type, enums, ""));
         for (FieldDeclaration field : type.fields()) {
             UUID referenced = field.type().sourceClassifierId();
             if (referenced != null && !enums.containsKey(referenced) && types.containsKey(referenced)
@@ -64,7 +69,7 @@ public final class QueryFieldCatalog {
 
     private static void addReference(List<QueryField> fields, String fieldName, TypeDeclaration referenced,
             Map<UUID, EnumDeclaration> enums) {
-        fields.add(new QueryField(fieldName + "Id", fieldName + ".id", Kind.UUID, null));
+        fields.add(new QueryField(fieldName + "Id", fieldName + ".id", Kind.UUID, null, referenced.tableName()));
         fields.addAll(scalars(referenced, enums, fieldName + "."));
     }
 
@@ -77,10 +82,10 @@ public final class QueryFieldCatalog {
             UUID classifier = field.type().sourceClassifierId();
             if (classifier != null && enums.containsKey(classifier)) {
                 fields.add(new QueryField(prefix + field.javaName(), prefix + field.javaName(), Kind.ENUM,
-                        enums.get(classifier)));
+                        enums.get(classifier), null));
             } else if (classifier == null) {
                 kind(field.type().javaTypeName()).ifPresent(kind -> fields.add(
-                        new QueryField(prefix + field.javaName(), prefix + field.javaName(), kind, null)));
+                        new QueryField(prefix + field.javaName(), prefix + field.javaName(), kind, null, null)));
             }
         }
         return fields;

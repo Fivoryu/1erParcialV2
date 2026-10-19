@@ -390,6 +390,9 @@ public final class GenerationArtifactBundleBuilder {
             if (field.enumeration() != null) {
                 field.enumeration().literals().forEach(item.putArray("enum")::add);
             }
+            if (field.references() != null) {
+                item.put("references", field.references());
+            }
         }
         schema.set("x-uml-operations", operationsExtension(type));
         schema.set("x-uml-relationships", relationshipsExtension(type, ir));

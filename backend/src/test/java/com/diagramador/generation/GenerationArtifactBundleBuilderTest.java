@@ -143,8 +143,10 @@ class GenerationArtifactBundleBuilderTest {
         assertThat(openApi.at("/paths/~1api~1order~1aggregate/get/parameters/0/schema/enum").toString())
                 .isEqualTo("[\"count\",\"sum\",\"avg\",\"min\",\"max\"]");
         assertThat(openApi.at("/paths/~1api~1order~1values/get/parameters/0/schema/enum").toString())
-                .isEqualTo("[\"orderNumber\",\"customerId\",\"customer.displayName\"]");
+                .isEqualTo("[\"id\",\"orderNumber\",\"customerId\",\"customer.displayName\"]");
         assertThat(openApi.at("/components/schemas/OrderDto/x-query-fields/2").toString())
+                .isEqualTo("{\"name\":\"customerId\",\"kind\":\"UUID\",\"references\":\"customer\"}");
+        assertThat(openApi.at("/components/schemas/OrderDto/x-query-fields/3").toString())
                 .isEqualTo("{\"name\":\"customer.displayName\",\"kind\":\"STRING\"}");
         assertThat(openApi.at("/x-agent-capabilities/filterSyntax").asText()).isEqualTo("field:operator:value");
         assertThat(openApi.at("/x-agent-capabilities/operators").size()).isEqualTo(9);
