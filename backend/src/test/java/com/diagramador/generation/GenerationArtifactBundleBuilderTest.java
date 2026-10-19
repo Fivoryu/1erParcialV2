@@ -186,6 +186,38 @@ class GenerationArtifactBundleBuilderTest {
     }
 
     @Test
+    void openApiNamesTheHumanReadableDisplayFieldsOfEachEntity() throws Exception {
+        TypeUse text = new TypeUse(null, null, "String", "String", "VARCHAR(255)", true);
+        TypeUse number = new TypeUse(null, null, "Integer", "Integer", "INTEGER", true);
+        java.util.function.BiFunction<String, Boolean, FieldDeclaration> field = (name, nullable) ->
+                new FieldDeclaration(UUID.nameUUIDFromBytes(name.getBytes()), name, name,
+                        name.equals("edad") ? number : text, "PRIVATE",
+                        nullable ? MultiplicityKind.ZERO_OR_ONE : MultiplicityKind.EXACTLY_ONE,
+                        new MultiplicityBounds(nullable ? 0 : 1, 1), nullable, CollectionIntent.SINGLE_VALUE, null, 0);
+        TypeDeclaration alumno = new TypeDeclaration(id(801), null, ClassifierKind.CLASS, "Alumno", "Alumno", "",
+                "alumno", false, List.of(field.apply("edad", false), field.apply("apellido", false),
+                        field.apply("nombre", false)), List.of());
+        TypeDeclaration libro = new TypeDeclaration(id(802), null, ClassifierKind.CLASS, "Libro", "Libro", "",
+                "libro", false, List.of(field.apply("isbn", false), field.apply("titulo", true)), List.of());
+        TypeDeclaration pago = new TypeDeclaration(id(803), null, ClassifierKind.CLASS, "Pago", "Pago", "",
+                "pago", false, List.of(field.apply("nota", true), field.apply("referencia", false)), List.of());
+        TypeDeclaration medida = new TypeDeclaration(id(804), null, ClassifierKind.CLASS, "Medida", "Medida", "",
+                "medida", false, List.of(field.apply("edad", false)), List.of());
+        InputSnapshot snapshot = snapshot("Guest");
+
+        GeneratedArtifactBundle bundle = builder.build(identity("course-store", snapshot, 1), snapshot,
+                new DomainModelIR(List.of(), List.of(alumno, libro, pago, medida), List.of(), List.of(), List.of()),
+                VerificationState.NOT_RUN);
+        JsonNode schemas = JSON.readTree(bundle.files().get(GenerationArtifactBundleBuilder.OPENAPI_PATH))
+                .at("/components/schemas");
+
+        assertThat(schemas.at("/AlumnoDto/x-display-fields").toString()).isEqualTo("[\"nombre\",\"apellido\"]");
+        assertThat(schemas.at("/LibroDto/x-display-fields").toString()).isEqualTo("[\"titulo\"]");
+        assertThat(schemas.at("/PagoDto/x-display-fields").toString()).isEqualTo("[\"referencia\"]");
+        assertThat(schemas.at("/MedidaDto/x-display-fields").toString()).isEqualTo("[]");
+    }
+
+    @Test
     void provenanceRecordsFrozenIdentitiesDiagnosticsManifestAndVerificationStatus() throws Exception {
         InputSnapshot snapshot = snapshot("Guest");
         GeneratedArtifactBundle bundle = builder.build(identity("course-store", snapshot, 1), snapshot,

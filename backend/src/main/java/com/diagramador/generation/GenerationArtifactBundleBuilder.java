@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
@@ -269,9 +270,43 @@ public final class GenerationArtifactBundleBuilder {
                 }
             }
         }
+        ArrayNode displayFields = schema.putArray("x-display-fields");
+        displayFields(type).forEach(displayFields::add);
         schema.set("x-uml-operations", operationsExtension(type));
         schema.set("x-uml-relationships", relationshipsExtension(type, ir));
         return schema;
+    }
+
+    private static final List<String> LABEL_NAMES = List.of("nombre", "name", "titulo", "title", "descripcion",
+            "description");
+    private static final List<String> SURNAME_NAMES = List.of("apellido", "apellidos", "lastname", "surname");
+
+    /**
+     * Fields a client shows instead of the id: a conventional label name (plus a surname next to a first name),
+     * else the first required single-valued String. Empty when the entity has no readable text field.
+     */
+    static List<String> displayFields(TypeDeclaration type) {
+        List<FieldDeclaration> texts = type.fields().stream()
+                .filter(field -> field.collectionIntent() != DomainModelIR.CollectionIntent.COLLECTION)
+                .filter(field -> field.type().sourceClassifierId() == null)
+                .filter(field -> "String".equals(field.type().javaTypeName())
+                        || "java.lang.String".equals(field.type().javaTypeName()))
+                .toList();
+        for (String label : LABEL_NAMES) {
+            for (FieldDeclaration field : texts) {
+                if (field.javaName().toLowerCase(Locale.ROOT).equals(label)) {
+                    if (!label.equals("nombre") && !label.equals("name")) {
+                        return List.of(field.javaName());
+                    }
+                    return texts.stream().map(FieldDeclaration::javaName)
+                            .filter(name -> SURNAME_NAMES.contains(name.toLowerCase(Locale.ROOT)))
+                            .findFirst().map(surname -> List.of(field.javaName(), surname))
+                            .orElse(List.of(field.javaName()));
+                }
+            }
+        }
+        return texts.stream().filter(field -> !field.nullable()).findFirst()
+                .map(field -> List.of(field.javaName())).orElse(List.of());
     }
 
     private ObjectNode enumSchema(EnumDeclaration enumeration, boolean collection) {
