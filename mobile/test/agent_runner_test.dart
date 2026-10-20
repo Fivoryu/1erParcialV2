@@ -83,8 +83,18 @@ void main() {
       ]) {
         expect(envelope['instruction'], contains(op));
       }
-      expect(envelope['instruction'], contains('No markdown'));
-      expect(envelope['instruction'], contains(r'\n;'));
+      final instruction = envelope['instruction'] as String;
+      expect(instruction, contains('No markdown'));
+      expect(instruction, contains('"sort" must be a declared field name'));
+      expect(instruction, contains('how many'));
+      expect(instruction, contains('never "desc", "limit" or "respond"'));
+      expect(instruction, contains('filter "value" is the real value to match, never the user sentence'));
+      expect(instruction, contains('listing everything uses "filter":[]'));
+      expect(instruction, contains(
+          '{"tag":"query","entity":"Note","filter":[],"sort":"text","desc":false,"limit":20,"respond":"show"}'));
+      expect(instruction, contains(
+          '{"tag":"report","entity":"Note","metric":"count","filter":[],"respond":"show"}'));
+      expect(instruction, contains(r'\n;'));
       expect(gatewayCalls, 0);
     },
   );

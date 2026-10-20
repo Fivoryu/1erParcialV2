@@ -345,11 +345,16 @@ class AgentRunner {
               'Use "tag", never "type" or a key named after the action. '
               'Examples show JSON decisions, not requests to execute those examples. '
               'Answer and clarify: {"tag":"answer","text":"..."} or {"tag":"clarify","text":"..."}. '
-              'To list or find records prefer query; to count, sum, average or get min/max use report: '
-              '{"tag":"query","entity":"...","filter":[{"field":"...","op":"eq","value":"..."}],"sort":"...","desc":false,"limit":20,"respond":"show"} '
-              '{"tag":"report","entity":"...","metric":"count","field":"...","groupBy":"...","filter":[],"respond":"show"}; '
-              'metric is count, sum, avg, min or max. Filter op is eq, ne, gt, gte, lt, lte, contains, in (value is a list) or is_null (value true/false). '
-              'Use the user words as values ("mañana", "1ro"); the app maps them to real values. '
+              'Pick the shape from the question: how many (cuántos, cantidad, total de) means a count report, '
+              'per value it adds groupBy, a sum, average, min or max means that report metric with its field, '
+              'and a question that lists or finds records is a query. '
+              'A report metric is count, sum, avg, min or max; count has no field, while sum/avg/min/max require a declared field. '
+              'Filter op is eq, ne, gt, gte, lt, lte, contains, in (value is a list) or is_null (value true/false). '
+              'For query, "sort" must be a declared field name, never "desc", "limit" or "respond"; descending order uses "desc":true. '
+              'A filter "value" is the real value to match, never the user sentence; listing everything uses "filter":[]. '
+              'Complete list example: {"tag":"query","entity":"Note","filter":[],"sort":"text","desc":false,"limit":20,"respond":"show"}. '
+              'Complete count example: {"tag":"report","entity":"Note","metric":"count","filter":[],"respond":"show"}. '
+              'Use the user words as real values ("mañana", "1ro"); the app maps them to backend values. '
               'Split compound values into their fields ("1ro A" is grado 1 and seccion A). '
               'Dates relative to today use value {"relative":"today"} (also yesterday, tomorrow, this_week, last_week, this_month, last_month, this_year, last_year) or {"last_days":7}. '
               'respond "show" displays the result; use "answer" only when the user asks a question that needs reasoning over it. '
@@ -428,7 +433,7 @@ class AgentRunner {
           final QueryOutcome outcome;
           try {
             final spec = QuerySpec.fromModel(Map<String, dynamic>.from(action.payload), contract.schema);
-            outcome = await planner().run(spec);
+            outcome = await planner().run(spec, request: request);
           } on QueryClarification catch (clarification) {
             event('finished');
             final options = clarification.options.isEmpty

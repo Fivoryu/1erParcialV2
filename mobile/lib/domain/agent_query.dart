@@ -39,6 +39,7 @@ class QuerySpec {
     required this.shape,
     this.filters = const [],
     this.sortField,
+    this.ignoredSort,
     this.sortDesc = false,
     this.limit = 20,
     this.metricOp = 'count',
@@ -51,6 +52,7 @@ class QuerySpec {
   final QueryShape shape;
   final List<FilterSpec> filters;
   final String? sortField;
+  final String? ignoredSort;
   final bool sortDesc;
   final int limit;
   final String metricOp;
@@ -85,7 +87,7 @@ class QuerySpec {
     }
     final metric = (payload['metric'] ?? 'count').toString();
     if (report && !metrics.contains(metric)) throw FormatException('Unknown metric $metric.');
-    final metricField = payload['field'] is String
+    final metricField = metric != 'count' && payload['field'] is String
         ? resolveField(entity, schema, payload['field'] as String)
         : null;
     if (report && metric != 'count' && metricField == null) {
@@ -94,7 +96,16 @@ class QuerySpec {
     final groupBy = payload['groupBy'] is String
         ? resolveField(entity, schema, payload['groupBy'] as String)
         : null;
-    final sort = payload['sort'] is String ? resolveField(entity, schema, payload['sort'] as String) : null;
+    final rawSort = payload['sort'] is String ? payload['sort'] as String : null;
+    String? sort;
+    String? ignoredSort;
+    if (rawSort != null) {
+      try {
+        sort = resolveField(entity, schema, rawSort);
+      } on QueryClarification {
+        ignoredSort = rawSort;
+      }
+    }
     final limit = payload['limit'] is int ? payload['limit'] as int : 20;
     if (metricField != null && report && metric != 'count') {
       final info = _info(entity, schema, metricField);
@@ -110,6 +121,7 @@ class QuerySpec {
       shape: !report ? QueryShape.list : (metric == 'count' && metricField == null ? QueryShape.count : QueryShape.aggregate),
       filters: filters,
       sortField: sort,
+      ignoredSort: ignoredSort,
       sortDesc: payload['desc'] == true,
       limit: limit.clamp(1, schema.maxPageSize),
       metricOp: metric,
@@ -219,14 +231,24 @@ class QueryPlanner {
   final int maxLocalRecords;
   final _values = <String, List<String>>{};
 
-  Future<QueryOutcome> run(QuerySpec spec) async {
+  Future<QueryOutcome> run(QuerySpec spec, {String? request}) async {
     final filters = <FilterSpec>[];
+    final omittedEchoes = <String>[];
     for (final filter in spec.filters) {
+      if (request != null && _isEcho(filter.value, request)) {
+        omittedEchoes.add('Omití el filtro "${filter.field}": su valor repite tu pedido.');
+        continue;
+      }
       filters.addAll(await _ground(spec.entity, filter));
     }
     final outcome = schema.queryCapable ? await _server(spec, filters) : await _local(spec, filters);
     final labels = await _labels(spec.entity, outcome.records, outcome.buckets, spec.groupBy);
-    final notes = [...outcome.notes];
+    final notes = [
+      ...outcome.notes,
+      ...omittedEchoes,
+      if (spec.ignoredSort != null)
+        'No ordené por "${spec.ignoredSort}": no es un campo de ${spec.entity.name}.',
+    ];
     if (spec.shape == QueryShape.list && outcome.records.isEmpty && filters.isNotEmpty) {
       notes.add('Los valores existen, pero ningún registro cumple todos los filtros.');
     }
@@ -243,6 +265,22 @@ class QueryPlanner {
   }
 
   // ---- grounding -------------------------------------------------------
+
+  static bool _isEcho(dynamic value, String request) {
+    if (value is! String) return false;
+    final normalizedValue = normalize(value);
+    final normalizedRequest = normalize(request);
+    final words = value
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => normalize(word).isNotEmpty)
+        .length;
+    if (words < 2 || value.trim().length < 12) return false;
+    if (normalizedValue == normalizedRequest) return true;
+    return words >= 3 &&
+        normalizedRequest.contains(normalizedValue) &&
+        normalizedValue.length >= normalizedRequest.length * 0.6;
+  }
 
   Future<List<FilterSpec>> _ground(EntitySchema entity, FilterSpec filter) async {
     final info = QuerySpec._info(entity, schema, filter.field)!;

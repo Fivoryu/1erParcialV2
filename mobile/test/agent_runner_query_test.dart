@@ -44,6 +44,50 @@ void main() {
     expect(prompts.single['instruction'], contains('"1ro A" is grado 1 and seccion A'));
   });
 
+  test('a filter that echoes the request is omitted for a read and noted', () async {
+    const request = 'Mostrame todos los alumnos del turno de la mañana';
+    final runner = AgentRunner(
+      contract: colegio(),
+      model: (_) async => jsonEncode({
+        'tag': 'query',
+        'entity': 'alumno',
+        'filter': [{'field': 'nombre', 'op': 'contains', 'value': request}],
+        'respond': 'show',
+      }),
+      gateway: colegioData().call,
+      scopeGuard: () => true,
+    );
+
+    final result = await runner.run(request);
+
+    expect(result.status, AgentRunStatus.answered);
+    expect(result.text, contains('| 1 | Ana | Paz | A | 6 |'));
+    expect(result.text, contains('| 4 | Dani | Vera | C | 8 |'));
+    expect(result.text, endsWith('_Omití el filtro "nombre": su valor repite tu pedido._'));
+  });
+
+  test('a one-word request remains a usable filter value', () async {
+    final backend = colegioData();
+    backend.tables['alumno']![0]['nombre'] = 'hola';
+    final runner = AgentRunner(
+      contract: colegio(),
+      model: (_) async => jsonEncode({
+        'tag': 'query',
+        'entity': 'alumno',
+        'filter': [{'field': 'nombre', 'op': 'eq', 'value': 'hola'}],
+        'respond': 'show',
+      }),
+      gateway: backend.call,
+      scopeGuard: () => true,
+    );
+
+    final result = await runner.run('hola');
+
+    expect(result.status, AgentRunStatus.answered);
+    expect(result.text, contains('| 1 | hola | Paz | A | 6 |'));
+    expect(result.text, isNot(contains('Omití el filtro')));
+  });
+
   test('respond answer lets the model reason over the computed result, through the quality gate', () async {
     var calls = 0;
     final runner = AgentRunner(

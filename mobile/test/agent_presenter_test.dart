@@ -35,6 +35,13 @@ void main() {
     expect(AgentPresenter.uuid.hasMatch(text), isFalse);
   });
 
+  test('an undeclared sort is ignored and reported without claiming an order', () async {
+    final text = presenter.render(await run({'tag': 'query', 'entity': 'alumno', 'sort': 'desc'}));
+
+    expect(text, startsWith('*Entendí: alumno*'));
+    expect(text, endsWith('_No ordené por "desc": no es un campo de alumno._'));
+  });
+
   test('"cantidad de ejercicios" style counts answer with the number, grouped by label', () async {
     final total = presenter.render(await run({'tag': 'report', 'entity': 'alumno', 'metric': 'count'}));
     expect(total, '*Entendí: cantidad de alumno*\n\nHay **4** registros de alumno.');
@@ -48,6 +55,30 @@ void main() {
     expect(grouped, contains('| curso | Cantidad |'));
     expect(grouped, contains('| A | 2 |'));
     expect(AgentPresenter.uuid.hasMatch(grouped), isFalse);
+  });
+
+  test('count ignores a supplied field and still counts records per group', () async {
+    final backend = colegioData();
+    final outcome = await QueryPlanner(schema: schema, gateway: backend.call).run(
+      QuerySpec.fromModel({'tag': 'report', 'entity': 'alumno', 'metric': 'count', 'field': 'id'}, schema),
+    );
+
+    expect(outcome.spec.shape, QueryShape.count);
+    expect(outcome.spec.metricField, isNull);
+    expect(presenter.render(outcome), '*Entendí: cantidad de alumno*\n\nHay **4** registros de alumno.');
+    expect(backend.calls.single.query.map((parameter) => parameter.name), ['op']);
+
+    final groupedBackend = colegioData();
+    final grouped = await QueryPlanner(schema: schema, gateway: groupedBackend.call).run(
+      QuerySpec.fromModel({
+        'tag': 'report', 'entity': 'alumno', 'metric': 'count', 'field': 'id', 'groupBy': 'cursoId',
+      }, schema),
+    );
+    final groupedText = presenter.render(grouped);
+    expect(groupedText, contains('| A | 2 |'));
+    expect(groupedText, contains('| C | 1 |'));
+    final groupedAggregate = groupedBackend.calls.firstWhere((call) => call.path.endsWith('/aggregate'));
+    expect(groupedAggregate.query.map((parameter) => parameter.name), ['op', 'groupBy']);
   });
 
   test('aggregates are formatted from the computed value', () async {

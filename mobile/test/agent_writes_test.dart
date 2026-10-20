@@ -85,6 +85,20 @@ void main() {
     expect(backend.calls.where((c) => c.method != 'GET'), isEmpty, reason: 'nothing is written before confirmation');
   });
 
+  test('an update match that echoes the request clarifies without a gateway write', () async {
+    const request = 'pasá todos los registros al otro grupo';
+    final backend = colegioData();
+    backend.tables['alumno'] = [backend.tables['alumno']![1]];
+    final result = await runnerReturning([
+      {'tag': 'update', 'entity': 'alumno', 'match': [{'field': 'nombre', 'value': request}],
+        'values': {'edad': 8}},
+    ], backend).run(request);
+
+    expect(result.status, AgentRunStatus.clarification);
+    expect(result.text, contains('No encontré'));
+    expect(backend.calls.where((call) => call.method != 'GET'), isEmpty);
+  });
+
   test('an update by name keeps the other values and humanizes the change', () async {
     final result = await runnerReturning([
       {'tag': 'update', 'entity': 'alumno', 'match': [{'field': 'nombre', 'value': 'beto'}],
