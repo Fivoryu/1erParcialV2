@@ -579,10 +579,12 @@ class AgentRunner {
         AgentRunStatus.clarification,
         'Invalid or unsupported action: ${error.message}',
       );
-    } catch (_) {
-      return const AgentRunResult(
+    } catch (error, stackTrace) {
+      return AgentRunResult(
         AgentRunStatus.failed,
         'Model or tool failed; no success is assumed. Dispatched writes may be unknown.',
+        failure: error,
+        failureStackTrace: stackTrace,
       );
     } finally {
       _busy = false;

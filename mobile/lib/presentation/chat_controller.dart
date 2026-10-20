@@ -317,6 +317,14 @@ class ChatController extends ChangeNotifier {
     _runner = runner;
     final result = await runner.run(content);
     if (epoch != _epoch) return;
+    final failure = result.failure;
+    if (failure != null && const bool.fromEnvironment('AGENT_DEBUG')) {
+      final stackTrace = result.failureStackTrace;
+      debugPrint(
+        'AGENT_ERROR ${failure.runtimeType}: $failure'
+        '${stackTrace == null ? '' : '\n$stackTrace'}',
+      );
+    }
     if (result.deletePreview != null && allowed()) {
       final proposal = result.deletePreview!;
       final receipt = await service.agentOperation(

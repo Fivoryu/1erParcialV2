@@ -529,4 +529,23 @@ void main() {
     expect(contract.authorize('Creá unas Notes que digan "hola"'), isNotNull);
     expect(contract.authorize('creá la NOTA que diga "hola"'), isNull);
   });
+
+  test('failed agent result retains an unknown tool error', () async {
+    final error = StateError('transient tool failure');
+    final runner = AgentRunner(
+      contract: fixture(),
+      model: (_) async => '{"tag":"read","entity":"Note"}',
+      gateway: (_) async => throw error,
+      scopeGuard: () => true,
+    );
+
+    final result = await runner.run('Read the notes');
+
+    expect(result.status, AgentRunStatus.failed);
+    expect(
+      result.text,
+      'Model or tool failed; no success is assumed. Dispatched writes may be unknown.',
+    );
+    expect(result.failure, same(error));
+  });
 }

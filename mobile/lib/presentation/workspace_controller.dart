@@ -442,6 +442,12 @@ class WorkspaceController extends ChangeNotifier {
         throw const MnnUnavailableException('Local model session changed.');
       }
     });
+    if (const bool.fromEnvironment('AGENT_DEBUG')) {
+      // Diagnostic builds only: the raw decision, to see what the model wrote.
+      final raw = response!;
+      final visible = raw.length > 3000 ? raw.substring(0, 3000) : raw;
+      debugPrint('AGENT_RAW ${raw.length} $visible');
+    }
     return response!;
   }
 

@@ -113,9 +113,13 @@ class AgentRunResult {
     this.deleteLabels = const [],
     this.writePreview,
     this.data,
+    this.failure,
+    this.failureStackTrace,
   });
   final AgentRunStatus status;
   final String text;
+  final Object? failure;
+  final StackTrace? failureStackTrace;
   final OperationProposal? deletePreview;
 
   /// Several exact targets for one confirmed bulk deletion (bounded).
