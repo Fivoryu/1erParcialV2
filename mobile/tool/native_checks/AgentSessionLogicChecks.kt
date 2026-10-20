@@ -43,5 +43,13 @@ fun main() {
     rejects("send rejects missing key") { s.sendInput(mapOf("scope" to "b", "message" to "m")) }
 
     expect("remaining is clamped", s.remainingMs(10, 25) == 15L && s.remainingMs(30, 25) == 0L)
+
+    // Streamed text: LiteRT delivers deltas on this device; snapshots must not be duplicated.
+    expect("deltas are joined", s.streamedText(listOf("{\"tag\"", ":\"answer\",", "\"text\":\"hi\"}")) == "{\"tag\":\"answer\",\"text\":\"hi\"}")
+    expect("cumulative snapshots keep the last", s.streamedText(listOf("{\"t", "{\"tag\"", "{\"tag\":1}")) == "{\"tag\":1}")
+    expect("a single message is itself", s.streamedText(listOf("{\"tag\":1}")) == "{\"tag\":1}")
+    expect("empty chunks are ignored", s.streamedText(listOf("", "ab", "", "cd")) == "abcd")
+    expect("no chunks is empty", s.streamedText(emptyList()) == "")
+    expect("a repeated delta is still a delta", s.streamedText(listOf("a", "a")) == "aa")
     println("AgentSessionLogicChecks: $checks checks passed")
 }

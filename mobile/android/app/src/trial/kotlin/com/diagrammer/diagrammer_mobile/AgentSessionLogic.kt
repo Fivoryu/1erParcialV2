@@ -47,4 +47,18 @@ internal object AgentSessionLogic {
 
     /** Remaining wait in ms, never negative; 0 means the deadline has already passed. */
     fun remainingMs(nowMs: Long, deadlineMs: Long): Long = (deadlineMs - nowMs).coerceAtLeast(0L)
+
+    /**
+     * Full text of a streamed generation. Each callback message may be a delta (this device) or a
+     * cumulative snapshot; when every chunk strictly extends the previous one they are snapshots and
+     * the last is the text, otherwise the chunks are deltas and are joined. The final SDK message alone
+     * is only the last delta, which truncated decisions to their closing characters.
+     */
+    fun streamedText(chunks: List<String>): String {
+        val texts = chunks.filter { it.isNotEmpty() }
+        if (texts.isEmpty()) return ""
+        val cumulative = texts.size > 1 &&
+            texts.zipWithNext().all { (previous, next) -> next.length > previous.length && next.startsWith(previous) }
+        return if (cumulative) texts.last() else texts.joinToString("")
+    }
 }

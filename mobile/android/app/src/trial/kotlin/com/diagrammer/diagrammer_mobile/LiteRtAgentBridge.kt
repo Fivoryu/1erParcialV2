@@ -202,6 +202,11 @@ class LiteRtAgentBridge(context: Context, messenger: BinaryMessenger) : AutoClos
                 checkActive(operation)
                 candidate.initialize()
                 checkActive(operation)
+                // A GPU engine can initialize and still fail on its first token (e.g. "Can not find
+                // OpenCL library on this device" from the GPU sampler), so prove one token before
+                // accepting it; a failure falls back to CPU like an initialization failure.
+                if (name == "gpu") warmUp(operation, candidate)
+                checkActive(operation)
                 backendName.set(name)
                 loaded.set(true)
                 return
@@ -213,6 +218,56 @@ class LiteRtAgentBridge(context: Context, messenger: BinaryMessenger) : AutoClos
             }
         }
         throw lastError ?: IllegalStateException("No backend initialized.")
+    }
+
+    /**
+     * Proves the backend can produce a token before it is accepted. The probe is bounded by the
+     * operation deadline and cancellable like every other generation: a GPU engine may also stall here,
+     * and an unbounded wait would both violate the bounded-wait guarantee and leave the bridge busy.
+     */
+    private fun warmUp(operation: Operation, engine: Engine) {
+        val probe = engine.createConversation(ConversationConfig(
+            maxOutputToken = 1,
+            thinkingConfig = ThinkingConfig(enableThinking = false),
+            samplerConfig = SamplerConfig(topK = 1, topP = 1.0, temperature = 0.0),
+        ))
+        val slot = ConversationSlot(operation, probe)
+        conversation.set(slot)
+        try {
+            // A cancel that arrived while the probe was still being created found no slot to cancel, so
+            // the operation is rechecked before the send and on every slice of the wait.
+            checkActive(operation)
+            val completed = CountDownLatch(1)
+            val failure = AtomicReference<Throwable?>(null)
+            probe.sendMessageAsync("ok", object : MessageCallback {
+                override fun onMessage(message: Message) = Unit
+
+                override fun onDone() {
+                    completed.countDown()
+                }
+
+                override fun onError(error: Throwable) {
+                    failure.set(error)
+                    completed.countDown()
+                }
+            }, maxOutputToken = 1)
+            var done = completed.await(0, TimeUnit.MILLISECONDS)
+            while (!done) {
+                val remaining = AgentSessionLogic.remainingMs(SystemClock.elapsedRealtime(), operation.deadline)
+                if (remaining == 0L) break
+                checkActive(operation)
+                done = completed.await(minOf(remaining, PROBE_SLICE_MS), TimeUnit.MILLISECONDS)
+            }
+            if (!done) {
+                synchronized(conversationLock) { runCatching { probe.cancelProcess() } }
+                throw GenerationTimeout()
+            }
+            checkActive(operation)
+            failure.get()?.let { throw it }
+        } finally {
+            conversation.compareAndSet(slot, null)
+            synchronized(conversationLock) { runCatching { probe.close() } }
+        }
     }
 
     private fun generate(operation: Operation, input: GenerationInput): String {
@@ -238,11 +293,9 @@ class LiteRtAgentBridge(context: Context, messenger: BinaryMessenger) : AutoClos
         try {
             // Do not extract, truncate or replace any part of the runner envelope.
             val response = runGeneration(operation, local, input.prompt, input.maxTokens, LEGACY_WAIT_MS)
-            // The final decision comes from the SDK's final message, never from
-            // the UI accumulator: partial delivery semantics (chunks vs
-            // cumulative snapshots) must not affect strict decision output.
-            val text = response.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
-            return AgentDecisionMapping.decision(text, response.toolCalls)
+            // Tool calls come from the SDK's final message; the text is rebuilt from every chunk
+            // (deltas or snapshots, see AgentSessionLogic.streamedText).
+            return AgentDecisionMapping.decision(response.text, response.message.toolCalls)
         } finally {
             synchronized(conversationLock) { local.close() }
         }
@@ -293,7 +346,7 @@ class LiteRtAgentBridge(context: Context, messenger: BinaryMessenger) : AutoClos
         }
         try {
             val response = runGeneration(operation, current.conversation, input.message, input.maxTokens, input.timeoutMs.toLong())
-            val text = response.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }.trim()
+            val text = response.text.trim()
             require(text.isNotEmpty() && text.length <= 32768) { "Local Gemma returned no usable text." }
             current.usedChars += input.message.length + text.length
             return text
@@ -305,13 +358,15 @@ class LiteRtAgentBridge(context: Context, messenger: BinaryMessenger) : AutoClos
     }
 
     /** One bounded generation on [local]; throws [GenerationTimeout] after [waitMs] and cancels in-flight work. */
-    private fun runGeneration(operation: Operation, local: Conversation, message: String, maxTokens: Int, waitMs: Long): Message {
+    private class Generation(val message: Message, val text: String)
+
+    private fun runGeneration(operation: Operation, local: Conversation, message: String, maxTokens: Int, waitMs: Long): Generation {
         val slot = ConversationSlot(operation, local)
         conversation.set(slot)
         try {
             checkActive(operation)
             val completed = CountDownLatch(1)
-            val partialText = StringBuilder()
+            val chunks = mutableListOf<String>()
             val finalMessage = AtomicReference<Message?>(null)
             val failure = AtomicReference<Throwable?>(null)
             val started = SystemClock.elapsedRealtime()
@@ -321,8 +376,9 @@ class LiteRtAgentBridge(context: Context, messenger: BinaryMessenger) : AutoClos
                     val chunk = message.contents.contents
                         .filterIsInstance<Content.Text>()
                         .joinToString("") { it.text }
-                    val accumulatedText = synchronized(partialText) {
-                        partialText.append(chunk).toString()
+                    val accumulatedText = synchronized(chunks) {
+                        chunks.add(chunk)
+                        AgentSessionLogic.streamedText(chunks)
                     }
                     if (chunk.isEmpty()) return
                     if (acceptsCompletion(
@@ -356,7 +412,8 @@ class LiteRtAgentBridge(context: Context, messenger: BinaryMessenger) : AutoClos
             }
             checkActive(operation)
             failure.get()?.let { throw it }
-            return checkNotNull(finalMessage.get()) { "Local Gemma returned no message." }
+            val last = checkNotNull(finalMessage.get()) { "Local Gemma returned no message." }
+            return Generation(last, synchronized(chunks) { AgentSessionLogic.streamedText(chunks) })
         } finally {
             conversation.compareAndSet(slot, null)
         }
@@ -460,6 +517,7 @@ class LiteRtAgentBridge(context: Context, messenger: BinaryMessenger) : AutoClos
     companion object {
         private const val MAX_NUM_TOKENS = 4096
         private const val SESSION_GRACE_MS = 10000L
+        private const val PROBE_SLICE_MS = 250L
         private const val LEGACY_WAIT_MS = 110000L
         private const val MODEL_SIZE = 2588147712L
         private const val MODEL_SHA256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
