@@ -17,14 +17,18 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +53,35 @@ public class ChatMemoryAgentService {
                     + "\\b(?:(?:la|una|esta|esa|the|this|a)\\s+)?(?:memoria|recuerdo|memory)\\s+"
                     + "(?:fue|ha sido|was|has been|se(?:\\s+ha)?|está|is)\\s+"
                     + "(?:guardad[oa]s?|registrad[oa]s?|revisad[oa]s?|modificad[oa]s?|"
-                    + "actualizad[oa]s?|saved|revised|updated)\\b");
+                    + "actualizad[oa]s?|saved|revised|updated)\\b|"
+                    + "\\b(?:guard[eé]|guard[oó]|registr[eé]|registr[oó]|anot[eé]|anot[oó]|saved|recorded|stored)"
+                    + "(?=\\s|[,:;.]|$).{0,40}?\\b(?:como|as)\\s+(?:una?\\s+|an?\\s+)?"
+                    + "(?:hip[oó]tesis|decisi[oó]n|hypothesis|decision)\\b");
+    /**
+     * Explicit requests are executed by the server instead of waiting for the small local model to emit the
+     * action JSON, which it does unreliably: "Guardá como hipótesis que X" saves X; "Revisá la hipótesis que
+     * contiene T: cambio" revises the single active memory containing every identifier in T.
+     */
+    private static final Pattern EXPLICIT_SAVE = Pattern.compile(
+            "(?iu)^\\s*(?:por\\s+favor,?\\s+)?(?:guard[aá]|registr[aá]|anot[aá]|save|record)\\s+"
+                    + "(?:esto\\s+|this\\s+)?(?:como|as)\\s+(?:una?\\s+|an?\\s+)?"
+                    + "(hip[oó]tesis|decisi[oó]n|hypothesis|decision)\\b\\s*[:,]?\\s*(?:que\\s+|that\\s+)?(.+)$",
+            Pattern.DOTALL);
+    private static final Pattern EXPLICIT_REVISE = Pattern.compile(
+            "(?iu)^\\s*(?:por\\s+favor,?\\s+)?(?:revis[aá]|correg[ií]|actualiz[aá]|modific[aá]|revise|update|correct)"
+                    + "\\s+(?:la\\s+|el\\s+|una\\s+|the\\s+)?(?:hip[oó]tesis|decisi[oó]n|memoria|hypothesis|decision|memory)"
+                    + "\\b([^:]*):\\s*(.+)$",
+            Pattern.DOTALL);
+    private static final Pattern SENTENCE_BREAK = Pattern.compile("(?<=[.!?])\\s+");
+    private static final Pattern SEARCH_WORD = Pattern.compile("[\\p{L}\\p{N}]+(?:-[\\p{L}\\p{N}]+)*");
+    private static final int MAX_SERVER_SEARCH_TERMS = 6;
+    private static final Set<String> SEARCH_NOISE = Set.of("busca", "buscá", "buscar", "consulta", "consultá",
+            "consultar", "revisa", "revisá", "mira", "mirá", "explora", "explorá", "search", "look", "find",
+            "otro", "otros", "otra", "otras", "diferente", "diferentes", "distinto", "distintos", "distinta",
+            "distintas", "diagrama", "diagramas", "proyecto", "proyectos", "other", "different", "another",
+            "diagram", "diagrams", "project", "projects", "todos", "todas", "entre", "across", "para", "como",
+            "este", "esta", "estos", "estas", "cual", "cuál", "donde", "dónde", "aparece", "aparecen", "registra",
+            "tiene", "decime", "dime", "sobre", "with", "from", "what", "which", "where", "that", "this", "there");
     private static final Pattern DENIED_EXTERNAL_SCOPE = Pattern.compile(
             "(?iu)\\b(?:no|nunca)\\s+(?:"
                     + "busca|buscá|buscar|busque|busques|busquen|consulta|consultá|consultar|consultes|consulten|"
@@ -78,6 +110,7 @@ public class ChatMemoryAgentService {
     private final MemoryOperationsService memoryOperationsService;
     private final ContextBudgetService contextBudgetService;
     private final ChatService chatService;
+    private final DiagramMemoryService diagramMemoryService;
     private final ObjectMapper objectMapper;
 
     public record AgentAnswer(String body, Set<UUID> consultedProjectIds) {
@@ -120,11 +153,13 @@ public class ChatMemoryAgentService {
     }
 
     public ChatMemoryAgentService(ChatAssistantProvider provider, MemoryOperationsService memoryOperationsService,
-            ContextBudgetService contextBudgetService, ChatService chatService, ObjectMapper objectMapper) {
+            ContextBudgetService contextBudgetService, ChatService chatService,
+            DiagramMemoryService diagramMemoryService, ObjectMapper objectMapper) {
         this.provider = provider;
         this.memoryOperationsService = memoryOperationsService;
         this.contextBudgetService = contextBudgetService;
         this.chatService = chatService;
+        this.diagramMemoryService = diagramMemoryService;
         this.objectMapper = objectMapper;
     }
 
@@ -143,6 +178,9 @@ public class ChatMemoryAgentService {
         boolean externalSearchRequested = userQuestion != null
                 && EXPLICIT_EXTERNAL_SCOPE.matcher(userQuestion).find()
                 && !DENIED_EXTERNAL_SCOPE.matcher(userQuestion).find();
+        Deque<MemoryAction> serverActions = new ArrayDeque<>(
+                explicitActions(projectId, viewId, userQuestion, externalSearchRequested));
+        boolean serverWriteApplied = false;
 
         for (int step = 0; step <= MAX_ACTION_STEPS; step++) {
             try {
@@ -152,18 +190,25 @@ public class ChatMemoryAgentService {
             }
 
             String raw;
-            try {
-                raw = provider.chat(List.copyOf(turns));
-            } catch (RuntimeException exception) {
-                logger.warn("Memory-agent provider call failed for project {} and view {}", projectId, viewId,
-                        exception);
-                if (!confirmedEffects.isEmpty()) {
-                    return partial(confirmedEffects, failedWrite, consultedProjects, sourceLabels);
+            ParsedResponse response;
+            boolean plannedByServer = !serverActions.isEmpty();
+            if (plannedByServer) {
+                MemoryAction planned = serverActions.poll();
+                raw = actionJson(planned);
+                response = ParsedResponse.action(planned);
+            } else {
+                try {
+                    raw = provider.chat(List.copyOf(turns));
+                } catch (RuntimeException exception) {
+                    logger.warn("Memory-agent provider call failed for project {} and view {}", projectId, viewId,
+                            exception);
+                    if (!confirmedEffects.isEmpty()) {
+                        return partial(confirmedEffects, failedWrite, consultedProjects, sourceLabels);
+                    }
+                    throw exception;
                 }
-                throw exception;
+                response = parseResponse(raw);
             }
-
-            ParsedResponse response = parseResponse(raw);
             if (response.invalidAction()) {
                 return refused(confirmedEffects, failedWrite, consultedProjects, sourceLabels);
             }
@@ -187,11 +232,18 @@ public class ChatMemoryAgentService {
                 return refused(confirmedEffects, failedWrite, consultedProjects, sourceLabels);
             }
             ToolExecution execution = completedActions.get(action.fingerprint());
+            if (execution == null && !plannedByServer && serverWriteApplied && action.writes()) {
+                // The server already applied the explicit write for this request; a reworded model write
+                // must not persist a second memory.
+                execution = execution(action.operation(), false,
+                        "The server already applied this request's memory change.", false, false, null);
+            }
             if (execution == null) {
                 execution = execute(projectId, viewId, action, consultedProjects, sourceLabels);
                 completedActions.put(action.fingerprint(), execution);
                 if (execution.writeSucceeded() && execution.effect() != null) {
                     confirmedEffects.add(execution.effect());
+                    serverWriteApplied |= plannedByServer;
                 }
                 failedWrite |= execution.writeFailed();
             }
@@ -252,6 +304,112 @@ public class ChatMemoryAgentService {
             return execution(action.operation(), false, "The operation was unavailable.", false,
                     action.writes(), null);
         }
+    }
+
+    /** Plans the server-executed action for an explicit save, revise or cross-diagram search request. */
+    private List<MemoryAction> explicitActions(UUID projectId, UUID viewId, String question,
+            boolean externalSearchRequested) {
+        if (question == null || question.isBlank()) {
+            return List.of();
+        }
+        Matcher save = EXPLICIT_SAVE.matcher(question);
+        if (save.matches()) {
+            String content = withoutTerminalPunctuation(firstSentence(save.group(2)));
+            if (!content.isEmpty() && content.length() <= MAX_CONTENT_LENGTH) {
+                return List.of(new MemoryAction("save", null, kindOf(save.group(1)), content, null, false,
+                        MAX_ACTION_RESULTS));
+            }
+            return List.of();
+        }
+        Matcher revise = EXPLICIT_REVISE.matcher(question);
+        if (revise.matches()) {
+            MemoryAction action = explicitRevision(projectId, viewId, revise.group(1), revise.group(2));
+            return action == null ? List.of() : List.of(action);
+        }
+        if (externalSearchRequested) {
+            String query = distinctiveSearchQuery(question);
+            if (!query.isEmpty()) {
+                return List.of(new MemoryAction("search", null, null, null, query, true, MAX_ACTION_RESULTS));
+            }
+        }
+        return List.of();
+    }
+
+    /** Revises only when exactly one active memory of this diagram contains every identifier of the target. */
+    private MemoryAction explicitRevision(UUID projectId, UUID viewId, String target, String change) {
+        List<String> identifiers = new ArrayList<>();
+        Matcher word = SEARCH_WORD.matcher(target);
+        while (word.find()) {
+            if (word.group().chars().anyMatch(Character::isDigit)) {
+                identifiers.add(word.group().toLowerCase(Locale.ROOT));
+            }
+        }
+        String instruction = firstSentence(change);
+        if (identifiers.isEmpty() || instruction.isEmpty()) {
+            return null;
+        }
+        List<DiagramMemoryResource> matching = diagramMemoryService.memories(projectId, viewId, "ACTIVE").stream()
+                .filter(memory -> identifiers.stream()
+                        .allMatch(memory.content().toLowerCase(Locale.ROOT)::contains))
+                .toList();
+        if (matching.size() != 1) {
+            return null;
+        }
+        DiagramMemoryResource predecessor = matching.get(0);
+        String previous = predecessor.content().strip();
+        String separator = previous.matches("(?s).*[.!?]$") ? " " : ". ";
+        String revised = previous + separator + "Revisión: " + withoutTerminalPunctuation(instruction) + ".";
+        if (revised.length() > MAX_CONTENT_LENGTH) {
+            return null;
+        }
+        return new MemoryAction("revise", predecessor.memoryId(), predecessor.kind(), revised, null, false,
+                MAX_ACTION_RESULTS);
+    }
+
+    private static String distinctiveSearchQuery(String question) {
+        Set<String> terms = new java.util.LinkedHashSet<>();
+        Matcher word = SEARCH_WORD.matcher(question.toLowerCase(Locale.ROOT));
+        while (word.find() && terms.size() < MAX_SERVER_SEARCH_TERMS) {
+            String term = word.group();
+            boolean identifier = term.chars().anyMatch(Character::isDigit);
+            if (identifier || (term.length() >= 4 && !SEARCH_NOISE.contains(term))) {
+                terms.add(term);
+            }
+        }
+        String query = String.join(" ", terms);
+        return query.length() <= MAX_QUERY_LENGTH ? query : query.substring(0, MAX_QUERY_LENGTH).strip();
+    }
+
+    private static String firstSentence(String text) {
+        String stripped = text == null ? "" : text.strip();
+        return SENTENCE_BREAK.split(stripped, 2)[0].strip();
+    }
+
+    private static String withoutTerminalPunctuation(String text) {
+        return text.replaceAll("[.!?]+$", "").strip();
+    }
+
+    private static String kindOf(String word) {
+        String normalized = word.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("hip") || normalized.startsWith("hyp") ? "HYPOTHESIS" : "DECISION";
+    }
+
+    private String actionJson(MemoryAction action) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("operation", action.operation());
+        if (action.memoryId() != null) {
+            fields.put("memoryId", action.memoryId().toString());
+        }
+        if (action.writes()) {
+            fields.put("kind", action.kind());
+            fields.put("content", action.content());
+        }
+        if ("search".equals(action.operation())) {
+            fields.put("query", action.query());
+            fields.put("includeAccessibleProjects", action.includeAccessibleProjects());
+            fields.put("limit", action.limit());
+        }
+        return json(Map.of("memoryAction", fields));
     }
 
     private void collectSources(UUID currentProjectId, List<SearchHit> hits, Set<UUID> consultedProjects,
@@ -370,7 +528,7 @@ public class ChatMemoryAgentService {
                     }
                     UUID memoryId = operation.equals("revise") ? uuid(node.path("memoryId").textValue()) : null;
                     String rawContent = node.path("content").textValue();
-                    String kind = node.path("kind").textValue().strip().toUpperCase(java.util.Locale.ROOT);
+                    String kind = node.path("kind").textValue().strip().toUpperCase(Locale.ROOT);
                     String content = rawContent.strip();
                     if (rawContent.length() > MAX_CONTENT_LENGTH
                             || (operation.equals("revise") && memoryId == null)

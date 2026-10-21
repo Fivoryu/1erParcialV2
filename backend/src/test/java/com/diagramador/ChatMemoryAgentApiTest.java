@@ -693,6 +693,131 @@ class ChatMemoryAgentApiTest extends AuthenticatedApiTest {
                 .isEqualTo(pendingBefore - 20);
     }
 
+    @Test
+    void explicitSaveRequestIsExecutedByTheServerWhenTheModelOnlyAnswersInText() throws Exception {
+        String owner = username("explicit-save");
+        UUID projectId = createProject(owner, "ExplicitSaveProject");
+        UUID viewId = defaultViewId(projectId);
+        UUID sessionId = createSession(owner, projectId, viewId, "Guardado explícito");
+        String questionId = postMessage(owner, projectId, sessionId,
+                "Guardá como hipótesis que la conciliación genera el estado det-save-marker antes del cierre. "
+                        + "Decime en una frase qué registraste.");
+        when(chatAssistantProvider.chat(anyList())).thenReturn(extraction(""), "Registré la hipótesis.");
+
+        mockMvc.perform(ask(owner, projectId, sessionId, questionId)).andExpect(status().isAccepted());
+        JsonNode answer = awaitAiAnswer(owner, projectId, sessionId, questionId);
+
+        JsonNode stored = memories(owner, projectId, viewId);
+        assertThat(stored).hasSize(1);
+        assertThat(stored.get(0).path("kind").asText()).isEqualTo("HYPOTHESIS");
+        assertThat(stored.get(0).path("status").asText()).isEqualTo("ACTIVE");
+        assertThat(stored.get(0).path("content").asText())
+                .isEqualTo("la conciliación genera el estado det-save-marker antes del cierre");
+        assertThat(answer.path("body").asText()).contains("Registré la hipótesis.")
+                .contains("Memoria guardada por el servidor");
+        ArgumentCaptor<List<ChatAssistantProvider.Turn>> calls = ArgumentCaptor.captor();
+        verify(chatAssistantProvider, timeout(5_000).times(2)).chat(calls.capture());
+        assertThat(turnText(calls.getAllValues().get(1))).contains("SERVER_MEMORY_RESULT")
+                .contains("det-save-marker");
+    }
+
+    @Test
+    void explicitReviseRequestReplacesTheUniqueMatchingActiveMemory() throws Exception {
+        String owner = username("explicit-revise");
+        UUID projectId = createProject(owner, "ExplicitReviseProject");
+        UUID viewId = defaultViewId(projectId);
+        String oldId = saveMemory(owner, projectId, viewId, "HYPOTHESIS",
+                "La conciliación genera el estado REV-OLD-7 antes del cierre.");
+        String otherId = saveMemory(owner, projectId, viewId, "HYPOTHESIS", "Otra hipótesis REV-OTHER-8.");
+        UUID sessionId = createSession(owner, projectId, viewId, "Revisión explícita");
+        String questionId = postMessage(owner, projectId, sessionId,
+                "Revisá la hipótesis activa que contiene REV-OLD-7: debe indicar REV-NEW-7 después del cierre. "
+                        + "¿Cuál quedó como versión vigente?");
+        when(chatAssistantProvider.chat(anyList())).thenReturn(extraction(""), "Quedó vigente la versión revisada.");
+
+        mockMvc.perform(ask(owner, projectId, sessionId, questionId)).andExpect(status().isAccepted());
+        JsonNode answer = awaitAiAnswer(owner, projectId, sessionId, questionId);
+
+        JsonNode stored = memories(owner, projectId, viewId);
+        JsonNode previous = findMemory(stored, oldId);
+        assertThat(previous.path("status").asText()).isEqualTo("REPLACED");
+        JsonNode replacement = findMemory(stored, previous.path("replacedBy").asText());
+        assertThat(replacement.path("status").asText()).isEqualTo("ACTIVE");
+        assertThat(replacement.path("kind").asText()).isEqualTo("HYPOTHESIS");
+        assertThat(replacement.path("content").asText()).isEqualTo(
+                "La conciliación genera el estado REV-OLD-7 antes del cierre. "
+                        + "Revisión: debe indicar REV-NEW-7 después del cierre.");
+        assertThat(findMemory(stored, otherId).path("status").asText()).isEqualTo("ACTIVE");
+        assertThat(answer.path("body").asText()).contains("Memoria revisada por el servidor");
+    }
+
+    @Test
+    void explicitReviseRequestWithAnAmbiguousTargetLeavesMemoriesToTheModel() throws Exception {
+        String owner = username("ambiguous-revise");
+        UUID projectId = createProject(owner, "AmbiguousReviseProject");
+        UUID viewId = defaultViewId(projectId);
+        saveMemory(owner, projectId, viewId, "HYPOTHESIS", "Primera hipótesis AMB-1 del cierre.");
+        saveMemory(owner, projectId, viewId, "HYPOTHESIS", "Segunda hipótesis AMB-1 del cierre.");
+        UUID sessionId = createSession(owner, projectId, viewId, "Revisión ambigua");
+        String questionId = postMessage(owner, projectId, sessionId,
+                "Revisá la hipótesis que contiene AMB-1: debe indicar AMB-2.");
+        when(chatAssistantProvider.chat(anyList())).thenReturn(extraction(""), "¿Cuál de las dos hipótesis revisás?");
+
+        mockMvc.perform(ask(owner, projectId, sessionId, questionId)).andExpect(status().isAccepted());
+        JsonNode answer = awaitAiAnswer(owner, projectId, sessionId, questionId);
+
+        JsonNode stored = memories(owner, projectId, viewId);
+        assertThat(stored).hasSize(2);
+        assertThat(stored.findValuesAsText("status")).containsOnly("ACTIVE");
+        assertThat(answer.path("body").asText()).isEqualTo("¿Cuál de las dos hipótesis revisás?");
+    }
+
+    @Test
+    void explicitCrossDiagramRequestSearchesCommonProjectsWithoutAModelAction() throws Exception {
+        String owner = username("explicit-search");
+        String collaborator = username("det-collab");
+        UUID currentProject = createProject(owner, "DeterministicCurrentProject");
+        UUID currentView = defaultViewId(currentProject);
+        bearer(collaborator);
+        addMembership(collaborator, currentProject, ProjectMemberRole.EDITOR);
+        UUID externalProject = createProject(owner, "DeterministicExternalProject");
+        UUID externalView = defaultViewId(externalProject);
+        saveMemory(owner, externalProject, externalView, "DECISION", "included-det-marker detneedle7");
+        addMembership(collaborator, externalProject, ProjectMemberRole.VIEWER);
+        UUID sessionId = createSession(owner, currentProject, currentView, "Búsqueda determinista");
+        String questionId = postMessage(owner, currentProject, sessionId,
+                "Buscá en otros diagramas la regla detneedle7. ¿En qué proyecto aparece?");
+        when(chatAssistantProvider.chat(anyList())).thenReturn(extraction(""), "Encontré la regla.");
+
+        mockMvc.perform(ask(owner, currentProject, sessionId, questionId)).andExpect(status().isAccepted());
+        JsonNode answer = awaitAiAnswer(owner, currentProject, sessionId, questionId);
+
+        assertThat(answer.path("body").asText()).contains("Encontré la regla.")
+                .contains("DeterministicExternalProject");
+        ArgumentCaptor<List<ChatAssistantProvider.Turn>> calls = ArgumentCaptor.captor();
+        verify(chatAssistantProvider, timeout(5_000).times(2)).chat(calls.capture());
+        assertThat(turnText(calls.getAllValues().get(1))).contains("SERVER_MEMORY_RESULT")
+                .contains("included-det-marker");
+    }
+
+    @Test
+    void savedAsHypothesisClaimWithoutAPersistedWriteIsReplacedBySafeAnswer() throws Exception {
+        String owner = username("hypothesis-claim");
+        UUID projectId = createProject(owner, "HypothesisClaimProject");
+        UUID viewId = defaultViewId(projectId);
+        UUID sessionId = createSession(owner, projectId, viewId, "Afirmación sin escritura");
+        String questionId = postMessage(owner, projectId, sessionId, "Anotalo por favor");
+        when(chatAssistantProvider.chat(anyList())).thenReturn(extraction(""),
+                "Registré como hipótesis: claim-marker antes del cierre.");
+
+        mockMvc.perform(ask(owner, projectId, sessionId, questionId)).andExpect(status().isAccepted());
+        JsonNode answer = awaitAiAnswer(owner, projectId, sessionId, questionId);
+
+        assertThat(memories(owner, projectId, viewId)).isEmpty();
+        assertThat(answer.path("body").asText())
+                .isEqualTo("No se confirmó ningún cambio de memoria; no puedo afirmar que se haya guardado.");
+    }
+
     private String username(String role) {
         return "cma-" + role + "-" + UUID.randomUUID();
     }
