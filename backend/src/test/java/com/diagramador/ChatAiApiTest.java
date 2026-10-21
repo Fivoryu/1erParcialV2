@@ -306,8 +306,8 @@ class ChatAiApiTest extends AuthenticatedApiTest {
         awaitAiAnswer(ownerA, projectA, sessionA, questionA);
 
         ArgumentCaptor<List<ChatAssistantProvider.Turn>> turns = ArgumentCaptor.captor();
-        verify(chatAssistantProvider, timeout(5_000)).chat(turns.capture());
-        String fullConversation = turns.getValue().stream()
+        verify(chatAssistantProvider, timeout(5_000).times(2)).chat(turns.capture());
+        String fullConversation = turns.getAllValues().get(1).stream()
                 .map(ChatAssistantProvider.Turn::content)
                 .reduce("", (left, right) -> left + "\n" + right);    assertThat(fullConversation).contains("ClienteA");
         assertThat(fullConversation).contains("pregunta del proyecto A");
@@ -337,8 +337,8 @@ class ChatAiApiTest extends AuthenticatedApiTest {
         awaitAiAnswer(owner, projectId, sessionId, oldQuestion);
 
         ArgumentCaptor<List<ChatAssistantProvider.Turn>> turns = ArgumentCaptor.captor();
-        verify(chatAssistantProvider, timeout(5_000)).chat(turns.capture());
-        List<ChatAssistantProvider.Turn> sent = turns.getValue();
+        verify(chatAssistantProvider, timeout(5_000).times(2)).chat(turns.capture());
+        List<ChatAssistantProvider.Turn> sent = turns.getAllValues().get(1);
         assertThat(sent).isNotEmpty();
         assertThat(sent.get(sent.size() - 1).content()).isEqualTo("mensaje 2");
         // The recent history stays, excluding the question to avoid sending it twice.
