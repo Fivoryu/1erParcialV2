@@ -70,6 +70,17 @@ describe('help corpus', () => {
     }
   });
 
+  it('explains memory automation, natural-language operations, and shared cross-diagram access', () => {
+    const topic = HELP_TOPICS.find((candidate) => candidate.slug === 'diagram-chat');
+    expect(topic).toBeDefined();
+    const copy = [topic?.summary, ...(topic?.steps ?? [])].join(' ');
+
+    expect(copy).toContain('extracted automatically');
+    expect(copy).toContain('read, save, or revise a memory');
+    expect(copy).toContain('latest UML');
+    expect(copy).toContain('every active collaborator can access');
+  });
+
   it('covers the core user journeys', () => {
     const slugs = HELP_TOPICS.map((topic) => topic.slug);
     for (const expected of [
