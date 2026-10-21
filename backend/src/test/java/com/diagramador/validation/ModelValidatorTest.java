@@ -50,7 +50,8 @@ class ModelValidatorTest {
                         relationship(12, RelationshipKind.ASSOCIATION, "places")),
                 List.of(end(20, 10, PERSON_ID, (short) 1), end(21, 10, EMPLOYEE_ID, (short) 2),
                         end(22, 11, ANIMAL_ID, (short) 1), end(23, 11, PERSON_ID, (short) 2),
-                        end(24, 12, PERSON_ID, (short) 1), end(25, 12, ORDER_ID, (short) 2)));
+                        end(24, 12, PERSON_ID, (short) 1, null, MultiplicityKind.EXACTLY_ONE),
+                        end(25, 12, ORDER_ID, (short) 2, null, MultiplicityKind.ZERO_OR_MANY)));
 
         assertThat(validator.validate(model)).isEmpty();
     }
@@ -190,7 +191,8 @@ class ModelValidatorTest {
         ModelValidationReadModel model = readModel(
                 List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Person")),
                 List.of(relationship(10, RelationshipKind.ASSOCIATION, "knows")),
-                List.of(end(20, 10, PERSON_ID, (short) 1), end(21, 10, PERSON_ID, (short) 2)));
+                List.of(end(20, 10, PERSON_ID, (short) 1, null, MultiplicityKind.ZERO_OR_ONE),
+                        end(21, 10, PERSON_ID, (short) 2, null, MultiplicityKind.ZERO_OR_MANY)));
 
         assertThat(validator.validate(model)).isEmpty();
     }
@@ -514,6 +516,136 @@ class ModelValidatorTest {
         assertThat(diagnostics.get(0).code()).isEqualTo("UNRESOLVED_TYPE");
         assertThat(diagnostics.get(0).elementId()).isEqualTo(PERSON_ID);
         assertThat(diagnostics.get(0).feature()).isEqualTo("name");
+    }
+
+    @Test
+    void manyToManyAssociationIsReportedAsUnsupportedMultiplicityCombination() {
+        ModelValidationReadModel model = readModel(
+                List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Student"),
+                        classifier(ORDER_ID, null, ClassifierKind.CLASS, "Course")),
+                List.of(relationship(10, RelationshipKind.ASSOCIATION, "enrolls")),
+                List.of(end(20, 10, PERSON_ID, (short) 1, null, MultiplicityKind.ZERO_OR_MANY),
+                        end(21, 10, ORDER_ID, (short) 2, null, MultiplicityKind.ONE_OR_MANY)));
+
+        List<ModelValidationDiagnostic> diagnostics = validator.validate(model);
+
+        assertThat(diagnostics).hasSize(1);
+        assertThat(diagnostics.get(0).code()).isEqualTo("UNSUPPORTED_MULTIPLICITY_COMBINATION");
+        assertThat(diagnostics.get(0).severity()).isEqualTo(SeverityKind.ERROR);
+        assertThat(diagnostics.get(0).elementId()).isEqualTo(id(10));
+        assertThat(diagnostics.get(0).feature()).isEqualTo("multiplicity");
+        assertThat(diagnostics.get(0).message()).contains("enrolls", "ZERO_OR_MANY", "ONE_OR_MANY",
+                "intermediate class");
+    }
+
+    @Test
+    void oneToOneCompositionIsReportedAsUnsupportedMultiplicityCombination() {
+        ModelValidationReadModel model = readModel(
+                List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Person"),
+                        classifier(ORDER_ID, null, ClassifierKind.CLASS, "Passport")),
+                List.of(relationship(10, RelationshipKind.COMPOSITION, "holds")),
+                List.of(end(20, 10, PERSON_ID, (short) 1, null, MultiplicityKind.EXACTLY_ONE),
+                        end(21, 10, ORDER_ID, (short) 2, null, MultiplicityKind.ZERO_OR_ONE)));
+
+        assertThat(validator.validate(model)).extracting(ModelValidationDiagnostic::code)
+                .containsExactly("UNSUPPORTED_MULTIPLICITY_COMBINATION");
+    }
+
+    @Test
+    void oneToManyAggregationHasNoDiagnostics() {
+        ModelValidationReadModel model = readModel(
+                List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Team"),
+                        classifier(ORDER_ID, null, ClassifierKind.CLASS, "Player")),
+                List.of(relationship(10, RelationshipKind.AGGREGATION, "groups")),
+                List.of(end(20, 10, PERSON_ID, (short) 1, null, MultiplicityKind.ZERO_OR_ONE),
+                        end(21, 10, ORDER_ID, (short) 2, null, MultiplicityKind.ZERO_OR_MANY)));
+
+        assertThat(validator.validate(model)).isEmpty();
+    }
+
+    @Test
+    void mandatoryReferenceCycleIsReportedForEveryParticipant() {
+        ModelValidationReadModel model = readModel(
+                List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Department"),
+                        classifier(EMPLOYEE_ID, null, ClassifierKind.CLASS, "Employee")),
+                List.of(relationship(10, RelationshipKind.ASSOCIATION, "worksIn"),
+                        relationship(11, RelationshipKind.ASSOCIATION, "managedBy")),
+                List.of(end(20, 10, EMPLOYEE_ID, (short) 1, null, MultiplicityKind.ZERO_OR_MANY),
+                        end(21, 10, PERSON_ID, (short) 2, null, MultiplicityKind.EXACTLY_ONE),
+                        end(22, 11, PERSON_ID, (short) 1, null, MultiplicityKind.ZERO_OR_MANY),
+                        end(23, 11, EMPLOYEE_ID, (short) 2, null, MultiplicityKind.EXACTLY_ONE)));
+
+        List<ModelValidationDiagnostic> diagnostics = validator.validate(model);
+
+        assertThat(diagnostics).extracting(ModelValidationDiagnostic::code)
+                .containsExactly("MANDATORY_REFERENCE_CYCLE", "MANDATORY_REFERENCE_CYCLE");
+        assertThat(diagnostics).extracting(ModelValidationDiagnostic::elementId)
+                .containsExactly(PERSON_ID, EMPLOYEE_ID);
+        assertThat(diagnostics).extracting(ModelValidationDiagnostic::severity).containsOnly(SeverityKind.ERROR);
+        assertThat(diagnostics.get(1).message()).contains("Employee");
+    }
+
+    @Test
+    void optionalReferenceCycleIsNotReported() {
+        ModelValidationReadModel model = readModel(
+                List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Department"),
+                        classifier(EMPLOYEE_ID, null, ClassifierKind.CLASS, "Employee")),
+                List.of(relationship(10, RelationshipKind.ASSOCIATION, "worksIn"),
+                        relationship(11, RelationshipKind.ASSOCIATION, "managedBy")),
+                List.of(end(20, 10, EMPLOYEE_ID, (short) 1, null, MultiplicityKind.ZERO_OR_MANY),
+                        end(21, 10, PERSON_ID, (short) 2, null, MultiplicityKind.EXACTLY_ONE),
+                        end(22, 11, PERSON_ID, (short) 1, null, MultiplicityKind.ZERO_OR_MANY),
+                        end(23, 11, EMPLOYEE_ID, (short) 2, null, MultiplicityKind.ZERO_OR_ONE)));
+
+        assertThat(validator.validate(model)).isEmpty();
+    }
+
+    @Test
+    void mandatorySelfReferenceIsReported() {
+        ModelValidationReadModel model = readModel(
+                List.of(classifier(EMPLOYEE_ID, null, ClassifierKind.CLASS, "Employee")),
+                List.of(relationship(10, RelationshipKind.ASSOCIATION, "reportsTo")),
+                List.of(end(20, 10, EMPLOYEE_ID, (short) 1, "subordinates", MultiplicityKind.ZERO_OR_MANY),
+                        end(21, 10, EMPLOYEE_ID, (short) 2, "manager", MultiplicityKind.EXACTLY_ONE)));
+
+        List<ModelValidationDiagnostic> diagnostics = validator.validate(model);
+
+        assertThat(diagnostics).hasSize(1);
+        assertThat(diagnostics.get(0).code()).isEqualTo("MANDATORY_REFERENCE_CYCLE");
+        assertThat(diagnostics.get(0).elementId()).isEqualTo(EMPLOYEE_ID);
+    }
+
+    @Test
+    void compositionCycleIsReportedAsWarningForEveryParticipant() {
+        ModelValidationReadModel model = readModel(
+                List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Order"),
+                        classifier(ORDER_ID, null, ClassifierKind.CLASS, "OrderLine")),
+                List.of(relationship(10, RelationshipKind.COMPOSITION, "contains"),
+                        relationship(11, RelationshipKind.COMPOSITION, "owns")),
+                List.of(end(20, 10, PERSON_ID, (short) 1, null, MultiplicityKind.ZERO_OR_ONE),
+                        end(21, 10, ORDER_ID, (short) 2, null, MultiplicityKind.ZERO_OR_MANY),
+                        end(22, 11, ORDER_ID, (short) 1, null, MultiplicityKind.ZERO_OR_ONE),
+                        end(23, 11, PERSON_ID, (short) 2, null, MultiplicityKind.ZERO_OR_MANY)));
+
+        List<ModelValidationDiagnostic> diagnostics = validator.validate(model);
+
+        assertThat(diagnostics).extracting(ModelValidationDiagnostic::code)
+                .containsExactly("COMPOSITION_CYCLE", "COMPOSITION_CYCLE");
+        assertThat(diagnostics).extracting(ModelValidationDiagnostic::elementId)
+                .containsExactly(PERSON_ID, ORDER_ID);
+        assertThat(diagnostics).extracting(ModelValidationDiagnostic::severity)
+                .containsOnly(SeverityKind.WARNING);
+    }
+
+    @Test
+    void selfCompositionIsNotReported() {
+        ModelValidationReadModel model = readModel(
+                List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Folder")),
+                List.of(relationship(10, RelationshipKind.COMPOSITION, "children")),
+                List.of(end(20, 10, PERSON_ID, (short) 1, "parent", MultiplicityKind.ZERO_OR_ONE),
+                        end(21, 10, PERSON_ID, (short) 2, "children", MultiplicityKind.ZERO_OR_MANY)));
+
+        assertThat(validator.validate(model)).isEmpty();
     }
 
     private static ModelValidationReadModel readModel(List<Classifier> classifiers,
