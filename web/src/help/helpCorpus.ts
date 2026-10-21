@@ -162,13 +162,15 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     slug: 'diagram-chat',
     title: 'Diagram chat',
     summary:
-      'Chat with the collaborators of this diagram; an assistant with memory of the diagram can join the conversation.',
+      'Chat history stays session-scoped; the AI uses current UML and shared diagram memory, and searches other diagrams only within the chat audience’s shared access.',
     steps: [
       'Open the chat panel inside the editor.',
       'Create or select a session; sessions of the same diagram keep their own history.',
-      'Ask the assistant explicitly; it knows the current diagram and answers are shared with collaborators.',
+      'Useful diagram knowledge is extracted automatically after AI requests. Extract memories remains available for a manual run.',
+      'Ask the assistant explicitly; each request uses the latest UML and active memories for this diagram. Ask naturally in chat to read, save, or revise a memory.',
+      'Ask explicitly to search other diagrams; shared answers name their sources and use only projects every active collaborator can access.',
       'Dictate with the microphone button, or attach an image to ask about it; sending is always explicit.',
     ],
-    keywords: ['chat', 'message', 'session', 'assistant', 'voice', 'dictation', 'image'],
+    keywords: ['chat', 'message', 'session', 'assistant', 'memory', 'memories', 'read', 'save', 'revise', 'other diagrams', 'shared access', 'uml', 'voice', 'dictation', 'image'],
   },
 ];
