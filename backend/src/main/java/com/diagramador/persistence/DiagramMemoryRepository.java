@@ -2,9 +2,13 @@ package com.diagramador.persistence;
 
 import com.diagramador.domain.DiagramMemory;
 import com.diagramador.domain.MemoryStatus;
+import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,6 +18,13 @@ public interface DiagramMemoryRepository extends JpaRepository<DiagramMemory, UU
     List<DiagramMemory> findByView_IdOrderByCreatedAtAscIdAsc(UUID viewId);
 
     List<DiagramMemory> findByView_IdAndStatusOrderByCreatedAtAscIdAsc(UUID viewId, MemoryStatus status);
+
+    List<DiagramMemory> findByView_IdAndContentContainingIgnoreCaseOrderByCreatedAtDescIdDesc(
+            UUID viewId, String content, Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT m FROM DiagramMemory m WHERE m.id = :memoryId")
+    Optional<DiagramMemory> findByIdForUpdate(@Param("memoryId") UUID memoryId);
 
     /**
      * PD-06 analog for memory (T5/L43): a single atomic bulk DELETE of the whole diagram's
