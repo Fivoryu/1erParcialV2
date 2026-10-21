@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.diagramador.assistant.LlamaCppAssistantProvider;
+import com.diagramador.assistant.MemoryAgentProtocol;
 import com.diagramador.context.TokenCounter;
 import com.diagramador.domain.ProjectMemberRole;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -90,6 +91,25 @@ class ContextMeterApiTest extends AuthenticatedApiTest {
         assertThat(meter.path("diagramData").asLong()).isPositive();
         assertThat(meter.path("totalUsed").asLong()).isPositive();
         assertThat(meter.path("compactionPending").asBoolean()).isFalse();
+    }
+
+    @Test
+    void meterCountsChatAndMemoryAgentInstructionsExactlyOnce() throws Exception {
+        String owner = username("instructions");
+        UUID projectId = createProject(owner);
+        UUID sessionId = createSession(owner, projectId, defaultViewId(projectId), "Instrucciones");
+        String systemPrompt = "Instrucciones del sistema del chat.";
+
+        JsonNode meter = meter(owner, projectId, sessionId);
+        long expectedInstructions = systemPrompt.length() + MemoryAgentProtocol.INSTRUCTIONS.length();
+
+        assertThat(meter.path("instructions").asLong()).isEqualTo(expectedInstructions);
+        assertThat(meter.path("totalUsed").asLong()).isEqualTo(
+                meter.path("instructions").asLong()
+                        + meter.path("diagramData").asLong()
+                        + meter.path("memories").asLong()
+                        + meter.path("history").asLong()
+                        + meter.path("images").asLong());
     }
 
     @Test
@@ -189,15 +209,15 @@ class ContextMeterApiTest extends AuthenticatedApiTest {
 
         when(chatAssistantProvider.chat(anyList()))
                 .thenReturn("{\"summary\":\"Resumen del tramo previo\",\"decisions\":[],\"hypotheses\":[],\"pending\":[]}",
-                        "respuesta final");
+                        "{\"memories\":[]}", "respuesta final");
         mockMvc.perform(ask(owner, projectId, sessionB, questionId))
                 .andExpect(status().isAccepted());
         awaitAiAnswer(owner, projectId, sessionB, questionId);
 
-        // Provider calls in order: [0] memory extraction, [1] compaction, [2] the answer itself.
+        // Calls: [0] manual extraction, [1] preflight compaction, [2] automatic extraction, [3] answer.
         ArgumentCaptor<List<com.diagramador.assistant.ChatAssistantProvider.Turn>> calls = ArgumentCaptor.captor();
-        verify(chatAssistantProvider, timeout(5_000).times(3)).chat(calls.capture());
-        String answerConversation = calls.getAllValues().get(2).stream()
+        verify(chatAssistantProvider, timeout(5_000).times(4)).chat(calls.capture());
+        String answerConversation = calls.getAllValues().get(3).stream()
                 .map(com.diagramador.assistant.ChatAssistantProvider.Turn::content)
                 .reduce("", (left, right) -> left + "\n" + right);
         // The answer sees the compacted summary and the diagram's memories (CA-15)...

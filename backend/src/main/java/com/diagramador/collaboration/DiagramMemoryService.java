@@ -161,7 +161,8 @@ public class DiagramMemoryService {
             messageRepository.markMemoryExtracted(pendingMessages.stream().map(DiagramMessage::getId).toList());
         }
         if (!pendingCommands.isEmpty()) {
-            commandRepository.markKnowledgeConsumed(modelId);
+            commandRepository.markKnowledgeConsumedForCommands(
+                    pendingCommands.stream().map(ModelCommand::getCommandId).toList());
         }
         return new ExtractionResult(created.size(), conflicts, replacements, true);
     }
@@ -339,7 +340,7 @@ public class DiagramMemoryService {
         return value instanceof String text ? text.strip() : null;
     }
 
-    private static DiagramMemoryResource memoryResource(DiagramMemory memory) {
+    public static DiagramMemoryResource memoryResource(DiagramMemory memory) {
         return new DiagramMemoryResource(memory.getId(), memory.getKind().name(), memory.getStatus().name(),
                 memory.getContent(),
                 memory.getSourceSession() == null ? null : memory.getSourceSession().getId(),

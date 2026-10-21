@@ -10,7 +10,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.diagramador.assistant.ChatAssistantProvider;
 import com.diagramador.assistant.LlamaCppAssistantProvider;
+import com.diagramador.assistant.MemoryAgentProtocol;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
@@ -184,6 +186,16 @@ class ChatAttachmentApiTest extends AuthenticatedApiTest {
         when(chatAssistantProvider.chat(anyList())).thenReturn("respuesta simple");
         mockMvc.perform(ask(owner, projectId, sessionWithoutImage, plainQuestion))
                 .andExpect(status().isAccepted());
+
+        JsonNode answer = awaitAiAnswer(owner, projectId, sessionWithoutImage, plainQuestion);
+        assertThat(answer.path("body").asText()).isEqualTo("respuesta simple");
+
+        ArgumentCaptor<List<ChatAssistantProvider.Turn>> calls = ArgumentCaptor.captor();
+        verify(chatAssistantProvider, timeout(5_000).atLeastOnce()).chat(calls.capture());
+        List<ChatAssistantProvider.Turn> answerTurns = calls.getAllValues()
+                .get(calls.getAllValues().size() - 1);
+        assertThat(answerTurns.stream()
+                .filter(turn -> MemoryAgentProtocol.INSTRUCTIONS.equals(turn.content())).count()).isEqualTo(1);
     }
 
     private String username(String role) {
