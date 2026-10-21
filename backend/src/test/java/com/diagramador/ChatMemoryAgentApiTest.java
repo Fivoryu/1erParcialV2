@@ -730,14 +730,16 @@ class ChatMemoryAgentApiTest extends AuthenticatedApiTest {
                 "La conciliación genera el estado REV-OLD-7 antes del cierre.");
         String otherId = saveMemory(owner, projectId, viewId, "HYPOTHESIS", "Otra hipótesis REV-OTHER-8.");
         UUID sessionId = createSession(owner, projectId, viewId, "Revisión explícita");
+        String earlierId = postMessage(owner, projectId, sessionId, "Recordemos que REV-OLD-7 aplica antes del cierre.");
         String questionId = postMessage(owner, projectId, sessionId,
                 "Revisá la hipótesis activa que contiene REV-OLD-7: debe indicar REV-NEW-7 después del cierre. "
                         + "¿Cuál quedó como versión vigente?");
-        // Automatic extraction also stores the request itself, which mentions the same identifier; it must not
-        // make the revision target ambiguous.
+        // Automatic extraction also stores echoes of the explicit memory, from an earlier message and from the
+        // request itself; they repeat the identifier but must not make the revision target ambiguous.
         when(chatAssistantProvider.chat(anyList())).thenReturn(
-                extraction(memoryCandidate("Revisar la hipótesis REV-OLD-7 para indicar REV-NEW-7.", "HYPOTHESIS",
-                        questionId)),
+                extraction(memoryCandidate("REV-OLD-7 aplica antes del cierre.", "HYPOTHESIS", earlierId) + ","
+                        + memoryCandidate("Revisar la hipótesis REV-OLD-7 para indicar REV-NEW-7.", "HYPOTHESIS",
+                                questionId)),
                 "Quedó vigente la versión revisada.");
 
         mockMvc.perform(ask(owner, projectId, sessionId, questionId)).andExpect(status().isAccepted());

@@ -339,6 +339,7 @@ public class ChatMemoryAgentService {
     /**
      * Revises only when exactly one active memory of this diagram contains every identifier of the target. Memories
      * extracted from the request itself are not candidates: they repeat its identifiers without being the target.
+     * When extraction echoes leave several candidates, only explicitly stored memories remain.
      */
     private MemoryAction explicitRevision(UUID projectId, UUID viewId, UUID questionMessageId, String target,
             String change) {
@@ -358,6 +359,11 @@ public class ChatMemoryAgentService {
                 .filter(memory -> identifiers.stream()
                         .allMatch(memory.content().toLowerCase(Locale.ROOT)::contains))
                 .toList();
+        if (matching.size() > 1) {
+            // Extraction echoes a stored memory whenever later messages quote it; an explicitly stored memory
+            // (no chat source) is the authoritative one among them.
+            matching = matching.stream().filter(memory -> memory.sourceMessageId() == null).toList();
+        }
         if (matching.size() != 1) {
             return null;
         }
