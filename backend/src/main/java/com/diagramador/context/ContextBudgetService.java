@@ -2,6 +2,7 @@ package com.diagramador.context;
 
 import com.diagramador.assistant.AssistantJson;
 import com.diagramador.assistant.ChatAssistantProvider;
+import com.diagramador.assistant.MemoryAgentProtocol;
 import com.diagramador.assistant.DiagramContextRenderer;
 import com.diagramador.api.ApiException;
 import com.diagramador.collaboration.ChatService;
@@ -169,8 +170,21 @@ public class ContextBudgetService {
         return buildLiveContext(session, projectId, after, questionMessageId);
     }
 
+    public void requireAdditionalPromptWithinBudget(ContextReport report, List<String> additions) {
+        long total = report.totalUsed();
+        for (String addition : additions) {
+            long tokens = tokenCounter.count(addition);
+            if (tokens > report.promptBudget() - total) {
+                throw error(HttpStatus.PAYLOAD_TOO_LARGE, "CONTEXT_OVERFLOW",
+                        "The context does not fit within the prompt budget (CA-26).");
+            }
+            total += tokens;
+        }
+    }
+
     private ContextReport report(ChatSession session, UUID projectId, long images) {
-        long instructions = tokenCounter.count(provider.systemPrompt());
+        long instructions = tokenCounter.count(provider.systemPrompt())
+                + tokenCounter.count(MemoryAgentProtocol.INSTRUCTIONS);
         String diagramJson = contextRenderer.render(projectApiService.getModel(projectId));
         long diagramData = tokenCounter.count(diagramJson);
         String memoriesJson = memoriesJson(session.getView().getId());
