@@ -31,6 +31,6 @@ public interface ModelCommandRepository extends JpaRepository<ModelCommand, UUID
 
     @Modifying
     @Query("UPDATE ModelCommand c SET c.knowledgePending = false "
-            + "WHERE c.model.id = :modelId AND c.knowledgePending = true")
-    int markKnowledgeConsumed(@Param("modelId") UUID modelId);
+            + "WHERE c.commandId IN :commandIds AND c.knowledgePending = true")
+    int markKnowledgeConsumedForCommands(@Param("commandIds") List<UUID> commandIds);
 }
