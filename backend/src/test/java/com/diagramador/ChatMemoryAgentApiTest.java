@@ -733,7 +733,12 @@ class ChatMemoryAgentApiTest extends AuthenticatedApiTest {
         String questionId = postMessage(owner, projectId, sessionId,
                 "Revisá la hipótesis activa que contiene REV-OLD-7: debe indicar REV-NEW-7 después del cierre. "
                         + "¿Cuál quedó como versión vigente?");
-        when(chatAssistantProvider.chat(anyList())).thenReturn(extraction(""), "Quedó vigente la versión revisada.");
+        // Automatic extraction also stores the request itself, which mentions the same identifier; it must not
+        // make the revision target ambiguous.
+        when(chatAssistantProvider.chat(anyList())).thenReturn(
+                extraction(memoryCandidate("Revisar la hipótesis REV-OLD-7 para indicar REV-NEW-7.", "HYPOTHESIS",
+                        questionId)),
+                "Quedó vigente la versión revisada.");
 
         mockMvc.perform(ask(owner, projectId, sessionId, questionId)).andExpect(status().isAccepted());
         JsonNode answer = awaitAiAnswer(owner, projectId, sessionId, questionId);

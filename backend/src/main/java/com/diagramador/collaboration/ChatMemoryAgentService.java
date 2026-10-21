@@ -164,7 +164,7 @@ public class ChatMemoryAgentService {
     }
 
     public AgentAnswer answer(UUID projectId, UUID viewId, LiveContext context,
-            List<ChatAssistantProvider.Turn> baseTurns, String userQuestion) {
+            List<ChatAssistantProvider.Turn> baseTurns, String userQuestion, UUID questionMessageId) {
         List<ChatAssistantProvider.Turn> turns = new ArrayList<>(baseTurns.size() + 1);
         turns.add(new ChatAssistantProvider.Turn("system", MemoryAgentProtocol.INSTRUCTIONS));
         turns.addAll(baseTurns);
@@ -179,7 +179,7 @@ public class ChatMemoryAgentService {
                 && EXPLICIT_EXTERNAL_SCOPE.matcher(userQuestion).find()
                 && !DENIED_EXTERNAL_SCOPE.matcher(userQuestion).find();
         Deque<MemoryAction> serverActions = new ArrayDeque<>(
-                explicitActions(projectId, viewId, userQuestion, externalSearchRequested));
+                explicitActions(projectId, viewId, userQuestion, questionMessageId, externalSearchRequested));
         boolean serverWriteApplied = false;
 
         for (int step = 0; step <= MAX_ACTION_STEPS; step++) {
@@ -308,7 +308,7 @@ public class ChatMemoryAgentService {
 
     /** Plans the server-executed action for an explicit save, revise or cross-diagram search request. */
     private List<MemoryAction> explicitActions(UUID projectId, UUID viewId, String question,
-            boolean externalSearchRequested) {
+            UUID questionMessageId, boolean externalSearchRequested) {
         if (question == null || question.isBlank()) {
             return List.of();
         }
@@ -323,7 +323,8 @@ public class ChatMemoryAgentService {
         }
         Matcher revise = EXPLICIT_REVISE.matcher(question);
         if (revise.matches()) {
-            MemoryAction action = explicitRevision(projectId, viewId, revise.group(1), revise.group(2));
+            MemoryAction action = explicitRevision(projectId, viewId, questionMessageId, revise.group(1),
+                    revise.group(2));
             return action == null ? List.of() : List.of(action);
         }
         if (externalSearchRequested) {
@@ -335,8 +336,12 @@ public class ChatMemoryAgentService {
         return List.of();
     }
 
-    /** Revises only when exactly one active memory of this diagram contains every identifier of the target. */
-    private MemoryAction explicitRevision(UUID projectId, UUID viewId, String target, String change) {
+    /**
+     * Revises only when exactly one active memory of this diagram contains every identifier of the target. Memories
+     * extracted from the request itself are not candidates: they repeat its identifiers without being the target.
+     */
+    private MemoryAction explicitRevision(UUID projectId, UUID viewId, UUID questionMessageId, String target,
+            String change) {
         List<String> identifiers = new ArrayList<>();
         Matcher word = SEARCH_WORD.matcher(target);
         while (word.find()) {
@@ -349,6 +354,7 @@ public class ChatMemoryAgentService {
             return null;
         }
         List<DiagramMemoryResource> matching = diagramMemoryService.memories(projectId, viewId, "ACTIVE").stream()
+                .filter(memory -> questionMessageId == null || !questionMessageId.equals(memory.sourceMessageId()))
                 .filter(memory -> identifiers.stream()
                         .allMatch(memory.content().toLowerCase(Locale.ROOT)::contains))
                 .toList();

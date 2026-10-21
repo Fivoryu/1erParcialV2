@@ -226,7 +226,7 @@ public class ChatAiService {
                     request.questionMessageId, live);
             String userQuestion = live.questionTurn() == null ? null : live.questionTurn().content();
             ChatMemoryAgentService.AgentAnswer answer = chatMemoryAgentService.answer(projectId,
-                    freshSession.getView().getId(), live, turns, userQuestion);
+                    freshSession.getView().getId(), live, turns, userQuestion, request.questionMessageId);
 
             boolean published;
             try {
