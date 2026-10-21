@@ -38,6 +38,9 @@ public class ModelValidator {
     public static final String INCOMPLETE_MULTIPLICITY_SPECIFICATION = "INCOMPLETE_MULTIPLICITY_SPECIFICATION";
     public static final String DUPLICATE_MEMBER_NAME = "DUPLICATE_MEMBER_NAME";
     public static final String UNRESOLVED_TYPE = "UNRESOLVED_TYPE";
+    public static final String UNSUPPORTED_MULTIPLICITY_COMBINATION = "UNSUPPORTED_MULTIPLICITY_COMBINATION";
+    public static final String MANDATORY_REFERENCE_CYCLE = "MANDATORY_REFERENCE_CYCLE";
+    public static final String COMPOSITION_CYCLE = "COMPOSITION_CYCLE";
 
     /**
      * Profile primitive names resolvable at model level, mirroring the canonical V1 generation profile's
@@ -55,7 +58,94 @@ public class ModelValidator {
         diagnostics.addAll(incompleteRangeMultiplicities(model));
         diagnostics.addAll(duplicateMemberNames(model));
         diagnostics.addAll(unresolvedTypes(model));
+        diagnostics.addAll(unsupportedMultiplicityCombinations(model));
+        diagnostics.addAll(mandatoryReferenceCycles(model));
+        diagnostics.addAll(compositionCycles(model));
         return diagnostics;
+    }
+
+    /**
+     * R7 — structural relationships (association, aggregation, composition) must be one-to-many, mirroring the
+     * generation layer's UNSUPPORTED_MULTIPLICITY_COMBINATION semantics without depending on it: exactly one
+     * to-many end ({@code ZERO_OR_MANY} or {@code ONE_OR_MANY}) and one to-one end ({@code EXACTLY_ONE} or
+     * {@code ZERO_OR_ONE}). Relationships without exactly two ends are ignored (the generation layer reports them).
+     */
+    public List<ModelValidationDiagnostic> unsupportedMultiplicityCombinations(ModelValidationReadModel model) {
+        Map<UUID, List<RelationshipEndElement>> endsByRelationship = structuralEnds(model);
+        List<ModelValidationDiagnostic> diagnostics = new ArrayList<>();
+        for (RelationshipElement relationship : model.relationships()) {
+            if (!isStructuralKind(relationship.kind())) {
+                continue;
+            }
+            List<RelationshipEndElement> ends = endsByRelationship.get(relationship.id());
+            if (ends == null || ends.size() != 2 || oneToMany(ends) != null) {
+                continue;
+            }
+            String combination = ends.stream()
+                    .map(end -> end.multiplicity() == null ? "UNKNOWN" : end.multiplicity().name())
+                    .reduce((first, second) -> first + "/" + second).orElse("");
+            diagnostics.add(new ModelValidationDiagnostic(UNSUPPORTED_MULTIPLICITY_COMBINATION, SeverityKind.ERROR,
+                    relationship.id(), "multiplicity", "Relationship '" + relationship.name() + "' of kind "
+                            + relationship.kind() + " has multiplicity combination " + combination
+                            + "; the backend generator requires exactly one to-many end and one to-one end. For a "
+                            + "many-to-many relationship, model an intermediate class linked by two one-to-many "
+                            + "relationships."));
+        }
+        return sortedByElement(diagnostics);
+    }
+
+    /**
+     * R8 — mandatory references must not form a cycle. Each one-to-many structural relationship whose to-one end
+     * is {@code EXACTLY_ONE} becomes a NOT NULL foreign key from the to-many classifier to the to-one classifier;
+     * a cycle of such keys, including a mandatory self-reference, leaves no row that can be inserted first. Every
+     * classifier on a cycle is reported.
+     */
+    public List<ModelValidationDiagnostic> mandatoryReferenceCycles(ModelValidationReadModel model) {
+        Map<UUID, String> names = classifierNames(model);
+        List<DirectedEdge> edges = new ArrayList<>();
+        Set<UUID> selfReferencing = new HashSet<>();
+        for (OneToMany relationship : oneToManyRelationships(model, names.keySet())) {
+            if (relationship.oneEnd().multiplicity() != MultiplicityKind.EXACTLY_ONE) {
+                continue;
+            }
+            UUID owner = relationship.manyEnd().classifierId();
+            UUID referenced = relationship.oneEnd().classifierId();
+            if (owner.equals(referenced)) {
+                selfReferencing.add(owner);
+            }
+            edges.add(new DirectedEdge(owner, referenced));
+        }
+        Set<UUID> cyclic = new HashSet<>(cyclicNodes(edges));
+        cyclic.addAll(selfReferencing);
+        return cyclic.stream()
+                .sorted(Comparator.comparing(UUID::toString))
+                .map(classifierId -> new ModelValidationDiagnostic(MANDATORY_REFERENCE_CYCLE, SeverityKind.ERROR,
+                        classifierId, "multiplicity", "Classifier '" + names.get(classifierId)
+                                + "' participates in a cycle of mandatory (multiplicity 1) references, so none of "
+                                + "its rows can be inserted first. Make at least one end of the cycle 0..1."))
+                .toList();
+    }
+
+    /**
+     * R9 — compositions must not form an ownership cycle between distinct classifiers. A composition's whole is
+     * its to-one end and its part the to-many end; a self-composition (a recursive tree) is not a cycle. Reported
+     * as a WARNING for every classifier on the cycle.
+     */
+    public List<ModelValidationDiagnostic> compositionCycles(ModelValidationReadModel model) {
+        Map<UUID, String> names = classifierNames(model);
+        List<DirectedEdge> edges = new ArrayList<>();
+        for (OneToMany relationship : oneToManyRelationships(model, names.keySet())) {
+            if (relationship.kind() == RelationshipKind.COMPOSITION) {
+                edges.add(new DirectedEdge(relationship.oneEnd().classifierId(),
+                        relationship.manyEnd().classifierId()));
+            }
+        }
+        return cyclicNodes(edges).stream()
+                .sorted(Comparator.comparing(UUID::toString))
+                .map(classifierId -> new ModelValidationDiagnostic(COMPOSITION_CYCLE, SeverityKind.WARNING,
+                        classifierId, "composition", "Classifier '" + names.get(classifierId)
+                                + "' participates in a composition cycle, so it is transitively a part of itself."))
+                .toList();
     }
 
     /**
@@ -278,6 +368,65 @@ public class ModelValidator {
         return diagnostics;
     }
 
+    /** Groups every end of a structural relationship by relationship id, ordered by ordinal. */
+    private static Map<UUID, List<RelationshipEndElement>> structuralEnds(ModelValidationReadModel model) {
+        Map<UUID, List<RelationshipEndElement>> endsByRelationship = new LinkedHashMap<>();
+        for (RelationshipEndElement end : model.relationshipEnds()) {
+            endsByRelationship.computeIfAbsent(end.relationshipId(), ignored -> new ArrayList<>()).add(end);
+        }
+        endsByRelationship.values().forEach(ends -> ends.sort(Comparator.comparingInt(RelationshipEndElement::ordinal)));
+        return endsByRelationship;
+    }
+
+    /**
+     * The structural relationships that map to one-to-many foreign keys, with both ends on known classifiers.
+     */
+    private static List<OneToMany> oneToManyRelationships(ModelValidationReadModel model,
+            Set<UUID> knownClassifiers) {
+        Map<UUID, List<RelationshipEndElement>> endsByRelationship = structuralEnds(model);
+        List<OneToMany> relationships = new ArrayList<>();
+        for (RelationshipElement relationship : model.relationships()) {
+            if (!isStructuralKind(relationship.kind())) {
+                continue;
+            }
+            List<RelationshipEndElement> ends = endsByRelationship.get(relationship.id());
+            OneToMany pair = ends == null || ends.size() != 2 ? null : oneToMany(ends);
+            if (pair == null || !knownClassifiers.contains(pair.oneEnd().classifierId())
+                    || !knownClassifiers.contains(pair.manyEnd().classifierId())) {
+                continue;
+            }
+            relationships.add(new OneToMany(relationship.kind(), pair.oneEnd(), pair.manyEnd()));
+        }
+        return relationships;
+    }
+
+    /** Returns the to-one and to-many ends of a two-end pair, or null when it is not one-to-many. */
+    private static OneToMany oneToMany(List<RelationshipEndElement> ends) {
+        RelationshipEndElement first = ends.get(0);
+        RelationshipEndElement second = ends.get(1);
+        if (isToOneMultiplicity(first.multiplicity()) && isToManyEnd(second.multiplicity())) {
+            return new OneToMany(null, first, second);
+        }
+        if (isToManyEnd(first.multiplicity()) && isToOneMultiplicity(second.multiplicity())) {
+            return new OneToMany(null, second, first);
+        }
+        return null;
+    }
+
+    private static boolean isToOneMultiplicity(MultiplicityKind multiplicity) {
+        return multiplicity == MultiplicityKind.EXACTLY_ONE || multiplicity == MultiplicityKind.ZERO_OR_ONE;
+    }
+
+    /** To-many as the generator maps it; unlike {@link #isToManyMultiplicity}, RANGE is not mappable. */
+    private static boolean isToManyEnd(MultiplicityKind multiplicity) {
+        return multiplicity == MultiplicityKind.ONE_OR_MANY || multiplicity == MultiplicityKind.ZERO_OR_MANY;
+    }
+
+    private static boolean isStructuralKind(RelationshipKind kind) {
+        return kind == RelationshipKind.ASSOCIATION || kind == RelationshipKind.AGGREGATION
+                || kind == RelationshipKind.COMPOSITION;
+    }
+
     private static boolean isToManyMultiplicity(MultiplicityKind multiplicity) {
         return multiplicity == MultiplicityKind.ONE_OR_MANY || multiplicity == MultiplicityKind.ZERO_OR_MANY
                 || multiplicity == MultiplicityKind.RANGE;
@@ -381,16 +530,16 @@ public class ModelValidator {
         return resolvedPairs;
     }
 
-    /** Strongly connected components (Kosaraju) over hierarchy edges; self-loops belong to R2. */
+    /** Strongly connected components (Kosaraju) over directed edges; self-loops belong to R2, R8 and R9. */
     private static Set<UUID> cyclicNodes(List<DirectedEdge> edges) {
         Map<UUID, List<UUID>> forward = new LinkedHashMap<>();
         Map<UUID, List<UUID>> backward = new LinkedHashMap<>();
         for (DirectedEdge edge : edges) {
-            if (edge.supertypeId().equals(edge.subtypeId())) {
+            if (edge.from().equals(edge.to())) {
                 continue;
             }
-            forward.computeIfAbsent(edge.supertypeId(), ignored -> new ArrayList<>()).add(edge.subtypeId());
-            backward.computeIfAbsent(edge.subtypeId(), ignored -> new ArrayList<>()).add(edge.supertypeId());
+            forward.computeIfAbsent(edge.from(), ignored -> new ArrayList<>()).add(edge.to());
+            backward.computeIfAbsent(edge.to(), ignored -> new ArrayList<>()).add(edge.from());
         }
 
         Set<UUID> visited = new HashSet<>();
@@ -471,6 +620,9 @@ public class ModelValidator {
         return kind == RelationshipKind.INTERFACE_REALIZATION ? "interfaceRealization" : "generalization";
     }
 
-    private record DirectedEdge(UUID supertypeId, UUID subtypeId) {
+    private record DirectedEdge(UUID from, UUID to) {
+    }
+
+    private record OneToMany(RelationshipKind kind, RelationshipEndElement oneEnd, RelationshipEndElement manyEnd) {
     }
 }
