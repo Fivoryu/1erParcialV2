@@ -364,6 +364,15 @@ describe('ChatPanel', () => {
     expect(markup).toContain('Deleting chat history does not forget memory.');
   });
 
+  it('explains automatic memory, natural-language operations, current UML, and shared search scope', () => {
+    const markup = render();
+
+    expect(markup).toContain('Useful design knowledge is extracted automatically after AI requests');
+    expect(markup).toContain('Ask naturally in chat to read, save, or revise memories');
+    expect(markup).toContain('Each AI request uses the latest UML for this diagram');
+    expect(markup).toContain('Shared results come only from projects every active collaborator can access');
+  });
+
   it('renders authorized image bytes as a thumbnail on the associated message', () => {
     const imageMessage: ChatMessageResource = {
       ...history[0]!,
