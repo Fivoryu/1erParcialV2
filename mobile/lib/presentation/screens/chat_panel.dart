@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -71,22 +70,41 @@ class _ChatPanelState extends State<ChatPanel> {
             Text(
               '${event.elapsed.inSeconds}s • ${event.phase}${event.tool == null ? "" : " • ${event.tool}"}',
             ),
-          if (c.deletePreview != null)
+          if (c.writePreview != null)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('Confirm deletion of this exact target'),
-                    SelectableText(
-                      const JsonEncoder.withIndent('  ')
-                          .convert(c.deletePreview!['target']),
+                    Text(c.writeSummary ?? 'Confirm this change'),
+                    FilledButton(
+                      onPressed: c.busy ? null : c.confirmWrite,
+                      child: const Text('Confirm change'),
                     ),
-                    Text(c.deletePreview!['path'] as String),
+                    TextButton(
+                      onPressed: c.dismissWrite,
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (c.deletePreview != null || c.deletePreviews.isNotEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(c.deletePreviews.isEmpty
+                        ? 'Confirm deletion of this exact record'
+                        : 'Confirm deletion of these ${c.deletePreviews.length} records'),
+                    // Labels only: the confirmation never shows record identifiers.
+                    for (final label in c.deleteLabels) Text('• $label'),
                     FilledButton(
                       onPressed: c.busy ? null : c.confirmDelete,
-                      child: const Text('Confirm delete'),
+                      child: Text(c.deletePreviews.isEmpty ? 'Confirm delete' : 'Delete all ${c.deletePreviews.length}'),
                     ),
                     TextButton(
                       onPressed: c.dismissDelete,

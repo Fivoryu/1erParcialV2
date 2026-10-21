@@ -51,7 +51,8 @@ public class MobileAgentOperationService {
     private Receipt submitValidated(UUID project, UUID deployment, Request request) {
         validate(request);
         var prepared = gateway.prepareAgent(project, deployment,
-                new OperationRequest(request.contractHash(), request.method(), request.path(), request.body(), false));
+                new OperationRequest(request.contractHash(), request.method(), request.path(), request.body(), false,
+                        request.query()));
         String canonical = MobileAgentOperationResources.canonical(json, request);
         var claim = store.claim(prepared.userId(), project, deployment, request, canonical);
         if (!claim.dispatch()) return receipt(claim.stored());

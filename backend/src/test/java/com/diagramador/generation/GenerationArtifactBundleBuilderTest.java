@@ -131,8 +131,25 @@ class GenerationArtifactBundleBuilderTest {
         JsonNode openApi = JSON.readTree(document);
 
         assertThat(openApi.path("openapi").asText()).isEqualTo("3.0.3");
-        assertThat(fieldNames(openApi.path("paths")))
-                .containsExactly("/api/customer", "/api/customer/{id}", "/api/order", "/api/order/{id}");
+        assertThat(fieldNames(openApi.path("paths"))).containsExactly("/api/customer",
+                "/api/customer/aggregate", "/api/customer/query", "/api/customer/values", "/api/customer/{id}",
+                "/api/order", "/api/order/aggregate", "/api/order/query", "/api/order/values", "/api/order/{id}");
+        JsonNode query = openApi.at("/paths/~1api~1order~1query/get");
+        assertThat(query.at("/parameters/0/name").asText()).isEqualTo("filter");
+        assertThat(query.at("/parameters/0/explode").asBoolean()).isTrue();
+        assertThat(query.at("/parameters/3/schema/maximum").asInt()).isEqualTo(200);
+        assertThat(query.at("/responses/200/content/application~1json/schema/properties/items/items/$ref").asText())
+                .isEqualTo("#/components/schemas/OrderDto");
+        assertThat(openApi.at("/paths/~1api~1order~1aggregate/get/parameters/0/schema/enum").toString())
+                .isEqualTo("[\"count\",\"sum\",\"avg\",\"min\",\"max\"]");
+        assertThat(openApi.at("/paths/~1api~1order~1values/get/parameters/0/schema/enum").toString())
+                .isEqualTo("[\"id\",\"orderNumber\",\"customerId\",\"customer.displayName\"]");
+        assertThat(openApi.at("/components/schemas/OrderDto/x-query-fields/2").toString())
+                .isEqualTo("{\"name\":\"customerId\",\"kind\":\"UUID\",\"references\":\"customer\"}");
+        assertThat(openApi.at("/components/schemas/OrderDto/x-query-fields/3").toString())
+                .isEqualTo("{\"name\":\"customer.displayName\",\"kind\":\"STRING\"}");
+        assertThat(openApi.at("/x-agent-capabilities/filterSyntax").asText()).isEqualTo("field:operator:value");
+        assertThat(openApi.at("/x-agent-capabilities/operators").size()).isEqualTo(9);
         assertCrudOperations(openApi, "customer");
         assertCrudOperations(openApi, "order");
         assertThat(openApi.at("/paths/~1api~1customer/post/responses/201/content/application~1json/schema/$ref")
@@ -154,6 +171,69 @@ class GenerationArtifactBundleBuilderTest {
         assertThat(ConnectionConfigRefValidator.looksCredentialLike(document)).isFalse();
         assertThat(HOST_PATH.matcher(document).find()).isFalse();
         assertThat(bundle.files().keySet()).contains("openapi.json", "provenance.json");
+    }
+
+    @Test
+    void openApiPublishesEnumerationLiteralsInsteadOfAForeignKey() throws Exception {
+        InputSnapshot snapshot = snapshot("Guest");
+        DomainModelIR base = ir("displayName", "Guest", false);
+        UUID statusId = id(701);
+        TypeUse statusType = new TypeUse(id(702), statusId, "OrderStatus", "OrderStatus", "VARCHAR(64)", true);
+        FieldDeclaration status = new FieldDeclaration(id(703), "status", "status", statusType, "PRIVATE",
+                MultiplicityKind.ZERO_OR_ONE, new MultiplicityBounds(0, 1), true, CollectionIntent.SINGLE_VALUE,
+                null, 1);
+        List<TypeDeclaration> types = base.types().stream().map(type -> !type.sourceId().equals(ORDER_ID) ? type
+                : new TypeDeclaration(type.sourceId(), null, type.classifierKind(), type.sourceName(),
+                        type.javaName(), type.javaPackageName(), type.tableName(), false,
+                        java.util.stream.Stream.concat(type.fields().stream(), java.util.stream.Stream.of(status))
+                                .toList(), type.operations())).toList();
+        DomainModelIR ir = new DomainModelIR(base.packages(), types, base.relationships(), List.of(),
+                base.diagnostics(), List.of(new DomainModelIR.EnumDeclaration(statusId, "OrderStatus",
+                        "OrderStatus", "", List.of("OPEN", "CLOSED"))));
+
+        GeneratedArtifactBundle bundle = builder.build(identity("course-store", snapshot, 1), snapshot, ir,
+                VerificationState.NOT_RUN);
+        JsonNode openApi = JSON.readTree(bundle.files().get(GenerationArtifactBundleBuilder.OPENAPI_PATH));
+
+        JsonNode property = openApi.at("/components/schemas/OrderDto/properties/status");
+        assertThat(property.path("type").asText()).isEqualTo("string");
+        assertThat(property.path("enum").toString()).isEqualTo("[\"OPEN\",\"CLOSED\"]");
+        assertThat(property.path("x-enum-name").asText()).isEqualTo("OrderStatus");
+        assertThat(openApi.at("/components/schemas/OrderDto/x-query-fields").toString())
+                .contains("{\"name\":\"status\",\"kind\":\"ENUM\",\"enum\":[\"OPEN\",\"CLOSED\"]}");
+        assertThat(openApi.at("/components/schemas/OrderDto/properties/statusId").isMissingNode()).isTrue();
+    }
+
+    @Test
+    void openApiNamesTheHumanReadableDisplayFieldsOfEachEntity() throws Exception {
+        TypeUse text = new TypeUse(null, null, "String", "String", "VARCHAR(255)", true);
+        TypeUse number = new TypeUse(null, null, "Integer", "Integer", "INTEGER", true);
+        java.util.function.BiFunction<String, Boolean, FieldDeclaration> field = (name, nullable) ->
+                new FieldDeclaration(UUID.nameUUIDFromBytes(name.getBytes()), name, name,
+                        name.equals("edad") ? number : text, "PRIVATE",
+                        nullable ? MultiplicityKind.ZERO_OR_ONE : MultiplicityKind.EXACTLY_ONE,
+                        new MultiplicityBounds(nullable ? 0 : 1, 1), nullable, CollectionIntent.SINGLE_VALUE, null, 0);
+        TypeDeclaration alumno = new TypeDeclaration(id(801), null, ClassifierKind.CLASS, "Alumno", "Alumno", "",
+                "alumno", false, List.of(field.apply("edad", false), field.apply("apellido", false),
+                        field.apply("nombre", false)), List.of());
+        TypeDeclaration libro = new TypeDeclaration(id(802), null, ClassifierKind.CLASS, "Libro", "Libro", "",
+                "libro", false, List.of(field.apply("isbn", false), field.apply("titulo", true)), List.of());
+        TypeDeclaration pago = new TypeDeclaration(id(803), null, ClassifierKind.CLASS, "Pago", "Pago", "",
+                "pago", false, List.of(field.apply("nota", true), field.apply("referencia", false)), List.of());
+        TypeDeclaration medida = new TypeDeclaration(id(804), null, ClassifierKind.CLASS, "Medida", "Medida", "",
+                "medida", false, List.of(field.apply("edad", false)), List.of());
+        InputSnapshot snapshot = snapshot("Guest");
+
+        GeneratedArtifactBundle bundle = builder.build(identity("course-store", snapshot, 1), snapshot,
+                new DomainModelIR(List.of(), List.of(alumno, libro, pago, medida), List.of(), List.of(), List.of()),
+                VerificationState.NOT_RUN);
+        JsonNode schemas = JSON.readTree(bundle.files().get(GenerationArtifactBundleBuilder.OPENAPI_PATH))
+                .at("/components/schemas");
+
+        assertThat(schemas.at("/AlumnoDto/x-display-fields").toString()).isEqualTo("[\"nombre\",\"apellido\"]");
+        assertThat(schemas.at("/LibroDto/x-display-fields").toString()).isEqualTo("[\"titulo\"]");
+        assertThat(schemas.at("/PagoDto/x-display-fields").toString()).isEqualTo("[\"referencia\"]");
+        assertThat(schemas.at("/MedidaDto/x-display-fields").toString()).isEqualTo("[]");
     }
 
     @Test

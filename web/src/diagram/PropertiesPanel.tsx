@@ -254,23 +254,30 @@ function ClassifierProperties({
 }) {
   const canBeAbstract = classifier.kind === 'CLASS' || classifier.kind === 'ABSTRACT_CLASS';
   const isPackage = classifier.kind === 'PACKAGE';
+  const isEnumeration = classifier.kind === 'ENUMERATION';
   const namespacePackages = availableNamespacePackages(model, classifier.id);
   const namespaceValue = namespacePackages.some((candidate) => candidate.id === classifier.namespaceId)
     ? classifier.namespaceId ?? ''
     : '';
 
   function addAttribute() {
+    // Enumeration literals are untyped identifiers; the backend rejects a type.
     const envelope = onCommand({
       type: 'attribute.add',
       targets: [{ scope: 'classifier', id: classifier.id }],
-      payload: {
-        name: `attribute${classifier.attributes.length + 1}`,
-        type: { primitiveName: 'String' },
-        visibility: 'PUBLIC',
-        multiplicity: 'EXACTLY_ONE',
-        defaultValue: null,
-        ordinal: nextOrdinal(classifier.attributes),
-      },
+      payload: isEnumeration
+        ? {
+          name: `LITERAL_${classifier.attributes.length + 1}`,
+          ordinal: nextOrdinal(classifier.attributes),
+        }
+        : {
+          name: `attribute${classifier.attributes.length + 1}`,
+          type: { primitiveName: 'String' },
+          visibility: 'PUBLIC',
+          multiplicity: 'EXACTLY_ONE',
+          defaultValue: null,
+          ordinal: nextOrdinal(classifier.attributes),
+        },
     });
     const id = envelope?.payload.id;
     if (typeof id === 'string') {
@@ -301,13 +308,13 @@ function ClassifierProperties({
     <>
       <section className="property-section" aria-labelledby="classifier-properties-title">
         <div className="property-section-heading">
-          <h3 id="classifier-properties-title">{isPackage ? 'Package' : 'Class'}</h3>
+          <h3 id="classifier-properties-title">{isPackage ? 'Package' : isEnumeration ? 'Enumeration' : 'Class'}</h3>
           <button className="text-button danger-button" onClick={onDelete} type="button">
-            Delete {isPackage ? 'package' : 'class'}
+            Delete {isPackage ? 'package' : isEnumeration ? 'enumeration' : 'class'}
           </button>
         </div>
         <p className="property-summary">
-          {isPackage ? 'Package' : classifier.kind === 'INTERFACE' ? 'Interface' : classifier.isAbstract ? 'Abstract class' : 'Class'}
+          {isPackage ? 'Package' : isEnumeration ? 'Enumeration' : classifier.kind === 'INTERFACE' ? 'Interface' : classifier.isAbstract ? 'Abstract class' : 'Class'}
         </p>
         <label className="field-label" htmlFor="classifier-package">Package</label>
         <select
@@ -335,7 +342,12 @@ function ClassifierProperties({
             <span>Abstract class</span>
           </label>
         )}
-        {!isPackage && (
+        {isEnumeration && (
+          <div className="property-actions">
+            <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Add literal</button>
+          </div>
+        )}
+        {!isPackage && !isEnumeration && (
           <div className="property-actions">
             <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Add attribute</button>
             <button className="button button-secondary button-compact" onClick={addOperation} type="button">Add operation</button>
@@ -623,6 +635,20 @@ function AttributeProperties({
         defaultValue: defaultValue === '' ? null : defaultValue,
       },
     });
+  }
+
+  if (classifier.kind === 'ENUMERATION') {
+    // A literal is only its name (renamed on the canvas); it has no type,
+    // visibility, multiplicity or default value.
+    return (
+      <div className="property-section-heading">
+        <div>
+          <h3>Enumeration literal</h3>
+          <p className="property-summary">{attribute.name} in {classifier.name}</p>
+        </div>
+        <button className="text-button danger-button" onClick={onDelete} type="button">Delete</button>
+      </div>
+    );
   }
 
   return (

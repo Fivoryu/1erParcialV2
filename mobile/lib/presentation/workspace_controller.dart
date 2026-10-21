@@ -413,7 +413,19 @@ class WorkspaceController extends ChangeNotifier {
       if (epoch != _modelEpoch) {
         throw const MnnUnavailableException('Local model session changed.');
       }
-      if (selectedRuntime == LocalRuntime.gemma) {
+      final session = selectedRuntime == LocalRuntime.gemma ? _sessionParts(prompt) : null;
+      final agent = litert;
+      if (session != null && agent is LiteRtSessionAgentService) {
+        // The static part (rules, examples, this backend's contract) is the
+        // persistent conversation's system instruction, prefilled once per
+        // backend; each request only sends what changed.
+        await agent.openSession(scope: session.scope, systemInstruction: session.system);
+        response = await agent.sendInSession(
+          scope: session.scope,
+          message: session.message,
+          onPartial: onPartial,
+        );
+      } else if (selectedRuntime == LocalRuntime.gemma) {
         final agent = litert!;
         response = agent is LiteRtStreamingAgentService
             ? await agent.generateAgent(
@@ -430,7 +442,40 @@ class WorkspaceController extends ChangeNotifier {
         throw const MnnUnavailableException('Local model session changed.');
       }
     });
+    if (const bool.fromEnvironment('AGENT_DEBUG')) {
+      // Diagnostic builds only: the raw decision, to see what the model wrote.
+      final raw = response!;
+      final visible = raw.length > 3000 ? raw.substring(0, 3000) : raw;
+      debugPrint('AGENT_RAW ${raw.length} $visible');
+    }
     return response!;
+  }
+
+  /// Splits an agent runner envelope into the session system instruction and
+  /// the per-request message; null when the prompt is not such an envelope.
+  ({String scope, String system, String message})? _sessionParts(String prompt) {
+    final selected = contract;
+    if (selected == null) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(prompt);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map<String, dynamic> ||
+        !decoded.containsKey('instruction') ||
+        !decoded.containsKey('contract')) {
+      return null;
+    }
+    const staticKeys = {'instruction', 'examples', 'contract'};
+    return (
+      scope: '${selected.deploymentId}:${selected.contractHash}',
+      system: jsonEncode({for (final key in staticKeys) if (decoded.containsKey(key)) key: decoded[key]}),
+      message: jsonEncode({
+        for (final entry in decoded.entries)
+          if (!staticKeys.contains(entry.key)) entry.key: entry.value,
+      }),
+    );
   }
 
   Future<void> propose(UserSession session, String userPrompt) async {

@@ -76,13 +76,12 @@
       "name": "Enumeración",
       "umlElement": "uml:Enumeration",
       "covers": ["ENUMERATION"],
-      "supported": false,
-      "unsupportedReason": "El clasificador se puede guardar (classifier.kind='ENUMERATION'), pero el modelo de datos no tiene dónde guardar sus literales. Una enumeración sin constantes no puede materializarse como Java enum, que es lo que declara la sección 8.3 de contratos.",
+      "supported": true,
       "origin": "analisis-seccion-6",
       "mappings": [
-        { "target": "persistence", "value": "classifier.kind='ENUMERATION' guarda el clasificador, pero no sus literales" },
-        { "target": "generation", "value": "NONE", "reason": "No es posible emitir un Java enum sin sus constantes; el generador no puede consumar el mapeo declarado en la sección 8.3." },
-        { "target": "xmi", "value": "uml:Enumeration con ownedLiteral, que hoy no tiene contraparte persistida" }
+        { "target": "persistence", "value": "classifier.kind='ENUMERATION'; sus literales son filas uml_attribute con kind='LITERAL' y sin tipo" },
+        { "target": "generation", "value": "Java enum en el paquete de dominio; el atributo que la usa es @Enumerated(EnumType.STRING) sobre VARCHAR(64) con CHECK de los literales, y openapi.json publica el enum" },
+        { "target": "xmi", "value": "uml:Enumeration con ownedLiteral" }
       ],
       "sources": [
         "docs/analisis-enunciado-parcial-1.md#6",
@@ -90,7 +89,7 @@
         "docs/puds/datos/02-esquema-fisico.sql#L133-L143",
         "docs/puds/contratos/01-contratos-transversales.md#8-3"
       ],
-      "notes": "Cubierto también por BL-CLS-05. Ver GAP-02."
+      "notes": "Cubierto también por BL-CLS-05. GAP-02 cerrado: los literales se guardan como atributos LITERAL, el mismo formato que ya escribía la importación XMI."
     },
     {
       "id": "BL-CLS-05",
@@ -98,12 +97,11 @@
       "name": "Literal de enumeración",
       "umlElement": "uml:EnumerationLiteral",
       "covers": ["ENUMERATION"],
-      "supported": false,
-      "unsupportedReason": "No existe tabla ni columna que guarde las constantes de una enumeración. Sin ellas, la enumeración es un nombre sin contenido.",
+      "supported": true,
       "origin": "derivado",
       "mappings": [
-        { "target": "persistence", "value": "NONE", "reason": "El esquema físico no declara ninguna entidad para literales de enumeración; la ausencia está probada en el rango de tablas del modelo semántico." },
-        { "target": "generation", "value": "NONE", "reason": "Sin literales persistidos no hay constantes que emitir en el Java enum generado." },
+        { "target": "persistence", "value": "uml_attribute con kind='LITERAL', type_reference_id NULL; el nombre debe ser un identificador" },
+        { "target": "generation", "value": "Constante del Java enum generado y valor permitido del CHECK SQL" },
         { "target": "xmi", "value": "ownedLiteral dentro de uml:Enumeration" }
       ],
       "sources": [
@@ -699,12 +697,6 @@
       "description": "La línea base está en estado proposed y requiere ratificación humana antes de darla por cerrada.",
       "blocks": ["cierre del Incremento 0", "arranque del Ciclo 1", "cualquier afirmación pública de compatibilidad UML"],
       "owner": "Equipo y docente en la sesión de ratificación"
-    },
-    {
-      "id": "GAP-02",
-      "description": "La enumeración no tiene dónde guardar sus literales, así que no puede materializarse como Java enum pese a que la sección 8.3 de contratos lo declara. El dialecto de EA sí entrega las constantes, pero serializadas como ownedAttribute y no como ownedLiteral, de modo que un importador que busque la forma estándar también las pierde.",
-      "blocks": ["BL-CLS-04", "BL-CLS-05", "generación de enumeraciones", "RF-10 y RF-11 para modelos con enums"],
-      "owner": "Equipo, en el diseño de datos del Ciclo 1"
     },
     {
       "id": "GAP-03",

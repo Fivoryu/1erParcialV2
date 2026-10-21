@@ -361,3 +361,68 @@ describe('UML class node presentation', () => {
     expect(markup).not.toContain('Abstract attribute');
   });
 });
+
+const enumeration: ClassifierResource = {
+  id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  name: 'Turno',
+  kind: 'ENUMERATION',
+  isAbstract: false,
+  namespaceId: null,
+  attributes: [
+    {
+      id: 'eeeeeeee-0000-4000-8000-000000000001',
+      name: 'MANANA',
+      kind: 'LITERAL',
+      visibility: 'PUBLIC',
+      multiplicity: 'EXACTLY_ONE',
+      defaultValue: null,
+      typeReferenceId: null,
+      type: null,
+      ordinal: 0,
+    },
+  ],
+  operations: [],
+  constraints: [],
+};
+
+describe('UML enumeration', () => {
+  const model: ModelResource = { ...modelFixture, classifiers: [...modelFixture.classifiers, enumeration] };
+
+  it('renders the enumeration stereotype and its literals without type or visibility', () => {
+    const markup = renderClassifier(enumeration);
+
+    expect(markup).toContain('«enumeration»');
+    expect(markup).toContain('MANANA');
+    expect(markup).not.toContain('+ MANANA');
+  });
+
+  it('adds untyped literals instead of attributes and operations', () => {
+    const sent: unknown[] = [];
+    const markup = renderToStaticMarkup(createElement(PropertiesPanel, {
+      model,
+      selection: { kind: 'classifier', classifierId: enumeration.id },
+      onCommand: (request) => { sent.push(request); return null; },
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    expect(markup).toContain('Enumeration');
+    expect(markup).toContain('Add literal');
+    expect(markup).not.toContain('Add attribute');
+    expect(markup).not.toContain('Add operation');
+  });
+
+  it('edits a literal without a type, visibility or multiplicity', () => {
+    const markup = renderToStaticMarkup(createElement(PropertiesPanel, {
+      model,
+      selection: { kind: 'attribute', classifierId: enumeration.id, elementId: enumeration.attributes[0]!.id },
+      onCommand: () => null,
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    expect(markup).toContain('Enumeration literal');
+    expect(markup).not.toContain('attribute-type');
+    expect(markup).not.toContain('Visibility');
+  });
+});

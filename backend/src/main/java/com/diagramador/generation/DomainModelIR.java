@@ -15,11 +15,21 @@ public record DomainModelIR(
         List<TypeDeclaration> types,
         List<RelationshipDescriptor> relationships,
         List<SourceArtifactMapping> sourceToArtifacts,
-        List<GenerationDiagnostic> diagnostics) {
+        List<GenerationDiagnostic> diagnostics,
+        List<EnumDeclaration> enums) {
 
     private static final Comparator<UUID> UUID_ORDER = Comparator.nullsFirst(Comparator.comparing(UUID::toString));
 
+    public DomainModelIR(List<PackageDeclaration> packages, List<TypeDeclaration> types,
+            List<RelationshipDescriptor> relationships, List<SourceArtifactMapping> sourceToArtifacts,
+            List<GenerationDiagnostic> diagnostics) {
+        this(packages, types, relationships, sourceToArtifacts, diagnostics, List.of());
+    }
+
     public DomainModelIR {
+        enums = sorted(enums, Comparator.comparing(EnumDeclaration::javaPackageName)
+                .thenComparing(EnumDeclaration::javaName)
+                .thenComparing(EnumDeclaration::sourceId, UUID_ORDER));
         packages = sorted(packages, Comparator.comparing(PackageDeclaration::javaPackageName)
                 .thenComparing(PackageDeclaration::sourceId, UUID_ORDER));
         types = sorted(types, Comparator.comparing(TypeDeclaration::javaPackageName)
@@ -94,6 +104,23 @@ public record DomainModelIR(
                     .thenComparing(FieldDeclaration::sourceId, UUID_ORDER));
             operations = sorted(operations, Comparator.comparingInt(OperationSignature::ordinal)
                     .thenComparing(OperationSignature::sourceId, UUID_ORDER));
+        }
+    }
+
+    /** A UML enumeration; attributes typed by it carry its id in {@link TypeUse#sourceClassifierId()}. */
+    public record EnumDeclaration(
+            UUID sourceId,
+            String sourceName,
+            String javaName,
+            String javaPackageName,
+            List<String> literals) {
+
+        public EnumDeclaration {
+            Objects.requireNonNull(sourceId, "sourceId");
+            Objects.requireNonNull(sourceName, "sourceName");
+            Objects.requireNonNull(javaName, "javaName");
+            Objects.requireNonNull(javaPackageName, "javaPackageName");
+            literals = List.copyOf(literals);
         }
     }
 

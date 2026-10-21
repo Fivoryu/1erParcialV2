@@ -2,7 +2,11 @@ import 'dart:convert';
 
 import 'operation_proposal.dart';
 
-enum AgentRunStatus { answered, clarification, deletePending, stopped, failed }
+enum AgentRunStatus { answered, clarification, deletePending, writePending, stopped, failed }
+
+/// Raised by a model adapter when generation ran past its budget and was
+/// cancelled; the runner reports it instead of waiting forever.
+abstract interface class AgentModelTimeout implements Exception {}
 
 class AgentAction {
   AgentAction._(this.tag, this.payload);
@@ -20,9 +24,12 @@ class AgentAction {
       'clarify': {'tag', 'text'},
       'read': {'tag', 'entity', 'id'},
       'create': {'tag', 'entity', 'values'},
-      'update': {'tag', 'entity', 'id', 'values'},
-      'delete_preview': {'tag', 'entity', 'id'},
+      'update': {'tag', 'entity', 'id', 'match', 'values'},
+      'delete_preview': {'tag', 'entity', 'id', 'match', 'all'},
       'calculate': {'tag', 'calculation'},
+      // Reads and reports are validated against the contract by QuerySpec.
+      'query': {'tag', 'entity', 'filter', 'sort', 'desc', 'limit', 'respond'},
+      'report': {'tag', 'entity', 'metric', 'field', 'groupBy', 'filter', 'respond'},
     };
     final tag = value['tag'];
     if (tag is! String ||
@@ -38,6 +45,13 @@ class AgentAction {
       if (value['calculation'] is! Map<String, dynamic>) {
         throw const FormatException('Missing calculation.');
       }
+    } else if (tag == 'query' || tag == 'report') {
+      if (value['entity'] is! String) {
+        throw const FormatException('Missing entity.');
+      }
+      if (value.containsKey('filter') && value['filter'] is! List) {
+        throw const FormatException('filter must be a list.');
+      }
     } else {
       if (value['entity'] is! String) {
         throw const FormatException('Missing entity.');
@@ -45,8 +59,11 @@ class AgentAction {
       if (value.containsKey('id') && value['id'] is! String) {
         throw const FormatException('Invalid identifier.');
       }
-      if ((tag == 'update' || tag == 'delete_preview') &&
-          !value.containsKey('id')) {
+      if (tag == 'delete_preview' && value.containsKey('match') && value['match'] is! List) {
+        throw const FormatException('match must be a list of filters.');
+      }
+      if ((tag == 'update' && !value.containsKey('id') && !value.containsKey('match')) ||
+          (tag == 'delete_preview' && !value.containsKey('id') && !value.containsKey('match'))) {
         throw const FormatException('Missing identifier.');
       }
       if ((tag == 'create' || tag == 'update') &&
@@ -88,11 +105,58 @@ class AgentProgress {
 }
 
 class AgentRunResult {
-  const AgentRunResult(this.status, this.text, {this.deletePreview, this.data});
+  const AgentRunResult(
+    this.status,
+    this.text, {
+    this.deletePreview,
+    this.deletePreviews = const [],
+    this.deleteLabels = const [],
+    this.writePreview,
+    this.data,
+    this.failure,
+    this.failureStackTrace,
+  });
   final AgentRunStatus status;
   final String text;
+  final Object? failure;
+  final StackTrace? failureStackTrace;
   final OperationProposal? deletePreview;
+
+  /// Several exact targets for one confirmed bulk deletion (bounded).
+  final List<OperationProposal> deletePreviews;
+
+  /// Human labels of the targets, in the same order; never identifiers.
+  final List<String> deleteLabels;
+
+  /// A create or update the model proposed, already grounded and validated;
+  /// it is only sent after the user confirms the shown summary.
+  final OperationProposal? writePreview;
   final dynamic data;
+}
+
+/// The backend rejected a write; [message] is already human readable.
+class BackendRejection implements Exception {
+  const BackendRejection(this.status, this.message);
+  final int? status;
+  final String message;
+
+  /// Translates a generated backend error (`ApiErrorResponse`) for the chat.
+  factory BackendRejection.from(int? status, dynamic body) {
+    final code = body is Map ? body['code']?.toString() : null;
+    final detail = body is Map && body['detail'] is String ? (body['detail'] as String).trim() : '';
+    final message = switch ((status, code)) {
+      (_, 'VALIDATION_FAILED') => 'Faltan datos o hay valores inválidos${detail.isEmpty ? '' : ': $detail'}.',
+      (_, 'INVALID_REFERENCE') => 'El registro relacionado no existe.',
+      (_, 'INVALID_REQUEST') => 'Algún valor no tiene el formato esperado${detail.isEmpty ? '' : ': $detail'}.',
+      (404, _) || (_, 'NOT_FOUND') => 'Ese registro ya no existe.',
+      (409, _) || (_, 'DATA_CONSTRAINT_VIOLATION') => 'No se pudo: el registro está duplicado o lo usan otros registros.',
+      _ => 'El backend rechazó la operación${status == null ? '' : ' ($status)'}.',
+    };
+    return BackendRejection(status, message);
+  }
+
+  @override
+  String toString() => message;
 }
 
 /// A record reference handed to the on-device model: stable short alias

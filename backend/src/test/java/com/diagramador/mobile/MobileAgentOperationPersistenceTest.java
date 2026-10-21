@@ -40,13 +40,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.flywaydb.core.Flyway;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -59,7 +61,7 @@ class MobileAgentOperationPersistenceTest {
                     new PortBinding(Ports.Binding.bindIpAndPort("127.0.0.1", 0), new ExposedPort(5432))));
     private static final String HASH = "a".repeat(64);
     private static JdbcTemplate jdbc;
-    private static DriverManagerDataSource datasource;
+    private static HikariDataSource datasource;
     private final ObjectMapper json = new ObjectMapper();
     private final UUID fixture = UUID.randomUUID();
     private final AtomicInteger sends = new AtomicInteger();
@@ -80,10 +82,31 @@ class MobileAgentOperationPersistenceTest {
     private int responseStatus = 200;
 
     @BeforeAll static void migrate() {
-        Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .schemas("diagrammer").defaultSchema("diagrammer").load().migrate();
-        datasource = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+        datasource = pool(4);
+        Flyway.configure().dataSource(datasource).schemas("diagrammer").defaultSchema("diagrammer").load().migrate();
         jdbc = new JdbcTemplate(datasource);
+    }
+
+    /**
+     * The container publishes 5432 only on 127.0.0.1, while getJdbcUrl() names "localhost". Right after start the
+     * Docker port proxy can accept a connection before PostgreSQL answers through it, so the first handshakes
+     * randomly ended in "Read timed out". The pool waits for a real connection and then reuses it.
+     */
+    private static String jdbcUrl() {
+        return "jdbc:postgresql://127.0.0.1:" + POSTGRES.getMappedPort(5432) + "/" + POSTGRES.getDatabaseName();
+    }
+
+    @AfterAll static void closePool() { if (datasource != null) datasource.close(); }
+
+    private static HikariDataSource pool(int size) {
+        HikariConfig config = new HikariConfig();
+        config.setJdbcUrl(jdbcUrl());
+        config.setUsername(POSTGRES.getUsername());
+        config.setPassword(POSTGRES.getPassword());
+        config.setMaximumPoolSize(size);
+        config.setInitializationFailTimeout(60_000);
+        config.setConnectionTimeout(30_000);
+        return new HikariDataSource(config);
     }
 
     @BeforeEach void fixture() throws Exception {
@@ -159,8 +182,10 @@ class MobileAgentOperationPersistenceTest {
         assertThat(committedBeforeSend).isTrue();
         assertThat(service.submit(fixture, fixture, intent)).isEqualTo(first);
         assertThat(service.lookup(fixture, fixture, id, HASH)).isEqualTo(first);
-        var reopened = new MobileAgentOperationStore(new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())), new DataSourceTransactionManager(datasource));
-        assertThat(reopened.lookup(fixture, fixture, fixture, id).state()).isEqualTo("completed");
+        try (HikariDataSource fresh = pool(1)) {
+            var reopened = new MobileAgentOperationStore(new JdbcTemplate(fresh), new DataSourceTransactionManager(fresh));
+            assertThat(reopened.lookup(fixture, fixture, fixture, id).state()).isEqualTo("completed");
+        }
         String before = snapshot();
         assertThatThrownBy(() -> service.submit(fixture, fixture, request(id, "POST", 2, null)))
                 .isInstanceOf(ApiException.class).extracting("code").isEqualTo("OPERATION_CONFLICT");

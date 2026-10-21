@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'agent_models.dart';
 import 'agent_contract.dart';
 import 'agent_calculator.dart';
+import 'agent_presenter.dart';
+import 'agent_query.dart';
+import 'backend_schema.dart';
 import 'operation_proposal.dart';
 
 typedef AgentModel = Future<String> Function(String prompt);
@@ -18,13 +21,16 @@ class AgentRunner {
     required this.scopeGuard,
     DateTime Function()? now,
     this.onProgress,
-    this.maxSteps = 12,
-    this.maxModelCalls = 8,
-    this.maxToolCalls = 8,
+    this.maxSteps = 6,
+    this.maxModelCalls = 3,
+    this.maxToolCalls = 16,
     this.maxPromptChars = 32768,
     this.maxRecords = 1000,
-    Duration budget = const Duration(minutes: 5),
+    this.presenter = const AgentPresenter(),
+    Map<String, RecordRef>? refs,
+    Duration budget = const Duration(minutes: 2),
   }) : now = now ?? DateTime.now,
+       _refs = refs ?? <String, RecordRef>{},
        budget = budget > const Duration(minutes: 5)
            ? const Duration(minutes: 5)
            : budget {
@@ -47,7 +53,182 @@ class AgentRunner {
   final int maxSteps, maxModelCalls, maxToolCalls, maxPromptChars, maxRecords;
   static const int maxObservationRecords = 20;
   final Duration budget;
+  final AgentPresenter presenter;
+  /// Shared with the caller when given, so refs outlive one runner.
+  final Map<String, RecordRef> _refs;
+  late final _refByUuid = <String, String>{
+    for (final entry in _refs.entries) entry.value.id: entry.key,
+  };
   bool _cancelled = false, _busy = false;
+
+  /// Grounds a model-proposed create/update (field names, enum literals,
+  /// numbers, references by their values, the update target by ref or match)
+  /// and returns it for confirmation with a readable summary. An update keeps
+  /// the record's other values, because a generated PUT replaces the record.
+  Future<AgentRunResult> _confirmWrite(AgentAction action, QueryPlanner planner) async {
+    final entity = QuerySpec.entityNamed(action.payload['entity'], contract.schema);
+    if (entity == null) {
+      return AgentRunResult(AgentRunStatus.clarification, 'No conozco esa entidad en este backend.\n\n'
+          'Opciones: ${contract.schema.entities.keys.join(', ')}');
+    }
+    final update = action.tag == 'update';
+    try {
+      final values = await planner.groundWrite(entity, Map<String, dynamic>.from(action.payload['values'] as Map));
+      String? id;
+      Map<String, dynamic>? current;
+      if (update) {
+        final raw = action.payload['id'];
+        if (raw is String && raw.startsWith('#')) {
+          final ref = _refs[raw];
+          if (ref == null || ref.entity != entity.name) {
+            return const AgentRunResult(AgentRunStatus.clarification, 'No reconozco ese registro; volvé a listarlos.');
+          }
+          id = ref.id;
+        } else if (raw is String && AgentContract.uuid.hasMatch(raw)) {
+          id = raw;
+        } else if (action.payload['match'] is List) {
+          final outcome = await planner.run(QuerySpec.fromModel(
+              {'tag': 'query', 'entity': entity.name, 'filter': action.payload['match'], 'limit': 6}, contract.schema));
+          if (outcome.records.isEmpty) {
+            return AgentRunResult(AgentRunStatus.clarification, 'No encontré qué registro de ${entity.name} cambiar.');
+          }
+          if (outcome.records.length > 1) {
+            final rowRefs = [for (final r in outcome.records) _refFor(r['id'] as String?, entity.name) ?? ''];
+            return AgentRunResult(AgentRunStatus.clarification,
+                'Hay ${outcome.total ?? outcome.records.length} registros que coinciden. ¿Cuál querés cambiar?\n\n'
+                '${presenter.render(outcome, rowRefs: rowRefs)}');
+          }
+          id = outcome.records.single['id'] as String?;
+        }
+        if (id == null) {
+          return AgentRunResult(AgentRunStatus.clarification, '¿Qué registro de ${entity.name} querés cambiar?');
+        }
+        final read = await planner.gateway(OperationProposal(method: 'GET', path: '${entity.path}/$id', body: null));
+        if (read.data is! Map) {
+          return AgentRunResult(AgentRunStatus.clarification, 'No pude leer ese registro de ${entity.name}.');
+        }
+        current = Map<String, dynamic>.from(read.data as Map)..remove('id');
+      }
+      final body = {...?current, ...values};
+      final OperationProposal proposal;
+      try {
+        proposal = contract.operation(AgentAction.parse(jsonEncode({
+          'tag': action.tag,
+          'entity': entity.name,
+          if (update) 'id': id,
+          'values': body,
+        })));
+      } on FormatException catch (invalid) {
+        return AgentRunResult(AgentRunStatus.clarification, 'Faltan datos para ${entity.name}: ${invalid.message}');
+      }
+      final changes = [
+        for (final entry in values.entries)
+          '${AgentPresenter.field(entity.references.containsKey(entry.key) && entry.key.endsWith('Id') ? entry.key.substring(0, entry.key.length - 2) : entry.key)}'
+              '${update ? ' → ' : ': '}${await _writeLabel(entity, entry.key, entry.value, planner)}',
+      ].join(' · ');
+      final target = update ? QueryPlanner.label(entity, current!) : null;
+      return AgentRunResult(
+        AgentRunStatus.writePending,
+        update
+            ? 'Voy a cambiar $target: $changes. ¿Confirmás?'
+            : 'Voy a crear un registro de ${entity.name}: $changes. ¿Confirmás?',
+        writePreview: proposal,
+      );
+    } on QueryClarification catch (clarification) {
+      final options = clarification.options.isEmpty
+          ? ''
+          : '\n\nOpciones: ${clarification.options.map(AgentPresenter.literal).join(', ')}';
+      return AgentRunResult(AgentRunStatus.clarification, '${clarification.message}$options');
+    }
+  }
+
+  /// How a written value reads in the confirmation: the related record's
+  /// label for a reference, a humanized literal for an enum.
+  Future<String> _writeLabel(EntitySchema entity, String field, dynamic value, QueryPlanner planner) async {
+    if (value == null) return '—';
+    final target = contract.schema.entity(entity.references[field]);
+    if (target != null && value is String) {
+      final read = await planner.gateway(OperationProposal(method: 'GET', path: '${target.path}/$value', body: null));
+      return read.data is Map ? QueryPlanner.label(target, read.data as Map) : 'el registro elegido';
+    }
+    if (value is String && (entity.fields[field]?.literals.contains(value) ?? false)) return AgentPresenter.literal(value);
+    return value is num ? AgentPresenter.number(value) : value.toString();
+  }
+
+  static const int maxBulkDelete = 20;
+
+  /// Delete targets named by their values ("borrá a Juan Pérez"): exactly one
+  /// match previews it; several ask which one (with row refs) unless the user
+  /// asked for all of them, which previews them together up to a cap. Every
+  /// target still needs the explicit confirmation of the delete flow.
+  Future<AgentRunResult> _deleteByMatch(AgentAction action, QueryPlanner planner) async {
+    final QueryOutcome outcome;
+    try {
+      final spec = QuerySpec.fromModel({
+        'tag': 'query',
+        'entity': action.payload['entity'],
+        'filter': action.payload['match'],
+        'limit': maxBulkDelete + 1,
+      }, contract.schema);
+      outcome = await planner.run(spec);
+    } on QueryClarification catch (clarification) {
+      return AgentRunResult(AgentRunStatus.clarification, clarification.message);
+    }
+    final entity = outcome.spec.entity;
+    final total = outcome.total ?? outcome.records.length;
+    if (outcome.records.isEmpty) {
+      return AgentRunResult(AgentRunStatus.clarification,
+          'No encontré registros de ${entity.name} para borrar con esos datos.');
+    }
+    final rowRefs = [
+      for (final record in outcome.records)
+        _refFor(record['id'] as String?, entity.name) ?? '',
+    ];
+    if (outcome.records.length > 1 && action.payload['all'] != true) {
+      return AgentRunResult(AgentRunStatus.clarification,
+          'Encontré $total registros de ${entity.name}. ¿Cuál querés borrar? Decime su número, o pedí borrarlos todos.\n\n'
+          '${presenter.render(outcome, rowRefs: rowRefs)}');
+    }
+    if (total > maxBulkDelete) {
+      return AgentRunResult(AgentRunStatus.clarification,
+          'Son $total registros de ${entity.name}; por seguridad borro como máximo $maxBulkDelete por vez. Acotá el pedido.');
+    }
+    final proposals = [
+      for (final record in outcome.records)
+        contract.operation(AgentAction.parse(jsonEncode({
+          'tag': 'delete_preview',
+          'entity': entity.name,
+          'id': record['id'],
+        }))),
+    ];
+    final labels = [for (final record in outcome.records) QueryPlanner.label(entity, record)];
+    return AgentRunResult(
+      AgentRunStatus.deletePending,
+      proposals.length == 1
+          ? 'Confirmá que querés borrar: ${labels.single}.'
+          : 'Confirmá que querés borrar estos ${proposals.length} registros de ${entity.name}: ${labels.join(', ')}.',
+      deletePreview: proposals.length == 1 ? proposals.single : null,
+      deletePreviews: proposals.length > 1 ? proposals : const [],
+      deleteLabels: labels,
+    );
+  }
+
+  /// Ref number ("2" for "#2") of a record, assigning one when new.
+  String? _refFor(String? id, String entity) {
+    if (id is! String || !AgentContract.uuid.hasMatch(id)) return null;
+    final existing = _refByUuid[id];
+    if (existing != null) return existing.substring(1);
+    final alias = '#${_refs.length + 1}';
+    _refs[alias] = RecordRef(id, entity);
+    _refByUuid[id] = alias;
+    return alias.substring(1);
+  }
+
+  static bool _asksForIdentifiers(String request) =>
+      RegExp(r'\b(uuids?|ids?|identificador(es)?)\b', caseSensitive: false).hasMatch(request);
+
+  /// Record refs handed out so far ("#1" -> record), shared across runs.
+  Map<String, RecordRef> get refs => Map.unmodifiable(_refs);
   bool get inFlight => _busy;
   void cancel() => _cancelled = true;
   Future<AgentRunResult> run(
@@ -82,19 +263,15 @@ class AgentRunner {
     var writeDispatched = false;
     final observations = <Map<String, dynamic>>[];
     final completedCalculations = <String, num>{};
-    // T2/L52: per-run record aliasing. The model references records by short
-    // refs ("#1"); exact UUIDs stay out of the prompt and the answers.
-    final refs = <String, RecordRef>{};
-    final refByUuid = <String, String>{};
+    // T2/L52 record aliasing. The model references records by short refs
+    // ("#1"); exact UUIDs stay out of the prompt and the answers. Refs live on
+    // the runner, so a follow-up ("borrá el 2") resolves against the records
+    // shown in an earlier message of the same backend conversation.
+    final refs = _refs;
+    final refByUuid = _refByUuid;
     RecordRef? refFor(String? id, String entity) {
-      if (id is! String || !AgentContract.uuid.hasMatch(id)) return null;
-      final existing = refByUuid[id];
-      if (existing != null) return refs[existing];
-      final ref = RecordRef(id, entity);
-      final alias = '#${refs.length + 1}';
-      refs[alias] = ref;
-      refByUuid[id] = alias;
-      return ref;
+      final number = _refFor(id, entity);
+      return number == null ? null : refs['#$number'];
     }
 
     /// View of one tool result for the model: lists and single records become
@@ -135,6 +312,23 @@ class AgentRunner {
         'committed': result.committed,
       };
     }
+    /// Planner whose backend calls count against this run's tool budget and
+    /// stop when the run is cancelled, expired or the backend changed.
+    QueryPlanner planner() => QueryPlanner(
+      schema: contract.schema,
+      refs: refs,
+      now: now,
+      gateway: (proposal) async {
+        if (++toolCalls > maxToolCalls) throw StateError('Tool limit reached.');
+        if (!allowed()) throw StateError('Request stopped before tool dispatch.');
+        event('tool_started', tool: proposal.method);
+        final toolStart = now();
+        final result = await gateway(proposal);
+        if (!allowed()) throw StateError('Late tool result discarded.');
+        event('tool_finished', tool: proposal.method, duration: now().difference(toolStart));
+        return result;
+      },
+    );
     final trusted = authorization ?? contract.authorize(request);
     try {
       for (var step = 0; step < maxSteps; step++) {
@@ -151,9 +345,25 @@ class AgentRunner {
               'Use "tag", never "type" or a key named after the action. '
               'Examples show JSON decisions, not requests to execute those examples. '
               'Answer and clarify: {"tag":"answer","text":"..."} or {"tag":"clarify","text":"..."}. '
+              'Pick the shape from the question: how many (cuántos, cantidad, total de) means a count report, '
+              'per value it adds groupBy, a sum, average, min or max means that report metric with its field, '
+              'and a question that lists or finds records is a query. '
+              'A report metric is count, sum, avg, min or max; count has no field, while sum/avg/min/max require a declared field. '
+              'Filter op is eq, ne, gt, gte, lt, lte, contains, in (value is a list) or is_null (value true/false). '
+              'For query, "sort" must be a declared field name, never "desc", "limit" or "respond"; descending order uses "desc":true. '
+              'A filter "value" is the real value to match, never the user sentence; listing everything uses "filter":[]. '
+              'Complete list example: {"tag":"query","entity":"Note","filter":[],"sort":"text","desc":false,"limit":20,"respond":"show"}. '
+              'Complete count example: {"tag":"report","entity":"Note","metric":"count","filter":[],"respond":"show"}. '
+              'Use the user words as real values ("mañana", "1ro"); the app maps them to backend values. '
+              'Split compound values into their fields ("1ro A" is grado 1 and seccion A). '
+              'Dates relative to today use value {"relative":"today"} (also yesterday, tomorrow, this_week, last_week, this_month, last_month, this_year, last_year) or {"last_days":7}. '
+              'respond "show" displays the result; use "answer" only when the user asks a question that needs reasoning over it. '
+              'A follow-up like "the second one" refers to ref "#2" of the last result. '
               'Read: {"tag":"read","entity":"..."}, optionally with "id". '
               'Create: {"tag":"create","entity":"...","values":{}}. '
-              'Update: {"tag":"update","entity":"...","id":"...","values":{}}. '
+              'Update: {"tag":"update","entity":"...","id":"#2","values":{}} or with "match":[filters] instead of "id"; values hold only the changed fields. '
+              'For a reference give the related record values, e.g. "curso":{"grado":"1ro","seccion":"A"}; enums and numbers may use the user words. '
+              'The user confirms every change before it is sent. '
               'Delete preview: {"tag":"delete_preview","entity":"...","id":"..."}. '
               'Contract lists each entity with its methods, writable field names/types and '
               'required fields; use exact entity names and only declared fields. '
@@ -213,9 +423,39 @@ class AgentRunner {
             action.tag == 'answer'
                 ? AgentRunStatus.answered
                 : AgentRunStatus.clarification,
-            action.payload['text'] as String,
+            // Quality gate: model text never shows a record identifier.
+            AgentPresenter.sanitize(action.payload['text'] as String,
+                identifiersRequested: _asksForIdentifiers(request)),
             data: observations,
           );
+        }
+        if (action.tag == 'query' || action.tag == 'report') {
+          final QueryOutcome outcome;
+          try {
+            final spec = QuerySpec.fromModel(Map<String, dynamic>.from(action.payload), contract.schema);
+            outcome = await planner().run(spec, request: request);
+          } on QueryClarification catch (clarification) {
+            event('finished');
+            final options = clarification.options.isEmpty
+                ? ''
+                : '\n\nOpciones: ${clarification.options.map(AgentPresenter.literal).join(', ')}';
+            return AgentRunResult(AgentRunStatus.clarification, '${clarification.message}$options');
+          }
+          final rowRefs = [
+            for (final record in outcome.records)
+              _refFor(record['id'] as String?, outcome.spec.entity.name) ?? '',
+          ];
+          final rendered = presenter.render(outcome, rowRefs: rowRefs);
+          if (outcome.spec.respond == 'show') {
+            event('finished');
+            return AgentRunResult(AgentRunStatus.answered, rendered, data: outcome);
+          }
+          observations.add({
+            'query': presenter.interpretation(outcome),
+            'result': rendered.length > 4000 ? rendered.substring(0, 4000) : rendered,
+            'complete': outcome.complete,
+          });
+          continue;
         }
         if (action.tag == 'calculate') {
           final calculation = Map<String, dynamic>.from(
@@ -247,6 +487,28 @@ class AgentRunner {
           });
           event('calculation_finished');
           continue;
+        }
+        if (action.tag == 'delete_preview' && action.payload.containsKey('match')) {
+          return await _deleteByMatch(action, planner());
+        }
+        if (action.tag == 'create' || action.tag == 'update') {
+          if (writeDispatched) {
+            return const AgentRunResult(
+              AgentRunStatus.clarification,
+              'Specify the exact entity, target and field values. This proposed write is not authorized.',
+            );
+          }
+          OperationProposal? direct;
+          try {
+            direct = contract.operation(action, refs: refs);
+          } on FormatException {
+            direct = null;
+          }
+          // Values the user typed exactly (deterministic authorize) dispatch
+          // at once; anything the model inferred is shown for confirmation.
+          if (direct == null || trusted == null || !trusted.permits(request, contract.scope, direct)) {
+            return await _confirmWrite(action, planner());
+          }
         }
         final proposal = contract.operation(action, refs: refs);
         if (action.tag == 'delete_preview') {
@@ -310,15 +572,24 @@ class AgentRunner {
         AgentRunStatus.stopped,
         'Step limit reached.',
       );
+    } on BackendRejection catch (rejection) {
+      return AgentRunResult(AgentRunStatus.failed, rejection.message);
+    } on AgentModelTimeout {
+      return const AgentRunResult(
+        AgentRunStatus.failed,
+        'La IA local tardó demasiado y se canceló. Probá de nuevo o con un pedido más corto.',
+      );
     } on FormatException catch (error) {
       return AgentRunResult(
         AgentRunStatus.clarification,
         'Invalid or unsupported action: ${error.message}',
       );
-    } catch (_) {
-      return const AgentRunResult(
+    } catch (error, stackTrace) {
+      return AgentRunResult(
         AgentRunStatus.failed,
         'Model or tool failed; no success is assumed. Dispatched writes may be unknown.',
+        failure: error,
+        failureStackTrace: stackTrace,
       );
     } finally {
       _busy = false;

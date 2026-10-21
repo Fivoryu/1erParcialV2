@@ -83,8 +83,18 @@ void main() {
       ]) {
         expect(envelope['instruction'], contains(op));
       }
-      expect(envelope['instruction'], contains('No markdown'));
-      expect(envelope['instruction'], contains(r'\n;'));
+      final instruction = envelope['instruction'] as String;
+      expect(instruction, contains('No markdown'));
+      expect(instruction, contains('"sort" must be a declared field name'));
+      expect(instruction, contains('how many'));
+      expect(instruction, contains('never "desc", "limit" or "respond"'));
+      expect(instruction, contains('filter "value" is the real value to match, never the user sentence'));
+      expect(instruction, contains('listing everything uses "filter":[]'));
+      expect(instruction, contains(
+          '{"tag":"query","entity":"Note","filter":[],"sort":"text","desc":false,"limit":20,"respond":"show"}'));
+      expect(instruction, contains(
+          '{"tag":"report","entity":"Note","metric":"count","filter":[],"respond":"show"}'));
+      expect(instruction, contains(r'\n;'));
       expect(gatewayCalls, 0);
     },
   );
@@ -372,9 +382,10 @@ void main() {
         },
         scopeGuard: () => true,
       );
+      // The mismatched entity is shown for confirmation, never sent.
       expect(
         (await runner.run('Crea Note con text = "hello"')).status,
-        AgentRunStatus.clarification,
+        AgentRunStatus.writePending,
       );
       expect(calls, 0);
     },
@@ -527,5 +538,24 @@ void main() {
     final contract = fixture();
     expect(contract.authorize('Creá unas Notes que digan "hola"'), isNotNull);
     expect(contract.authorize('creá la NOTA que diga "hola"'), isNull);
+  });
+
+  test('failed agent result retains an unknown tool error', () async {
+    final error = StateError('transient tool failure');
+    final runner = AgentRunner(
+      contract: fixture(),
+      model: (_) async => '{"tag":"read","entity":"Note"}',
+      gateway: (_) async => throw error,
+      scopeGuard: () => true,
+    );
+
+    final result = await runner.run('Read the notes');
+
+    expect(result.status, AgentRunStatus.failed);
+    expect(
+      result.text,
+      'Model or tool failed; no success is assumed. Dispatched writes may be unknown.',
+    );
+    expect(result.failure, same(error));
   });
 }

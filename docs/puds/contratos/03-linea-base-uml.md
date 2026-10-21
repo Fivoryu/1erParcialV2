@@ -69,9 +69,9 @@ constructo. Hoy:
 
 | Resultado | Cantidad | Cláusulas |
 | --- | ---: | --- |
-| Soportadas | 18 | `CLASS`, `ABSTRACT_CLASS`, `INTERFACE`, `PACKAGE`, `ATTRIBUTE`, `OPERATION`, `PARAMETER_AND_TYPE`, `DEFAULT_VALUE`, `ASSOCIATION`, `AGGREGATION`, `COMPOSITION`, `GENERALIZATION`, `INTERFACE_REALIZATION`, `DEPENDENCY`, `ROLES_AND_NAVIGABILITY`, `CONSTRAINTS`, `STABLE_IDS`, `LAYOUT_SEPARATION` |
+| Soportadas | 19 | `CLASS`, `ABSTRACT_CLASS`, `INTERFACE`, `ENUMERATION`, `PACKAGE`, `ATTRIBUTE`, `OPERATION`, `PARAMETER_AND_TYPE`, `DEFAULT_VALUE`, `ASSOCIATION`, `AGGREGATION`, `COMPOSITION`, `GENERALIZATION`, `INTERFACE_REALIZATION`, `DEPENDENCY`, `ROLES_AND_NAVIGABILITY`, `CONSTRAINTS`, `STABLE_IDS`, `LAYOUT_SEPARATION` |
 | Con soporte parcial | 1 | `VISIBILITY` |
-| Sin ningún soporte | 6 | `ENUMERATION`, `STATIC_MEMBER`, `ABSTRACT_MEMBER`, `MULTIPLICITY`, `NOTES`, `STEREOTYPES` |
+| Sin ningún soporte | 5 | `STATIC_MEMBER`, `ABSTRACT_MEMBER`, `MULTIPLICITY`, `NOTES`, `STEREOTYPES` |
 
 ### 5.2 Los contratos transversales
 
@@ -83,7 +83,7 @@ con el modelo de datos, **§8.3 sobredeclara**. Este es el hallazgo central de e
 | classes | BL-CLS-01 | Soportado |
 | abstract classes | BL-CLS-02 | Soportado |
 | interfaces | BL-CLS-03 | Soportado |
-| enumerations | BL-CLS-04, BL-CLS-05 | **No soportado** — no hay dónde guardar los literales |
+| enumerations | BL-CLS-04, BL-CLS-05 | Soportado — literales como atributos `LITERAL` (GAP-02 cerrado) |
 | packages | BL-CLS-06 | Soportado |
 | attributes | BL-FEA-01 | Soportado |
 | operations | BL-FEA-02 | Soportado |
@@ -104,12 +104,12 @@ con el modelo de datos, **§8.3 sobredeclara**. Este es el hallazgo central de e
 | stable IDs | BL-CMP-04 | Soportado |
 | supported constraints/stereotypes | BL-CMP-02, BL-CMP-03 | **Parcial** — restricciones sí, estereotipos no |
 
-En números: de los 23 elementos que §8.3 declara, **18 se sostienen, 2 se sostienen a medias y 3 no**. Y hay
+En números: de los 23 elementos que §8.3 declara, **19 se sostienen, 2 se sostienen a medias y 2 no**. Y hay
 una cláusula que el análisis exige y §8.3 nunca menciona: **las notas UML**.
 
-La diferencia no es cosmética. §8.3 dice que las enumeraciones se convierten en `enum` de Java; el modelo de
-datos no tiene dónde guardar las constantes, así que hoy no puede cumplirlo. Declararlo soportado habría
-significado descubrirlo durante la generación, no antes.
+La diferencia no es cosmética. §8.3 dice que las enumeraciones se convierten en `enum` de Java; hasta que los
+literales tuvieron dónde guardarse (filas `uml_attribute` con `kind='LITERAL'`, GAP-02), no podía cumplirlo.
+Hoy el generador emite el `enum`, la columna con `CHECK` y el `enum` del contrato OpenAPI.
 
 ## 6. Inventario y triple mapeo
 
@@ -120,8 +120,8 @@ significado descubrirlo durante la generación, no antes.
 | BL-CLS-01 | Clase | sí | `classifier` con `kind='CLASS'` | Entidad JPA | `uml:Class` con `EAID_` |
 | BL-CLS-02 | Clase abstracta | sí | `is_abstract` y literal `ABSTRACT_CLASS` | Entidad JPA con herencia | `isAbstract='true'` |
 | BL-CLS-03 | Interfaz | sí | `classifier.kind='INTERFACE'` | Interfaz Java | `uml:Interface` |
-| BL-CLS-04 | Enumeración | **no** | Solo el clasificador, sin literales | `NONE` | `uml:Enumeration` |
-| BL-CLS-05 | Literal de enumeración | **no** | `NONE` | `NONE` | `ownedLiteral` |
+| BL-CLS-04 | Enumeración | sí | `classifier.kind='ENUMERATION'` | Java `enum` + `@Enumerated(STRING)` con `CHECK` | `uml:Enumeration` |
+| BL-CLS-05 | Literal de enumeración | sí | `uml_attribute` con `kind='LITERAL'` sin tipo | Constante del `enum` | `ownedLiteral` |
 | BL-CLS-06 | Paquete | sí | `kind='PACKAGE'` y `namespace_id` | Paquete Java | `uml:Package` |
 | BL-CLS-07 | Tipo primitivo o de dominio | sí | `type_reference` con XOR | Resolución en el IR | `type` con prefijo `EAJava_` |
 
@@ -165,7 +165,7 @@ significado descubrirlo durante la generación, no antes.
 | BL-CMP-04 | Identificador estable | sí | UUID por tabla y pares polimórficos | Id de origen en el IR y los hashes | Correlación con `EAID_` |
 | BL-CMP-05 | Disposición visual separada | sí | `diagram_view`, `element_geometry`, `connector_path` | `NONE` (excluido del artefacto) | `element`, `geometry`, `style` |
 
-**Celdas `NONE`: 10 de 96** (persistencia 3, generación 7, XMI 0). Que XMI no tenga ninguna celda `NONE` no
+**Celdas `NONE`: 7 de 96** (persistencia 2, generación 5, XMI 0). Que XMI no tenga ninguna celda `NONE` no
 significa que no pierda nada: significa que todo constructo de esta línea base tiene una forma declarada en el
 dialecto. La pérdida real del intercambio es materia de T3 y de Q3, no de esta tabla.
 
@@ -174,7 +174,6 @@ dialecto. La pérdida real del intercambio es materia de T3 y de Q3, no de esta 
 | id | Hueco | Bloquea | Responsable |
 | --- | --- | --- | --- |
 | GAP-01 | La línea base no está ratificada | Cierre del Incremento 0 y arranque del Ciclo 1 | Equipo y docente |
-| GAP-02 | Sin literales de enumeración no hay `enum` de Java | BL-CLS-04, BL-CLS-05, RF-10, RF-11 | Equipo (diseño de datos) |
 | GAP-03 | No existe entidad para notas UML | BL-CMP-01, RF-02, roundtrip de notas | Equipo (diseño de datos) |
 | GAP-04 | No existe entidad de estereotipo aplicado | BL-CMP-03, RF-09, RF-10 | Equipo (diseño de datos) |
 | GAP-05 | Multiplicidad sin cotas numéricas | BL-REL-07, fidelidad del roundtrip | Equipo (decisión explícita) |

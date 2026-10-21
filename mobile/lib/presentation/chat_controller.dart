@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../domain/agent_contract.dart';
 import '../domain/agent_models.dart';
+import '../domain/agent_query.dart';
 import '../domain/agent_runner.dart';
 import '../domain/models.dart';
 import '../domain/operation_proposal.dart';
@@ -38,6 +39,10 @@ class ChatController extends ChangeNotifier {
     ++_epoch;
     busy = false;
     deletePreview = null;
+    deletePreviews = const [];
+    deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     progress = const [];
     notifyListeners();
   }
@@ -45,9 +50,24 @@ class ChatController extends ChangeNotifier {
   bool get agentConnected => model != null && _contract != null;
   BackendContract? _contract;
   AgentRunner? _runner;
+
+  /// Record refs per backend scope, so "borrá el 2" resolves against rows
+  /// shown in an earlier message of the same backend.
+  final _refsByScope = <String, Map<String, RecordRef>>{};
   bool _requestCancelled = false;
   List<AgentProgress> progress = const [];
   Map<String, dynamic>? deletePreview;
+
+  /// Receipts awaiting one confirmation for a bounded bulk deletion.
+  List<Map<String, dynamic>> deletePreviews = const [];
+
+  /// Human labels of the pending delete targets (single or bulk).
+  List<String> deleteLabels = const [];
+
+  /// A model-proposed create/update waiting for the user's confirmation, and
+  /// its readable summary.
+  OperationProposal? writePreview;
+  String? writeSummary;
   final _writeScopes = <String>{};
   ChatScope? _scope;
   String? _token;
@@ -75,6 +95,10 @@ class ChatController extends ChangeNotifier {
     cancelModel?.call().catchError((Object _) {});
     _runner?.cancel();
     deletePreview = null;
+    deletePreviews = const [];
+    deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     progress = const [];
     _contract = contract;
     ++_epoch;
@@ -106,6 +130,11 @@ class ChatController extends ChangeNotifier {
         token,
         epoch,
       );
+    } on BackendRejection catch (rejection) {
+      if (epoch == _epoch) {
+        _clearStreamingMessage();
+        error = rejection.message;
+      }
     } catch (e) {
       if (epoch == _epoch) {
         _clearStreamingMessage();
@@ -175,6 +204,10 @@ class ChatController extends ChangeNotifier {
   void cancelRequest() {
     _requestCancelled = true;
     deletePreview = null;
+    deletePreviews = const [];
+    deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     _runner?.cancel();
     cancelModel?.call().catchError((Object _) {});
     error = 'Stop requested. No new tool will be sent; an in-flight model or write may still finish.';
@@ -228,13 +261,22 @@ class ChatController extends ChangeNotifier {
     setDraft('');
     progress = const [];
     deletePreview = null;
+    deletePreviews = const [];
+    deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     notifyListeners();
     final runner = AgentRunner(
       contract: AgentContract(selectedContract),
+      refs: _refsByScope.putIfAbsent(
+        '${repository.scope.namespace}:${selectedContract.contractHash}',
+        () => <String, RecordRef>{},
+      ),
       model: (prompt) async {
         final input = jsonDecode(prompt) as Map<String, dynamic>;
+        // Few recent turns: the prompt stays small, so prefill stays fast.
         input['conversation'] = local
-            .skip(local.length > 12 ? local.length - 12 : 0)
+            .skip(local.length > 4 ? local.length - 4 : 0)
             .map((m) => {'role': m.role, 'content': m.content})
             .toList();
         final modelInput = jsonEncode(input);
@@ -275,6 +317,14 @@ class ChatController extends ChangeNotifier {
     _runner = runner;
     final result = await runner.run(content);
     if (epoch != _epoch) return;
+    final failure = result.failure;
+    if (failure != null && const bool.fromEnvironment('AGENT_DEBUG')) {
+      final stackTrace = result.failureStackTrace;
+      debugPrint(
+        'AGENT_ERROR ${failure.runtimeType}: $failure'
+        '${stackTrace == null ? '' : '\n$stackTrace'}',
+      );
+    }
     if (result.deletePreview != null && allowed()) {
       final proposal = result.deletePreview!;
       final receipt = await service.agentOperation(
@@ -297,6 +347,31 @@ class ChatController extends ChangeNotifier {
       if (epoch != _epoch) return;
       if (!allowed()) return;
       deletePreview = {...receipt, 'target': target.toJson()};
+      deleteLabels = result.deleteLabels.isNotEmpty
+          ? result.deleteLabels
+          : [_label(selectedContract, proposal.path, target.data)];
+    }
+    if (result.writePreview != null && allowed()) {
+      writePreview = result.writePreview;
+      writeSummary = result.text;
+    }
+    if (result.deletePreviews.isNotEmpty && allowed()) {
+      final previews = <Map<String, dynamic>>[];
+      for (final proposal in result.deletePreviews) {
+        final receipt = await service.agentOperation(
+          token,
+          repository.scope.projectId,
+          repository.scope.deploymentId,
+          _payload(repository.scope, proposal, _uuid()),
+        );
+        if (epoch != _epoch || !allowed()) return;
+        if (receipt['state'] != 'awaiting_confirmation') {
+          throw StateError('Deletion preview unavailable.');
+        }
+        previews.add(receipt);
+      }
+      deletePreviews = previews;
+      deleteLabels = result.deleteLabels;
     }
     await store.appendMessage(
       repository.scope,
@@ -370,7 +445,7 @@ class ChatController extends ChangeNotifier {
         await store.putCache(
           CacheEntry(
             scope: scope,
-            path: proposal.path,
+            path: proposal.cacheKey,
             body: result.body,
             fetchedAt: time,
             complete: false,
@@ -382,7 +457,7 @@ class ChatController extends ChangeNotifier {
           fetchedAt: time,
         );
       } catch (_) {
-        final cached = await store.getCache(scope, proposal.path);
+        final cached = await store.getCache(scope, proposal.cacheKey);
         if (cached == null) rethrow;
         return AgentToolResult(
           data: cached.body,
@@ -474,7 +549,7 @@ class ChatController extends ChangeNotifier {
       }
       final status = receipt['status'] as int?;
       if (status == null || status < 200 || status >= 300) {
-        throw StateError('Backend operation rejected: $status');
+        throw BackendRejection.from(status, receipt['result']);
       }
       return AgentToolResult(
         data: receipt['result'],
@@ -486,11 +561,18 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  /// Confirms the pending deletion: one exact target, or every target of a
+  /// bounded bulk preview, each with its own persisted preview receipt.
   Future<void> confirmDelete() => _run((repository, token, epoch) async {
-    final preview = deletePreview;
+    final previews = [?deletePreview, ...deletePreviews];
+    final labels = deleteLabels;
     final conversation = selected;
-    if (preview == null || conversation == null) return;
+    if (previews.isEmpty || conversation == null) return;
     deletePreview = null;
+    deletePreviews = const [];
+    deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     _requestCancelled = false;
     final deadline = DateTime.now().add(const Duration(minutes: 5));
     bool allowed() =>
@@ -498,32 +580,92 @@ class ChatController extends ChangeNotifier {
         !_requestCancelled &&
         DateTime.now().isBefore(deadline) &&
         identical(selected, conversation);
-    final result = await _write(
-      repository.scope,
-      token,
-      OperationProposal(
-        method: 'DELETE',
-        path: preview['path'] as String,
-        body: preview['body'],
-      ),
-      preview: preview,
-      allowed: allowed,
-    );
+    var deleted = 0;
+    try {
+      for (final preview in previews) {
+        await _write(
+          repository.scope,
+          token,
+          OperationProposal(
+            method: 'DELETE',
+            path: preview['path'] as String,
+            body: preview['body'],
+          ),
+          preview: preview,
+          allowed: allowed,
+        );
+        deleted++;
+        if (epoch != _epoch) return;
+      }
+    } finally {
+      if (epoch == _epoch && deleted > 0) {
+        final names = labels.take(deleted).join(', ');
+        await store.appendMessage(
+          repository.scope,
+          conversation.id,
+          ChatMessage(
+            id: _uuid(),
+            role: 'assistant',
+            content: deleted == 1
+                ? 'Eliminado${names.isEmpty ? '' : ': $names'}.'
+                : 'Eliminados $deleted de ${previews.length} registros${names.isEmpty ? '' : ': $names'}.',
+            createdAt: DateTime.now().toUtc(),
+          ),
+        );
+        final local = await store.messages(repository.scope, conversation.id);
+        if (epoch == _epoch) messages = local;
+      }
+    }
+  });
+
+  /// Sends the confirmed create/update exactly as it was shown.
+  Future<void> confirmWrite() => _run((repository, token, epoch) async {
+    final proposal = writePreview;
+    final conversation = selected;
+    final contract = _contract;
+    if (proposal == null || conversation == null || contract == null) return;
+    writePreview = null;
+    writeSummary = null;
+    _requestCancelled = false;
+    final deadline = DateTime.now().add(const Duration(minutes: 2));
+    bool allowed() =>
+        epoch == _epoch &&
+        !_requestCancelled &&
+        DateTime.now().isBefore(deadline) &&
+        identical(selected, conversation);
+    final result = await _write(repository.scope, token, proposal, allowed: allowed);
     if (epoch != _epoch) return;
+    final label = _label(contract, '${proposal.path}/', result.data);
     await store.appendMessage(
       repository.scope,
       conversation.id,
       ChatMessage(
         id: _uuid(),
         role: 'assistant',
-        content: 'Deletion confirmed by backend. ${jsonEncode(result.data)}',
+        content: proposal.method == 'POST' ? 'Listo, creado: $label.' : 'Listo, actualizado: $label.',
         createdAt: DateTime.now().toUtc(),
       ),
     );
     final local = await store.messages(repository.scope, conversation.id);
-    if (epoch != _epoch) return;
-    messages = local;
+    if (epoch == _epoch) messages = local;
   });
+
+  void dismissWrite() {
+    writePreview = null;
+    writeSummary = null;
+    notifyListeners();
+  }
+
+  /// Display label of a record read from [path], from its entity's readable
+  /// fields; never its identifier.
+  String _label(BackendContract contract, String path, dynamic record) {
+    final schema = AgentContract(contract).schema;
+    final entity = schema.entities.values
+        .where((candidate) => path.startsWith('${candidate.path}/'))
+        .firstOrNull;
+    if (entity == null || record is! Map) return 'el registro seleccionado';
+    return QueryPlanner.label(entity, record);
+  }
 
   Future<void> inspectOperations() => _run((repository, token, epoch) async {
     final cached = await store.cache(repository.scope);
@@ -558,6 +700,10 @@ class ChatController extends ChangeNotifier {
 
   void dismissDelete() {
     deletePreview = null;
+    deletePreviews = const [];
+    deleteLabels = const [];
+    writePreview = null;
+    writeSummary = null;
     notifyListeners();
   }
 

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'backend_schema.dart';
 import 'models.dart';
 import 'agent_models.dart';
 import 'operation_proposal.dart';
@@ -16,23 +17,12 @@ class AgentContract {
   static final uuid = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
   );
-  Map<String, String> get entities {
-    final result = <String, String>{};
-    final paths = openApi['paths'];
-    if (paths is! Map) throw const FormatException('Contract has no paths.');
-    for (final key in paths.keys) {
-      if (key is String &&
-          RegExp(r'^/[A-Za-z0-9_/-]+$').hasMatch(key) &&
-          !key.endsWith('/')) {
-        final name = key.split('/').last;
-        if (result.containsKey(name)) {
-          throw const FormatException('Ambiguous entity name.');
-        }
-        result[name] = key;
-      }
-    }
-    return result;
-  }
+  late final BackendSchema schema = BackendSchema.parse(openApi);
+
+  /// Entity name -> collection path; generated helper routes are excluded.
+  Map<String, String> get entities => {
+    for (final entity in schema.entities.values) entity.name: entity.path,
+  };
 
   OperationProposal operation(AgentAction action, {Map<String, RecordRef> refs = const {}}) {
     final entity = action.payload['entity'];
@@ -287,12 +277,24 @@ class AgentContract {
           if (method is String && httpMethods.contains(method)) methods.add(method.toUpperCase());
         }
       }
-      final schema = _bodySchema(baseItem) ?? _bodySchema(idItem);
+      final fromBase = _bodySchema(baseItem);
+      // An entity whose only body is the item PUT still advertises its fields.
+      final schema = fromBase.fields.isEmpty ? _bodySchema(idItem) : fromBase;
+      final described = this.schema.entity(entry.key);
       result.add({
         'entity': entry.key,
         'methods': methods.toList()..sort(),
         'fields': schema.fields,
         'required': schema.required,
+        // Queryable fields, relation paths and enum literals the model may
+        // filter, group or sort by; absent for backends without /query.
+        if (described != null && described.queryFields.isNotEmpty)
+          'query': {
+            for (final field in described.queryFields.values)
+              if (field.name != 'id')
+                field.name: field.literals.isNotEmpty ? field.literals : field.kind.name,
+          },
+        if (described != null && described.displayFields.isNotEmpty) 'label': described.displayFields,
       });
     }
     return result;

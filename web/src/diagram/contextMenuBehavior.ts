@@ -315,6 +315,7 @@ export function buildContextMenuItems(
       ['add-class', 'Nueva clase', 'CLASS'],
       ['add-abstract-class', 'Nueva clase abstracta', 'ABSTRACT_CLASS'],
       ['add-interface', 'Nueva interfaz', 'INTERFACE'],
+      ['add-enumeration', 'Nueva enumeración', 'ENUMERATION'],
       ['add-package', 'Nuevo paquete', 'PACKAGE'],
     ] as const).map(([id, label, kind]) => ({
       id,

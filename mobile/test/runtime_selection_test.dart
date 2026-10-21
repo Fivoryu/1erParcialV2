@@ -87,7 +87,59 @@ class FakeGemma implements LiteRtAgentService {
   }
 }
 
+class FakeSessionGemma extends FakeGemma implements LiteRtSessionAgentService {
+  FakeSessionGemma(super.events);
+  final opened = <(String, String)>[];
+  final sent = <(String, String)>[];
+
+  @override
+  Future<void> openSession({required String scope, required String systemInstruction}) async {
+    opened.add((scope, systemInstruction));
+  }
+
+  @override
+  Future<String> sendInSession({
+    required String scope,
+    required String message,
+    int maxTokens = 256,
+    Duration timeout = const Duration(seconds: 30),
+    void Function(String partial)? onPartial,
+  }) async {
+    sent.add((scope, message));
+    return '{"tag":"answer","text":"gemma"}';
+  }
+
+  @override
+  Future<void> closeSession() async {}
+
+  @override
+  Future<String> generateAgent({
+    required String prompt,
+    int maxTokens = 512,
+    void Function(String partial)? onPartial,
+  }) => super.generateAgent(prompt: prompt, maxTokens: maxTokens);
+}
+
 void main() {
+  test('a session-capable Gemma gets the static prompt once per backend and only the request per message', () async {
+    final events = <String>[];
+    final gemma = FakeSessionGemma(events);
+    final c = WorkspaceController(mnn: FakeQwen(events), litert: gemma);
+    await c.selectRuntime(LocalRuntime.gemma);
+    await c.loadDetectedModel();
+    c.contract = const BackendContract(deploymentId: 'd', runId: 'r', contractHash: 'h', openApi: {});
+    const envelope =
+        '{"instruction":"rules","examples":[1],"request":"hola","contract":[{"entity":"alumno"}],"observations":[]}';
+
+    expect(await c.generateAgent(envelope), '{"tag":"answer","text":"gemma"}');
+
+    expect(gemma.opened, [('d:h', '{"instruction":"rules","examples":[1],"contract":[{"entity":"alumno"}]}')]);
+    expect(gemma.sent, [('d:h', '{"request":"hola","observations":[]}')]);
+    expect(gemma.received, isNull, reason: 'the one-shot path is not used');
+    expect(await c.generateAgent('not an envelope'), '{"tag":"answer","text":"gemma"}');
+    expect(gemma.received, 'not an envelope');
+  });
+
   test('explicit switch clears ready but retains backend and draft; release precedes load', () async {
     final events = <String>[];
     final qwen = FakeQwen(events);
