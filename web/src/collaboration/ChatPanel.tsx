@@ -404,6 +404,9 @@ export default function ChatPanel({
           <section className="diagram-memory-panel" aria-labelledby="diagram-memory-title">
             <h3 id="diagram-memory-title">Diagram memory</h3>
             <p>Memory belongs to this diagram, not to one chat session. Deleting chat history does not forget memory.</p>
+            <p>Useful design knowledge is extracted automatically after AI requests. Use Extract memories to run it manually.</p>
+            <p>Ask naturally in chat to read, save, or revise memories. Each AI request uses the latest UML for this diagram.</p>
+            <p>Ask explicitly to search other diagrams. Shared results come only from projects every active collaborator can access.</p>
             {memoryError && <p className="notice notice-error" role="alert">{memoryError}</p>}
             {memoryMessage && <p className="quiet-state" role="status">{memoryMessage}</p>}
             {memoriesLoading ? (

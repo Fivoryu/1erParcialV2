@@ -1,12 +1,11 @@
 package com.diagramador.collaboration;
 
 import com.diagramador.assistant.ChatAssistantProvider;
-import com.diagramador.assistant.DiagramContextRenderer;
 import com.diagramador.context.ContextBudgetService;
 import com.diagramador.api.ApiException;
 import com.diagramador.api.ChatResources.MessageResource;
-import com.diagramador.api.ModelResource;
-import com.diagramador.api.ProjectApiService;
+import com.diagramador.domain.ChatSession;
+import com.diagramador.identity.CurrentUser;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -40,11 +39,12 @@ public class ChatAiService {
     private static final int CONTEXT_HISTORY_MESSAGES = 10;
 
     private final ChatService chatService;
-    private final ChatAssistantProvider provider;
     private final com.diagramador.context.ContextBudgetService contextBudgetService;
     private final com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository;
     private final com.diagramador.identity.CurrentUserContext currentUserContext;
     private final ProjectEventBus eventBus;
+    private final DiagramMemoryService diagramMemoryService;
+    private final ChatMemoryAgentService chatMemoryAgentService;
     private final boolean enabled;
 
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
@@ -58,6 +58,7 @@ public class ChatAiService {
     private static final class PendingRequest {
         private final UUID questionMessageId;
         private final UUID authorUserId;
+        private final CurrentUser initiatingUser;
         private volatile Future<?> future;
         private volatile String state = "QUEUED";
         /**
@@ -67,9 +68,10 @@ public class ChatAiService {
          */
         private final AtomicBoolean startGate = new AtomicBoolean(false);
 
-        private PendingRequest(UUID questionMessageId, UUID authorUserId) {
+        private PendingRequest(UUID questionMessageId, CurrentUser initiatingUser) {
             this.questionMessageId = questionMessageId;
-            this.authorUserId = authorUserId;
+            this.authorUserId = initiatingUser.userId();
+            this.initiatingUser = initiatingUser;
         }
     }
 
@@ -79,25 +81,26 @@ public class ChatAiService {
     public record AskAccepted(String state) {
     }
 
-    public ChatAiService(ChatService chatService, ChatAssistantProvider provider,
+    public ChatAiService(ChatService chatService,
             com.diagramador.context.ContextBudgetService contextBudgetService,
             com.diagramador.persistence.ChatAttachmentRepository chatAttachmentRepository,
             com.diagramador.identity.CurrentUserContext currentUserContext,
-            ProjectEventBus eventBus,
+            ProjectEventBus eventBus, DiagramMemoryService diagramMemoryService,
+            ChatMemoryAgentService chatMemoryAgentService,
             @Value("${diagrammer.assistant.enabled:false}") boolean enabled) {
         this.chatService = chatService;
-        this.provider = provider;
         this.contextBudgetService = contextBudgetService;
         this.chatAttachmentRepository = chatAttachmentRepository;
         this.currentUserContext = currentUserContext;
         this.eventBus = eventBus;
+        this.diagramMemoryService = diagramMemoryService;
+        this.chatMemoryAgentService = chatMemoryAgentService;
         this.enabled = enabled;
     }
 
     /**
-     * Enqueues one ask. Authorization and target validation run here (request thread); the
-     * provider call runs on the single worker thread. The context snapshot is captured now so
-     * the answer reflects the diagram the question was asked against (CA-08).
+     * Enqueues one ask. Authorization and a baseline context-budget check run here; extraction,
+     * fresh context construction and every conversational provider call run on the single worker.
      */
     public AskAccepted ask(UUID projectId, UUID sessionId, UUID messageId) {
         if (!enabled) {
@@ -105,13 +108,14 @@ public class ChatAiService {
                     "The AI assistant is not enabled on this deployment.");
         }
         chatService.requireAskTarget(projectId, sessionId, messageId);
-        UUID userId = currentUserContext.require().userId();
+        CurrentUser initiatingUser = currentUserContext.require();
+        UUID userId = initiatingUser.userId();
         // PD-04: "1 por usuario" — one pending ask per USER across all their sessions (L54).
         if (pending.values().stream().anyMatch(existing -> userId.equals(existing.authorUserId))) {
             throw error(HttpStatus.CONFLICT, "AI_REQUEST_IN_FLIGHT",
                     "This user already has a pending AI request.");
         }
-        PendingRequest request = new PendingRequest(messageId, userId);
+        PendingRequest request = new PendingRequest(messageId, initiatingUser);
         if (pending.putIfAbsent(sessionId, request) != null) {
             throw error(HttpStatus.CONFLICT, "AI_REQUEST_IN_FLIGHT",
                     "This session already has a pending AI request.");
@@ -120,8 +124,8 @@ public class ChatAiService {
             // QUEUED is published before any worker can exist, so RUNNING/COMPLETED can never
             // precede it, and a cancellation's CANCELLED can only follow it.
             publishStatus(projectId, sessionId, "QUEUED", null);
-            List<ChatAssistantProvider.Turn> turns = buildTurns(projectId, sessionId, messageId);
-            Future<?> future = executor.submit(() -> run(projectId, sessionId, request, turns));
+            contextBudgetService.prepare(projectId, sessionId, messageId);
+            Future<?> future = executor.submit(() -> run(projectId, sessionId, request));
             synchronized (request) {
                 request.future = future;
             }
@@ -193,19 +197,51 @@ public class ChatAiService {
         publishStatus(projectId, sessionId, "CANCELLED", null);
     }
 
-    private void run(UUID projectId, UUID sessionId, PendingRequest request,
-            List<ChatAssistantProvider.Turn> turns) {
+    private void run(UUID projectId, UUID sessionId, PendingRequest request) {
         // The cancellation may have taken the gate before this worker picked the task up.
         if (!request.startGate.compareAndSet(false, true)) {
             return;
         }
+        CurrentUser previousUser = currentUserContext.optional().orElse(null);
+        boolean previousOperator = currentUserContext.isOperator();
         try {
-            // The RUNNING transition lives inside the try so any fatal failure on this path is
-            // still covered by the finally cleanup below.
+            currentUserContext.set(request.initiatingUser);
             request.state = "RUNNING";
             publishStatus(projectId, sessionId, "RUNNING", null);
-            String answer = provider.chat(turns);
-            chatService.postAiAnswer(sessionId, request.questionMessageId, answer);
+
+            ChatSession accessibleSession = chatService.requireAccessibleSession(projectId, sessionId);
+            UUID viewId = accessibleSession.getView().getId();
+            try {
+                // The existing bounded extractor consumes only the sources it actually sends.
+                diagramMemoryService.extract(projectId, viewId);
+            } catch (RuntimeException extractionFailure) {
+                // Extraction is best-effort; the pending sources and the user's question remain intact.
+                logger.warn("Automatic memory extraction failed for view {}", viewId, extractionFailure);
+            }
+
+            ChatSession freshSession = chatService.requireAccessibleSession(projectId, sessionId);
+            ContextBudgetService.LiveContext live = contextBudgetService.prepare(projectId, sessionId,
+                    request.questionMessageId);
+            List<ChatAssistantProvider.Turn> turns = buildTurns(projectId, sessionId,
+                    request.questionMessageId, live);
+            String userQuestion = live.questionTurn() == null ? null : live.questionTurn().content();
+            ChatMemoryAgentService.AgentAnswer answer = chatMemoryAgentService.answer(projectId,
+                    freshSession.getView().getId(), live, turns, userQuestion, request.questionMessageId);
+
+            boolean published;
+            try {
+                published = chatMemoryAgentService.publishIfSharedSourcesRemainAccessible(projectId, sessionId,
+                        request.questionMessageId, answer);
+            } catch (RuntimeException publicationFailure) {
+                logger.warn("AI answer could not be safely published for session {}", sessionId, publicationFailure);
+                published = false;
+            }
+            if (!published) {
+                request.state = "FAILED";
+                publishStatus(projectId, sessionId, "FAILED",
+                        "The shared context changed; the response was not published.");
+                return;
+            }
             request.state = "COMPLETED";
             publishStatus(projectId, sessionId, "COMPLETED", null);
         } catch (RuntimeException exception) {
@@ -213,16 +249,20 @@ public class ChatAiService {
             request.state = "FAILED";
             publishStatus(projectId, sessionId, "FAILED", briefReason(exception));
         } finally {
-            // Two-arg remove: a newer request for the same session (none should exist while this
-            // one is pending) must never be dropped by this worker's cleanup.
             pending.remove(sessionId, request);
+            currentUserContext.clear();
+            if (previousUser != null) {
+                currentUserContext.set(previousUser);
+            } else if (previousOperator) {
+                currentUserContext.setOperator();
+            }
         }
     }
 
-    private List<ChatAssistantProvider.Turn> buildTurns(UUID projectId, UUID sessionId, UUID questionMessageId) {
+    private List<ChatAssistantProvider.Turn> buildTurns(UUID projectId, UUID sessionId, UUID questionMessageId,
+            ContextBudgetService.LiveContext live) {
         // T6/L45: the budget service meters, auto-compacts at ceil(0.8*P) and refuses overflow;
-        // the built context carries diagram data, memories and this session's summary only (CA-15).
-        ContextBudgetService.LiveContext live = contextBudgetService.prepare(projectId, sessionId, questionMessageId);
+        // the built context carries fresh canonical UML, active memories and this session's history (CA-15).
         List<ChatAssistantProvider.Turn> turns = new ArrayList<>();
         turns.add(new ChatAssistantProvider.Turn("user", live.contextTurn()));
         turns.addAll(live.liveTurns());

@@ -94,9 +94,20 @@ public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssis
         if (!enabled) {
             throw new IllegalStateException("AI assistant provider is disabled");
         }
-        List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", CHAT_SYSTEM_PROMPT));
+        // Chat templates such as Qwen's reject any system message after the first one, so caller-supplied
+        // system turns are folded into the single leading system message instead of being sent in place.
+        StringBuilder systemPrompt = new StringBuilder(CHAT_SYSTEM_PROMPT);
         for (Turn turn : turns) {
+            if ("system".equals(turn.role())) {
+                systemPrompt.append("\n\n").append(turn.content());
+            }
+        }
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", systemPrompt.toString()));
+        for (Turn turn : turns) {
+            if ("system".equals(turn.role())) {
+                continue;
+            }
             if (turn.imageBase64() == null) {
                 messages.add(Map.of("role", turn.role(), "content", turn.content()));
             } else {

@@ -34,6 +34,7 @@ import {
   updateSessionAiStatus,
   type SessionAiStatus,
 } from '../collaboration/chatState';
+import { isCurrentMemoryRefreshScope, shouldRefreshDiagramMemories } from '../collaboration/memoryRefresh';
 import PresencePanel from '../collaboration/PresencePanel';
 import { createCursorCoalescer, type CursorCoalescer } from '../collaboration/cursorCoalescer';
 import { buildRemoteCursorMarkers } from '../collaboration/remoteCursors';
@@ -204,6 +205,9 @@ export default function ProjectEditorPage() {
   const sequenceRef = useRef(0);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const chatSessionIdRef = useRef(chatSessionId);
+  const chatSessionsRef = useRef<ChatSessionResource[]>([]);
+  const currentDefaultViewIdRef = useRef<Uuid | null>(null);
+  const refreshDiagramMemoriesRef = useRef<(() => Promise<void>) | null>(null);
   useLayoutEffect(() => {
     chatSessionIdRef.current = chatSessionId;
   }, [chatSessionId]);
@@ -211,6 +215,37 @@ export default function ProjectEditorPage() {
   const attachmentObjectUrlsRef = useRef<string[]>([]);
   const currentUserId = loadSession()?.userId ?? null;
   const defaultViewId = model?.views.find((view) => view.is_default)?.id ?? null;
+  useLayoutEffect(() => {
+    currentDefaultViewIdRef.current = defaultViewId;
+    chatSessionsRef.current = [];
+  }, [defaultViewId, projectId]);
+  const refreshDiagramMemories = useCallback(async (): Promise<void> => {
+    if (!projectId || !defaultViewId || project?.id !== projectId) {
+      return;
+    }
+    const scope = { projectId, viewId: defaultViewId };
+    if (!isCurrentMemoryRefreshScope(scope, currentProjectIdRef.current, currentDefaultViewIdRef.current)) {
+      return;
+    }
+
+    setMemoriesLoading(true);
+    try {
+      const items = await api.listMemories(projectId, defaultViewId);
+      if (isCurrentMemoryRefreshScope(scope, currentProjectIdRef.current, currentDefaultViewIdRef.current)) {
+        setMemories(items);
+        setMemoryError(null);
+      }
+    } catch (cause: unknown) {
+      if (isCurrentMemoryRefreshScope(scope, currentProjectIdRef.current, currentDefaultViewIdRef.current)) {
+        setMemoryError(loginErrorMessage(cause));
+      }
+    } finally {
+      if (isCurrentMemoryRefreshScope(scope, currentProjectIdRef.current, currentDefaultViewIdRef.current)) {
+        setMemoriesLoading(false);
+      }
+    }
+  }, [defaultViewId, project?.id, projectId]);
+  refreshDiagramMemoriesRef.current = refreshDiagramMemories;
   const editingLease = useEditingLease(projectId, currentUserId);
   const cursorCoalescerRef = useRef<CursorCoalescer<{ x: number; y: number }> | null>(null);
 
@@ -407,11 +442,13 @@ export default function ProjectEditorPage() {
       };
     }
 
+    chatSessionsRef.current = [];
     void api.listSessions(projectId, defaultViewId)
       .then((sessions) => {
         if (!active || currentProjectIdRef.current !== projectId) {
           return;
         }
+        chatSessionsRef.current = sessions;
         setChatSessions(sessions);
         const session = activeSessionFor(
           [{ id: defaultViewId, isDefault: true }],
@@ -479,37 +516,15 @@ export default function ProjectEditorPage() {
   }, [chatSessionId, projectId, refreshContextMeter]);
 
   useEffect(() => {
-    let active = true;
     setMemories([]);
     setMemoryError(null);
     setMemoryMessage(null);
-    setMemoriesLoading(Boolean(projectId && defaultViewId));
-    if (!projectId || !defaultViewId) {
+    if (!projectId || !defaultViewId || project?.id !== projectId) {
       setMemoriesLoading(false);
-      return () => {
-        active = false;
-      };
+      return;
     }
-    void api.listMemories(projectId, defaultViewId)
-      .then((items) => {
-        if (active && currentProjectIdRef.current === projectId) {
-          setMemories(items);
-        }
-      })
-      .catch((cause: unknown) => {
-        if (active) {
-          setMemoryError(loginErrorMessage(cause));
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setMemoriesLoading(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [defaultViewId, projectId]);
+    void refreshDiagramMemories();
+  }, [defaultViewId, project?.id, projectId, refreshDiagramMemories]);
 
   useEffect(() => {
     let active = true;
@@ -627,8 +642,14 @@ export default function ProjectEditorPage() {
           }
         } else if (event.type === 'chat.ai.status') {
           const status = chatAiStatusFromProjectEvent(event.data);
-          if (status) {
+          const belongsToCurrentView = status !== null
+            && chatSessionsRef.current.some((session) => session.id === status.sessionId
+              && session.viewId === currentDefaultViewIdRef.current);
+          if (status && currentProjectIdRef.current === projectId && belongsToCurrentView) {
             setChatAiStatuses((current) => updateSessionAiStatus(current, status));
+            if (shouldRefreshDiagramMemories(status, chatSessionsRef.current, currentDefaultViewIdRef.current)) {
+              void refreshDiagramMemoriesRef.current?.();
+            }
           }
         } else if (event.type === 'operation.applied') {
           void refreshModelFromEvent();
@@ -769,23 +790,28 @@ export default function ProjectEditorPage() {
     if (!projectId || !defaultViewId || chatSessionActionBusy) {
       return;
     }
+    const scope = { projectId, viewId: defaultViewId };
     setChatSessionActionBusy(true);
     setChatError(null);
     try {
       const created = await api.createSession(projectId, defaultViewId, `Session ${chatSessions.length + 1}`);
-      if (currentProjectIdRef.current !== projectId) {
+      if (!isCurrentMemoryRefreshScope(scope, currentProjectIdRef.current, currentDefaultViewIdRef.current)
+        || created.viewId !== defaultViewId) {
         return;
       }
+      chatSessionsRef.current = chatSessionsRef.current.some((session) => session.id === created.id)
+        ? chatSessionsRef.current
+        : [...chatSessionsRef.current, created];
       setChatSessions((current) => current.some((session) => session.id === created.id)
         ? current
         : [...current, created]);
       setChatSessionId(created.id);
     } catch (cause: unknown) {
-      if (currentProjectIdRef.current === projectId) {
+      if (isCurrentMemoryRefreshScope(scope, currentProjectIdRef.current, currentDefaultViewIdRef.current)) {
         setChatError(loginErrorMessage(cause));
       }
     } finally {
-      if (currentProjectIdRef.current === projectId) {
+      if (isCurrentMemoryRefreshScope(scope, currentProjectIdRef.current, currentDefaultViewIdRef.current)) {
         setChatSessionActionBusy(false);
       }
     }
@@ -877,28 +903,6 @@ export default function ProjectEditorPage() {
     } finally {
       if (currentProjectIdRef.current === projectId) {
         setCompactBusy(false);
-      }
-    }
-  }
-
-  async function refreshDiagramMemories(): Promise<void> {
-    if (!projectId || !defaultViewId) {
-      return;
-    }
-    setMemoriesLoading(true);
-    try {
-      const items = await api.listMemories(projectId, defaultViewId);
-      if (currentProjectIdRef.current === projectId) {
-        setMemories(items);
-        setMemoryError(null);
-      }
-    } catch (cause: unknown) {
-      if (currentProjectIdRef.current === projectId) {
-        setMemoryError(loginErrorMessage(cause));
-      }
-    } finally {
-      if (currentProjectIdRef.current === projectId) {
-        setMemoriesLoading(false);
       }
     }
   }
