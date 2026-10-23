@@ -49,6 +49,10 @@ import { ReviewPanelLoader } from '../review/ReviewPanel';
 import XmiImportPanel from '../xmi/XmiImportPanel';
 import XmiExportPanel from '../xmi/XmiExportPanel';
 import MembersPanel from '../members/MembersPanel';
+import BranchesPanel from '../vcs/BranchesPanel';
+import HistoryPanel from '../vcs/HistoryPanel';
+import MergeRequestsPanel from '../vcs/MergeRequestsPanel';
+import PermissionsPanel from '../vcs/PermissionsPanel';
 import {
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
@@ -1234,6 +1238,28 @@ export default function ProjectEditorPage() {
                 modelRevision={model.revision}
                 editingLease={editingLease}
               />
+            </Modal>
+
+            <Modal
+              open={activeSection?.id === 'vcs'}
+              title={findEditorSection('vcs').title}
+              size={findEditorSection('vcs').size}
+              titleVisible={false}
+              onClose={closeSection}
+            >
+              <BranchesPanel
+                projectId={project.id}
+                onModelCheckout={(checkoutModel) => {
+                  canonicalModelRef.current = checkoutModel;
+                  revisionRef.current = checkoutModel.revision;
+                  pendingCommandsRef.current = [];
+                  publishModel(checkoutModel);
+                  setSelection(null);
+                }}
+              />
+              <HistoryPanel projectId={project.id} />
+              <MergeRequestsPanel projectId={project.id} />
+              <PermissionsPanel projectId={project.id} />
             </Modal>
 
             <Modal

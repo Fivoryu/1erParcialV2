@@ -2,14 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { EDITOR_SECTIONS, findEditorSection, nextActiveSection } from './editorSections';
 
 describe('editor sections registry', () => {
-  it('lists exactly the five sections in the frozen order', () => {
+  it('lists exactly the six sections with versioning last', () => {
     expect(EDITOR_SECTIONS.map((section) => section.id)).toEqual([
       'xmi',
       'collaboration',
       'members',
       'review',
       'generation',
+      'vcs',
     ]);
+    expect(findEditorSection('vcs')).toMatchObject({
+      label: 'Versioning',
+      title: 'History, branches and reviews',
+      size: 'lg',
+    });
   });
 
   it('has unique ids and no empty label or title', () => {
@@ -43,5 +49,6 @@ describe('nextActiveSection', () => {
 
   it('switches sections instead of accumulating', () => {
     expect(nextActiveSection('members', 'generation')).toBe('generation');
+    expect(nextActiveSection('generation', 'vcs')).toBe('vcs');
   });
 });

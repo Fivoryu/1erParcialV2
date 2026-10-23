@@ -173,4 +173,19 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     ],
     keywords: ['chat', 'message', 'session', 'assistant', 'memory', 'memories', 'read', 'save', 'revise', 'other diagrams', 'shared access', 'uml', 'voice', 'dictation', 'image'],
   },
+  {
+    slug: 'versioning-and-branches',
+    title: 'History, branches and reviews',
+    summary:
+      'Save commits with clear messages, see who changed what and when, and review separate work before bringing it back into the main line.',
+    steps: [
+      'Open Versioning from the editor options to see the current branch and its history.',
+      'Save a commit with a clear message; its history entry shows who made the change, what changed and when.',
+      'Create a branch for separate work, then use the branch selector to switch between branches.',
+      'Open a review between two branches, check any conflicting changes, and merge it when the work is ready.',
+      'The diagram creator can grant each person different abilities, including viewing, editing, recording changes, creating branches, merging reviews and managing access.',
+    ],
+    keywords: ['history', 'message', 'author', 'changes', 'branch', 'switch', 'review', 'merge', 'permissions'],
+    section: 'vcs',
+  },
 ];

@@ -81,6 +81,23 @@ describe('help corpus', () => {
     expect(copy).toContain('every active collaborator can access');
   });
 
+  it('explains version history, branches, reviews, and per-person access in user language', () => {
+    const topic = HELP_TOPICS.find((candidate) => candidate.slug === 'versioning-and-branches');
+    expect(topic).toBeDefined();
+    expect(topic?.section).toBe('vcs');
+    expect(topic?.steps).toHaveLength(5);
+    const copy = [topic?.summary, ...(topic?.steps ?? [])].join(' ');
+
+    expect(copy).toContain('commit with a clear message');
+    expect(copy).toContain('who made the change, what changed and when');
+    expect(copy).toContain('Create a branch');
+    expect(copy).toContain('switch between branches');
+    expect(copy).toContain('Open a review between two branches');
+    expect(copy).toContain('merge it');
+    expect(copy).toContain('diagram creator can grant each person');
+    expect(copy).not.toMatch(/\b(?:HTTP|JSON|API|UUID|hash)\b/i);
+  });
+
   it('covers the core user journeys', () => {
     const slugs = HELP_TOPICS.map((topic) => topic.slug);
     for (const expected of [
@@ -95,6 +112,7 @@ describe('help corpus', () => {
       'deploy-the-generated-backend',
       'assistant-with-natural-language',
       'diagram-chat',
+      'versioning-and-branches',
     ]) {
       expect(slugs, `missing topic "${expected}"`).toContain(expected);
     }
