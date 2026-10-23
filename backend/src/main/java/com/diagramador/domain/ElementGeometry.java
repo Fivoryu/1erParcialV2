@@ -62,7 +62,14 @@ public class ElementGeometry {
 
     public static ElementGeometry create(DiagramView view, TargetType targetType, UUID targetId, int x, int y, int w,
             int h, int zOrder) {
+        return create(null, view, targetType, targetId, x, y, w, h, zOrder);
+    }
+
+    /** Identity-preserving factory used by snapshot materialization. */
+    public static ElementGeometry create(UUID id, DiagramView view, TargetType targetType, UUID targetId, int x, int y,
+            int w, int h, int zOrder) {
         ElementGeometry geometry = new ElementGeometry();
+        geometry.id = id;
         geometry.view = view;
         geometry.targetType = targetType;
         geometry.targetId = targetId;

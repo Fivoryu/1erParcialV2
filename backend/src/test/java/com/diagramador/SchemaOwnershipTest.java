@@ -111,7 +111,19 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("undo_log", Set.of("id", "model_id", "user_id", "command_id", "type", "pre_snapshot",
                     "undone_at", "redone_at", "created_at")),
             Map.entry("view_style", Set.of("style_id", "view_id", "target_type", "target_id", "routing",
-                    "corner_radius", "stroke_width", "dashed", "route_adjustment", "created_at", "updated_at")));
+                    "corner_radius", "stroke_width", "dashed", "route_adjustment", "created_at", "updated_at")),
+            Map.entry("vcs_snapshot", Set.of("snapshot_id", "model_id", "state_hash", "payload", "created_at")),
+            Map.entry("vcs_commit", Set.of("commit_id", "model_id", "parent_commit_id",
+                    "second_parent_commit_id", "snapshot_id", "branch_name", "kind", "origin", "message",
+                    "author_user_id", "created_at")),
+            Map.entry("vcs_branch", Set.of("branch_id", "model_id", "name", "head_commit_id", "is_protected",
+                    "created_by_user_id", "created_at", "updated_at")),
+            Map.entry("vcs_merge_request", Set.of("merge_request_id", "model_id", "source_branch_id",
+                    "target_branch_id", "source_commit_id", "target_commit_id", "merge_base_commit_id",
+                    "merged_commit_id", "state", "has_conflicts", "conflicts", "title", "opened_by_user_id",
+                    "decided_by_user_id", "created_at", "updated_at")),
+            Map.entry("vcs_permission", Set.of("permission_id", "model_id", "user_id", "action",
+                    "granted_by_user_id", "created_at")));
 
     private static final Set<String> TABLES_RESERVED_FOR_LATER_TASKS = Set.of(
             "model_conflict",
@@ -159,7 +171,12 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("xmi_exchange", Set.of("idx_exchange_model")),
             Map.entry("xmi_loss_item", Set.of()),
             Map.entry("undo_log", Set.of("idx_undo_log_model_user")),
-            Map.entry("view_style", Set.of("idx_view_style_view")));
+            Map.entry("view_style", Set.of("idx_view_style_view")),
+            Map.entry("vcs_snapshot", Set.of("idx_vcs_snapshot_model")),
+            Map.entry("vcs_commit", Set.of("idx_vcs_commit_model", "idx_vcs_commit_author")),
+            Map.entry("vcs_branch", Set.of("idx_vcs_branch_model")),
+            Map.entry("vcs_merge_request", Set.of("idx_vcs_merge_request_model", "idx_vcs_merge_request_source")),
+            Map.entry("vcs_permission", Set.of("idx_vcs_permission_model_user")));
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -177,7 +194,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
+                .contains("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "23");
     }
 
     @Test
@@ -227,6 +244,10 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertColumnType("xmi_exchange", "direction", "exchange_direction");
         assertColumnType("xmi_exchange", "status", "exchange_status");
         assertColumnType("xmi_loss_item", "severity", "severity_kind");
+        assertColumnType("vcs_commit", "kind", "vcs_commit_kind");
+        assertColumnType("vcs_commit", "origin", "vcs_commit_origin");
+        assertColumnType("vcs_merge_request", "state", "vcs_merge_state");
+        assertColumnType("vcs_permission", "action", "vcs_action");
     }
 
     @Test
@@ -247,6 +268,10 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertEnumLabels("deployment_state", DeploymentState.class, 6);
         assertEnumLabels("exchange_direction", ExchangeDirection.class, 2);
         assertEnumLabels("exchange_status", ExchangeStatus.class, 3);
+        assertEnumLabels("vcs_commit_kind", com.diagramador.domain.VcsCommitKind.class, 3);
+        assertEnumLabels("vcs_commit_origin", com.diagramador.domain.VcsCommitOrigin.class, 5);
+        assertEnumLabels("vcs_merge_state", com.diagramador.domain.VcsMergeState.class, 3);
+        assertEnumLabels("vcs_action", com.diagramador.domain.VcsAction.class, 8);
     }
 
     @Test
