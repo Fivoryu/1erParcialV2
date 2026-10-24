@@ -95,6 +95,71 @@ class OperatorApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void operatorCanUseVcsRoutesButRemainsForbiddenFromProjectAndModelOperations() throws Exception {
+        String projectId = createProject("operator-vcs");
+        mockMvc.perform(authorized(get("/projects/{projectId}/vcs/status", projectId)))
+                .andExpect(status().isOk());
+        MvcResult modelResult = mockMvc.perform(authorized(get("/projects/{projectId}/model", projectId)))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode model = objectMapper.readTree(modelResult.getResponse().getContentAsByteArray());
+        UUID modelId = UUID.fromString(model.path("id").asText());
+
+        Map<String, Object> envelope = Map.of(
+                "operationId", UUID.randomUUID(),
+                "type", "classifier.create",
+                "projectId", UUID.fromString(projectId),
+                "modelId", modelId,
+                "baseRevision", model.path("revision").asLong(),
+                "targets", java.util.List.of(),
+                "preconditions", java.util.List.of(),
+                "payload", Map.of("id", UUID.randomUUID(), "name", "Owned", "kind", "CLASS"),
+                "origin", "MANUAL",
+                "idempotencyKey", UUID.randomUUID().toString());
+        mockMvc.perform(authorized(post("/projects/{projectId}/commands", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(envelope))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(withOperator(get("/projects/{projectId}/vcs/status", projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.branch").value("main"))
+                .andExpect(jsonPath("$.dirty").value(true));
+        mockMvc.perform(withOperator(post("/projects/{projectId}/vcs/commits", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("message", "Operator commit")))))
+                .andExpect(status().isCreated());
+        mockMvc.perform(withOperator(post("/projects/{projectId}/vcs/branches", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("name", "operator-branch")))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("operator-branch"));
+        mockMvc.perform(withOperator(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
+                        "/projects/{projectId}/vcs/branches/operator-branch", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("isProtected", true)))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isProtected").value(true));
+
+        mockMvc.perform(withOperator(post("/projects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("name", "forbidden", "description", "")))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(withOperator(post("/projects/{projectId}/commands", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(withOperator(get("/projects/{projectId}/model", projectId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(withOperator(get("/projects/not-a-uuid/vcs/status")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
     void userBearerRetainsMembershipFilteredProjectList() throws Exception {
         String projectId = createProject("user-owned");
         String otherUserToken = bearer("regular-" + UUID.randomUUID());

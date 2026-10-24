@@ -46,7 +46,8 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("project_member", Set.of("project_id", "user_id", "role", "status", "joined_at", "updated_at")),
             Map.entry("invitation", Set.of("invitation_id", "project_id", "invited_by_user_id", "invitee_user_id",
                     "role", "status", "created_at", "updated_at")),
-            Map.entry("uml_model", Set.of("model_id", "project_id", "name", "current_revision", "created_at")),
+            Map.entry("uml_model", Set.of("model_id", "project_id", "name", "current_revision", "created_at",
+                    "active_branch_id")),
             Map.entry("diagram_message", Set.of("message_id", "model_id", "session_id", "kind", "author_user_id", "reply_to_message_id", "memory_extracted", "body", "created_at")),
             Map.entry("diagram_memory", Set.of("memory_id", "view_id", "kind", "status", "content", "source_session_id", "source_message_id", "source_command_id", "replaced_by", "created_by_user_id", "created_at")),
             Map.entry("chat_session_compaction", Set.of("session_id", "summary", "up_to_message_id", "created_at", "updated_at")),
@@ -194,7 +195,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertThat(history).extracting(row -> String.valueOf(row.get("description")))
                 .contains("baseline", "seed owner");
         assertThat(history).extracting(row -> String.valueOf(row.get("version")))
-                .contains("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "23");
+                .contains("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "23", "24");
     }
 
     @Test
