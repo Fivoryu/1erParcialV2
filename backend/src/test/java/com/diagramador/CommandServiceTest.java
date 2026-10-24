@@ -20,6 +20,7 @@ import com.diagramador.domain.ProjectMember;
 import com.diagramador.domain.ProjectMemberRole;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UserAccount;
+import com.diagramador.domain.VcsAction;
 import com.diagramador.persistence.ClassifierRepository;
 import com.diagramador.persistence.ModelCommandRepository;
 import com.diagramador.persistence.ModelVersionRepository;
@@ -110,6 +111,16 @@ class CommandServiceTest extends AbstractPostgresIntegrationTest {
         assertThat(result.diagnostics()).singleElement()
                 .satisfies(diagnostic -> assertThat(diagnostic.code()).isEqualTo(ErrorCode.UNKNOWN_OPERATION));
         assertThat(result.diagnostics().get(0).message()).contains("unknown.command");
+    }
+
+    @Test
+    void everyRegisteredCommandHandlerHasAnExplicitVcsAction() {
+        assertThat(commandService.registeredCommandTypes()).isNotEmpty().allSatisfy(type ->
+                assertThat(commandService.actionFor(type))
+                        .as("registered command %s has an explicit action", type)
+                        .isPresent());
+        assertThat(commandService.actionFor("project.rename")).contains(VcsAction.CREATE);
+        assertThat(commandService.actionFor("unmapped.future.command")).isEmpty();
     }
 
     @Test
