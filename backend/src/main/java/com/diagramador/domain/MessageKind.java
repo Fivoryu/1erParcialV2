@@ -6,5 +6,7 @@ package com.diagramador.domain;
  */
 public enum MessageKind {
     HUMAN,
-    AI
+    AI,
+    /** A plan the assistant suggested to the group (V25); its state lives in {@link ChatProposal}. */
+    PROPOSAL
 }

@@ -91,6 +91,16 @@ public class DiagramMessage {
         return message;
     }
 
+    /**
+     * A proposal card: authored by the member who asked. The plan itself is kept in
+     * {@link ChatProposal}.
+     */
+    public static DiagramMessage createProposal(ChatSession session, UserAccount author, String body) {
+        DiagramMessage message = create(session, author, body);
+        message.kind = MessageKind.PROPOSAL;
+        return message;
+    }
+
     public UUID getId() {
         return id;
     }
