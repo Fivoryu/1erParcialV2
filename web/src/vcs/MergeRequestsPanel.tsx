@@ -94,6 +94,7 @@ export function MergeRequestsPanelView({
           <p className="eyebrow">Versioning</p>
           <h2 id="vcs-merge-requests-title">Merge requests</h2>
         </div>
+        <span className="count-chip vcs-count-chip">{mergeRequests.length}</span>
       </div>
 
       {error && (
@@ -149,11 +150,11 @@ export function MergeRequestsPanelView({
       </form>
 
       <div className="vcs-section">
-        <h3>Review requests</h3>
+        <p className="vcs-subsection-label">Review requests</p>
         {loading ? (
           <p className="quiet-state" role="status">Loading merge requests…</p>
         ) : mergeRequests.length === 0 ? (
-          <p className="quiet-state">No merge requests yet.</p>
+          <p className="quiet-state">No merge requests yet; open one to request a review of a branch.</p>
         ) : (
           <ul className="vcs-merge-request-list">
             {mergeRequests.map((mergeRequest) => {
@@ -163,8 +164,10 @@ export function MergeRequestsPanelView({
                 <li className="vcs-merge-request-row" key={mergeRequest.mergeRequestId}>
                   <div className="vcs-merge-request-copy">
                     <h4>{mergeRequest.title}</h4>
-                    <p><strong>{mergeRequest.sourceBranch}</strong> → <strong>{mergeRequest.targetBranch}</strong></p>
-                    <p>State: <strong>{mergeRequest.state}</strong></p>
+                    <p className="vcs-branch-pair"><strong>{mergeRequest.sourceBranch}</strong> → <strong>{mergeRequest.targetBranch}</strong></p>
+                    <span className={`vcs-state-chip vcs-state-chip--${mergeRequest.state.toLowerCase()}`}>
+                      {mergeRequest.state}
+                    </span>
                     <p className="property-hint">
                       Opened by {mergeRequest.openedByDisplayName}
                       {mergeRequest.decidedByDisplayName ? ` · decided by ${mergeRequest.decidedByDisplayName}` : ''}
@@ -180,9 +183,9 @@ export function MergeRequestsPanelView({
                         <ul className="vcs-conflict-list">
                           {mergeRequest.conflicts.map((conflict, index) => (
                             <li className="vcs-conflict-row" key={`${conflict.targetType}-${conflict.targetId}-${index}`}>
-                              <h6>{conflictKindLabel(conflict.kind)} · {conflict.targetName}</h6>
+                              <h4>{conflictKindLabel(conflict.kind)} · {conflict.targetName}</h4>
                               <p>{conflict.message}</p>
-                              <dl>
+                              <dl className="vcs-conflict-values">
                                 <div><dt>Field</dt><dd>{conflict.field ?? '—'}</dd></div>
                                 <div><dt>Base</dt><dd>{conflictValueLabel(conflict.baseValue)}</dd></div>
                                 <div><dt>Source</dt><dd>{conflictValueLabel(conflict.sourceValue)}</dd></div>

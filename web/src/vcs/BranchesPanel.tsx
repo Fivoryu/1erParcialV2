@@ -7,6 +7,7 @@ import {
   type VcsCheckoutResource,
   type VcsStatus,
 } from './api';
+import { relativeTimeLabel } from './presentation';
 
 const api = createVcsApiClient();
 
@@ -74,6 +75,7 @@ export function BranchesPanelView({
           <p className="eyebrow">Versioning</p>
           <h2 id="vcs-branches-title">Branches</h2>
         </div>
+        <span className="count-chip vcs-count-chip">{branches.length}</span>
       </div>
 
       {error && (
@@ -83,8 +85,6 @@ export function BranchesPanelView({
         </div>
       )}
       {notice && <p className="generation-notice" role="status">{notice}</p>}
-      {status && <p className="property-hint">Current branch: <strong>{status.branch}</strong></p>}
-
       <form className="vcs-branch-form" onSubmit={submitBranch}>
         <label className="field-label">
           New branch name
@@ -115,26 +115,26 @@ export function BranchesPanelView({
       {loading ? (
         <p className="quiet-state" role="status">Loading branches…</p>
       ) : branches.length === 0 ? (
-        <p className="quiet-state">No branches are available.</p>
+        <p className="quiet-state">No branches are available; create a branch to start working.</p>
       ) : (
         <ul className="vcs-branch-list">
           {branches.map((branch) => {
             const current = branch.name === status?.branch;
             return (
-              <li className="vcs-branch-row" key={branch.name}>
+              <li className={`vcs-branch-row${current ? ' vcs-branch-row--current' : ''}`} key={branch.name}>
                 <div className="vcs-branch-copy">
-                  <h3>{branch.name}</h3>
-                  {current && <span className="count-chip">Current</span>}
-                  <p><strong>Head:</strong> {branch.headMessage ?? 'No commits yet.'}</p>
-                  {branch.headAuthorDisplayName && (
-                    <p className="property-hint">
-                      {branch.headAuthorDisplayName}
-                      {branch.headCreatedAt ? ` · ${new Date(branch.headCreatedAt).toLocaleString()}` : ''}
-                    </p>
-                  )}
+                  <div className="vcs-branch-heading">
+                    <h3>{branch.name}</h3>
+                    {current && <span className="vcs-current-chip">Current</span>}
+                  </div>
+                  <p className="vcs-branch-meta">
+                    <strong>Head:</strong> {branch.headMessage ?? 'No commits yet.'}
+                    {branch.headAuthorDisplayName && ` · ${branch.headAuthorDisplayName}`}
+                    {branch.headCreatedAt && ` · ${relativeTimeLabel(branch.headCreatedAt)}`}
+                  </p>
                 </div>
                 <div className="vcs-branch-controls">
-                  <label className="vcs-protection-toggle">
+                  <label className={`vcs-protection-chip${branch.isProtected ? ' is-protected' : ' is-unprotected'}`}>
                     <input
                       type="checkbox"
                       checked={branch.isProtected}
@@ -142,7 +142,7 @@ export function BranchesPanelView({
                       aria-label={`Protect ${branch.name}`}
                       onChange={() => onToggleProtection(branch)}
                     />
-                    Protected
+                    <span>{branch.isProtected ? 'Protected' : 'Not protected'}</span>
                   </label>
                   <button
                     className="button button-secondary button-compact"
@@ -165,9 +165,10 @@ export function BranchesPanelView({
 export interface BranchesPanelProps {
   projectId: Uuid;
   onModelCheckout(model: ModelResource): void;
+  onStatusChanged?(): void;
 }
 
-export default function BranchesPanel({ projectId, onModelCheckout }: BranchesPanelProps) {
+export default function BranchesPanel({ projectId, onModelCheckout, onStatusChanged }: BranchesPanelProps) {
   const [branches, setBranches] = useState<VcsBranch[]>([]);
   const [status, setStatus] = useState<VcsStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -246,6 +247,7 @@ export default function BranchesPanel({ projectId, onModelCheckout }: BranchesPa
       dirty: false,
     });
     onModelCheckout(outcome.checkout.model);
+    onStatusChanged?.();
     setNotice(`Switched to ${outcome.checkout.branch}.`);
     setBusy(false);
     setBusyBranch(null);

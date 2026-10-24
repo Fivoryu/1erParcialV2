@@ -31,12 +31,15 @@ describe('version permissions panel', () => {
   it('renders one row per returned user and all actions as checked-state checkboxes', () => {
     const markup = render({ permissions: [permission, { ...permission, userId: '22222222-2222-4222-8222-222222222222', displayName: 'Morgan Lee' }] });
 
+    expect(markup).toContain('<table class="vcs-permission-table">');
+    expect(markup).toContain('scope="col">Manage Permissions</th>');
     expect(markup).toContain('Avery Rivera');
     expect(markup).toContain('Morgan Lee');
     expect(markup.match(/type="checkbox"/g)).toHaveLength(VCS_PERMISSION_ACTIONS.length * 2);
     expect(markup.match(/checked=""/g)).toHaveLength(permission.actions.length * 2);
     expect(markup).toContain('View for Avery Rivera');
     expect(markup).toContain('Manage Permissions for Avery Rivera');
+    expect(markup).toContain('Saving a change pins the effective permission set for that member.');
     expect(markup).not.toContain(permission.userId);
   });
 
@@ -56,6 +59,6 @@ describe('version permissions panel', () => {
 
   it('distinguishes loading and an empty permissions list', () => {
     expect(render({ loading: true, permissions: [] })).toContain('Loading permissions…');
-    expect(render({ loading: false, permissions: [] })).toContain('No project permissions are available.');
+    expect(render({ loading: false, permissions: [] })).toContain('No project permissions are available; add a project member before changing actions.');
   });
 });

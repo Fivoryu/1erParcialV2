@@ -105,6 +105,10 @@ describe('merge requests panel', () => {
     expect(markup).toContain('Target branch');
     expect(markup).toContain('Describe this review');
     expect(markup).toContain('Orders review');
+    expect(markup).toContain('feature-orders</strong> → <strong>main');
+    expect(markup).toContain('vcs-state-chip--open');
+    expect(markup).toContain('vcs-state-chip--merged');
+    expect(markup).toContain('vcs-state-chip--closed');
     expect(markup).toContain('OPEN');
     expect(markup).toContain('MERGED');
     expect(markup).toContain('CLOSED');
@@ -114,6 +118,8 @@ describe('merge requests panel', () => {
   it('shows element, field, and base/source/target values for every conflict kind', () => {
     const markup = render();
 
+    expect(markup).toContain('vcs-conflict-section');
+    expect(markup).toContain('vcs-conflict-values');
     expect(markup).toContain('Field conflict · Order');
     expect(markup).toContain('name');
     expect(markup).toContain('PurchaseOrder');
@@ -175,6 +181,6 @@ describe('merge requests panel', () => {
 
   it('distinguishes loading from an empty request list', () => {
     expect(render({ loading: true, mergeRequests: [] })).toContain('Loading merge requests…');
-    expect(render({ loading: false, mergeRequests: [] })).toContain('No merge requests yet.');
+    expect(render({ loading: false, mergeRequests: [] })).toContain('No merge requests yet; open one to request a review of a branch.');
   });
 });

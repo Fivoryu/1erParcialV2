@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { relativeTimeLabel } from './presentation';
 import Modal from '../ui/Modal';
 import type { Uuid } from '../api/types';
 import {
@@ -12,26 +13,7 @@ import {
 
 const api = createVcsApiClient();
 
-export function relativeTimeLabel(timestamp: string, now = Date.now()): string {
-  const createdAt = Date.parse(timestamp);
-  if (Number.isNaN(createdAt)) {
-    return 'Time unavailable';
-  }
-
-  const elapsedSeconds = (now - createdAt) / 1000;
-  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ['year', 60 * 60 * 24 * 365],
-    ['month', 60 * 60 * 24 * 30],
-    ['week', 60 * 60 * 24 * 7],
-    ['day', 60 * 60 * 24],
-    ['hour', 60 * 60],
-    ['minute', 60],
-    ['second', 1],
-  ];
-  const formatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-  const [unit, secondsPerUnit] = units.find(([, seconds]) => Math.abs(elapsedSeconds) >= seconds) ?? units.at(-1)!;
-  return formatter.format(-Math.round(elapsedSeconds / secondsPerUnit), unit);
-}
+export { relativeTimeLabel } from './presentation';
 
 export interface HistoryPanelViewProps {
   branches: VcsBranch[];
@@ -85,6 +67,7 @@ export function HistoryPanelView({
           <p className="eyebrow">Versioning</p>
           <h2 id="vcs-history-title">History</h2>
         </div>
+        <span className="count-chip vcs-count-chip">{commits.length}</span>
       </div>
 
       {error && (
@@ -107,10 +90,8 @@ export function HistoryPanelView({
             {branches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name}</option>)}
           </select>
         </label>
-        {status && <p className="property-hint">Current branch: <strong>{status.branch}</strong></p>}
+        {status?.dirty === false && <span className="vcs-clean-chip" role="status">Clean working copy</span>}
       </div>
-
-      {status?.dirty === false && <p className="quiet-state" role="status">nothing to commit</p>}
 
       <form className="vcs-commit-form" onSubmit={submitCommit}>
         <label className="field-label">
@@ -129,11 +110,11 @@ export function HistoryPanelView({
       </form>
 
       <div className="vcs-section">
-        <h3>Changes on {selectedBranch || 'the current branch'}</h3>
+        <p className="vcs-subsection-label">Changes on {selectedBranch || 'the current branch'}</p>
         {loading ? (
           <p className="quiet-state" role="status">Loading history…</p>
         ) : commits.length === 0 ? (
-          <p className="quiet-state">No commits yet.</p>
+          <p className="quiet-state">No commits yet; make a change and commit it to start a history.</p>
         ) : (
           <ul className="vcs-commit-list">
             {commits.map((commit) => (
@@ -147,7 +128,10 @@ export function HistoryPanelView({
                   <strong>{commit.message}</strong>
                   <span>{commit.authorDisplayName} · {relativeTimeLabel(commit.createdAt)}</span>
                 </button>
-                <span className="count-chip vcs-kind-chip">{commit.kind} · {commit.origin}</span>
+                <div className="vcs-commit-chips">
+                <span className="vcs-kind-chip">{commit.kind}</span>
+                <span className="vcs-origin-chip">{commit.origin}</span>
+              </div>
               </li>
             ))}
           </ul>
@@ -163,7 +147,7 @@ export function HistoryPanelView({
             <h3>{commitDetail.message}</h3>
             <h4>Changed elements</h4>
             {commitDetail.changes.length === 0 ? (
-              <p className="quiet-state">No element changes are listed.</p>
+              <p className="quiet-state">No element changes are listed; select another commit to inspect its changes.</p>
             ) : (
               <ul className="vcs-change-list">
                 {commitDetail.changes.map((change, index) => (
@@ -183,9 +167,11 @@ export function HistoryPanelView({
 
 export interface HistoryPanelProps {
   projectId: Uuid;
+  onStatusChanged?(): void;
+  onDetailOpenChange?(open: boolean): void;
 }
 
-export default function HistoryPanel({ projectId }: HistoryPanelProps) {
+export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenChange }: HistoryPanelProps) {
   const [branches, setBranches] = useState<VcsBranch[]>([]);
   const [status, setStatus] = useState<VcsStatus | null>(null);
   const [selectedBranch, setSelectedBranch] = useState('');
@@ -265,6 +251,7 @@ export default function HistoryPanel({ projectId }: HistoryPanelProps) {
     setNotice(null);
     try {
       await api.createCommit(projectId, { message });
+      onStatusChanged?.();
       const [nextStatus, nextBranches] = await Promise.all([
         api.getStatus(projectId),
         api.listBranches(projectId),
@@ -283,12 +270,14 @@ export default function HistoryPanel({ projectId }: HistoryPanelProps) {
   async function handleOpenCommit(commitId: Uuid): Promise<void> {
     setCommitDetail(null);
     setDetailLoading(true);
+    onDetailOpenChange?.(true);
     setError(null);
     try {
       setCommitDetail(await api.getCommit(projectId, commitId));
     } catch (cause: unknown) {
       setError(vcsErrorMessage(cause, 'The commit details could not be loaded.'));
       setDetailLoading(false);
+      onDetailOpenChange?.(false);
     } finally {
       setDetailLoading(false);
     }
@@ -315,6 +304,7 @@ export default function HistoryPanel({ projectId }: HistoryPanelProps) {
       onCloseDetail={() => {
         setCommitDetail(null);
         setDetailLoading(false);
+        onDetailOpenChange?.(false);
       }}
       onDismissError={() => setError(null)}
     />

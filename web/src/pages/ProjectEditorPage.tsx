@@ -49,10 +49,7 @@ import { ReviewPanelLoader } from '../review/ReviewPanel';
 import XmiImportPanel from '../xmi/XmiImportPanel';
 import XmiExportPanel from '../xmi/XmiExportPanel';
 import MembersPanel from '../members/MembersPanel';
-import BranchesPanel from '../vcs/BranchesPanel';
-import HistoryPanel from '../vcs/HistoryPanel';
-import MergeRequestsPanel from '../vcs/MergeRequestsPanel';
-import PermissionsPanel from '../vcs/PermissionsPanel';
+import VersioningPanel from '../vcs/VersioningPanel';
 import {
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
@@ -1247,7 +1244,7 @@ export default function ProjectEditorPage() {
               titleVisible={false}
               onClose={closeSection}
             >
-              <BranchesPanel
+              <VersioningPanel
                 projectId={project.id}
                 onModelCheckout={(checkoutModel) => {
                   canonicalModelRef.current = checkoutModel;
@@ -1257,9 +1254,6 @@ export default function ProjectEditorPage() {
                   setSelection(null);
                 }}
               />
-              <HistoryPanel projectId={project.id} />
-              <MergeRequestsPanel projectId={project.id} />
-              <PermissionsPanel projectId={project.id} />
             </Modal>
 
             <Modal

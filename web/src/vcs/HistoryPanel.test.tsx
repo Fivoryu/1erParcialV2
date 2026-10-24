@@ -70,14 +70,17 @@ function render(overrides: Partial<HistoryPanelViewProps> = {}): string {
 }
 
 describe('version history panel', () => {
-  it('shows the active branch, author, commit message, and clean working-copy state', () => {
+  it('shows the selected branch, author, commit message, and clean working-copy chip', () => {
     const markup = render();
 
-    expect(markup).toContain('Current branch:');
+    expect(markup).toContain('History branch');
     expect(markup).toContain('main');
     expect(markup).toContain('Avery Rivera');
     expect(markup).toContain('Add account diagram');
-    expect(markup).toContain('nothing to commit');
+    expect(markup).toContain('Clean working copy');
+    expect(markup).toContain('vcs-commit-list');
+    expect(markup).toContain('vcs-kind-chip');
+    expect(markup).toContain('vcs-origin-chip');
     expect(markup).toContain('Commit changes');
   });
 
@@ -101,6 +104,6 @@ describe('version history panel', () => {
 
   it('distinguishes loading and empty histories', () => {
     expect(render({ loading: true, commits: [] })).toContain('Loading history…');
-    expect(render({ loading: false, commits: [] })).toContain('No commits yet.');
+    expect(render({ loading: false, commits: [] })).toContain('No commits yet; make a change and commit it to start a history.');
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Uuid } from '../api/types';
 import {
   createVcsApiClient,
-  permissionUpdatePayload,
+  permissionTogglePayload,
   VCS_PERMISSION_ACTIONS,
   vcsErrorMessage,
   type VcsPermissionAction,
@@ -40,7 +40,9 @@ export function PermissionsPanelView({
           <p className="eyebrow">Versioning</p>
           <h2 id="vcs-permissions-title">Permissions</h2>
         </div>
+        <span className="count-chip vcs-count-chip">{permissions.length}</span>
       </div>
+      <p className="property-hint vcs-permissions-hint">Saving a change pins the effective permission set for that member.</p>
 
       {error && (
         <div className="notice notice-error" role="alert">
@@ -52,32 +54,44 @@ export function PermissionsPanelView({
       {loading ? (
         <p className="quiet-state" role="status">Loading permissions…</p>
       ) : permissions.length === 0 ? (
-        <p className="quiet-state">No project permissions are available.</p>
+        <p className="quiet-state">No project permissions are available; add a project member before changing actions.</p>
       ) : (
-        <ul className="vcs-permission-list">
-          {permissions.map((permission) => (
-            <li className="vcs-permission-row" key={permission.userId}>
-              <div className="vcs-permission-copy">
-                <h3>{permission.displayName}</h3>
-                <p>{permission.username}</p>
-              </div>
-              <div className="vcs-permission-actions">
+        <div className="vcs-permission-table-wrap">
+          <table className="vcs-permission-table">
+            <thead>
+              <tr>
+                <th className="vcs-permission-member-heading" scope="col">Member</th>
                 {VCS_PERMISSION_ACTIONS.map((action) => (
-                  <label className="vcs-permission-action" key={action}>
-                    <input
-                      aria-label={`${permissionActionLabel(action)} for ${permission.displayName}`}
-                      checked={permission.actions.includes(action)}
-                      disabled={busyUserId !== null}
-                      onChange={(event) => onToggleAction(permission, action, event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>{permissionActionLabel(action)}</span>
-                  </label>
+                  <th key={action} scope="col">{permissionActionLabel(action)}</th>
                 ))}
-              </div>
-            </li>
-          ))}
-        </ul>
+              </tr>
+            </thead>
+            <tbody>
+              {permissions.map((permission) => (
+                <tr key={permission.userId}>
+                  <th className="vcs-permission-member" scope="row">
+                    <span>{permission.displayName}</span>
+                    <small>{permission.username}</small>
+                  </th>
+                  {VCS_PERMISSION_ACTIONS.map((action) => (
+                    <td key={action}>
+                      <label className="vcs-permission-action">
+                        <input
+                          aria-label={`${permissionActionLabel(action)} for ${permission.displayName}`}
+                          checked={permission.actions.includes(action)}
+                          disabled={busyUserId !== null}
+                          onChange={(event) => onToggleAction(permission, action, event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span className="sr-only">{permissionActionLabel(action)}</span>
+                      </label>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
@@ -127,16 +141,13 @@ export default function PermissionsPanel({ projectId }: PermissionsPanelProps) {
     if (busyUserId !== null) {
       return;
     }
-    const checkedActions = checked
-      ? [...permission.actions, action]
-      : permission.actions.filter((current) => current !== action);
     setBusyUserId(permission.userId);
     setError(null);
     try {
       const updated = await api.updatePermissions(
         projectId,
         permission.userId,
-        permissionUpdatePayload(checkedActions),
+        permissionTogglePayload(permission.actions, action, checked),
       );
       setPermissions((current) => current.map((item) => item.userId === updated.userId ? updated : item));
     } catch (cause: unknown) {

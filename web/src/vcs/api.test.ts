@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiTransportError } from '../api/client';
 import {
   createVcsApiClient,
+  permissionTogglePayload,
   permissionUpdatePayload,
   VCS_ERROR_CODES,
   VCS_PERMISSION_ACTIONS,
@@ -95,6 +96,15 @@ describe('version-control API contract', () => {
       actions: VCS_PERMISSION_ACTIONS.filter((action) => checkedActions.includes(action)),
     });
     expect(permissionUpdatePayload(checkedActions).actions).toEqual(['VIEW', 'MERGE', 'MANAGE_PERMISSIONS']);
+  });
+
+  it('builds permission-toggle payloads from the effective checked set', () => {
+    expect(permissionTogglePayload(['VIEW', 'ADD', 'MERGE'], 'COMMIT', true)).toEqual({
+      actions: ['VIEW', 'ADD', 'COMMIT', 'MERGE'],
+    });
+    expect(permissionTogglePayload(['VIEW', 'ADD', 'MERGE'], 'ADD', false)).toEqual({
+      actions: ['VIEW', 'MERGE'],
+    });
   });
 
   it('keeps each frozen error code on the readable error path', () => {

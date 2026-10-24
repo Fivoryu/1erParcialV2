@@ -54,9 +54,12 @@ describe('version branches panel', () => {
   it('lists branch heads and exposes protected status and checkout controls', () => {
     const markup = render();
 
-    expect(markup).toContain('Current branch:');
+    expect(markup).toContain('vcs-branch-row--current');
+    expect(markup).toContain('Current');
+    expect(markup).toContain('Protected');
     expect(markup).toContain('feature-orders');
     expect(markup).toContain('Add orders');
+    expect(markup).toContain('Avery Rivera');
     expect(markup).toContain('Protect main');
     expect(markup).toContain('Switch branch');
     expect(markup).toContain('Create branch');
@@ -92,6 +95,6 @@ describe('version branches panel', () => {
 
   it('distinguishes an empty branch list from a loading error', () => {
     expect(render({ loading: true, branches: [] })).toContain('Loading branches…');
-    expect(render({ loading: false, branches: [] })).toContain('No branches are available.');
+    expect(render({ loading: false, branches: [] })).toContain('No branches are available; create a branch to start working.');
   });
 });

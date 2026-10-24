@@ -168,6 +168,17 @@ export function permissionUpdatePayload(
   return { actions: VCS_PERMISSION_ACTIONS.filter((action) => checked.has(action)) };
 }
 
+export function permissionTogglePayload(
+  currentActions: readonly VcsPermissionAction[],
+  action: VcsPermissionAction,
+  checked: boolean,
+): UpdateVcsPermissionsRequest {
+  const nextActions = checked
+    ? [...currentActions, action]
+    : currentActions.filter((current) => current !== action);
+  return permissionUpdatePayload(nextActions);
+}
+
 export function vcsErrorMessage(error: unknown, fallback: string): string {
   if (!(error instanceof ApiTransportError)) {
     return fallback;
