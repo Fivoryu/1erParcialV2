@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.diagramador.assistant.DiagramContextRenderer;
+import com.diagramador.api.ModelResource;
 import com.diagramador.command.ModelStateHasher;
 import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.ProjectMemberRole;
@@ -20,6 +22,8 @@ import com.diagramador.persistence.UmlRelationshipRepository;
 import com.diagramador.persistence.UserAccountRepository;
 import com.diagramador.persistence.ViewStyle;
 import com.diagramador.persistence.ViewStyleRepository;
+import com.diagramador.identity.CurrentUser;
+import com.diagramador.identity.CurrentUserContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
@@ -71,6 +75,12 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
 
     @Autowired
     private ModelStateHasher stateHasher;
+
+    @Autowired
+    private CurrentUserContext currentUserContext;
+
+    @Autowired
+    private DiagramContextRenderer diagramContextRenderer;
 
     @DynamicPropertySource
     static void operatorProperties(DynamicPropertyRegistry registry) {
@@ -205,6 +215,221 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
             assertThat(change.path("targetId").asText()).isEqualTo(classifierId.toString());
             assertThat(change.path("targetName").asText()).isEqualTo("Added in diff");
         });
+    }
+
+    @Test
+    void repoHistoryFiltersByAuthorAndReturnsNewestFirst() throws Exception {
+        String owner = username("repo-history-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        UUID firstClassifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, firstClassifierId, "Owner first classifier");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Owner first commit"), 201);
+
+        String editor = username("repo-history-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        UserAccount editorAccount = userRepository.findByUsernameIgnoreCase(editor).orElseThrow();
+        editorAccount.setDisplayName("History Editor");
+        userRepository.saveAndFlush(editorAccount);
+        putPermissions(owner, projectId, editorAccount.getId(), List.of("COMMIT"), 200);
+
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Editor committed classifier");
+        postJson(editor, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Editor commit"), 201);
+
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Owner latest classifier");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Owner latest commit"), 201);
+
+        JsonNode allHistory = getJson(owner, get("/projects/{projectId}/vcs/repo/history", projectId));
+        JsonNode editorHistory = getJson(owner,
+                get("/projects/{projectId}/vcs/repo/history", projectId)
+                        .param("authorUserId", editorAccount.getId().toString()));
+        List<String> messages = new java.util.ArrayList<>();
+        allHistory.forEach(commit -> messages.add(commit.path("message").asText()));
+
+        assertThat(messages).containsExactly("Owner latest commit", "Editor commit", "Owner first commit",
+                "Initial commit");
+        assertThat(editorHistory).hasSize(1);
+        assertThat(editorHistory.get(0).path("message").asText()).isEqualTo("Editor commit");
+        assertThat(editorHistory.get(0).path("authorUserId").asText()).isEqualTo(editorAccount.getId().toString());
+        assertThat(editorHistory.get(0).path("authorDisplayName").asText()).isEqualTo("History Editor");
+    }
+
+    @Test
+    void repoDiffBetweenCommitsReportsAddedAndRenamedClassifiers() throws Exception {
+        String owner = username("repo-diff");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        UUID renamedClassifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, renamedClassifierId, "Before rename");
+        JsonNode firstCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add classifier to rename"), 201);
+
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Created between commits");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add another classifier"), 201);
+
+        renameClassifier(owner, projectId, renamedClassifierId, "Renamed classifier");
+        JsonNode lastCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Rename first classifier"), 201);
+        JsonNode diff = getJson(owner, get("/projects/{projectId}/vcs/repo/diff", projectId)
+                .param("fromCommitId", firstCommit.path("commitId").asText())
+                .param("toCommitId", lastCommit.path("commitId").asText()));
+
+        assertThat(diff).anySatisfy(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("ADDED");
+            assertThat(change.path("targetType").asText()).isEqualTo("CLASSIFIER");
+            assertThat(change.path("targetName").asText()).isEqualTo("Created between commits");
+        });
+        assertThat(diff).anySatisfy(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("MODIFIED");
+            assertThat(change.path("targetType").asText()).isEqualTo("CLASSIFIER");
+            assertThat(change.path("targetName").asText()).isEqualTo("Renamed classifier");
+        });
+    }
+
+    @Test
+    void repoBlameIncludesClassifierHistoryForAnAttributeAndRealAuthors() throws Exception {
+        String owner = username("repo-blame-owner");
+        UUID projectId = createProject(owner);
+        UserAccount ownerAccount = userRepository.findByUsernameIgnoreCase(owner).orElseThrow();
+        ownerAccount.setDisplayName("Classifier Author");
+        userRepository.saveAndFlush(ownerAccount);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, classifierId, "Person");
+        JsonNode classifierCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Create person classifier"), 201);
+
+        String editor = username("repo-blame-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        UserAccount editorAccount = userRepository.findByUsernameIgnoreCase(editor).orElseThrow();
+        editorAccount.setDisplayName("Attribute Author");
+        userRepository.saveAndFlush(editorAccount);
+        putPermissions(owner, projectId, editorAccount.getId(), List.of("COMMIT"), 200);
+
+        UUID attributeId = UUID.randomUUID();
+        commandJson(owner, projectId, "attribute.add", List.of(Map.of("scope", "classifier", "id", classifierId)),
+                Map.of("id", attributeId, "name", "email", "type", Map.of("primitiveName", "String")), 200);
+        JsonNode attributeCommit = postJson(editor, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add email attribute"), 201);
+        JsonNode blame = getJson(editor, get("/projects/{projectId}/vcs/repo/blame", projectId)
+                .param("targetType", "ATTRIBUTE")
+                .param("targetId", attributeId.toString()));
+
+        assertThat(blame).hasSize(2);
+        assertThat(blame.get(0).path("commitId").asText()).isEqualTo(attributeCommit.path("commitId").asText());
+        assertThat(blame.get(0).path("authorDisplayName").asText()).isEqualTo("Attribute Author");
+        assertThat(blame.get(0).path("message").asText()).isEqualTo("Add email attribute");
+        assertThat(blame.get(1).path("commitId").asText()).isEqualTo(classifierCommit.path("commitId").asText());
+        assertThat(blame.get(1).path("authorDisplayName").asText()).isEqualTo("Classifier Author");
+        assertThat(blame.get(1).path("message").asText()).isEqualTo("Create person classifier");
+    }
+
+    @Test
+    void repoBlameReturnsOnlyTheCommitThatIntroducedAnUnchangedElement() throws Exception {
+        String owner = username("repo-blame-stable");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        UUID stableClassifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, stableClassifierId, "Stable classifier");
+        JsonNode introduced = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Introduce stable classifier"), 201);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Unrelated classifier");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add unrelated classifier"), 201);
+
+        JsonNode blame = getJson(owner, get("/projects/{projectId}/vcs/repo/blame", projectId)
+                .param("targetType", "CLASSIFIER")
+                .param("targetId", stableClassifierId.toString()));
+
+        assertThat(blame).hasSize(1);
+        assertThat(blame.get(0).path("commitId").asText()).isEqualTo(introduced.path("commitId").asText());
+        assertThat(blame.get(0).path("message").asText()).isEqualTo("Introduce stable classifier");
+    }
+
+    @Test
+    void repoQueriesAllowViewMembersDenyNonMembersAndAllowTheOperator() throws Exception {
+        String owner = username("repo-access-owner");
+        UUID projectId = createProject(owner);
+        JsonNode initial = getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, classifierId, "Readable classifier");
+        JsonNode commit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Readable history"), 201);
+
+        String viewer = username("repo-access-viewer");
+        bearer(viewer);
+        addMembership(viewer, projectId, ProjectMemberRole.VIEWER);
+        JsonNode viewerHistory = getJson(viewer, get("/projects/{projectId}/vcs/repo/history", projectId));
+        JsonNode viewerDiff = getJson(viewer, get("/projects/{projectId}/vcs/repo/diff", projectId)
+                .param("fromCommitId", initial.path("headCommitId").asText())
+                .param("toCommitId", commit.path("commitId").asText()));
+        JsonNode viewerBlame = getJson(viewer, get("/projects/{projectId}/vcs/repo/blame", projectId)
+                .param("targetType", "CLASSIFIER")
+                .param("targetId", classifierId.toString()));
+        assertThat(viewerHistory).hasSize(2);
+        assertThat(viewerDiff).anySatisfy(change ->
+                assertThat(change.path("targetName").asText()).isEqualTo("Readable classifier"));
+        assertThat(viewerBlame).hasSize(1);
+        assertError(viewer, get("/projects/{projectId}/vcs/repo/blame", projectId)
+                .param("targetType", "ATTRIBUTE").param("targetId", UUID.randomUUID().toString()),
+                404, "NOT_FOUND");
+
+        String outsider = username("repo-access-outsider");
+        assertError(outsider, get("/projects/{projectId}/vcs/repo/history", projectId), 403, "FORBIDDEN");
+        assertError(outsider, get("/projects/{projectId}/vcs/repo/diff", projectId)
+                .param("toCommitId", commit.path("commitId").asText()), 403, "FORBIDDEN");
+        assertError(outsider, get("/projects/{projectId}/vcs/repo/blame", projectId)
+                .param("targetType", "CLASSIFIER").param("targetId", classifierId.toString()), 403, "FORBIDDEN");
+
+        assertThat(getOperatorJson(get("/projects/{projectId}/vcs/repo/history", projectId))).hasSize(2);
+        assertThat(getOperatorJson(get("/projects/{projectId}/vcs/repo/diff", projectId)
+                .param("toCommitId", commit.path("commitId").asText()))).isNotEmpty();
+        assertThat(getOperatorJson(get("/projects/{projectId}/vcs/repo/blame", projectId)
+                .param("targetType", "CLASSIFIER").param("targetId", classifierId.toString()))).hasSize(1);
+    }
+
+    @Test
+    void assistantContextAddsReadableHistoryWithoutTechnicalIdentifiers() throws Exception {
+        String owner = username("assistant-history");
+        UUID projectId = createProject(owner);
+        UserAccount account = userRepository.findByUsernameIgnoreCase(owner).orElseThrow();
+        account.setDisplayName("History Author");
+        userRepository.saveAndFlush(account);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "History class");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add readable history entry"), 201);
+
+        String historyBlock = assistantHistoryBlock(owner, projectId);
+        assertThat(historyBlock).contains("History Author", "Add readable history entry");
+        assertThat(java.util.regex.Pattern.compile(
+                "(?i)\\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\\b")
+                .matcher(historyBlock).find()).isFalse();
+        assertThat(java.util.regex.Pattern.compile("(?i)\\b[0-9a-f]{64}\\b")
+                .matcher(historyBlock).find()).isFalse();
+    }
+
+    @Test
+    void assistantContextRendersASingleCommitInOneLine() throws Exception {
+        String owner = username("assistant-one");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        String historyBlock = assistantHistoryBlock(owner, projectId);
+
+        assertThat(historyBlock).contains("un solo commit", "Initial commit");
+        assertThat(historyBlock).doesNotContain("\n", "\r");
+        assertThat(historyBlock.lines()).hasSize(1);
     }
 
     @Test
@@ -760,6 +985,21 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
         assertThat(findById(checkout.path("model").path("classifiers"), featureClassifierId.toString())).isNotNull();
     }
 
+    private String assistantHistoryBlock(String owner, UUID projectId) throws Exception {
+        ModelResource model = objectMapper.treeToValue(
+                getJson(owner, "/projects/{projectId}/model", projectId), ModelResource.class);
+        UserAccount account = userRepository.findByUsernameIgnoreCase(owner).orElseThrow();
+        currentUserContext.set(new CurrentUser(account.getId(), account.getUsername(), account.getDisplayName()));
+        try {
+            String context = diagramContextRenderer.render(model);
+            int historyStart = context.lastIndexOf("Historial del diagrama:");
+            assertThat(historyStart).isGreaterThanOrEqualTo(0);
+            return context.substring(historyStart);
+        } finally {
+            currentUserContext.clear();
+        }
+    }
+
     private String username(String prefix) {
         return "vcs-" + prefix + "-" + UUID.randomUUID();
     }
@@ -946,6 +1186,20 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
             }
         }
         throw new AssertionError("Branch was not returned: " + branchName);
+    }
+
+    private JsonNode getJson(String username, MockHttpServletRequestBuilder request) throws Exception {
+        MvcResult result = mockMvc.perform(authorizedAs(username, request))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    private JsonNode getOperatorJson(MockHttpServletRequestBuilder request) throws Exception {
+        MvcResult result = mockMvc.perform(withOperator(request))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
     }
 
     private JsonNode getJson(String username, String path, Object... pathVariables) throws Exception {

@@ -31,6 +31,7 @@ public class VcsController {
     private final VcsAccessService accessService;
     private final VcsBranchService branchService;
     private final VcsCommitService commitService;
+    private final VcsRepoQueryService repoQueryService;
     private final VcsMergeRequestService mergeRequestService;
     private final VcsPermissionService permissionService;
     private final ProjectApiService projectApiService;
@@ -40,13 +41,15 @@ public class VcsController {
     private final CurrentUserContext currentUserContext;
 
     public VcsController(VcsAccessService accessService, VcsBranchService branchService,
-            VcsCommitService commitService, VcsMergeRequestService mergeRequestService,
-            VcsPermissionService permissionService, ProjectApiService projectApiService,
+            VcsCommitService commitService, VcsRepoQueryService repoQueryService,
+            VcsMergeRequestService mergeRequestService, VcsPermissionService permissionService,
+            ProjectApiService projectApiService,
             ProjectRepository projectRepository, UmlModelRepository modelRepository,
             UserAccountRepository userRepository, CurrentUserContext currentUserContext) {
         this.accessService = accessService;
         this.branchService = branchService;
         this.commitService = commitService;
+        this.repoQueryService = repoQueryService;
         this.mergeRequestService = mergeRequestService;
         this.permissionService = permissionService;
         this.projectApiService = projectApiService;
@@ -112,6 +115,29 @@ public class VcsController {
     public VcsResources.CommitDetail detail(@PathVariable UUID projectId, @PathVariable UUID commitId) {
         UmlModel model = readableModel(projectId);
         return commitService.detail(model, commitId);
+    }
+
+    @GetMapping("/repo/history")
+    public List<VcsResources.Commit> repoHistory(@PathVariable UUID projectId,
+            @RequestParam(name = "branchName", required = false) String branchName,
+            @RequestParam(name = "authorUserId", required = false) UUID authorUserId,
+            @RequestParam(name = "limit", required = false) Integer limit) {
+        return repoQueryService.history(readableModel(projectId), branchName, authorUserId, limit);
+    }
+
+    @GetMapping("/repo/diff")
+    public List<VcsResources.Change> repoDiff(@PathVariable UUID projectId,
+            @RequestParam(name = "fromCommitId", required = false) UUID fromCommitId,
+            @RequestParam(name = "toCommitId") UUID toCommitId) {
+        return repoQueryService.diff(readableModel(projectId), fromCommitId, toCommitId);
+    }
+
+    @GetMapping("/repo/blame")
+    public List<VcsResources.Commit> repoBlame(@PathVariable UUID projectId,
+            @RequestParam(name = "targetType") String targetType,
+            @RequestParam(name = "targetId") UUID targetId,
+            @RequestParam(name = "branchName", required = false) String branchName) {
+        return repoQueryService.blame(readableModel(projectId), targetType, targetId, branchName);
     }
 
     @GetMapping("/merge-requests")

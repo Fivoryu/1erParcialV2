@@ -53,7 +53,7 @@ public class AssistantPlanService {
                     "El diagrama cambió. Revisá el modelo antes de generar un nuevo plan.");
         }
 
-        String contextJson = contextRenderer.render(model);
+        String contextJson = contextRenderer.renderDiagramOnly(model);
         String rawDraft;
         try {
             rawDraft = provider.draft(contextJson, request.utterance());

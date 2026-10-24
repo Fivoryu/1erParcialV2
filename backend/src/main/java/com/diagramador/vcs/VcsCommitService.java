@@ -130,15 +130,7 @@ public class VcsCommitService {
         SnapshotModel child = snapshotService.fromJson(commit.getSnapshot().getPayload());
         SnapshotModel parent = commit.getParent() == null ? null
                 : snapshotService.fromJson(commit.getParent().getSnapshot().getPayload());
-        List<VcsResources.Change> changes = new ArrayList<>();
-        changes.addAll(diff(parent == null ? List.of() : parent.classifiers(), child.classifiers(),
-                com.diagramador.api.ModelResource.ClassifierResource::id,
-                com.diagramador.api.ModelResource.ClassifierResource::name, "CLASSIFIER"));
-        changes.addAll(diff(parent == null ? List.of() : parent.relationships(), child.relationships(),
-                com.diagramador.api.ModelResource.RelationshipResource::id,
-                com.diagramador.api.ModelResource.RelationshipResource::name, "RELATIONSHIP"));
-        changes.addAll(diff(parent == null ? List.of() : parent.views(), child.views(),
-                SnapshotModel.SnapshotView::id, SnapshotModel.SnapshotView::name, "VIEW"));
+        List<VcsResources.Change> changes = changesBetween(parent, child);
 
         UserAccount author = commit.getAuthor();
         return new VcsResources.CommitDetail(commit.getId(), commit.getBranchName(), commit.getKind(),
@@ -179,7 +171,7 @@ public class VcsCommitService {
         return normalized;
     }
 
-    private static VcsResources.Commit commitResource(VcsCommit commit) {
+    static VcsResources.Commit commitResource(VcsCommit commit) {
         UserAccount author = commit.getAuthor();
         return new VcsResources.Commit(commit.getId(), commit.getBranchName(), commit.getKind(), commit.getOrigin(),
                 commit.getMessage(), author == null ? null : author.getId(),
@@ -187,6 +179,20 @@ public class VcsCommitService {
                 commit.getParent() == null ? null : commit.getParent().getId(),
                 commit.getSecondParent() == null ? null : commit.getSecondParent().getId(),
                 commit.getSnapshot().getStateHash(), commit.getCreatedAt());
+    }
+
+    static List<VcsResources.Change> changesBetween(SnapshotModel parent, SnapshotModel child) {
+        Objects.requireNonNull(child, "child");
+        List<VcsResources.Change> changes = new ArrayList<>();
+        changes.addAll(diff(parent == null ? List.of() : parent.classifiers(), child.classifiers(),
+                com.diagramador.api.ModelResource.ClassifierResource::id,
+                com.diagramador.api.ModelResource.ClassifierResource::name, "CLASSIFIER"));
+        changes.addAll(diff(parent == null ? List.of() : parent.relationships(), child.relationships(),
+                com.diagramador.api.ModelResource.RelationshipResource::id,
+                com.diagramador.api.ModelResource.RelationshipResource::name, "RELATIONSHIP"));
+        changes.addAll(diff(parent == null ? List.of() : parent.views(), child.views(),
+                SnapshotModel.SnapshotView::id, SnapshotModel.SnapshotView::name, "VIEW"));
+        return List.copyOf(changes);
     }
 
     private static <T> List<VcsResources.Change> diff(List<T> before, List<T> after,
