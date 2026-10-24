@@ -31,6 +31,7 @@ public class VcsController {
     private final VcsAccessService accessService;
     private final VcsBranchService branchService;
     private final VcsCommitService commitService;
+    private final VcsMergeRequestService mergeRequestService;
     private final ProjectApiService projectApiService;
     private final ProjectRepository projectRepository;
     private final UmlModelRepository modelRepository;
@@ -38,12 +39,14 @@ public class VcsController {
     private final CurrentUserContext currentUserContext;
 
     public VcsController(VcsAccessService accessService, VcsBranchService branchService,
-            VcsCommitService commitService, ProjectApiService projectApiService,
-            ProjectRepository projectRepository, UmlModelRepository modelRepository,
-            UserAccountRepository userRepository, CurrentUserContext currentUserContext) {
+            VcsCommitService commitService, VcsMergeRequestService mergeRequestService,
+            ProjectApiService projectApiService, ProjectRepository projectRepository,
+            UmlModelRepository modelRepository, UserAccountRepository userRepository,
+            CurrentUserContext currentUserContext) {
         this.accessService = accessService;
         this.branchService = branchService;
         this.commitService = commitService;
+        this.mergeRequestService = mergeRequestService;
         this.projectApiService = projectApiService;
         this.projectRepository = projectRepository;
         this.modelRepository = modelRepository;
@@ -109,6 +112,40 @@ public class VcsController {
         return commitService.detail(model, commitId);
     }
 
+    @GetMapping("/merge-requests")
+    public List<VcsResources.MergeRequest> mergeRequests(@PathVariable UUID projectId) {
+        return mergeRequestService.list(readableModel(projectId));
+    }
+
+    @PostMapping(path = "/merge-requests", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<VcsResources.MergeRequest> openMergeRequest(@PathVariable UUID projectId,
+            @RequestBody(required = false) MergeRequestBody request) {
+        UmlModel model = requiredModel(projectId);
+        if (request == null) {
+            throw invalidPayload("Merge request body is required.");
+        }
+        VcsResources.MergeRequest created = mergeRequestService.open(model, request.sourceBranch(),
+                request.targetBranch(), request.title(), author());
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @GetMapping("/merge-requests/{mergeRequestId}")
+    public VcsResources.MergeRequest mergeRequestDetail(@PathVariable UUID projectId,
+            @PathVariable UUID mergeRequestId) {
+        return mergeRequestService.detail(readableModel(projectId), mergeRequestId);
+    }
+
+    @PostMapping("/merge-requests/{mergeRequestId}/merge")
+    public VcsResources.MergeRequest merge(@PathVariable UUID projectId, @PathVariable UUID mergeRequestId) {
+        return mergeRequestService.merge(requiredModel(projectId), mergeRequestId, author());
+    }
+
+    @PostMapping("/merge-requests/{mergeRequestId}/close")
+    public VcsResources.MergeRequest closeMergeRequest(@PathVariable UUID projectId,
+            @PathVariable UUID mergeRequestId) {
+        return mergeRequestService.close(requiredModel(projectId), mergeRequestId, author());
+    }
+
     @PostMapping(path = "/commits", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<VcsResources.Commit> commit(@PathVariable UUID projectId,
             @RequestBody(required = false) CommitRequest request) {
@@ -155,5 +192,8 @@ public class VcsController {
     }
 
     public record CommitRequest(String message) {
+    }
+
+    public record MergeRequestBody(String sourceBranch, String targetBranch, String title) {
     }
 }

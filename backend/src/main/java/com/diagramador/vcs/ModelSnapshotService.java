@@ -154,6 +154,7 @@ public class ModelSnapshotService {
         return new SnapshotModel(views, classifiers, relationships, viewStyle);
     }
 
+    @Transactional(readOnly = true)
     public String stateHash(UmlModel model) {
         return stateHasher.hash(model);
     }

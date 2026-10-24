@@ -1,6 +1,7 @@
 package com.diagramador.vcs;
 
 import com.diagramador.api.ApiException;
+import com.diagramador.command.ModelStateHasher;
 import com.diagramador.command.ValidationState;
 import com.diagramador.domain.Project;
 import com.diagramador.domain.UmlModel;
@@ -34,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class VcsBranchService {
 
     private final VcsAccessService accessService;
+    private final ModelStateHasher stateHasher;
     private final ModelSnapshotService snapshotService;
     private final VcsBranchRepository branchRepository;
     private final VcsCommitRepository commitRepository;
@@ -46,12 +48,13 @@ public class VcsBranchService {
     @PersistenceContext
     private EntityManager entityManager;
 
-    public VcsBranchService(VcsAccessService accessService, ModelSnapshotService snapshotService,
-            VcsBranchRepository branchRepository, VcsCommitRepository commitRepository,
+    public VcsBranchService(VcsAccessService accessService, ModelStateHasher stateHasher,
+            ModelSnapshotService snapshotService, VcsBranchRepository branchRepository, VcsCommitRepository commitRepository,
             VcsSnapshotRepository snapshotRepository, UmlModelRepository modelRepository,
             ModelVersionRepository versionRepository, UserAccountRepository userRepository,
             ProjectRepository projectRepository) {
         this.accessService = accessService;
+        this.stateHasher = stateHasher;
         this.snapshotService = snapshotService;
         this.branchRepository = branchRepository;
         this.commitRepository = commitRepository;
@@ -69,7 +72,7 @@ public class VcsBranchService {
         UUID activeId = activeBranchId(managedModel.getId());
         VcsBranch main = branchRepository.findByModel_IdAndName(managedModel.getId(), VcsBranch.MAIN).orElse(null);
         if (main == null) {
-            String stateHash = snapshotService.stateHash(managedModel);
+            String stateHash = stateHasher.hash(managedModel);
             SnapshotModel captured = snapshotService.capture(managedModel);
             VcsSnapshot snapshot = findOrCreateSnapshot(managedModel, stateHash, captured);
             VcsCommit initial = commitRepository.saveAndFlush(VcsCommit.create(managedModel, null, null, snapshot,
@@ -141,7 +144,7 @@ public class VcsBranchService {
         ensureMain(managedModel, author);
         VcsBranch target = findBranch(managedModel, name);
         VcsBranch current = activeBranch(managedModel);
-        String workingHash = snapshotService.stateHash(managedModel);
+        String workingHash = stateHasher.hash(managedModel);
         String currentHeadHash = current.getHeadCommit().getSnapshot().getStateHash();
         if (!Objects.equals(workingHash, currentHeadHash)) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKING_COPY_DIRTY",

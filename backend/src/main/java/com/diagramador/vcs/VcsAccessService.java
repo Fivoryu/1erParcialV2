@@ -43,6 +43,16 @@ public class VcsAccessService {
         requireCommit(projectId);
     }
 
+    public void requireMerge(UUID projectId) {
+        if (currentUserContext.isOperator()) {
+            return;
+        }
+        ProjectMember member = requireActiveMember(projectId);
+        if (member.getRole() != ProjectMemberRole.OWNER) {
+            throw forbidden("Merging requires OWNER access to this project.");
+        }
+    }
+
     public void requireProtection(UUID projectId) {
         if (currentUserContext.isOperator()) {
             return;

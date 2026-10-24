@@ -23,6 +23,7 @@ import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.domain.UserAccount;
+import com.diagramador.command.ModelStateHasher;
 import com.diagramador.persistence.ChatSessionRepository;
 import com.diagramador.persistence.ClassifierRepository;
 import com.diagramador.persistence.ConnectorPathRepository;
@@ -61,6 +62,9 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private ModelSnapshotService snapshotService;
+
+    @Autowired
+    private ModelStateHasher stateHasher;
 
     @Autowired
     private UserAccountRepository userAccountRepository;
@@ -135,6 +139,16 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
         SnapshotModel targetSnapshot = snapshotService.capture(target);
         assertThat(snapshotService.toJson(targetSnapshot)).isEqualTo(sourceJson);
         assertThat(elementIds(targetSnapshot)).containsExactlyInAnyOrderElementsOf(elementIds(captured));
+    }
+
+    @Test
+    void modelStateHasherAndSnapshotServiceShareTheProjectionIncludingRouteAdjustment() {
+        Fixture fixture = createRichModel();
+        SnapshotModel snapshot = snapshotService.capture(fixture.model());
+
+        assertThat(snapshot.viewStyle()).anySatisfy(style -> assertThat(style.routeAdjustment()).isNotNull());
+        assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(stateHasher.hash(fixture.model()));
+        assertThat(stateHasher.hash(snapshot)).isEqualTo(stateHasher.hash(fixture.model()));
     }
 
     @Test

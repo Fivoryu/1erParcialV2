@@ -3,6 +3,8 @@ package com.diagramador.vcs;
 import com.diagramador.api.ModelResource;
 import com.diagramador.domain.VcsCommitKind;
 import com.diagramador.domain.VcsCommitOrigin;
+import com.diagramador.domain.VcsMergeState;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -37,5 +39,11 @@ public final class VcsResources {
     }
 
     public record Checkout(String branch, ModelResource model) {
+    }
+
+    public record MergeRequest(UUID mergeRequestId, String title, VcsMergeState state,
+            String sourceBranch, String targetBranch, UUID sourceCommitId, UUID targetCommitId,
+            UUID mergeBaseCommitId, boolean hasConflicts, JsonNode conflicts, String openedByDisplayName,
+            String decidedByDisplayName, OffsetDateTime createdAt) {
     }
 }

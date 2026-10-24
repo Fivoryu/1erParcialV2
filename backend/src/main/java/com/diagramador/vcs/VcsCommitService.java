@@ -1,6 +1,7 @@
 package com.diagramador.vcs;
 
 import com.diagramador.api.ApiException;
+import com.diagramador.command.ModelStateHasher;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UserAccount;
 import com.diagramador.domain.VcsBranch;
@@ -34,6 +35,7 @@ public class VcsCommitService {
 
     private final VcsAccessService accessService;
     private final VcsBranchService branchService;
+    private final ModelStateHasher stateHasher;
     private final ModelSnapshotService snapshotService;
     private final UmlModelRepository modelRepository;
     private final VcsBranchRepository branchRepository;
@@ -41,11 +43,12 @@ public class VcsCommitService {
     private final VcsSnapshotRepository snapshotRepository;
 
     public VcsCommitService(VcsAccessService accessService, VcsBranchService branchService,
-            ModelSnapshotService snapshotService, UmlModelRepository modelRepository,
+            ModelStateHasher stateHasher, ModelSnapshotService snapshotService, UmlModelRepository modelRepository,
             VcsBranchRepository branchRepository, VcsCommitRepository commitRepository,
             VcsSnapshotRepository snapshotRepository) {
         this.accessService = accessService;
         this.branchService = branchService;
+        this.stateHasher = stateHasher;
         this.snapshotService = snapshotService;
         this.modelRepository = modelRepository;
         this.branchRepository = branchRepository;
@@ -57,7 +60,7 @@ public class VcsCommitService {
     public VcsResources.Status status(UmlModel model) {
         UmlModel managedModel = requireModel(model.getId());
         VcsBranch active = branchService.activeBranch(managedModel);
-        String currentHash = snapshotService.stateHash(managedModel);
+        String currentHash = stateHasher.hash(managedModel);
         String headHash = active.getHeadCommit().getSnapshot().getStateHash();
         return new VcsResources.Status(active.getName(), active.getHeadCommit().getId(),
                 !Objects.equals(currentHash, headHash));
@@ -85,7 +88,7 @@ public class VcsCommitService {
         if (branch.isProtected()) {
             accessService.requireProtection(projectId);
         }
-        String stateHash = snapshotService.stateHash(managedModel);
+        String stateHash = stateHasher.hash(managedModel);
         VcsCommit parent = branch.getHeadCommit();
         if (Objects.equals(stateHash, parent.getSnapshot().getStateHash())) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKING_COPY_CLEAN",

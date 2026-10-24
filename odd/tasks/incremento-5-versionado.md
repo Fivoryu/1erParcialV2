@@ -30,7 +30,7 @@
 | # | Tarea | Specs | Ruta | Commit |
 | --- | --- | --- | --- | --- |
 | T1 | Esquema VCS: migración `V23`, entidades y repositorios (`vcs_snapshot`, `vcs_commit`, `vcs_branch`, `vcs_merge_request`, `vcs_permission`) | S1, S2, S4, S5 |  | `68151b0` |
-| T2 | Serializador canónico del modelo + materializador con identidades preservadas + prueba de round-trip `state_hash` | S2 |  | `(pendiente de commit)` |
+| T2 | Serializador canónico del modelo + materializador con identidades preservadas + prueba de round-trip `state_hash` | S2 |  | `74c34d5` |
 | T3 | Commits manuales, rama `main` implícita e historial por rama | S1, S2, S3 |  |  |
 | T4 | Ramas: crear, listar y checkout con guardia de cambios sin commitear | S1, S7 |  |  |
 | T5 | Merge request: apertura, diff de tres vías, conflictos y merge que materializa el resultado | S4 |  |  |
@@ -116,3 +116,20 @@ checkout con cambios sin commitear), `WORKING_COPY_CLEAN` (409, commit sin cambi
   asignada es **SQL nativo con el id explícito** (`XmiImportHandler`, líneas ~556-575 y ~764), y es el que
   adopta `materialize`: `INSERT ... ON CONFLICT (<pk>) DO UPDATE`, con `CAST(:x AS diagrammer.<enum>)` en las
   columnas enumeradas, y `flush()` + `clear()` porque el contexto de persistencia no ve las escrituras nativas.
+- **L6 (decisión de seguridad, tomada al chocar con una invariante existente):** `AuthenticationInterceptor`
+  declara hoy que *el operador no puede crear proyectos, ejecutar comandos ni leer modelos*: nació como
+  **operador de despliegue**, con lista blanca mínima y una prueba que lo fija. S6 pide que el admin sea el
+  operador global con acceso total al diagrama, así que la lista blanca se amplía **solo** a
+  `/projects/{uuid}/vcs/**` (GET, POST, PUT), validando el uuid como el resto de las rutas. Crear proyectos,
+  ejecutar comandos y leer `/projects/{uuid}/model` siguen prohibidos y quedan cubiertos por una prueba en las
+  dos direcciones. Consecuencia declarada: el operador pasa a poder **leer el contenido de los diagramas**
+  (los snapshots incluyen el modelo completo), cosa que antes no podía. La alternativa descartada era inventar
+  un principal nuevo `admin` separado del operador de despliegue: es la arquitectura más limpia, pero agrega
+  configuración de credenciales y un segundo eje de autorización que el pedido no pidió.
+- **L7 (defecto de coherencia detectado en la revisión del padre, no en un test):** el materializador de T2
+  delegaba el hash en `ModelStateHasher`, que **no** incluye `view_style`; al implementar T5 el escritor
+  reemplazó esa delegación por una proyección propia que sí lo incluye. Resultado: dos convenciones de hash
+  escribiendo la misma columna `model_version.state_hash` — una en el camino de comandos y otra en el de
+  checkout/merge. Se unifica en `ModelStateHasher` agregando el grupo `view_style` (clave `(viewId, targetId)`),
+  que además cierra un agujero real: un cambio **solo de estilo** era invisible para `dirty` y por lo tanto no
+  se podía commitear. Costo declarado: el hash de un modelo existente cambia una vez, solo por esta razón.
