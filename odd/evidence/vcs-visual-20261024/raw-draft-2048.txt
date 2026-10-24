@@ -1,0 +1,245 @@
+```json
+{
+  "intent": "plan",
+  "operations": [
+    {
+      "type": "classifier.create",
+      "targetName": "Paciente",
+      "args": {
+        "name": "Paciente"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Paciente.nombre",
+      "args": {
+        "name": "nombre",
+        "type": "String"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Paciente.documento",
+      "args": {
+        "name": "documento",
+        "type": "String"
+      }
+    },
+    {
+      "type": "relationship.create",
+      "targetName": "Paciente->HistoriaClinica",
+      "args": {
+        "kind": "ASSOCIATION",
+        "source": {
+          "classifierName": "Paciente"
+        },
+        "target": {
+          "classifierName": "HistoriaClinica"
+        }
+      }
+    },
+    {
+      "type": "classifier.create",
+      "targetName": "Medico",
+      "args": {
+        "name": "Medico"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Medico.matricula",
+      "args": {
+        "name": "matricula",
+        "type": "String"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Medico.nombre",
+      "args": {
+        "name": "nombre",
+        "type": "String"
+      }
+    },
+    {
+      "type": "relationship.create",
+      "targetName": "Medico->Turno",
+      "args": {
+        "kind": "ASSOCIATION",
+        "source": {
+          "classifierName": "Medico"
+        },
+        "target": {
+          "classifierName": "Turno"
+        }
+      }
+    },
+    {
+      "type": "classifier.create",
+      "targetName": "Turno",
+      "args": {
+        "name": "Turno"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Turno.fecha",
+      "args": {
+        "name": "fecha",
+        "type": "Date"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Turno.hora",
+      "args": {
+        "name": "hora",
+        "type": "Integer"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Turno.estado",
+      "args": {
+        "name": "estado",
+        "type": "String"
+      }
+    },
+    {
+      "type": "relationship.create",
+      "targetName": "Turno->Paciente",
+      "args": {
+        "kind": "ASSOCIATION",
+        "source": {
+          "classifierName": "Turno"
+        },
+        "target": {
+          "classifierName": "Paciente"
+        }
+      }
+    },
+    {
+      "type": "classifier.create",
+      "targetName": "HistoriaClinica",
+      "args": {
+        "name": "HistoriaClinica"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "HistoriaClinica.numero",
+      "args": {
+        "name": "numero",
+        "type": "Integer"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "HistoriaClinica.observaciones",
+      "args": {
+        "name": "observaciones",
+        "type": "String"
+      }
+    },
+    {
+      "type": "relationship.create",
+      "targetName": "HistoriaClinica->Paciente",
+      "args": {
+        "kind": "ASSOCIATION",
+        "source": {
+          "classifierName": "HistoriaClinica"
+        },
+        "target": {
+          "classifierName": "Paciente"
+        }
+      }
+    },
+    {
+      "type": "classifier.create",
+      "targetName": "Especialidad",
+      "args": {
+        "name": "Especialidad"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Especialidad.nombre",
+      "args": {
+        "name": "nombre",
+        "type": "String"
+      }
+    },
+    {
+      "type": "relationship.create",
+      "targetName": "Especialidad->Medico",
+      "args": {
+        "kind": "ASSOCIATION",
+        "source": {
+          "classifierName": "Especialidad"
+        },
+        "target": {
+          "classifierName": "Medico"
+        }
+      }
+    },
+    {
+      "type": "classifier.create",
+      "targetName": "Medico",
+      "args": {
+        "name": "Medico"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Medico.medicos",
+      "args": {
+        "name": "medicos",
+        "type": "Integer"
+      }
+    },
+    {
+      "type": "relationship.create",
+      "targetName": "Medico->Especialidad",
+      "args": {
+        "kind": "ASSOCIATION",
+        "source": {
+          "classifierName": "Medico"
+        },
+        "target": {
+          "classifierName": "Especialidad"
+        }
+      }
+    },
+    {
+      "type": "classifier.create",
+      "targetName": "Especialidad",
+      "args": {
+        "name": "Especialidad"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Especialidad.grupos",
+      "args": {
+        "name": "grupos",
+        "type": "Integer"
+      }
+    },
+    {
+      "type": "relationship.create",
+      "targetName": "Especialidad->Medico",
+      "args": {
+        "kind": "ASSOCIATION",
+        "source": {
+          "classifierName": "Especialidad"
+        },
+        "target": {
+          "classifierName": "Medico"
+        }
+      }
+    }
+  ],
+  "question": null,
+  "explanation": "El diagrama de clases se ha generado siguiendo las reglas de UML. Se han creado las clases: Paciente, Medico, Turno, HistoriaClinica y Especialidad. Se han establecido las relaciones de asociación entre cada entidad: Paciente tiene una HistoriaClinica, un Medico atiende muchos Turnos, un Turno es de un Paciente y de un Medico, y un Medico tiene una Especialidad y una Especialidad agrupa muchos Medicos. Se han añadido los campos necesarios para cada entidad (nombre, documento, matricula, nombre, fecha, hora, estado, numero, observaciones, medicos, especialidad, grupos) y se han establecido las relaciones correspondientes entre las entidades."
+}
+```

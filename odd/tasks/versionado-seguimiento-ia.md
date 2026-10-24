@@ -53,3 +53,39 @@
   el JAR a `.jar.original` **después de pasar los 671 tests**. Causa: el backend de la sesión de QA estaba
   ejecutando exactamente `target/uml-diagrammer-backend-0.1.0.jar`, y Windows bloquea el JAR en uso. No es un
   defecto del código: se mató el proceso (PID 17224) y se rerunó el empaquetado con el puerto libre.
+
+- **S6 — El chat grupal puede pedirle a la IA que genere o sugiera.** En la sesión de chat compartida del
+  editor, un miembro pide una sugerencia; la propuesta aparece en el chat como tarjeta visible para todos, con
+  la vista previa del cambio futuro; un EDITOR o superior la aplica, y la aplicación queda registrada en el
+  chat (el linaje `chat_ai_linkage` de V16 ya existe). La IA es un miembro más: ve el contexto del diagrama y
+  el historial del chat, con los permisos de quien pregunta.
+- **S7 — El consumo de RAM del runtime de IA se declara y se acota.** Medido (captura del usuario): el
+  `com.docker.llama-server.exe` retiene **4.650-5.080 MB** para un modelo de 526 MB. `docker model configure
+  --context-size 4096` fue aplicado pero la reducción no se observó aún: el comando disparó un pull de
+  actualización del runner (`latest-cuda`) que quedó pendiente, y `docker model inspect` se bloquea en ese pull.
+  La descarga y recarga del modelo (`docker model unload`) funcionó. Queda declarado: el consumo es propiedad
+  del runtime de Docker Model Runner en esta máquina, no del producto; la palanca documentada (contexto
+  explícito) pudo no aplicar hasta completar la actualización del runner.
+
+## Tasks (continuación)
+
+| # | Tarea | Specs | Commit |
+| --- | --- | --- | --- |
+| T5 | Fix del proveedor: campo `model`, `max_tokens` 2048, `TIMEOUT` 300 s, prompt v4 de lenguaje cotidiano | S3, L2 | `f19b46a` (base) + este commit |
+| T6 | Chat grupal con sugerencias de IA: propuesta visible, vista previa, aceptación por EDITOR+ | S6 |  |
+
+## QA de la clínica (S4) — hallazgos con evidencia
+
+| # | Hallazgo | Evidencia | Estado |
+| --- | --- | --- | --- |
+| Q1 | 500 en todo ask: el proveedor no enviaba `model` y el runner exige `model is required` (HTTP 400) | `provider-resp.txt` | **corregido** con propiedad `diagrammer.assistant.model` + 2 pruebas |
+| Q2 | Plan de clínica truncado a 512 tokens → "no devolvió un plan JSON válido" | `raw-draft.txt`, `completion_tokens: 512` | **corregido** (`max_tokens` 2048) |
+| Q3 | Timeout del proveedor a los 120 s: el plan real genera 1735 tokens en **239 s** con prompt de 1720 | `backend-run.log` `HttpTimeoutException`, medición de ronda 25 | **corregido** (`TIMEOUT` 300 s) |
+| Q4 | El modelo 0.8B degrada en planes largos: entradas con `"type"` duplicado, `targetName` sin convención `Dueño.atributo`, prosa y fence tras el JSON | `raw-draft-2048.txt` | **límite del modelo contratado**, no del código; el validador lo rechaza limpio y la UI ofrece Reintentar |
+| Q5 | La latencia del modelo del doc (2,2 s + tokens/32, con prompt de 31 tokens) no escala: con prompt de 1720 tokens el decode cae a ~7,3 tok/s | medición de ronda 25 | documentado; el prompt v4 recorta ejemplos si hace falta |
+| Q6 | El modelo sin `enable_thinking:false` gasta los tokens en `reasoning_content` y devuelve `content` vacío | sonda directa | ya manejado por el proveedor (se envía siempre) |
+
+El camino feliz quedó demostrado de punta a punta a nivel runner (ronda 25: el plan JSON para la clínica se
+genera con clases, atributos y relaciones), pero la **entrega en vivo** del plan de 5 clases sigue siendo
+intermitente por Q4: el modelo contratado está por debajo de la tarea. Planes chicos (1-3 operaciones) son el
+caso confiable hoy. La decisión de subir de modelo (más RAM) o limitar el tamaño de pedido es del usuario.

@@ -194,3 +194,20 @@ checkout con cambios sin commitear), `WORKING_COPY_CLEAN` (409, commit sin cambi
   5. **LIMITACIÓN DECLARADA (no es pérdida de contenido):** `created_at` no viaja en el snapshot y
      `view_style.updated_at` se reescribe en el upsert. Son metadatos, no estado del diagrama; queda documentado
      que la materialización no es una restauración fila-a-fila.
+- **L14 (revisión nativa de la unidad de endurecimiento: APROBADA).** Linaje `review-9494f58ffd59d9b2`, rango
+  `f1b02aa..HEAD` (9 archivos, 491 líneas, nivel *medium*), lentes `risk` y `reliability`. Resultado `approved` y
+  autoridad reconocida (`burn_evidence: gentle-ai.review-acknowledged/v1`). Un hallazgo **informativo, no
+  bloqueante**: `R3-001` (WARNING) en el mapa de acciones de `CommandService`. Se interpreta como el tipo de prueba
+  `test.noop` declarado dentro del mapa de producción: 28 entradas, de las cuales una existe solo para que la prueba
+  de completitud pase, y el mapa no distingue handlers de producción de los del arnés. **No se reabre este
+  candidato ya aprobado por un hallazgo informativo**; queda como trabajo posterior: mover la declaración de acción
+  al registro de cada handler, o separar el arnés del mapa real.
+- **L15 (la interfaz del versionado se veía mal por una causa medible, no por gusto):** las clases `vcs-*` de
+  los cuatro paneles no tenían **ninguna** regla en `web/src/styles.css` (`grep -c "vcs-"` = 0). El panel se
+  apoyaba en las clases del sistema (`surface`, `button`, `eyebrow`) y en nombres propios sin estilo, así que
+  renderizaba como formularios apilados. Además el cuerpo del diálogo medía 481 px visibles contra 1244 px de
+  contenido (`overflow-y: auto`, o sea scrolleaba: **no** recortaba), porque cuatro secciones apiladas no tienen
+  sujeto. Corrección en dos pasadas: (1) pestañas accesibles (`role=tablist/tab/tabpanel`, flechas, Home/End) con
+  barra de estado —rama, limpio/sucio y último commit— y el CSS que faltaba para todas las clases; (2) columna de
+  contenido de 720 px, campo de mensaje de 420 px con la acción en la misma línea base, un solo bloque de título
+  por pestaña y ritmo normalizado 24/8/16. Evidencia: `odd/evidence/vcs-visual-20261024/`.

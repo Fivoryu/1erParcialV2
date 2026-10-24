@@ -1,0 +1,80 @@
+{
+  "intent": "plan",
+  "operations": [
+    {
+      "type": "classifier.create",
+      "targetName": "Paciente",
+      "args": {
+        "name": "Paciente"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Paciente",
+      "args": {
+        "name": "nombre",
+        "type": "String"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Paciente",
+      "args": {
+        "name": "documento",
+        "type": "String"
+      }
+    },
+    {
+      "type": "relationship.create",
+      "targetName": "Paciente->HistoriaClinica",
+      "args": {
+        "kind": "ASSOCIATION",
+        "source": {
+          "classifierName": "Paciente"
+        },
+        "target": {
+          "classifierName": "HistoriaClinica"
+        }
+      }
+    },
+    {
+      "type": "classifier.create",
+      "targetName": "Medico",
+      "args": {
+        "name": "Medico"
+      }
+    },
+    {
+      "type": "attribute.add",
+      "targetName": "Medico",
+      "args": {
+        "name": "matricula",
+        "type": "String"
+      },
+      "type": "attribute.add",
+      "targetName": "Medico",
+      "args": {
+        "name": "nombre",
+        "type": "String"
+      }
+    },
+    {
+      "type": "relationship.create",
+      "targetName": "Medico->Turno",
+      "args": {
+        "kind": "ASSOCIATION",
+        "source": {
+          "classifierName": "Medico"
+        },
+        "target": {
+          "classifierName": "Turno"
+        }
+      }
+    },
+    {
+      "type": "classifier.create",
+      "targetName": "Turno",
+      "args": {
+        "name": "Turno"
+      }
+   

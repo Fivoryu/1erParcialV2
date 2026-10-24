@@ -44,7 +44,7 @@ class LlamaCppAssistantProviderChatMessagesTest {
         });
         server.start();
         provider = new LlamaCppAssistantProvider(true,
-                "http://127.0.0.1:" + server.getAddress().getPort(), objectMapper);
+                "http://127.0.0.1:" + server.getAddress().getPort(), "", objectMapper);
     }
 
     @AfterEach

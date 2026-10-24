@@ -1,0 +1,1 @@
+{"model":"huggingface.co/ggml-org/qwen3.5-0.8b-gguf:Q4_0","messages":[{"role":"user","content":"Responde solo con la palabra ok"}],"max_tokens":8}
