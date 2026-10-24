@@ -31,11 +31,11 @@
 | --- | --- | --- | --- | --- |
 | T1 | Esquema VCS: migración `V23`, entidades y repositorios (`vcs_snapshot`, `vcs_commit`, `vcs_branch`, `vcs_merge_request`, `vcs_permission`) | S1, S2, S4, S5 |  | `68151b0` |
 | T2 | Serializador canónico del modelo + materializador con identidades preservadas + prueba de round-trip `state_hash` | S2 |  | `74c34d5` |
-| T3 | Commits manuales, rama `main` implícita e historial por rama | S1, S2, S3 |  |  |
-| T4 | Ramas: crear, listar y checkout con guardia de cambios sin commitear | S1, S7 |  |  |
-| T5 | Merge request: apertura, diff de tres vías, conflictos y merge que materializa el resultado | S4 |  |  |
-| T6 | Permisos por diagrama y usuario, con bypass del operador y rama protegida | S5, S6, S7 |  |  |
-| T7 | Herramientas de IA sobre el repo: historial, diff y autoría (blame) con los permisos del usuario | S8 |  |  |
+| T3 | Commits manuales, rama `main` implícita e historial por rama | S1, S2, S3 |  | `2c0e3b1` |
+| T4 | Ramas: crear, listar y checkout con guardia de cambios sin commitear | S1, S7 |  | `2c0e3b1` |
+| T5 | Merge request: apertura, diff de tres vías, conflictos y merge que materializa el resultado | S4 |  | `ad7d3da` |
+| T6 | Permisos por diagrama y usuario, con bypass del operador y rama protegida | S5, S6, S7 |  | `b3ce944` |
+| T7 | Herramientas de IA sobre el repo: historial, diff y autoría (blame) con los permisos del usuario | S8 |  | `f1b02aa` |
 | T8 | Superficie web: historial, ramas, PR con conflictos y matriz de permisos | S1, S2, S4, S5 |  | `dc265be` |
 
 ## Log
@@ -162,3 +162,35 @@ checkout con cambios sin commitear), `WORKING_COPY_CLEAN` (409, commit sin cambi
   rechaza con `INVALID_PAYLOAD` nombrando la acción y el rol, y no escribe nada — mejor un error explícito que una
   concesión guardada que no habilita nada. Descartado: relajar `CommandService` para honrar `ADD` sobre un
   `VIEWER`; dos capas que deciden distinto son la fábrica de agujeros clásica.
+- **L12 (proceso: el incremento completo excede el presupuesto de una revisión nativa):** `review.start` sobre el
+  candidato entero devolvió `lens_context_budget_exceeded` en preflight — sin linaje, sin mutación, nada que
+  reparar ni abandonar. La causa es de proceso, no técnica: se commiteó por unidad, pero se intentó revisar el
+  incremento **entero** de una vez (≈4.000 líneas en backend, web y dos migraciones). La práctica del Incremento 3
+  (S0) era revisar **antes** de commitear, por unidad, y así cada candidato entraba holgado. Desde acá: la
+  revisión nativa se pide contra la **cola** del rango (`baseRef` = commit previo a la unidad), no contra todo el
+  incremento; y la verificación de los dos riesgos declarados va por verificador independiente, que no tiene ese
+  límite.
+- **L13 (verificación independiente de riesgo alto: dos severos y dos moderados).** Evidencia y `file:line` en el
+  informe del verificador; resumen accionable:
+  1. **SEVERO — las concesiones se esquivan por rutas alternativas.** `ProjectApiService.executeCommand` consulta
+     `VcsAccessService`, pero `AssistantApplyService`, `XmiImportService` y `UndoService` llaman a `CommandService`
+     directo, y `CommandService` solo valida rol (`EDITOR`/`OWNER`). Un editor con concesión `COMMIT`-only queda
+     denegado en `/vcs` y en `/commands`, y **sí** puede borrar por *assistant apply*, agregar por import XMI o
+     mutar por undo/redo. Corrección: la comprobación de acción se muda **dentro de `CommandService`**, que es el
+     cuello único por el que pasan todos; consultarla desde los llamadores es lo que dejó el hueco (invierte el
+     razonamiento de L11 sobre dónde vive la costura, no la decisión sobre el rol como techo).
+  2. **SEVERO — el checkout puede borrar chat y memoria por identidad de vista.** `materialize` borra las vistas
+     cuyo id no está en el snapshot; `chat_session`, `diagram_message`, `chat_attachment` y `diagram_memory`
+     cuelgan de `view_id` con `ON DELETE CASCADE`. Si una rama borra y recrea la vista (id nuevo), el checkout de
+     la otra rama elimina la fila vieja y con ella la conversación. Corrección: fallar cerrado — si la
+     materialización fuera a borrar una vista con sesiones de chat o memoria, se rechaza con un error explícito en
+     vez de destruir. No se adivina identidad por nombre.
+  3. **MODERADO — el mapa de comandos es parcial** (`getOrDefault(..., ADD)`), y `project.rename` cae en `ADD`;
+     un handler registrado nuevo no obliga a declarar su acción. Corrección: mapa completo por tipo registrado más
+     una prueba de completitud que falle ante un tipo nuevo sin acción declarada.
+  4. **MODERADO — la lista blanca del operador acepta `segments.length >= 5`** y una ruta cruda
+     `POST /projects/{uuid}/vcs/../commands` pasa el predicado; el verificador no pudo certificar que el servlet
+     normalice antes. Corrección: rechazar segmentos `.` y `..` en el interceptor, con prueba.
+  5. **LIMITACIÓN DECLARADA (no es pérdida de contenido):** `created_at` no viaja en el snapshot y
+     `view_style.updated_at` se reescribe en el upsert. Son metadatos, no estado del diagrama; queda documentado
+     que la materialización no es una restauración fila-a-fila.

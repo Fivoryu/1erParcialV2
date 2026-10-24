@@ -15,13 +15,12 @@ import com.diagramador.api.ModelResource.ViewStyleResource;
 import com.diagramador.command.Author;
 import com.diagramador.command.CommandOrigin;
 import com.diagramador.command.CommandResult;
+import com.diagramador.command.ErrorCode;
 import com.diagramador.command.CommandStatus;
 import com.diagramador.command.OperationEnvelope;
 import com.diagramador.identity.CurrentUser;
 import com.diagramador.identity.CurrentUserContext;
 import com.diagramador.identity.ProjectAuthorizationService;
-import com.diagramador.vcs.VcsAccessService;
-import com.diagramador.domain.VcsAction;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ConnectorPath;
 import com.diagramador.domain.DiagramView;
@@ -65,7 +64,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -79,33 +77,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ProjectApiService {
 
-    // Explicit handler mappings: project.create creates the project/model (CREATE); classifier,
-    // relationship, view, attribute, operation, parameter, and constraint creation/add handlers
-    // use ADD; classifier/relationship deletion and attribute, operation, parameter, constraint,
-    // and geometry removal handlers use DELETE. Every unlisted command defaults to ADD.
-    private static final Map<String, VcsAction> COMMAND_ACTIONS = Map.ofEntries(
-            Map.entry("project.create", VcsAction.CREATE),
-            Map.entry("classifier.create", VcsAction.ADD),
-            Map.entry("relationship.create", VcsAction.ADD),
-            Map.entry("view.create", VcsAction.ADD),
-            Map.entry("attribute.add", VcsAction.ADD),
-            Map.entry("operation.add", VcsAction.ADD),
-            Map.entry("parameter.add", VcsAction.ADD),
-            Map.entry("constraint.add", VcsAction.ADD),
-            Map.entry("classifier.delete", VcsAction.DELETE),
-            Map.entry("relationship.delete", VcsAction.DELETE),
-            Map.entry("attribute.remove", VcsAction.DELETE),
-            Map.entry("operation.remove", VcsAction.DELETE),
-            Map.entry("parameter.remove", VcsAction.DELETE),
-            Map.entry("constraint.remove", VcsAction.DELETE),
-            Map.entry("geometry.remove", VcsAction.DELETE));
-
     private final ProjectRepository projectRepository;
     private final ModelCommandRepository modelCommandRepository;
     private final ProjectMemberRepository projectMemberRepository;
     private final CurrentUserContext currentUserContext;
     private final ProjectAuthorizationService projectAuthorizationService;
-    private final VcsAccessService vcsAccessService;
     private final UmlModelRepository modelRepository;
     private final ModelVersionRepository versionRepository;
     private final ClassifierRepository classifierRepository;
@@ -132,7 +108,7 @@ public class ProjectApiService {
             ElementGeometryRepository geometryRepository, ConnectorPathRepository connectorPathRepository,
             ViewStyleRepository viewStyleRepository,
             ProjectMemberRepository projectMemberRepository, CurrentUserContext currentUserContext,
-            ProjectAuthorizationService projectAuthorizationService, VcsAccessService vcsAccessService,
+            ProjectAuthorizationService projectAuthorizationService,
             com.diagramador.command.CommandService commandService,
             com.diagramador.undo.UndoCaptureService undoCaptureService) {
         this.projectRepository = projectRepository;
@@ -140,7 +116,6 @@ public class ProjectApiService {
         this.projectMemberRepository = projectMemberRepository;
         this.currentUserContext = currentUserContext;
         this.projectAuthorizationService = projectAuthorizationService;
-        this.vcsAccessService = vcsAccessService;
         this.modelRepository = modelRepository;
         this.versionRepository = versionRepository;
         this.classifierRepository = classifierRepository;
@@ -219,22 +194,20 @@ public class ProjectApiService {
         requireProject(pathProjectId);
         CurrentUser currentUser = currentUserContext.require();
         projectAuthorizationService.requireMember(pathProjectId);
-        vcsAccessService.requireAction(pathProjectId,
-                COMMAND_ACTIONS.getOrDefault(envelope.type(), VcsAction.ADD));
-        if ("xmi.import".equalsIgnoreCase(envelope.type()) && isReplaceMode(envelope.payload())) {
-            // L36/L54: REEMPLAZAR destroys the model's views (cascading chat history and memory
-            // away) — the generic command route must honor the same OWNER-only rule as the import
-            // controller, or an EDITOR could walk around it.
-            projectAuthorizationService.requireOwner(pathProjectId);
-        }
         OperationEnvelope authenticatedEnvelope = new OperationEnvelope(envelope.operationId(), envelope.type(),
                 new Author(currentUser.userId(), currentUser.username()), envelope.projectId(), envelope.modelId(),
                 envelope.baseRevision(), envelope.targets(), envelope.preconditions(), envelope.payload(),
                 envelope.origin(), envelope.causalParentOperationId(), envelope.idempotencyKey());
-        // IA4-04 capture hook: the pre-value snapshot of the envelope targets is taken BEFORE
-        // the command runs and stored next to the accepted command; CommandService is untouched.
+        // IA4-04 capture hook: take the pre-value snapshot before the command runs; fine-grained
+        // action authorization remains centralized in CommandService.
         JsonNode preSnapshot = undoCaptureService.snapshotTargets(authenticatedEnvelope);
         CommandResult result = commandService.execute(authenticatedEnvelope);
+        for (var diagnostic : result.diagnostics()) {
+            if (diagnostic.code() == ErrorCode.FORBIDDEN) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", diagnostic.message(), List.of(),
+                        authenticatedEnvelope.operationId());
+            }
+        }
         if (result.status() == CommandStatus.ACCEPTED) {
             undoCaptureService.recordAccepted(authenticatedEnvelope, result, currentUser.userId(), preSnapshot);
         }
@@ -276,15 +249,6 @@ public class ProjectApiService {
                 command.getBaseRevision(), command.getResultRevision(), command.getOperation(),
                 command.getTargetType() == null ? null : command.getTargetType().name(),
                 command.getTargetId(), command.isKnowledgePending(), command.getCreatedAt());
-    }
-
-    private static boolean isReplaceMode(Object payload) {
-        if (payload instanceof Map<?, ?> map) {
-            Object mode = map.get("mode");
-            return mode != null && "REEMPLAZAR".equalsIgnoreCase(String.valueOf(mode));
-        }
-        return payload != null && String.valueOf(payload).toUpperCase(java.util.Locale.ROOT)
-                .contains("REEMPLAZAR");
     }
 
     @Transactional(readOnly = true)

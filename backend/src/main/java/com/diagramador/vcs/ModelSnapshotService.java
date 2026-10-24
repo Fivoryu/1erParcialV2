@@ -1,5 +1,6 @@
 package com.diagramador.vcs;
 
+import com.diagramador.api.ApiException;
 import com.diagramador.api.ModelResource;
 import com.diagramador.api.ModelResource.AttributeResource;
 import com.diagramador.api.ModelResource.ClassifierResource;
@@ -57,6 +58,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -372,6 +374,7 @@ public class ModelSnapshotService {
         // Prune in the established FK-safe order after all snapshot-owned rows are restored.
         deleteMissing(relationshipRepository, existingRelationships, index.relationships.keySet());
         flushAndClear();
+        rejectViewDeletionWithConversationHistory(existingViews, index.views.keySet());
         deleteMissing(viewRepository, existingViews, index.views.keySet());
         flushAndClear();
         deleteMissing(typeReferenceRepository, existingTypeReferences, index.typeUses.keySet());
@@ -988,6 +991,43 @@ public class ModelSnapshotService {
             repository.deleteAll(stale);
             repository.flush();
         }
+    }
+
+    private void rejectViewDeletionWithConversationHistory(Map<UUID, DiagramView> current, Set<UUID> keepIds) {
+        current.keySet().stream()
+                .filter(viewId -> !keepIds.contains(viewId))
+                .sorted()
+                .filter(this::hasConversationHistory)
+                .findFirst()
+                .ifPresent(viewId -> {
+                    throw new ApiException(HttpStatus.CONFLICT, "VIEW_CHAT_PRESENT",
+                            "View " + viewId
+                                    + " has conversation history attached to this diagram, so nothing was changed.",
+                            List.of(), null);
+                });
+    }
+
+    private boolean hasConversationHistory(UUID viewId) {
+        Object result = entityManager.createNativeQuery("""
+                SELECT EXISTS (
+                    SELECT 1 FROM diagrammer.chat_session WHERE view_id = :viewId
+                    UNION ALL
+                    SELECT 1 FROM diagrammer.diagram_memory WHERE view_id = :viewId
+                    UNION ALL
+                    SELECT 1
+                    FROM diagrammer.diagram_message msg
+                    JOIN diagrammer.chat_session cs ON cs.session_id = msg.session_id
+                    WHERE cs.view_id = :viewId
+                    UNION ALL
+                    SELECT 1
+                    FROM diagrammer.chat_attachment ca
+                    JOIN diagrammer.chat_session cs ON cs.session_id = ca.session_id
+                    WHERE cs.view_id = :viewId
+                )
+                """)
+                .setParameter("viewId", viewId)
+                .getSingleResult();
+        return Boolean.TRUE.equals(result);
     }
 
     private void deleteMissingStyles(Map<StyleKey, ViewStyle> current, Set<StyleKey> keepKeys) {

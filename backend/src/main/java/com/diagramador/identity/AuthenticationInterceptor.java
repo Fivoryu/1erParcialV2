@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -87,6 +88,9 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
 
     // The operator cannot create projects, run commands, or read model contents.
     private static boolean isOperatorAllowed(String method, String path) {
+        if (containsDotTraversalSegment(path)) {
+            return false;
+        }
         if ("GET".equalsIgnoreCase(method) && "/projects".equals(path)) {
             return true;
         }
@@ -114,6 +118,16 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
                 && "deployments".equals(segments[1]) && isUuidPathSegment(segments[2])
                 && ("claim".equals(segments[3]) || "report".equals(segments[3])
                         || "stop".equals(segments[3]));
+    }
+
+    private static boolean containsDotTraversalSegment(String path) {
+        for (String segment : path.split("/", -1)) {
+            if (".".equals(segment) || "..".equals(segment)
+                    || segment.toLowerCase(Locale.ROOT).contains("%2e")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isUuidPathSegment(String segment) {

@@ -1,11 +1,14 @@
 package com.diagramador;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.diagramador.api.ApiException;
+import com.diagramador.identity.AuthenticationInterceptor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
@@ -16,6 +19,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -33,6 +39,9 @@ class OperatorApiTest extends AuthenticatedApiTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private AuthenticationInterceptor authenticationInterceptor;
 
     @DynamicPropertySource
     static void operatorProperties(DynamicPropertyRegistry registry) {
@@ -157,6 +166,37 @@ class OperatorApiTest extends AuthenticatedApiTest {
         mockMvc.perform(withOperator(get("/projects/not-a-uuid/vcs/status")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void operatorAllowlistRejectsTraversalAndKeepsUserOnlyRoutesForbidden() throws Exception {
+        String projectId = createProject("operator-traversal");
+
+        mockMvc.perform(withOperator(post("/projects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("name", "forbidden", "description", "")))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(withOperator(post("/projects/{projectId}/commands", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of()))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(withOperator(get("/projects/{projectId}/model", projectId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+
+        for (String traversal : new String[] {"..", "%2e%2e", "%2E"}) {
+            MockHttpServletRequest request = new MockHttpServletRequest("POST",
+                    "/projects/" + projectId + "/vcs/" + traversal + "/commands");
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + OPERATOR_TOKEN);
+            assertThatThrownBy(() -> authenticationInterceptor.preHandle(request,
+                    new MockHttpServletResponse(), new Object()))
+                    .isInstanceOfSatisfying(ApiException.class, exception -> {
+                        assertThat(exception.status()).isEqualTo(HttpStatus.FORBIDDEN);
+                        assertThat(exception.code()).isEqualTo("FORBIDDEN");
+                    });
+        }
     }
 
     @Test

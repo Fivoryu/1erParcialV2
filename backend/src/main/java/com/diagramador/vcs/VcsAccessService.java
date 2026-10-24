@@ -52,7 +52,15 @@ public class VcsAccessService {
         if (currentUserContext.isOperator()) {
             return;
         }
-        ProjectMember member = requireActiveMember(projectId);
+        requireAction(projectId, action, currentUserContext.require().userId());
+    }
+
+    /** Enforces an action for a trusted command author resolved by the command choke point. */
+    public void requireAction(UUID projectId, VcsAction action, UUID userId) {
+        if (currentUserContext.isOperator()) {
+            return;
+        }
+        ProjectMember member = requireActiveMember(projectId, userId);
         UmlModel model = requireModel(projectId);
         Set<VcsAction> grants = grantedActions(model.getId(), member.getId().getUserId());
         boolean protectedBranch = action == VcsAction.COMMIT && activeBranchIsProtected(model);
@@ -161,8 +169,7 @@ public class VcsAccessService {
                 .orElse(true);
     }
 
-    private ProjectMember requireActiveMember(UUID projectId) {
-        UUID userId = currentUserContext.require().userId();
+    private ProjectMember requireActiveMember(UUID projectId, UUID userId) {
         return projectMemberRepository.findByProjectIdAndUserId(projectId, userId)
                 .filter(member -> ACTIVE_STATUS.equals(member.getStatus()))
                 .orElseThrow(() -> forbidden("You do not have access to this project's version history."));

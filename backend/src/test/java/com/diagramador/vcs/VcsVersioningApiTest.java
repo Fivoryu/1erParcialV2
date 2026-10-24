@@ -26,7 +26,12 @@ import com.diagramador.identity.CurrentUser;
 import com.diagramador.identity.CurrentUserContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -764,6 +769,148 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void commitOnlyEditorCannotDeleteThroughAssistantApplyOrAppendThroughXmiImport() throws Exception {
+        String owner = username("cmd-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, classifierId, "Protected by grants");
+
+        String editor = username("cmd-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        UUID editorId = userIdFor(editor);
+        putPermissions(owner, projectId, editorId, List.of("COMMIT"), 200);
+        long revisionBefore = getJson(owner, "/projects/{projectId}/model", projectId)
+                .path("revision").asLong();
+
+        assertError(editor, post("/projects/{projectId}/assistant/apply", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of(
+                        "baseRevision", revisionBefore,
+                        "operations", List.of(Map.of("type", "classifier.delete", "targetId", classifierId,
+                                "args", Map.of()))))), 403, "FORBIDDEN");
+        assertThat(getJson(owner, "/projects/{projectId}/model", projectId).path("revision").asLong())
+                .isEqualTo(revisionBefore);
+        assertThat(findById(getJson(owner, "/projects/{projectId}/model", projectId)
+                .path("classifiers"), classifierId.toString())).isNotNull();
+
+        byte[] xmi = Files.readAllBytes(Path.of("..", "docs", "fixtures", "xmi", "Prueba3.xml"));
+        String checksum = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(xmi));
+        assertError(editor, post("/projects/{projectId}/xmi/import", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of(
+                        "fileBase64", Base64.getEncoder().encodeToString(xmi),
+                        "checksum", checksum,
+                        "mode", "AGREGAR",
+                        "idempotencyKey", "vcs-action-" + UUID.randomUUID()))), 403, "FORBIDDEN");
+        assertThat(getJson(owner, "/projects/{projectId}/model", projectId).path("revision").asLong())
+                .isEqualTo(revisionBefore);
+        assertThat(findById(getJson(owner, "/projects/{projectId}/model", projectId)
+                .path("classifiers"), classifierId.toString())).isNotNull();
+    }
+
+    @Test
+    void commitOnlyEditorCannotUndoAModelMutation() throws Exception {
+        String owner = username("undo-grant-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        String editor = username("undo-grant-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        UUID editorId = userIdFor(editor);
+        putPermissions(owner, projectId, editorId, List.of("ADD"), 200);
+
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(editor, projectId, classifierId, "Must survive denied undo");
+        long revisionBefore = getJson(owner, "/projects/{projectId}/model", projectId)
+                .path("revision").asLong();
+        putPermissions(owner, projectId, editorId, List.of("COMMIT"), 200);
+
+        assertError(editor, post("/projects/{projectId}/undo", projectId), 403, "FORBIDDEN");
+
+        JsonNode modelAfter = getJson(owner, "/projects/{projectId}/model", projectId);
+        assertThat(modelAfter.path("revision").asLong()).isEqualTo(revisionBefore);
+        assertThat(findById(modelAfter.path("classifiers"), classifierId.toString())).isNotNull();
+    }
+
+    @Test
+    void checkoutRefusesToDeleteViewWithConversationHistoryWithoutChangingAnything() throws Exception {
+        String owner = username("view-chat-checkout");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "without-chat"), 201);
+        UUID modelId = modelIdFor(projectId);
+        UmlModel model = modelRepository.findById(modelId).orElseThrow();
+        DiagramView branchOnlyView = viewRepository.saveAndFlush(
+                DiagramView.create(model, "Conversation view", "CLASS", false));
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add conversation view"), 201);
+
+        MvcResult sessionResult = mockMvc.perform(authorizedAs(owner,
+                post("/projects/{projectId}/views/{viewId}/sessions", projectId, branchOnlyView.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("title", "Branch conversation")))))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID sessionId = UUID.fromString(objectMapper.readTree(sessionResult.getResponse().getContentAsByteArray())
+                .path("id").asText());
+
+        JsonNode modelBefore = getJson(owner, "/projects/{projectId}/model", projectId);
+        String hashBefore = stateHasher.hash(modelRepository.findById(modelId).orElseThrow());
+        Map<String, Long> rowsBefore = materializationRowCounts(projectId);
+        JsonNode historyBefore = getJson(owner, "/projects/{projectId}/vcs/commits", projectId);
+
+        MvcResult checkoutResult = mockMvc.perform(authorizedAs(owner,
+                post("/projects/{projectId}/vcs/branches/{name}/checkout", projectId, "without-chat")))
+                .andExpect(status().isConflict())
+                .andReturn();
+        JsonNode error = objectMapper.readTree(checkoutResult.getResponse().getContentAsByteArray());
+
+        assertThat(error.path("code").asText()).isEqualTo("VIEW_CHAT_PRESENT");
+        assertThat(error.path("message").asText())
+                .contains(branchOnlyView.getId().toString(), "conversation history", "nothing was changed");
+        assertThat(stateHasher.hash(modelRepository.findById(modelId).orElseThrow())).isEqualTo(hashBefore);
+        assertThat(getJson(owner, "/projects/{projectId}/model", projectId)).isEqualTo(modelBefore);
+        assertThat(materializationRowCounts(projectId)).isEqualTo(rowsBefore);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.chat_session "
+                + "WHERE session_id = ?::uuid AND view_id = ?::uuid", Long.class,
+                sessionId.toString(), branchOnlyView.getId().toString())).isEqualTo(1L);
+        assertThat(getJson(owner, "/projects/{projectId}/vcs/commits", projectId)).isEqualTo(historyBefore);
+        JsonNode status = getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        assertThat(status.path("branch").asText()).isEqualTo("main");
+        assertThat(status.path("dirty").asBoolean()).isFalse();
+    }
+
+    @Test
+    void checkoutStillDeletesAViewWithoutChatOrMemory() throws Exception {
+        String owner = username("view-clean-checkout");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "without-view"), 201);
+        UUID modelId = modelIdFor(projectId);
+        UmlModel model = modelRepository.findById(modelId).orElseThrow();
+        DiagramView branchOnlyView = viewRepository.saveAndFlush(
+                DiagramView.create(model, "Unreferenced view", "CLASS", false));
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add unreferenced view"), 201);
+
+        assertThat(chatSessionCount(branchOnlyView.getId())).isZero();
+        assertThat(memoryCount(branchOnlyView.getId())).isZero();
+        assertThat(messageCount(branchOnlyView.getId())).isZero();
+        assertThat(attachmentCount(branchOnlyView.getId())).isZero();
+
+        JsonNode checkout = postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200,
+                projectId, "without-view");
+
+        assertThat(checkout.path("branch").asText()).isEqualTo("without-view");
+        assertThat(viewRepository.findById(branchOnlyView.getId())).isEmpty();
+        assertThat(viewRepository.findByModelId(modelId)).hasSize(1);
+    }
+
+    @Test
     void editorViewAndAddGrantsAllowCreationButNotDeletion() throws Exception {
         String owner = username("add-grant-owner");
         UUID projectId = createProject(owner);
@@ -1305,6 +1452,54 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
         return jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.vcs_snapshot s "
                 + "JOIN diagrammer.uml_model m ON m.model_id = s.model_id WHERE m.project_id = ?::uuid",
                 Long.class, projectId.toString());
+    }
+
+    private Map<String, Long> materializationRowCounts(UUID projectId) {
+        UUID modelId = modelIdFor(projectId);
+        return Map.of(
+                "views", jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.diagram_view WHERE model_id = ?::uuid",
+                        Long.class, modelId.toString()),
+                "sessions", jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.chat_session cs "
+                        + "JOIN diagrammer.diagram_view dv ON dv.view_id = cs.view_id "
+                        + "WHERE dv.model_id = ?::uuid", Long.class, modelId.toString()),
+                "memories", jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.diagram_memory dm "
+                        + "JOIN diagrammer.diagram_view dv ON dv.view_id = dm.view_id "
+                        + "WHERE dv.model_id = ?::uuid", Long.class, modelId.toString()),
+                "messages", jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.diagram_message msg "
+                        + "JOIN diagrammer.chat_session cs ON cs.session_id = msg.session_id "
+                        + "JOIN diagrammer.diagram_view dv ON dv.view_id = cs.view_id "
+                        + "WHERE dv.model_id = ?::uuid", Long.class, modelId.toString()),
+                "attachments", jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.chat_attachment ca "
+                        + "JOIN diagrammer.chat_session cs ON cs.session_id = ca.session_id "
+                        + "JOIN diagrammer.diagram_view dv ON dv.view_id = cs.view_id "
+                        + "WHERE dv.model_id = ?::uuid", Long.class, modelId.toString()),
+                "commits", vcsCommitCount(projectId),
+                "snapshots", vcsSnapshotCount(projectId),
+                "commands", jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.model_command "
+                        + "WHERE model_id = ?::uuid", Long.class, modelId.toString()),
+                "versions", modelVersionCount(projectId));
+    }
+
+    private long chatSessionCount(UUID viewId) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.chat_session WHERE view_id = ?::uuid",
+                Long.class, viewId.toString());
+    }
+
+    private long memoryCount(UUID viewId) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.diagram_memory WHERE view_id = ?::uuid",
+                Long.class, viewId.toString());
+    }
+
+    private long messageCount(UUID viewId) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.diagram_message msg "
+                + "JOIN diagrammer.chat_session cs ON cs.session_id = msg.session_id "
+                + "WHERE cs.view_id = ?::uuid", Long.class, viewId.toString());
+    }
+
+    private long attachmentCount(UUID viewId) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.chat_attachment ca "
+                + "JOIN diagrammer.chat_session cs ON cs.session_id = ca.session_id "
+                + "WHERE cs.view_id = ?::uuid", Long.class, viewId.toString());
     }
 
     private static JsonNode findById(JsonNode array, String id) {
