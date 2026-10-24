@@ -95,7 +95,8 @@ public class VcsMergeRequestService {
     public VcsResources.MergeRequest open(UmlModel model, String sourceName, String targetName, String title,
             UserAccount author) {
         UmlModel managedModel = requireModel(model.getId());
-        accessService.requireCommit(managedModel.getProject().getId());
+        // Opening a merge request is an editor/branch operation, not a direct commit to the active branch.
+        accessService.requireBranch(managedModel.getProject().getId());
         String normalizedSource = normalizeBranchName(sourceName);
         String normalizedTarget = normalizeBranchName(targetName);
         if (normalizedSource.isEmpty() || normalizedTarget.isEmpty()) {

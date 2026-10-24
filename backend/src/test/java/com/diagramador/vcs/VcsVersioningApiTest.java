@@ -13,6 +13,7 @@ import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.domain.UserAccount;
+import com.diagramador.domain.VcsAction;
 import com.diagramador.persistence.DiagramViewRepository;
 import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
@@ -491,8 +492,359 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
                 + "WHERE merge_request_id = ?::uuid", String.class, requestId)).isEqualTo("CLOSED");
     }
 
+    @Test
+    void viewerCanReadButCannotCreateBranchCommitOrRunCreationCommand() throws Exception {
+        String owner = username("viewer-read-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        String viewer = username("viewer-read");
+        bearer(viewer);
+        addMembership(viewer, projectId, ProjectMemberRole.VIEWER);
+        assertThat(getJson(viewer, "/projects/{projectId}/model", projectId).path("id").asText()).isNotBlank();
+        assertThat(permissionActions(getJson(viewer, "/projects/{projectId}/vcs/permissions", projectId),
+                userIdFor(viewer))).containsExactly("VIEW");
+
+        JsonNode branchError = postJson(viewer, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "viewer-branch"), 403);
+        assertThat(branchError.path("code").asText()).isEqualTo("FORBIDDEN");
+        JsonNode commitError = postJson(viewer, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Denied"), 403);
+        assertThat(commitError.path("code").asText()).isEqualTo("FORBIDDEN");
+
+        JsonNode commandError = commandJson(viewer, projectId, "classifier.create", List.of(),
+                Map.of("id", UUID.randomUUID(), "name", "Denied", "kind", "CLASS"), 403);
+        assertThat(commandError.path("code").asText()).isEqualTo("FORBIDDEN");
+        assertThat(commandError.path("message").asText()).doesNotContain("ADD", "CREATE", "VcsAction");
+    }
+
+    @Test
+    void editorViewGrantDeniesCreationAndListingShowsEffectiveBranchAction() throws Exception {
+        String owner = username("view-grant-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        String editor = username("view-grant-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        UUID editorId = userIdFor(editor);
+
+        JsonNode updated = putPermissions(owner, projectId, editorId, List.of("VIEW"), 200);
+        assertThat(actions(updated)).containsExactly("VIEW", "BRANCH");
+        JsonNode denied = commandJson(editor, projectId, "classifier.create", List.of(),
+                Map.of("id", UUID.randomUUID(), "name", "Denied", "kind", "CLASS"), 403);
+        assertThat(denied.path("code").asText()).isEqualTo("FORBIDDEN");
+        assertThat(permissionActions(getJson(owner, "/projects/{projectId}/vcs/permissions", projectId), editorId))
+                .containsExactly("VIEW", "BRANCH");
+        assertThat(grantActions(projectId, editorId)).containsExactly("VIEW");
+    }
+
+    @Test
+    void editorViewAndAddGrantsAllowCreationButNotDeletion() throws Exception {
+        String owner = username("add-grant-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        String editor = username("add-grant-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        UUID editorId = userIdFor(editor);
+        UUID modelId = modelIdFor(projectId);
+
+        putPermissions(owner, projectId, editorId, List.of("VIEW"), 200);
+        // Existing rows must retain their attribution when the grant set is expanded.
+        jdbcTemplate.update("UPDATE diagrammer.vcs_permission SET granted_by_user_id = ?::uuid "
+                + "WHERE model_id = ?::uuid AND user_id = ?::uuid AND action = 'VIEW'::diagrammer.vcs_action",
+                editorId.toString(), modelId.toString(), editorId.toString());
+        JsonNode updated = putPermissions(owner, projectId, editorId, List.of("VIEW", "ADD"), 200);
+        assertThat(actions(updated)).containsExactly("VIEW", "ADD", "BRANCH");
+        assertThat(jdbcTemplate.queryForObject("SELECT granted_by_user_id::text FROM diagrammer.vcs_permission "
+                + "WHERE model_id = ?::uuid AND user_id = ?::uuid AND action = 'VIEW'::diagrammer.vcs_action",
+                String.class, modelId.toString(), editorId.toString())).isEqualTo(editorId.toString());
+        assertThat(grantActions(projectId, editorId)).containsExactlyInAnyOrder("VIEW", "ADD");
+
+        UUID protectedClassifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, protectedClassifierId, "Must remain");
+        UUID addedClassifierId = UUID.randomUUID();
+        JsonNode added = commandJson(editor, projectId, "classifier.create", List.of(),
+                Map.of("id", addedClassifierId, "name", "Allowed addition", "kind", "CLASS"), 200);
+        assertThat(added.path("status").asText()).isEqualTo("ACCEPTED");
+        JsonNode deletion = commandJson(editor, projectId, "classifier.delete",
+                List.of(Map.of("scope", "classifier", "id", protectedClassifierId)), Map.of(), 403);
+        assertThat(deletion.path("code").asText()).isEqualTo("FORBIDDEN");
+        assertThat(findById(getJson(owner, "/projects/{projectId}/model", projectId)
+                .path("classifiers"), protectedClassifierId.toString())).isNotNull();
+    }
+
+    @Test
+    void emptyPermissionSetRestoresEditorRoleFallback() throws Exception {
+        String owner = username("clear-grants-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        String editor = username("clear-grants-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        UUID editorId = userIdFor(editor);
+        putPermissions(owner, projectId, editorId, List.of("VIEW"), 200);
+
+        JsonNode cleared = putPermissions(owner, projectId, editorId, List.of(), 200);
+        assertThat(actions(cleared)).containsExactly("VIEW", "CREATE", "ADD", "DELETE", "BRANCH");
+        assertThat(grantActions(projectId, editorId)).isEmpty();
+        UUID classifierId = UUID.randomUUID();
+        JsonNode created = commandJson(editor, projectId, "classifier.create", List.of(),
+                Map.of("id", classifierId, "name", "Role fallback", "kind", "CLASS"), 200);
+        assertThat(created.path("status").asText()).isEqualTo("ACCEPTED");
+        assertThat(permissionActions(getJson(owner, "/projects/{projectId}/vcs/permissions", projectId), editorId))
+                .containsExactly("VIEW", "CREATE", "ADD", "DELETE", "BRANCH");
+    }
+
+    @Test
+    void viewerGrantAboveRoleCeilingIsRejectedAndCannotEnableCreation() throws Exception {
+        String owner = username("viewer-add-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        String viewer = username("viewer-add");
+        bearer(viewer);
+        addMembership(viewer, projectId, ProjectMemberRole.VIEWER);
+        UUID viewerId = userIdFor(viewer);
+
+        JsonNode rejected = putPermissions(owner, projectId, viewerId, List.of("ADD"), 400);
+        assertThat(rejected.path("code").asText()).isEqualTo("INVALID_PAYLOAD");
+        assertThat(rejected.path("message").asText()).contains("ADD", "VIEWER");
+        assertThat(grantActions(projectId, viewerId)).isEmpty();
+
+        // Even a forged row cannot lift a VIEWER above the role ceiling in the command path or matrix.
+        jdbcTemplate.update("INSERT INTO diagrammer.vcs_permission "
+                + "(model_id, user_id, action, granted_by_user_id) VALUES (?::uuid, ?::uuid, "
+                + "'ADD'::diagrammer.vcs_action, ?::uuid)",
+                modelIdFor(projectId).toString(), viewerId.toString(), userIdFor(owner).toString());
+        assertThat(permissionActions(getJson(owner, "/projects/{projectId}/vcs/permissions", projectId), viewerId))
+                .containsExactly("VIEW");
+        JsonNode denied = commandJson(viewer, projectId, "classifier.create", List.of(),
+                Map.of("id", UUID.randomUUID(), "name", "Still denied", "kind", "CLASS"), 403);
+        assertThat(denied.path("code").asText()).isEqualTo("FORBIDDEN");
+    }
+
+    @Test
+    void onlyOwnerCanChangePermissionsAndInvalidActionNamesAreReported() throws Exception {
+        String owner = username("manage-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        String editor = username("manage-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        UUID editorId = userIdFor(editor);
+
+        JsonNode forbidden = putPermissions(editor, projectId, editorId, List.of("VIEW"), 403);
+        assertThat(forbidden.path("code").asText()).isEqualTo("FORBIDDEN");
+        JsonNode invalid = putPermissions(owner, projectId, editorId, List.of("VIEW", "BOGUS_ACTION"), 400);
+        assertThat(invalid.path("code").asText()).isEqualTo("INVALID_PAYLOAD");
+        assertThat(invalid.path("message").asText()).contains("BOGUS_ACTION");
+
+        JsonNode saved = putPermissions(owner, projectId, editorId, List.of("VIEW"), 200);
+        assertThat(actions(saved)).containsExactly("VIEW", "BRANCH");
+        assertThat(actions(permissionRow(getJson(owner, "/projects/{projectId}/vcs/permissions", projectId),
+                userIdFor(owner)))).containsExactly("VIEW", "CREATE", "ADD", "DELETE", "COMMIT", "BRANCH", "MERGE",
+                        "MANAGE_PERMISSIONS");
+        assertThat(grantActions(projectId, editorId)).containsExactly("VIEW");
+    }
+
+    @Test
+    void protectedMainNeedsCommitGrantButUnprotectedMainAllowsEditorCommit() throws Exception {
+        String owner = username("protected-commit-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        String editor = username("protected-commit-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Protected main change");
+        JsonNode denied = postJson(editor, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Denied on protected main"), 403);
+        assertThat(denied.path("code").asText()).isEqualTo("FORBIDDEN");
+
+        putPermissions(owner, projectId, userIdFor(editor), List.of("COMMIT"), 200);
+        JsonNode committed = postJson(editor, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Granted on protected main"), 201);
+        assertThat(committed.path("message").asText()).isEqualTo("Granted on protected main");
+
+        putJson(owner, "/projects/{projectId}/vcs/branches/main", projectId, Map.of("isProtected", false));
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Unprotected main change");
+        putPermissions(owner, projectId, userIdFor(editor), List.of(), 200);
+        JsonNode unprotectedCommit = postJson(editor, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Editor commits to unprotected main"), 201);
+        assertThat(unprotectedCommit.path("message").asText()).isEqualTo("Editor commits to unprotected main");
+        assertThat(grantActions(projectId, userIdFor(editor))).isEmpty();
+    }
+
+    @Test
+    void nonMemberCannotBeGrantedOrReadEvenWithAStoredViewRow() throws Exception {
+        String owner = username("forged-grant-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        String outsider = username("forged-grant-outsider");
+        bearer(outsider);
+        UUID outsiderId = userIdFor(outsider);
+        UUID modelId = modelIdFor(projectId);
+        jdbcTemplate.update("INSERT INTO diagrammer.vcs_permission "
+                + "(model_id, user_id, action, granted_by_user_id) VALUES (?::uuid, ?::uuid, "
+                + "'VIEW'::diagrammer.vcs_action, ?::uuid)",
+                modelId.toString(), outsiderId.toString(), userIdFor(owner).toString());
+
+        JsonNode notFound = putPermissions(owner, projectId, outsiderId, List.of("VIEW"), 404);
+        assertThat(notFound.path("code").asText()).isEqualTo("NOT_FOUND");
+        assertError(outsider, get("/projects/{projectId}/vcs/status", projectId), 403, "FORBIDDEN");
+        assertError(outsider, get("/projects/{projectId}/vcs/permissions", projectId), 403, "FORBIDDEN");
+        assertThat(grantActions(projectId, outsiderId)).containsExactly("VIEW");
+    }
+
+    @Test
+    void operatorBypassesVcsPermissionsAndListsOnlyActiveMembersOnAnotherProject() throws Exception {
+        String owner = username("operator-vcs-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        String editor = username("operator-vcs-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        UUID editorId = userIdFor(editor);
+
+        String removed = username("operator-vcs-removed");
+        bearer(removed);
+        addMembership(removed, projectId, ProjectMemberRole.VIEWER);
+        jdbcTemplate.update("UPDATE diagrammer.project_member SET status = 'REMOVED' "
+                + "WHERE project_id = ?::uuid AND user_id = ?::uuid", projectId.toString(), userIdFor(removed).toString());
+
+        JsonNode initialPermissions = getOperatorJson("/projects/{projectId}/vcs/permissions", projectId);
+        assertThat(permissionUserIds(initialPermissions))
+                .containsExactlyInAnyOrder(userIdFor(owner).toString(), editorId.toString());
+        assertThat(actions(permissionRow(initialPermissions, userIdFor(owner))))
+                .containsExactly("VIEW", "CREATE", "ADD", "DELETE", "COMMIT", "BRANCH", "MERGE",
+                        "MANAGE_PERMISSIONS");
+        assertThat(actions(permissionRow(initialPermissions, editorId)))
+                .containsExactly("VIEW", "CREATE", "ADD", "DELETE", "BRANCH");
+
+        UUID baseClassifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, baseClassifierId, "Operator commit base");
+        JsonNode operatorCommit = postOperatorJson("/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Operator commits protected main"), 201);
+        assertThat(operatorCommit.path("message").asText()).isEqualTo("Operator commits protected main");
+        JsonNode operatorBranch = postOperatorJson("/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "operator-branch"), 201);
+        assertThat(operatorBranch.path("name").asText()).isEqualTo("operator-branch");
+
+        JsonNode grant = putOperatorPermissions(projectId, editorId, List.of("VIEW"), 200);
+        assertThat(actions(grant)).containsExactly("VIEW", "BRANCH");
+        JsonNode listed = getOperatorJson("/projects/{projectId}/vcs/permissions", projectId);
+        assertThat(permissionUserIds(listed))
+                .containsExactlyInAnyOrder(userIdFor(owner).toString(), editorId.toString());
+        assertThat(actions(permissionRow(listed, editorId))).containsExactly("VIEW", "BRANCH");
+        assertThat(grantActions(projectId, editorId)).containsExactly("VIEW");
+
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "feature");
+        UUID featureClassifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, featureClassifierId, "Operator merge feature");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Feature change"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "main");
+        JsonNode request = openMergeRequest(owner, projectId, "feature", "main", "Operator merges", 201);
+
+        JsonNode operatorStatus = getOperatorJson("/projects/{projectId}/vcs/status", projectId);
+        assertThat(operatorStatus.path("branch").asText()).isEqualTo("main");
+        JsonNode merged = postOperatorActionJson(
+                "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200,
+                projectId, request.path("mergeRequestId").asText());
+        assertThat(merged.path("state").asText()).isEqualTo("MERGED");
+        JsonNode checkout = postOperatorActionJson(
+                "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "main");
+        assertThat(findById(checkout.path("model").path("classifiers"), baseClassifierId.toString())).isNotNull();
+        assertThat(findById(checkout.path("model").path("classifiers"), featureClassifierId.toString())).isNotNull();
+    }
+
     private String username(String prefix) {
         return "vcs-" + prefix + "-" + UUID.randomUUID();
+    }
+
+    private JsonNode putPermissions(String username, UUID projectId, UUID userId, List<String> actions,
+            int expectedStatus) throws Exception {
+        MvcResult result = mockMvc.perform(authorizedAs(username,
+                put("/projects/{projectId}/vcs/permissions/{userId}", projectId, userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("actions", actions)))))
+                .andExpect(status().is(expectedStatus))
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    private JsonNode putOperatorPermissions(UUID projectId, UUID userId, List<String> actions, int expectedStatus)
+            throws Exception {
+        MvcResult result = mockMvc.perform(withOperator(
+                put("/projects/{projectId}/vcs/permissions/{userId}", projectId, userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("actions", actions)))))
+                .andExpect(status().is(expectedStatus))
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    private JsonNode commandJson(String username, UUID projectId, String type,
+            List<Map<String, Object>> targets, Map<String, Object> payload, int expectedStatus) throws Exception {
+        JsonNode model = getJson(username, "/projects/{projectId}/model", projectId);
+        Map<String, Object> envelope = new HashMap<>();
+        envelope.put("operationId", UUID.randomUUID());
+        envelope.put("type", type);
+        envelope.put("projectId", projectId);
+        envelope.put("modelId", UUID.fromString(model.path("id").asText()));
+        envelope.put("baseRevision", model.path("revision").asLong());
+        envelope.put("targets", targets);
+        envelope.put("preconditions", List.of());
+        envelope.put("payload", payload);
+        envelope.put("origin", "MANUAL");
+        envelope.put("idempotencyKey", UUID.randomUUID().toString());
+        MvcResult result = mockMvc.perform(authorizedAs(username,
+                post("/projects/{projectId}/commands", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(envelope))))
+                .andExpect(status().is(expectedStatus))
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    private List<String> grantActions(UUID projectId, UUID userId) {
+        return jdbcTemplate.query("SELECT action::text FROM diagrammer.vcs_permission "
+                        + "WHERE model_id = ?::uuid AND user_id = ?::uuid",
+                (resultSet, rowNumber) -> resultSet.getString(1), modelIdFor(projectId).toString(), userId.toString())
+                .stream()
+                .sorted(java.util.Comparator.comparingInt(action -> VcsAction.valueOf(action).ordinal()))
+                .toList();
+    }
+
+    private UUID modelIdFor(UUID projectId) {
+        return modelRepository.findByProjectId(projectId).orElseThrow().getId();
+    }
+
+    private static List<String> actions(JsonNode permission) {
+        List<String> actions = new java.util.ArrayList<>();
+        permission.path("actions").forEach(action -> actions.add(action.asText()));
+        return actions;
+    }
+
+    private static JsonNode permissionRow(JsonNode permissions, UUID userId) {
+        for (JsonNode permission : permissions) {
+            if (userId.toString().equals(permission.path("userId").asText())) {
+                return permission;
+            }
+        }
+        throw new AssertionError("Permission row was not returned for user " + userId);
+    }
+
+    private static List<String> permissionActions(JsonNode permissions, UUID userId) {
+        return actions(permissionRow(permissions, userId));
+    }
+
+    private static List<String> permissionUserIds(JsonNode permissions) {
+        List<String> userIds = new java.util.ArrayList<>();
+        permissions.forEach(permission -> userIds.add(permission.path("userId").asText()));
+        return userIds;
     }
 
     private UUID createProject(String owner) throws Exception {
@@ -659,9 +1011,17 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
         return objectMapper.readTree(result.getResponse().getContentAsByteArray());
     }
 
-    private JsonNode getOperatorJson(String path, UUID projectId) throws Exception {
-        MvcResult result = mockMvc.perform(withOperator(get(path, projectId)))
+    private JsonNode getOperatorJson(String path, Object... pathVariables) throws Exception {
+        MvcResult result = mockMvc.perform(withOperator(get(path, pathVariables)))
                 .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    private JsonNode postOperatorActionJson(String path, int expectedStatus, Object... pathVariables)
+            throws Exception {
+        MvcResult result = mockMvc.perform(withOperator(post(path, pathVariables)))
+                .andExpect(status().is(expectedStatus))
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsByteArray());
     }

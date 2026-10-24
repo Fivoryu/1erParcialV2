@@ -32,6 +32,7 @@ public class VcsController {
     private final VcsBranchService branchService;
     private final VcsCommitService commitService;
     private final VcsMergeRequestService mergeRequestService;
+    private final VcsPermissionService permissionService;
     private final ProjectApiService projectApiService;
     private final ProjectRepository projectRepository;
     private final UmlModelRepository modelRepository;
@@ -40,13 +41,14 @@ public class VcsController {
 
     public VcsController(VcsAccessService accessService, VcsBranchService branchService,
             VcsCommitService commitService, VcsMergeRequestService mergeRequestService,
-            ProjectApiService projectApiService, ProjectRepository projectRepository,
-            UmlModelRepository modelRepository, UserAccountRepository userRepository,
-            CurrentUserContext currentUserContext) {
+            VcsPermissionService permissionService, ProjectApiService projectApiService,
+            ProjectRepository projectRepository, UmlModelRepository modelRepository,
+            UserAccountRepository userRepository, CurrentUserContext currentUserContext) {
         this.accessService = accessService;
         this.branchService = branchService;
         this.commitService = commitService;
         this.mergeRequestService = mergeRequestService;
+        this.permissionService = permissionService;
         this.projectApiService = projectApiService;
         this.projectRepository = projectRepository;
         this.modelRepository = modelRepository;
@@ -157,6 +159,21 @@ public class VcsController {
         return ResponseEntity.status(HttpStatus.CREATED).body(commit);
     }
 
+    @GetMapping("/permissions")
+    public List<VcsResources.Permission> permissions(@PathVariable UUID projectId) {
+        UmlModel model = readableModel(projectId);
+        return permissionService.list(model, author());
+    }
+
+    @PutMapping(path = "/permissions/{userId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public VcsResources.Permission replacePermissions(@PathVariable UUID projectId, @PathVariable UUID userId,
+            @RequestBody(required = false) PermissionsRequest request) {
+        UmlModel model = requiredModel(projectId);
+        accessService.requireAction(projectId, com.diagramador.domain.VcsAction.MANAGE_PERMISSIONS);
+        // [] clears grant rows and restores the project-role fallback; it does not deny all actions.
+        return permissionService.replace(model, userId, request == null ? null : request.actions(), author());
+    }
+
     private UmlModel readableModel(UUID projectId) {
         UmlModel model = requiredModel(projectId);
         accessService.requireRead(projectId);
@@ -192,6 +209,9 @@ public class VcsController {
     }
 
     public record CommitRequest(String message) {
+    }
+
+    public record PermissionsRequest(List<String> actions) {
     }
 
     public record MergeRequestBody(String sourceBranch, String targetBranch, String title) {

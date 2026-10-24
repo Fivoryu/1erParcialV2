@@ -133,3 +133,32 @@ checkout con cambios sin commitear), `WORKING_COPY_CLEAN` (409, commit sin cambi
   checkout/merge. Se unifica en `ModelStateHasher` agregando el grupo `view_style` (clave `(viewId, targetId)`),
   que además cierra un agujero real: un cambio **solo de estilo** era invisible para `dirty` y por lo tanto no
   se podía commitear. Costo declarado: el hash de un modelo existente cambia una vez, solo por esta razón.
+- **L8 (vacío semántico encontrado por el escritor de T6):** la tabla `vcs_permission` solo guarda concesiones, así que
+  "sin filas" no distingue *nunca configurado* de *configurado vacío*, y mi regla de fallback al rol chocaba con el
+  test de revocación. Semántica cerrada sin cambiar esquema: `VIEW` **no** se puede quitar por concesión (un miembro
+  activo siempre ve el diagrama; si no debe verlo, es un problema de membresía); para `CREATE`/`ADD`/`DELETE` el
+  conjunto de filas es **autoritativo** cuando existe y el rol decide cuando no existe; y `{actions:[]}` significa
+  **"volver al rol del proyecto"**, no "denegar todo". Descartado en esta entrega: representar el conjunto
+  configurado-vacío con una tabla o un centinela, porque el único verbo donde importaba era `VIEW`.
+- **L9 (segundo choque de contrato de T6):** `GET /permissions` no puede a la vez listar "todas las acciones
+  efectivas" y devolver exactamente `[VIEW]` para un `EDITOR`. Se cierra con **acciones efectivas**: la matriz
+  muestra lo que el usuario puede hoy, porque una casilla vacía tiene que significar "no puede". Regla: `VIEW`
+  siempre para miembros; `CREATE`/`ADD`/`DELETE` desde las filas si existen y si no desde el rol; `COMMIT` solo
+  para `OWNER`, operador o concesión explícita (la protección se re-chequea al commitear, la lista no puede
+  depender de la rama activa); `BRANCH` para `EDITOR`/`OWNER`/operador; `MERGE` y `MANAGE_PERMISSIONS` solo
+  `OWNER`/operador. Advertencia declarada en el javadoc de `replace(...)`: guardar una lista efectiva la
+  convierte en configuración explícita, y desde ahí manda sobre el rol.
+- **L10 (tercer cierre semántico de T6):** `GET /permissions` devuelve **una fila por miembro activo**, con sus
+  acciones efectivas (L9). **No** hay fila sintética del operador: `setOperator()` no deja `UserAccount`, así que
+  no tiene `userId`, `username` ni `displayName`, e inventarlos sería ficción en una matriz de personas. Los
+  privilegios del operador se demuestran ejerciéndolos (`GET`, `PUT`, commit, rama y merge sobre un proyecto
+  ajeno), no figurando en la lista. Un usuario común no miembro recibe `403` en esa ruta, para que no funcione
+  como directorio de usuarios.
+- **L11 (el rol es techo, y por qué no se toca `CommandService`):** `CommandService` tiene su propia guarda de
+  rol como última línea de defensa, así que existían **dos** decisiones de autorización para la misma acción.
+  Se resuelve sin tocar el dispatcher: `accionesEfectivas = techo(rol) ∩ (concesiones si existen, si no el
+  techo)`. Un permiso fino **nunca eleva** por encima del rol: un `VIEWER` sigue siendo de solo lectura, y si el
+  creador quiere que edite, cambia el rol. `PUT /permissions/{userId}` con una acción que excede el techo se
+  rechaza con `INVALID_PAYLOAD` nombrando la acción y el rol, y no escribe nada — mejor un error explícito que una
+  concesión guardada que no habilita nada. Descartado: relajar `CommandService` para honrar `ADD` sobre un
+  `VIEWER`; dos capas que deciden distinto son la fábrica de agujeros clásica.

@@ -2,6 +2,7 @@ package com.diagramador.vcs;
 
 import com.diagramador.api.ModelResource;
 import com.diagramador.domain.VcsCommitKind;
+import com.diagramador.domain.VcsAction;
 import com.diagramador.domain.VcsCommitOrigin;
 import com.diagramador.domain.VcsMergeState;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -45,5 +46,11 @@ public final class VcsResources {
             String sourceBranch, String targetBranch, UUID sourceCommitId, UUID targetCommitId,
             UUID mergeBaseCommitId, boolean hasConflicts, JsonNode conflicts, String openedByDisplayName,
             String decidedByDisplayName, OffsetDateTime createdAt) {
+    }
+
+    public record Permission(UUID userId, String username, String displayName, List<VcsAction> actions) {
+        public Permission {
+            actions = actions == null ? List.of() : List.copyOf(actions);
+        }
     }
 }

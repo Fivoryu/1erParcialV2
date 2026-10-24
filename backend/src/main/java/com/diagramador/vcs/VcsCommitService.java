@@ -85,9 +85,6 @@ public class VcsCommitService {
 
         branchService.ensureMain(managedModel, author);
         VcsBranch branch = branchService.activeBranch(managedModel);
-        if (branch.isProtected()) {
-            accessService.requireProtection(projectId);
-        }
         String stateHash = stateHasher.hash(managedModel);
         VcsCommit parent = branch.getHeadCommit();
         if (Objects.equals(stateHash, parent.getSnapshot().getStateHash())) {
