@@ -7,7 +7,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ClassifierRenameHandler implements CommandHandler {
+public class ClassifierRenameHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("name");
 

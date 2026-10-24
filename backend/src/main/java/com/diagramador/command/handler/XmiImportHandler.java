@@ -59,7 +59,7 @@ import org.springframework.stereotype.Component;
 
 /** Applies a complete, validated XMI graph as one command transaction. */
 @Component
-public class XmiImportHandler implements CommandHandler {
+public class XmiImportHandler implements CommandHandler.AddAction {
 
     private static final Set<String> PAYLOAD_FIELDS = Set.of("mode", "profile", "checksum", "readingResult");
 

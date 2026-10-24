@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 /** Renames an existing project. */
 @Component
-public class ProjectRenameHandler implements CommandHandler {
+public class ProjectRenameHandler implements CommandHandler.CreateAction {
 
     private static final Set<String> FIELDS = Set.of("name");
 

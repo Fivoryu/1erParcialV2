@@ -7,7 +7,7 @@ import com.diagramador.persistence.UmlConstraintRepository;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ConstraintRemoveHandler implements CommandHandler {
+public class ConstraintRemoveHandler implements CommandHandler.DeleteAction {
 
     private final CommandHandlerSupport support;
     private final UmlConstraintRepository constraintRepository;

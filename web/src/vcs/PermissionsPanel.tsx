@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { loadSession } from '../api/session';
 import type { Uuid } from '../api/types';
 import {
   createVcsApiClient,
@@ -18,6 +19,7 @@ function permissionActionLabel(action: VcsPermissionAction): string {
 
 export interface PermissionsPanelViewProps {
   permissions: VcsProjectPermission[];
+  currentUserId: Uuid | null;
   loading: boolean;
   busyUserId: Uuid | null;
   error: string | null;
@@ -27,6 +29,7 @@ export interface PermissionsPanelViewProps {
 
 export function PermissionsPanelView({
   permissions,
+  currentUserId,
   loading,
   busyUserId,
   error,
@@ -67,28 +70,36 @@ export function PermissionsPanelView({
               </tr>
             </thead>
             <tbody>
-              {permissions.map((permission) => (
-                <tr key={permission.userId}>
-                  <th className="vcs-permission-member" scope="row">
-                    <span>{permission.displayName}</span>
-                    <small>{permission.username}</small>
-                  </th>
-                  {VCS_PERMISSION_ACTIONS.map((action) => (
-                    <td key={action}>
-                      <label className="vcs-permission-action">
-                        <input
-                          aria-label={`${permissionActionLabel(action)} for ${permission.displayName}`}
-                          checked={permission.actions.includes(action)}
-                          disabled={busyUserId !== null}
-                          onChange={(event) => onToggleAction(permission, action, event.target.checked)}
-                          type="checkbox"
-                        />
-                        <span className="sr-only">{permissionActionLabel(action)}</span>
-                      </label>
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {permissions.map((permission) => {
+                const isCurrentUser = permission.userId === currentUserId;
+                return (
+                  <tr key={permission.userId}>
+                    <th className="vcs-permission-member" scope="row">
+                      <span>{permission.displayName}</span>
+                      <small>{permission.username}</small>
+                      {isCurrentUser && (
+                        <small className="property-hint">
+                          You cannot change your own permissions — ask another owner.
+                        </small>
+                      )}
+                    </th>
+                    {VCS_PERMISSION_ACTIONS.map((action) => (
+                      <td key={action}>
+                        <label className="vcs-permission-action">
+                          <input
+                            aria-label={`${permissionActionLabel(action)} for ${permission.displayName}`}
+                            checked={permission.actions.includes(action)}
+                            disabled={busyUserId !== null || isCurrentUser}
+                            onChange={(event) => onToggleAction(permission, action, event.target.checked)}
+                            type="checkbox"
+                          />
+                          <span className="sr-only">{permissionActionLabel(action)}</span>
+                        </label>
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -102,6 +113,7 @@ export interface PermissionsPanelProps {
 }
 
 export default function PermissionsPanel({ projectId }: PermissionsPanelProps) {
+  const currentUserId = loadSession()?.userId ?? null;
   const [permissions, setPermissions] = useState<VcsProjectPermission[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyUserId, setBusyUserId] = useState<Uuid | null>(null);
@@ -160,6 +172,7 @@ export default function PermissionsPanel({ projectId }: PermissionsPanelProps) {
   return (
     <PermissionsPanelView
       permissions={permissions}
+      currentUserId={currentUserId}
       loading={loading}
       busyUserId={busyUserId}
       error={error}

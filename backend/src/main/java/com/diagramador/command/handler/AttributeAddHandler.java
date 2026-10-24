@@ -13,7 +13,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 @Component
-public class AttributeAddHandler implements CommandHandler {
+public class AttributeAddHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "name", "type", "visibility", "multiplicity",
             "defaultValue", "ordinal", "isStatic", "isAbstract");

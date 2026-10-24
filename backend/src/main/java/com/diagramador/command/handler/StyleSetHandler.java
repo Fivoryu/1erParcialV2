@@ -24,7 +24,7 @@ import org.springframework.stereotype.Component;
  * semantic row is touched here.
  */
 @Component
-public class StyleSetHandler implements CommandHandler {
+public class StyleSetHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("viewId", "targetId", "routing", "cornerRadius",
             "strokeWidth", "dashed", "routeAdjustment");

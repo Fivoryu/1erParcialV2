@@ -29,7 +29,7 @@ export interface ChatPanelProps {
   busy: boolean;
   onDraftChange: (draft: string) => void;
   onSend: (body: string, images: File[]) => void | boolean | Promise<void | boolean>;
-  onAskAi: (messageId: Uuid) => void;
+  onAskAi: (messageId: Uuid) => void | boolean | Promise<void | boolean>;
   sessions: ChatSessionResource[];
   sessionsLoading: boolean;
   activeSessionId: Uuid | null;
@@ -125,6 +125,7 @@ export default function ChatPanel({
 }: ChatPanelProps) {
   const { locale, timeZone } = new Intl.DateTimeFormat().resolvedOptions();
   const speech = useSpeechRecognition();
+  const draftRef = useRef(draft);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imageNotice, setImageNotice] = useState<string | null>(null);
@@ -141,15 +142,35 @@ export default function ChatPanel({
     setImageNotice(null);
   }, [activeSessionId]);
 
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
   // T7/L47: the finished transcript is appended to the draft; sending stays explicit — the user
   // presses Send. A no-op on an empty transcript so nothing the user wrote is ever discarded.
   useEffect(() => {
     if (!speech.listening && speech.transcript.length > 0) {
-      onDraftChange(appendTranscript(draft, speech.transcript));
+      const nextDraft = appendTranscript(draft, speech.transcript);
+      draftRef.current = nextDraft;
+      onDraftChange(nextDraft);
+      speech.reset();
     }
     // Re-append only when a transcript completes; the effect is deliberately
     // scoped to the listening state and the completed transcript.
   }, [speech.listening, speech.transcript]);
+
+  async function handleAskAi(message: ChatMessageResource): Promise<void> {
+    let result: void | boolean;
+    try {
+      result = await onAskAi(message.id);
+    } catch {
+      result = false;
+    }
+    if (result === false && draftRef.current.trim().length === 0) {
+      draftRef.current = message.body;
+      onDraftChange(message.body);
+    }
+  }
 
   function handleFileChange(files: FileList | null): void {
     const selection = limitChatAttachments(Array.from(files ?? []));
@@ -276,7 +297,7 @@ export default function ChatPanel({
                           className="button button-secondary"
                           type="button"
                           disabled={busy || !activeSessionId || aiRequestInProgress}
-                          onClick={() => onAskAi(message.id)}
+                          onClick={() => handleAskAi(message)}
                         >
                           Ask AI
                         </button>
@@ -294,7 +315,10 @@ export default function ChatPanel({
               autoComplete="off"
               id="chat-message-draft"
               maxLength={2000}
-              onChange={(event) => onDraftChange(event.target.value)}
+              onChange={(event) => {
+                draftRef.current = event.target.value;
+                onDraftChange(event.target.value);
+              }}
               placeholder="Write a message…"
               type="text"
               value={draft}

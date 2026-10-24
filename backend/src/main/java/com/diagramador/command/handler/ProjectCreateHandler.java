@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 /** Creates the project aggregate and its initial class view. */
 @Component
-public class ProjectCreateHandler implements CommandHandler {
+public class ProjectCreateHandler implements CommandHandler.CreateAction {
 
     private static final Set<String> FIELDS = Set.of("name", "description", "modelName", "defaultViewName");
 

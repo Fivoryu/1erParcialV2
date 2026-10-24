@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 
 /** Creates a shared diagram view in the envelope's model. */
 @Component
-public class ViewCreateHandler implements CommandHandler {
+public class ViewCreateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "name", "viewKind");
 

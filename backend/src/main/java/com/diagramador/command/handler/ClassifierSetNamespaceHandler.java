@@ -10,7 +10,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ClassifierSetNamespaceHandler implements CommandHandler {
+public class ClassifierSetNamespaceHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("namespaceId");
 

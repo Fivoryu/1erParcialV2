@@ -44,6 +44,7 @@ import UmlCanvas from '../diagram/UmlCanvas';
 import { useUndoRedoShortcuts } from '../diagram/useUndoRedoShortcuts';
 import PropertiesPanel from '../diagram/PropertiesPanel';
 import AssistantPanel from '../assistant/AssistantPanel';
+import { chatAskErrorMessage } from '../assistant/chatAskFailure';
 import GenerationPanel from '../generation/GenerationPanel';
 import { ReviewPanelLoader } from '../review/ReviewPanel';
 import XmiImportPanel from '../xmi/XmiImportPanel';
@@ -864,19 +865,21 @@ export default function ProjectEditorPage() {
     }
   }
 
-  async function askAi(messageId: Uuid): Promise<void> {
+  async function askAi(messageId: Uuid): Promise<boolean> {
     const sessionId = chatSessionId;
     if (!projectId || !sessionId) {
-      return;
+      return false;
     }
 
     setChatError(null);
     try {
       await api.askAi(projectId, sessionId, messageId);
+      return true;
     } catch (cause: unknown) {
       if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
-        setChatError(loginErrorMessage(cause));
+        setChatError(chatAskErrorMessage(cause, loginErrorMessage));
       }
+      return false;
     }
   }
 
@@ -1185,7 +1188,7 @@ export default function ProjectEditorPage() {
                 onExtractMemories={() => void extractDiagramMemories()}
                 onForgetAllMemories={() => void forgetAllDiagramMemories()}
                 onForgetMemory={(memoryId) => void forgetDiagramMemory(memoryId)}
-                onAskAi={(messageId) => void askAi(messageId)}
+                onAskAi={(messageId) => askAi(messageId)}
                 onSend={(body, images) => sendMessage(body, images)}
                 onSessionChange={changeChatSession}
                 sessionActionBusy={chatSessionActionBusy}

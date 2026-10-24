@@ -47,37 +47,6 @@ public class CommandService {
     private static final Logger logger = LoggerFactory.getLogger(CommandService.class);
     private static final String PROJECT_CREATE = "project.create";
     private static final String XMI_IMPORT = "xmi.import";
-    private static final Map<String, VcsAction> COMMAND_ACTIONS = Map.ofEntries(
-            Map.entry("project.create", VcsAction.CREATE),
-            Map.entry("project.rename", VcsAction.CREATE),
-            Map.entry("classifier.create", VcsAction.ADD),
-            Map.entry("classifier.rename", VcsAction.ADD),
-            Map.entry("classifier.setAbstract", VcsAction.ADD),
-            Map.entry("classifier.setNamespace", VcsAction.ADD),
-            Map.entry("relationship.create", VcsAction.ADD),
-            Map.entry("relationship.update", VcsAction.ADD),
-            Map.entry("view.create", VcsAction.ADD),
-            Map.entry("attribute.add", VcsAction.ADD),
-            Map.entry("attribute.update", VcsAction.ADD),
-            Map.entry("operation.add", VcsAction.ADD),
-            Map.entry("operation.update", VcsAction.ADD),
-            Map.entry("parameter.add", VcsAction.ADD),
-            Map.entry("parameter.update", VcsAction.ADD),
-            Map.entry("constraint.add", VcsAction.ADD),
-            Map.entry("constraint.update", VcsAction.ADD),
-            Map.entry("geometry.set", VcsAction.ADD),
-            Map.entry("style.set", VcsAction.ADD),
-            Map.entry("xmi.import", VcsAction.ADD),
-            Map.entry("classifier.delete", VcsAction.DELETE),
-            Map.entry("relationship.delete", VcsAction.DELETE),
-            Map.entry("attribute.remove", VcsAction.DELETE),
-            Map.entry("operation.remove", VcsAction.DELETE),
-            Map.entry("parameter.remove", VcsAction.DELETE),
-            Map.entry("constraint.remove", VcsAction.DELETE),
-            Map.entry("geometry.remove", VcsAction.DELETE),
-            // Explicit action for the test-only handler registered by CommandServiceTest.
-            Map.entry("test.noop", VcsAction.ADD));
-
     private final ProjectRepository projectRepository;
     private final UmlModelRepository modelRepository;
     private final com.diagramador.persistence.UserAccountRepository userAccountRepository;
@@ -171,7 +140,7 @@ public class CommandService {
     }
 
     public Optional<VcsAction> actionFor(String commandType) {
-        return Optional.ofNullable(COMMAND_ACTIONS.get(commandType));
+        return Optional.ofNullable(handlers.get(commandType)).flatMap(CommandHandler::vcsAction);
     }
 
     public CommandResult submit(OperationEnvelope envelope) {
@@ -226,7 +195,7 @@ public class CommandService {
             }
         }
 
-        VcsAction action = COMMAND_ACTIONS.get(envelope.type());
+        VcsAction action = handler.vcsAction().orElse(null);
         if (action == null) {
             return rejected(envelope, new Diagnostic(ErrorCode.MODEL_INVALID,
                     "No VCS action is configured for registered command type " + envelope.type()));

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 
 /** Deletes a relationship's semantic ends and view-specific connector rows as one cascade. */
 @Component
-public class RelationshipDeleteHandler implements CommandHandler {
+public class RelationshipDeleteHandler implements CommandHandler.DeleteAction {
 
     private final CommandHandlerSupport support;
     private final UmlRelationshipRepository relationshipRepository;

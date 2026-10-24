@@ -30,7 +30,7 @@ import org.springframework.stereotype.Component;
 
 /** Deletes a classifier and every model row that cannot survive without it. */
 @Component
-public class ClassifierDeleteHandler implements CommandHandler {
+public class ClassifierDeleteHandler implements CommandHandler.DeleteAction {
 
     private final CommandHandlerSupport support;
     private final ClassifierRepository classifierRepository;

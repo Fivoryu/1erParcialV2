@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 
 /** Updates relationship metadata and keeps the aggregation marker derived from its kind. */
 @Component
-public class RelationshipUpdateHandler implements CommandHandler {
+public class RelationshipUpdateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("name", "kind", "source", "target");
     private static final Set<String> END_FIELDS = Set.of("role", "multiplicity", "navigability");

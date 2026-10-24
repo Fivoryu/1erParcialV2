@@ -14,6 +14,7 @@ const permission: VcsProjectPermission = {
 function props(overrides: Partial<PermissionsPanelViewProps> = {}): PermissionsPanelViewProps {
   return {
     permissions: [permission],
+    currentUserId: null,
     loading: false,
     busyUserId: null,
     error: null,
@@ -47,6 +48,25 @@ describe('version permissions panel', () => {
     const markup = render({ busyUserId: permission.userId });
 
     expect(markup.match(/disabled=""/g)).toHaveLength(VCS_PERMISSION_ACTIONS.length);
+  });
+
+  it('keeps the current user visible but disables every action with a clear hint', () => {
+    const otherPermission = {
+      ...permission,
+      userId: '22222222-2222-4222-8222-222222222222',
+      displayName: 'Morgan Lee',
+    };
+    const markup = render({
+      permissions: [permission, otherPermission],
+      currentUserId: permission.userId,
+    });
+
+    expect(markup).toContain('Avery Rivera');
+    expect(markup).toContain('Morgan Lee');
+    expect(markup).toContain('You cannot change your own permissions — ask another owner.');
+    expect(markup.match(/disabled=""/g)).toHaveLength(VCS_PERMISSION_ACTIONS.length);
+    expect(markup.match(/type="checkbox"/g)).toHaveLength(VCS_PERMISSION_ACTIONS.length * 2);
+    expect(markup.match(/checked=""/g)).toHaveLength(permission.actions.length * 2);
   });
 
   it('shows the API failure in an accessible alert', () => {

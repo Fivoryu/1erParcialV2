@@ -30,6 +30,7 @@ import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.UserAccountRepository;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -321,6 +322,11 @@ class CommandServiceTest extends AbstractPostgresIntegrationTest {
                 @Override
                 public String type() {
                     return "test.noop";
+                }
+
+                @Override
+                public Optional<VcsAction> vcsAction() {
+                    return Optional.of(VcsAction.ADD);
                 }
 
                 @Override

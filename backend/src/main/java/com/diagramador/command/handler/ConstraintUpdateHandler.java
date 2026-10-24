@@ -11,7 +11,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ConstraintUpdateHandler implements CommandHandler {
+public class ConstraintUpdateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("expression", "severity");
 
