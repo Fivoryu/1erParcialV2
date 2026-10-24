@@ -72,7 +72,7 @@
 | # | Tarea | Specs | Commit |
 | --- | --- | --- | --- |
 | T5 | Fix del proveedor: campo `model`, `max_tokens` 2048, `TIMEOUT` 300 s, prompt v4 de lenguaje cotidiano | S3, L2 | `f19b46a` (base) + este commit |
-| T6 | Chat grupal con sugerencias de IA: propuesta visible, vista previa, aceptación por EDITOR+ | S6 |  |
+| T6 | Chat grupal con sugerencias de IA: propuesta visible, vista previa, aceptación por EDITOR+ | S6 | ver L16 |
 
 ## QA de la clínica (S4) — hallazgos con evidencia
 
@@ -89,3 +89,16 @@ El camino feliz quedó demostrado de punta a punta a nivel runner (ronda 25: el 
 genera con clases, atributos y relaciones), pero la **entrega en vivo** del plan de 5 clases sigue siendo
 intermitente por Q4: el modelo contratado está por debajo de la tarea. Planes chicos (1-3 operaciones) son el
 caso confiable hoy. La decisión de subir de modelo (más RAM) o limitar el tamaño de pedido es del usuario.
+
+- **L16 (T6, decisión del usuario "Si": propuesta persistida).** Premisa corregida: `chat_ai_linkage` (V16) es solo
+  la columna `reply_to_message_id`; no había linaje de aplicación. Diseño entregado: migración `V25` (ensancha
+  `ck_diagram_message_kind` a `PROPOSAL` y crea `chat_proposal` con estado `PENDING/APPLYING/ACCEPTED/REJECTED/FAILED`);
+  `ChatProposalService` pide el plan a `AssistantPlanService` **fuera de transacción** (el modelo tarda minutos) y
+  guarda tarjeta + fila juntas; `POST /sessions/{s}/proposals` (EDITOR+), `GET` (miembro), `.../accept` y `.../reject`
+  (EDITOR+). Aceptar reclama `PENDING→APPLYING` con un `UPDATE` condicional (dos editores a la vez aplican una vez) y
+  aplica por `AssistantApplyService` contra la **revisión viva** (revalida cada paso; la revisión de la propuesta es
+  informativa), con los derechos de quien acepta; el resultado se registra en el chat como mensaje y por SSE
+  (`proposal.created`/`proposal.decided`). Web: `ChatProposalResource`, hook de estado en la página, tarjeta con vista
+  previa (reusa `describeAssistantOperation`), botón *Suggest change* solo para EDITOR+. Evidencia: `ChatProposalApiTest`
+  5/5; web 677 pruebas, `tsc` y `eslint` limpios. Límite declarado: un plan que el modelo contratado no logre
+  (Q4) responde 422 `NO_PROPOSAL` con el motivo y no guarda nada.

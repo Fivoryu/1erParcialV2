@@ -11,6 +11,7 @@ import { ApiTransportError, createApiClient } from '../api/client';
 import { loadSession } from '../api/session';
 import type {
   ChatMessageResource,
+  ChatProposalResource,
   ChatSessionResource,
   ContextMeterResource,
   DiagramMemoryResource,
@@ -24,6 +25,7 @@ import type {
   Uuid,
 } from '../api/types';
 import ChatPanel from '../collaboration/ChatPanel';
+import { proposalErrorMessage, proposalFromProjectEvent, upsertProposal } from '../collaboration/chatProposals';
 import { activeSessionFor } from '../collaboration/sessionSelection';
 import {
   appendMessageToSession,
@@ -44,6 +46,7 @@ import UmlCanvas from '../diagram/UmlCanvas';
 import { useUndoRedoShortcuts } from '../diagram/useUndoRedoShortcuts';
 import PropertiesPanel from '../diagram/PropertiesPanel';
 import AssistantPanel from '../assistant/AssistantPanel';
+import { createDiagramNames } from '../assistant/assistantNames';
 import { chatAskErrorMessage } from '../assistant/chatAskFailure';
 import GenerationPanel from '../generation/GenerationPanel';
 import { ReviewPanelLoader } from '../review/ReviewPanel';
@@ -184,6 +187,10 @@ export default function ProjectEditorPage() {
   const [currentUserRole, setCurrentUserRole] = useState<MemberRole | null>(null);
   const [attachmentUrls, setAttachmentUrls] = useState<Record<Uuid, string>>({});
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatProposals, setChatProposals] = useState<ChatProposalResource[]>([]);
+  const [proposalBusyId, setProposalBusyId] = useState<Uuid | null>(null);
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const [proposalNotice, setProposalNotice] = useState<string | null>(null);
   const [remoteCursorPositions, setRemoteCursors] = useState<Map<string, { x: number; y: number }>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
@@ -518,6 +525,30 @@ export default function ProjectEditorPage() {
   }, [chatSessionId, projectId, refreshContextMeter]);
 
   useEffect(() => {
+    let active = true;
+    setChatProposals([]);
+    setProposalNotice(null);
+    if (!projectId || !chatSessionId) {
+      return () => {
+        active = false;
+      };
+    }
+    void api.listProposals(projectId, chatSessionId)
+      .then((proposals) => {
+        if (active && currentProjectIdRef.current === projectId) {
+          setChatProposals((current) => proposals.reduce(
+            (merged, proposal) => upsertProposal(merged, proposal, chatSessionId),
+            current.filter((entry) => entry.sessionId === chatSessionId),
+          ));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [chatSessionId, projectId]);
+
+  useEffect(() => {
     setMemories([]);
     setMemoryError(null);
     setMemoryMessage(null);
@@ -641,6 +672,11 @@ export default function ProjectEditorPage() {
             if (message.sessionId === chatSessionIdRef.current) {
               void refreshContextMeter(message.sessionId);
             }
+          }
+        } else if (event.type === 'proposal.created' || event.type === 'proposal.decided') {
+          const proposal = proposalFromProjectEvent(event.data);
+          if (proposal) {
+            setChatProposals((current) => upsertProposal(current, proposal, chatSessionIdRef.current));
           }
         } else if (event.type === 'chat.ai.status') {
           const status = chatAiStatusFromProjectEvent(event.data);
@@ -773,6 +809,7 @@ export default function ProjectEditorPage() {
     setAssistantOpen(false);
     setAssistantSeed(null);
   }, []);
+  const diagramNames = useMemo(() => (model ? createDiagramNames(model) : null), [model]);
   const touchedElements = useMemo(() => groupTouchesByElement(presence), [presence]);
   const remoteCursorMarkers = useMemo(
     () => buildRemoteCursorMarkers(presence, remoteCursorPositions, currentUserId),
@@ -880,6 +917,55 @@ export default function ProjectEditorPage() {
         setChatError(chatAskErrorMessage(cause, loginErrorMessage));
       }
       return false;
+    }
+  }
+
+  async function suggestChange(utterance: string): Promise<boolean> {
+    const sessionId = chatSessionId;
+    if (!projectId || !sessionId || suggestBusy) {
+      return false;
+    }
+    setProposalNotice(null);
+    setSuggestBusy(true);
+    try {
+      const proposal = await api.proposeChange(projectId, sessionId, utterance);
+      if (chatSessionIdRef.current === sessionId) {
+        setChatProposals((current) => upsertProposal(current, proposal, sessionId));
+      }
+      return true;
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
+        setProposalNotice(proposalErrorMessage(cause, loginErrorMessage));
+      }
+      return false;
+    } finally {
+      setSuggestBusy(false);
+    }
+  }
+
+  async function decideProposal(proposalId: Uuid, decision: 'accept' | 'reject'): Promise<void> {
+    const sessionId = chatSessionId;
+    if (!projectId || !sessionId || proposalBusyId !== null) {
+      return;
+    }
+    setProposalNotice(null);
+    setProposalBusyId(proposalId);
+    try {
+      const decided = decision === 'accept'
+        ? await api.acceptProposal(projectId, sessionId, proposalId)
+        : await api.rejectProposal(projectId, sessionId, proposalId);
+      if (chatSessionIdRef.current === sessionId) {
+        setChatProposals((current) => upsertProposal(current, decided, sessionId));
+      }
+      if (decision === 'accept') {
+        void refreshModelFromEvent();
+      }
+    } catch (cause: unknown) {
+      if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
+        setProposalNotice(proposalErrorMessage(cause, loginErrorMessage));
+      }
+    } finally {
+      setProposalBusyId(null);
     }
   }
 
@@ -1164,7 +1250,9 @@ export default function ProjectEditorPage() {
                 aiStatus={chatSessionId ? chatAiStatuses[chatSessionId] ?? null : null}
                 attachmentUrls={attachmentUrls}
                 busy={chatBusy}
+                canDecideProposals={currentUserRole === 'OWNER' || currentUserRole === 'EDITOR'}
                 canDeleteHistory={currentUserRole === 'OWNER'}
+                diagramNames={diagramNames}
                 canManageMemory={currentUserRole === 'OWNER'}
                 compactBusy={compactBusy}
                 compactMessage={compactMessage}
@@ -1181,6 +1269,10 @@ export default function ProjectEditorPage() {
                 memoriesLoading={memoriesLoading}
                 memoryError={memoryError}
                 memoryMessage={memoryMessage}
+                proposalBusyId={proposalBusyId}
+                proposalNotice={proposalNotice}
+                proposals={chatProposals}
+                suggestBusy={suggestBusy}
                 onCompact={() => void compactChatContext()}
                 onCreateSession={() => void createChatSession()}
                 onDeleteHistory={() => void deleteChatHistory()}
@@ -1188,7 +1280,10 @@ export default function ProjectEditorPage() {
                 onExtractMemories={() => void extractDiagramMemories()}
                 onForgetAllMemories={() => void forgetAllDiagramMemories()}
                 onForgetMemory={(memoryId) => void forgetDiagramMemory(memoryId)}
+                onAcceptProposal={(proposalId) => void decideProposal(proposalId, 'accept')}
                 onAskAi={(messageId) => askAi(messageId)}
+                onRejectProposal={(proposalId) => void decideProposal(proposalId, 'reject')}
+                onSuggest={(utterance) => suggestChange(utterance)}
                 onSend={(body, images) => sendMessage(body, images)}
                 onSessionChange={changeChatSession}
                 sessionActionBusy={chatSessionActionBusy}

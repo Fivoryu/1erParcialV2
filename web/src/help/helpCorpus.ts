@@ -170,8 +170,9 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
       'Ask the assistant explicitly; each request uses the latest UML and active memories for this diagram. Ask naturally in chat to read, save, or revise a memory.',
       'Ask explicitly to search other diagrams; shared answers name their sources and use only projects every active collaborator can access.',
       'Dictate with the microphone button, or attach an image to ask about it; sending is always explicit.',
+      'Editors can type a change and press Suggest change: the assistant posts a card with the future change to the whole chat, and nothing changes until an editor presses Accept and apply or Reject.',
     ],
-    keywords: ['chat', 'message', 'session', 'assistant', 'memory', 'memories', 'read', 'save', 'revise', 'other diagrams', 'shared access', 'uml', 'voice', 'dictation', 'image'],
+    keywords: ['chat', 'message', 'session', 'assistant', 'memory', 'memories', 'read', 'save', 'revise', 'other diagrams', 'shared access', 'uml', 'voice', 'dictation', 'image', 'suggest', 'suggestion', 'proposal', 'accept'],
   },
   {
     slug: 'versioning-and-branches',

@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type {
   ChatMessageResource,
+  ChatProposalResource,
   ChatSessionResource,
   ContextMeterResource,
   DiagramMemoryResource,
   Uuid,
 } from '../api/types';
+import { describeAssistantOperation, type DiagramNames } from '../assistant/assistantNames';
 import { appendTranscript } from '../assistant/speechTranscript';
 import { useSpeechRecognition } from '../assistant/useSpeechRecognition';
 import MarkdownText from './MarkdownText';
 import { formatMessageTime } from './messageTime';
+import { proposalStatusLabel } from './chatProposals';
 import { limitChatAttachments, type SessionAiStatus } from './chatState';
 
 /**
@@ -56,6 +59,71 @@ export interface ChatPanelProps {
   onDeleteHistory: () => void;
   historyMessage: string | null;
   attachmentUrls: Record<Uuid, string>;
+  /** Suggestions the assistant made in this session; omitted where chat suggestions are not offered. */
+  proposals?: ChatProposalResource[];
+  /** Names of the live diagram, so a suggestion's preview reads in terms of the user's own classes. */
+  diagramNames?: DiagramNames | null;
+  /** Editors and owners may ask for, accept and reject suggestions; viewers only read them. */
+  canDecideProposals?: boolean;
+  proposalBusyId?: Uuid | null;
+  suggestBusy?: boolean;
+  proposalNotice?: string | null;
+  onSuggest?: (utterance: string) => void | boolean | Promise<void | boolean>;
+  onAcceptProposal?: (proposalId: Uuid) => void;
+  onRejectProposal?: (proposalId: Uuid) => void;
+}
+
+const EMPTY_NAMES: DiagramNames = {
+  classifiers: new Map(),
+  attributes: new Map(),
+  operations: new Map(),
+  relationships: new Map(),
+};
+
+interface ProposalCardProps {
+  proposal: ChatProposalResource;
+  diagramNames: DiagramNames;
+  canDecide: boolean;
+  busy: boolean;
+  onAccept: (proposalId: Uuid) => void;
+  onReject: (proposalId: Uuid) => void;
+}
+
+/** The suggestion every member sees: what would change, and who decided what. */
+function ProposalCard({ proposal, diagramNames, canDecide, busy, onAccept, onReject }: ProposalCardProps) {
+  const pending = proposal.status === 'PENDING';
+  return (
+    <section
+      className={`chat-proposal chat-proposal--${proposal.status.toLowerCase()}`}
+      aria-label={`Suggested change from ${proposal.requestedByDisplayName}`}
+    >
+      <p className="eyebrow">Suggested change · {proposalStatusLabel(proposal.status)}</p>
+      <p className="chat-proposal-preview-title">If accepted, the diagram will change like this:</p>
+      <ul className="chat-proposal-operations">
+        {proposal.operations.map((operation, index) => (
+          <li key={`${operation.type}-${index}`}>{describeAssistantOperation(operation, diagramNames)}</li>
+        ))}
+      </ul>
+      {proposal.resultSummary && (
+        <p className="quiet-state chat-proposal-result" role="status">
+          {proposal.decidedByDisplayName ? `${proposal.decidedByDisplayName}: ` : ''}{proposal.resultSummary}
+        </p>
+      )}
+      {pending && canDecide && (
+        <div className="chat-proposal-actions">
+          <button className="button button-primary" type="button" disabled={busy} onClick={() => onAccept(proposal.id)}>
+            {busy ? 'Working…' : 'Accept and apply'}
+          </button>
+          <button className="button button-secondary" type="button" disabled={busy} onClick={() => onReject(proposal.id)}>
+            Reject
+          </button>
+        </div>
+      )}
+      {pending && !canDecide && (
+        <p className="quiet-state">Only an editor or owner can accept this suggestion.</p>
+      )}
+    </section>
+  );
 }
 
 function aiStateLabel(status: SessionAiStatus): string {
@@ -122,6 +190,15 @@ export default function ChatPanel({
   onDeleteHistory,
   historyMessage,
   attachmentUrls,
+  proposals = [],
+  diagramNames = null,
+  canDecideProposals = false,
+  proposalBusyId = null,
+  suggestBusy = false,
+  proposalNotice = null,
+  onSuggest,
+  onAcceptProposal,
+  onRejectProposal,
 }: ChatPanelProps) {
   const { locale, timeZone } = new Intl.DateTimeFormat().resolvedOptions();
   const speech = useSpeechRecognition();
@@ -169,6 +246,24 @@ export default function ChatPanel({
     if (result === false && draftRef.current.trim().length === 0) {
       draftRef.current = message.body;
       onDraftChange(message.body);
+    }
+  }
+
+  async function handleSuggest(): Promise<void> {
+    const utterance = draft.trim();
+    if (!utterance || !onSuggest) {
+      return;
+    }
+    let result: void | boolean;
+    try {
+      result = await onSuggest(utterance);
+    } catch {
+      result = false;
+    }
+    // The request text is only spent when a suggestion was actually shared; a failure keeps it to retry.
+    if (result !== false && draftRef.current.trim() === utterance) {
+      draftRef.current = '';
+      onDraftChange('');
     }
   }
 
@@ -253,6 +348,9 @@ export default function ChatPanel({
                 {orderedHistory.map((message) => {
                   const isReader = message.authorUserId !== null && message.authorUserId === userId;
                   const isAssistant = message.kind === 'AI';
+                  const proposal = message.kind === 'PROPOSAL'
+                    ? proposals.find((entry) => entry.messageId === message.id) ?? null
+                    : null;
                   return (
                     <li
                       className={`chat-message${isReader ? ' chat-message--own' : ''}${isAssistant ? ' chat-message--assistant' : ''}`}
@@ -291,6 +389,16 @@ export default function ChatPanel({
                             <span className="chat-attachment-pending" key={attachmentId} role="status">Loading image…</span>
                           ))}
                         </div>
+                      )}
+                      {proposal && (
+                        <ProposalCard
+                          proposal={proposal}
+                          diagramNames={diagramNames ?? EMPTY_NAMES}
+                          canDecide={canDecideProposals}
+                          busy={proposalBusyId !== null}
+                          onAccept={(proposalId) => onAcceptProposal?.(proposalId)}
+                          onReject={(proposalId) => onRejectProposal?.(proposalId)}
+                        />
                       )}
                       {message.kind === 'HUMAN' && isReader && (
                         <button
@@ -357,6 +465,17 @@ export default function ChatPanel({
             >
               Attach images
             </button>
+            {onSuggest && canDecideProposals && (
+              <button
+                className="button button-secondary chat-suggest-change"
+                type="button"
+                disabled={busy || suggestBusy || !draft.trim() || !activeSessionId}
+                title="Ask the assistant to suggest a diagram change from this text. Nothing changes until an editor accepts it."
+                onClick={() => void handleSuggest()}
+              >
+                {suggestBusy ? 'Suggesting…' : 'Suggest change'}
+              </button>
+            )}
             <button
               className="button button-primary"
               disabled={busy || !draft.trim() || !activeSessionId}
@@ -365,6 +484,8 @@ export default function ChatPanel({
               {busy ? 'Sending…' : 'Send'}
             </button>
           </form>
+
+          {proposalNotice && <p className="notice notice-error" role="alert">{proposalNotice}</p>}
 
           {selectedImages.length > 0 && (
             <ul className="chat-selected-attachments" aria-label="Images to send">

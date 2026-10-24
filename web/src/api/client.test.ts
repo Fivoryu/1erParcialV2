@@ -365,6 +365,38 @@ describe('project chat API client', () => {
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer opaque-session-token');
   });
 
+  it('lists, proposes, accepts and rejects chat suggestions on the session routes', async () => {
+    const sessionId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const proposalId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => new Response('[]', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    saveSession({
+      token: 'opaque-session-token',
+      userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      username: 'diagram.user',
+      displayName: 'Diagram User',
+      expiresAt: '2999-01-01T00:00:00Z',
+    });
+    const base = `https://diagram.test/projects/${projectId}/sessions/${sessionId}/proposals`;
+
+    await client.listProposals(projectId, sessionId);
+    await client.proposeChange(projectId, sessionId, 'Add a Patient class');
+    await client.acceptProposal(projectId, sessionId, proposalId);
+    await client.rejectProposal(projectId, sessionId, proposalId);
+
+    const calls = fetcher.mock.calls.map(([input, init]) => [String(input), init?.method ?? 'GET']);
+    expect(calls).toEqual([
+      [base, 'GET'],
+      [base, 'POST'],
+      [`${base}/${proposalId}/accept`, 'POST'],
+      [`${base}/${proposalId}/reject`, 'POST'],
+    ]);
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({ utterance: 'Add a Patient class' });
+  });
+
   it('lists and posts messages on the project chat routes with the server resource shape', async () => {
     const authorUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     const message: ChatMessageResource = {
