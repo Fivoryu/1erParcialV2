@@ -131,6 +131,8 @@ describe('chat suggestions', () => {
       }],
     });
     expect(markup).toContain('Applied');
+    expect(markup).toContain('The suggested change:');
+    expect(markup).not.toContain('If accepted');
     expect(markup).toContain('Morgan Reader: 1 of 1 change applied.');
     expect(markup).not.toContain('Accept and apply');
   });

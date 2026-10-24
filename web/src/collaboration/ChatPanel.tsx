@@ -98,7 +98,9 @@ function ProposalCard({ proposal, diagramNames, canDecide, busy, onAccept, onRej
       aria-label={`Suggested change from ${proposal.requestedByDisplayName}`}
     >
       <p className="eyebrow">Suggested change · {proposalStatusLabel(proposal.status)}</p>
-      <p className="chat-proposal-preview-title">If accepted, the diagram will change like this:</p>
+      <p className="chat-proposal-preview-title">
+        {pending ? 'If accepted, the diagram will change like this:' : 'The suggested change:'}
+      </p>
       <ul className="chat-proposal-operations">
         {proposal.operations.map((operation, index) => (
           <li key={`${operation.type}-${index}`}>{describeAssistantOperation(operation, diagramNames)}</li>
