@@ -3,15 +3,43 @@ package com.diagramador.command;
 import com.diagramador.domain.Project;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.UmlModel;
+import com.diagramador.domain.VcsAction;
 import jakarta.persistence.EntityManager;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Port implemented by each registered command type. */
 public interface CommandHandler {
 
     String type();
+
+    /** The version-control action for this handler, or empty when it has not declared one. */
+    default Optional<VcsAction> vcsAction() {
+        return Optional.empty();
+    }
+
+    interface AddAction extends CommandHandler {
+        @Override
+        default Optional<VcsAction> vcsAction() {
+            return Optional.of(VcsAction.ADD);
+        }
+    }
+
+    interface CreateAction extends CommandHandler {
+        @Override
+        default Optional<VcsAction> vcsAction() {
+            return Optional.of(VcsAction.CREATE);
+        }
+    }
+
+    interface DeleteAction extends CommandHandler {
+        @Override
+        default Optional<VcsAction> vcsAction() {
+            return Optional.of(VcsAction.DELETE);
+        }
+    }
 
     /**
      * Declares that this handler creates the aggregate identified by the envelope.

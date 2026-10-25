@@ -14,7 +14,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ConstraintAddHandler implements CommandHandler {
+public class ConstraintAddHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "ownerType", "ownerId", "expression", "severity");
 

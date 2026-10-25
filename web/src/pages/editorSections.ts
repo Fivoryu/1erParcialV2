@@ -1,6 +1,6 @@
 import type { ModalSize } from '../ui/Modal';
 
-export type EditorSectionId = 'xmi' | 'collaboration' | 'members' | 'review' | 'generation';
+export type EditorSectionId = 'xmi' | 'collaboration' | 'members' | 'review' | 'generation' | 'vcs';
 
 export type EditorSection = {
   id: EditorSectionId;
@@ -14,8 +14,8 @@ export type EditorSection = {
 
 /**
  * Frozen registry of the editor sections collapsed into the compact view.
- * The order here is the order the option bar renders, and it is part of the
- * plan contract: xmi, collaboration, members, review, generation.
+ * The order here is the order the option bar renders. Existing sections retain
+ * their documented order, with versioning appended last.
  */
 export const EDITOR_SECTIONS: readonly EditorSection[] = [
   { id: 'xmi', label: 'XMI interchange', title: 'Import an XMI file', size: 'md' },
@@ -23,6 +23,7 @@ export const EDITOR_SECTIONS: readonly EditorSection[] = [
   { id: 'members', label: 'Members', title: 'Members', size: 'lg' },
   { id: 'review', label: 'Review', title: 'Review diagram', size: 'md' },
   { id: 'generation', label: 'Generation', title: 'Generate a backend', size: 'md' },
+  { id: 'vcs', label: 'Versioning', title: 'History, branches and reviews', size: 'lg' },
 ];
 
 /** Returns the matching section, or throws naming the unknown id. */

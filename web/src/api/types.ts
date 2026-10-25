@@ -28,7 +28,7 @@ export interface PresencePerson {
   cursorY: number | null;
 }
 
-export type ChatMessageKind = 'HUMAN' | 'AI';
+export type ChatMessageKind = 'HUMAN' | 'AI' | 'PROPOSAL';
 
 export interface ChatMessageResource {
   id: Uuid;
@@ -42,6 +42,34 @@ export interface ChatMessageResource {
   replyTo?: Uuid | null;
   /** Attachment ids are resolved through the authorized session attachment endpoint. */
   attachments?: Uuid[];
+}
+
+export type ChatProposalStatus = 'PENDING' | 'APPLYING' | 'ACCEPTED' | 'REJECTED' | 'FAILED';
+
+/** One step of a suggested plan, exactly as the plan endpoint returned it. */
+export interface ChatProposalOperation {
+  type: string;
+  targetId: Uuid | null;
+  args: Record<string, unknown>;
+}
+
+/** A plan the assistant suggested in a chat session; it changes nothing until an editor accepts it. */
+export interface ChatProposalResource {
+  id: Uuid;
+  /** The PROPOSAL chat message that shows this suggestion in the conversation. */
+  messageId: Uuid;
+  sessionId: Uuid;
+  requestedByUserId: Uuid;
+  requestedByDisplayName: string;
+  utterance: string;
+  operations: ChatProposalOperation[];
+  baseRevision: number;
+  status: ChatProposalStatus;
+  decidedByUserId: Uuid | null;
+  decidedByDisplayName: string | null;
+  decidedAt: string | null;
+  resultSummary: string | null;
+  createdAt: string;
 }
 
 export interface ChatAttachmentResource {

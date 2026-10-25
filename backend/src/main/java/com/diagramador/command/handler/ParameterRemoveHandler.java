@@ -7,7 +7,7 @@ import com.diagramador.persistence.OperationParameterRepository;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ParameterRemoveHandler implements CommandHandler {
+public class ParameterRemoveHandler implements CommandHandler.DeleteAction {
 
     private final CommandHandlerSupport support;
     private final OperationParameterRepository parameterRepository;

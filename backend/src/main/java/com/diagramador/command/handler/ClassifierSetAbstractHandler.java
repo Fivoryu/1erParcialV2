@@ -8,7 +8,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ClassifierSetAbstractHandler implements CommandHandler {
+public class ClassifierSetAbstractHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("isAbstract");
 

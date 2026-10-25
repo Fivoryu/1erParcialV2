@@ -22,7 +22,7 @@ export function messageFromProjectEvent(data: unknown): ChatMessageResource | nu
   const attachments = message?.attachments;
   if (typeof message?.id !== 'string'
     || typeof message.sessionId !== 'string'
-    || (kind !== 'HUMAN' && kind !== 'AI')
+    || (kind !== 'HUMAN' && kind !== 'AI' && kind !== 'PROPOSAL')
     || (authorUserId !== null && typeof authorUserId !== 'string')
     || typeof message.authorDisplayName !== 'string'
     || typeof message.body !== 'string'

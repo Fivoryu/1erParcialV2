@@ -44,7 +44,14 @@ public class ConnectorPath {
     }
 
     public static ConnectorPath create(DiagramView view, UmlRelationship relationship, int ordinal, int x, int y) {
+        return create(null, view, relationship, ordinal, x, y);
+    }
+
+    /** Identity-preserving factory used by snapshot materialization. */
+    public static ConnectorPath create(UUID id, DiagramView view, UmlRelationship relationship, int ordinal, int x,
+            int y) {
         ConnectorPath path = new ConnectorPath();
+        path.id = id;
         path.view = view;
         path.relationship = relationship;
         path.ordinal = ordinal;

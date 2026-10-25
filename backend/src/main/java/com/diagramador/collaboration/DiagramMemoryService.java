@@ -10,6 +10,7 @@ import com.diagramador.domain.DiagramMemory;
 import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.MemoryKind;
 import com.diagramador.domain.MemoryStatus;
+import com.diagramador.domain.MessageKind;
 import com.diagramador.domain.ModelCommand;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UserAccount;
@@ -91,8 +92,8 @@ public class DiagramMemoryService {
         }
         DiagramView view = chatService.requireAccessibleView(projectId, viewId);
         List<DiagramMessage> pendingMessages = messageRepository
-                .findBySession_View_IdAndMemoryExtractedFalseOrderByCreatedAtAscIdAsc(view.getId(),
-                        PageRequest.of(0, MAX_PENDING_MESSAGES));
+                .findBySession_View_IdAndKindAndMemoryExtractedFalseOrderByCreatedAtAscIdAsc(view.getId(),
+                        MessageKind.HUMAN, PageRequest.of(0, MAX_PENDING_MESSAGES));
         UUID modelId = view.getModel().getId();
         List<ModelCommand> pendingCommands = commandRepository
                 .findByModelIdAndKnowledgePendingTrueOrderByCreatedAtAscCommandIdAsc(modelId,

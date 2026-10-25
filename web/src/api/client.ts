@@ -2,6 +2,7 @@ import type {
   ApiErrorResource,
   ChatAttachmentResource,
   ChatMessageResource,
+  ChatProposalResource,
   CommandOutcome,
   CompactionOutcomeResource,
   ContextMeterResource,
@@ -110,6 +111,10 @@ function classifyCommandResult(result: CommandResult): CommandOutcome {
   }
 }
 
+function proposalsPath(projectId: Uuid, sessionId: Uuid): string {
+  return `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/proposals`;
+}
+
 export interface ApiClient {
   register(request: RegisterRequest): Promise<UserResource>;
   login(request: LoginRequest): Promise<LoginResponse>;
@@ -131,6 +136,10 @@ export interface ApiClient {
     attachmentIds?: Uuid[],
   ): Promise<ChatMessageResource>;
   askAi(projectId: Uuid, sessionId: Uuid, messageId: Uuid): Promise<AskAiResponse>;
+  listProposals(projectId: Uuid, sessionId: Uuid): Promise<ChatProposalResource[]>;
+  proposeChange(projectId: Uuid, sessionId: Uuid, utterance: string): Promise<ChatProposalResource>;
+  acceptProposal(projectId: Uuid, sessionId: Uuid, proposalId: Uuid): Promise<ChatProposalResource>;
+  rejectProposal(projectId: Uuid, sessionId: Uuid, proposalId: Uuid): Promise<ChatProposalResource>;
   deleteSessionHistory(projectId: Uuid, sessionId: Uuid): Promise<DeletedSessionHistoryResource>;
   getContextMeter(projectId: Uuid, sessionId: Uuid): Promise<ContextMeterResource>;
   compactSession(projectId: Uuid, sessionId: Uuid): Promise<CompactionOutcomeResource>;
@@ -379,6 +388,24 @@ export function createApiClient(
       return postJson<AskAiResponse>(
         `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/ask`,
         { messageId },
+      );
+    },
+    listProposals(projectId, sessionId) {
+      return requestJson<ChatProposalResource[]>(`${proposalsPath(projectId, sessionId)}`);
+    },
+    proposeChange(projectId, sessionId, utterance) {
+      return postJson<ChatProposalResource>(proposalsPath(projectId, sessionId), { utterance });
+    },
+    acceptProposal(projectId, sessionId, proposalId) {
+      return requestJson<ChatProposalResource>(
+        `${proposalsPath(projectId, sessionId)}/${encodeURIComponent(proposalId)}/accept`,
+        { method: 'POST' },
+      );
+    },
+    rejectProposal(projectId, sessionId, proposalId) {
+      return requestJson<ChatProposalResource>(
+        `${proposalsPath(projectId, sessionId)}/${encodeURIComponent(proposalId)}/reject`,
+        { method: 'POST' },
       );
     },
     deleteSessionHistory(projectId, sessionId) {

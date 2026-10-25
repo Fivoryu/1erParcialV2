@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 
 /** Upserts classifier rectangles or replaces relationship paths in one shared diagram view. */
 @Component
-public class GeometrySetHandler implements CommandHandler {
+public class GeometrySetHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("targetType", "viewId", "targetId", "x", "y", "w", "h",
             "zOrder", "waypoints");

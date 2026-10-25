@@ -15,8 +15,8 @@ class LlamaCppAssistantProviderPromptTest {
 
     @Test
     void promptDeclaresTheV3ContractVersion() {
-        assertThat(PROMPT).contains("ia4-01-prompt-v3");
-        assertThat(PROMPT).doesNotContain("ia4-01-prompt-v2");
+        assertThat(PROMPT).contains("ia4-01-prompt-v4");
+        assertThat(PROMPT).doesNotContain("ia4-01-prompt-v3");
     }
 
     @Test

@@ -7,7 +7,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 @Component
-public class OperationUpdateHandler implements CommandHandler {
+public class OperationUpdateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("name", "returnType", "visibility", "isAbstract", "isStatic");
 

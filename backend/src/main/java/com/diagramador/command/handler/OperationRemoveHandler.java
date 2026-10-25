@@ -7,7 +7,7 @@ import com.diagramador.persistence.UmlOperationRepository;
 import org.springframework.stereotype.Component;
 
 @Component
-public class OperationRemoveHandler implements CommandHandler {
+public class OperationRemoveHandler implements CommandHandler.DeleteAction {
 
     private final CommandHandlerSupport support;
     private final UmlOperationRepository operationRepository;

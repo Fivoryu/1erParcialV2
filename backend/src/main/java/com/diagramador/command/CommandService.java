@@ -2,6 +2,7 @@ package com.diagramador.command;
 
 import com.diagramador.collaboration.ProjectEvent;
 import com.diagramador.collaboration.ProjectEventBus;
+import com.diagramador.api.ApiException;
 import com.diagramador.domain.CascadeGroup;
 import com.diagramador.domain.ModelCommand;
 import com.diagramador.domain.ModelVersion;
@@ -12,6 +13,7 @@ import com.diagramador.domain.ProjectMemberRole;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UserAccount;
+import com.diagramador.domain.VcsAction;
 import com.diagramador.persistence.CascadeGroupRepository;
 import com.diagramador.persistence.ModelCommandRepository;
 import com.diagramador.persistence.ModelVersionRepository;
@@ -19,6 +21,7 @@ import com.diagramador.persistence.TombstoneRepository;
 import com.diagramador.persistence.ProjectMemberRepository;
 import com.diagramador.persistence.ProjectRepository;
 import com.diagramador.persistence.UmlModelRepository;
+import com.diagramador.vcs.VcsAccessService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
@@ -27,11 +30,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -40,7 +45,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class CommandService {
 
     private static final Logger logger = LoggerFactory.getLogger(CommandService.class);
-
+    private static final String PROJECT_CREATE = "project.create";
+    private static final String XMI_IMPORT = "xmi.import";
     private final ProjectRepository projectRepository;
     private final UmlModelRepository modelRepository;
     private final com.diagramador.persistence.UserAccountRepository userAccountRepository;
@@ -54,6 +60,7 @@ public class CommandService {
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
     private final ProjectEventBus eventBus;
+    private final VcsAccessService vcsAccessService;
     private final Map<String, CommandHandler> handlers;
 
     public CommandService(ProjectRepository projectRepository, UmlModelRepository modelRepository,
@@ -62,7 +69,7 @@ public class CommandService {
             CascadeGroupRepository cascadeGroupRepository, TombstoneRepository tombstoneRepository,
             ModelVersionRepository versionRepository, ModelStateHasher stateHasher, ObjectMapper objectMapper,
             EntityManager entityManager, TransactionTemplate transactionTemplate, ProjectEventBus eventBus,
-            List<CommandHandler> handlers) {
+            VcsAccessService vcsAccessService, List<CommandHandler> handlers) {
         this.projectRepository = projectRepository;
         this.modelRepository = modelRepository;
         this.userAccountRepository = userAccountRepository;
@@ -76,6 +83,7 @@ public class CommandService {
         this.entityManager = entityManager;
         this.transactionTemplate = transactionTemplate;
         this.eventBus = eventBus;
+        this.vcsAccessService = vcsAccessService;
         this.handlers = handlers.stream().collect(Collectors.toUnmodifiableMap(CommandHandler::type, Function.identity()));
     }
 
@@ -91,6 +99,8 @@ public class CommandService {
             return rejected(envelope, new Diagnostic(ErrorCode.REVISION_MISMATCH, exception.getMessage()));
         } catch (CommandValidationException exception) {
             return rejected(envelope, new Diagnostic(exception.code(), exception.getMessage()));
+        } catch (ApiException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             return rejected(envelope, new Diagnostic(ErrorCode.MODEL_INVALID,
                     "Command could not be applied: " + exception.getMessage()));
@@ -123,6 +133,14 @@ public class CommandService {
             }
         }
         return result;
+    }
+
+    public Set<String> registeredCommandTypes() {
+        return handlers.keySet();
+    }
+
+    public Optional<VcsAction> actionFor(String commandType) {
+        return Optional.ofNullable(handlers.get(commandType)).flatMap(CommandHandler::vcsAction);
     }
 
     public CommandResult submit(OperationEnvelope envelope) {
@@ -174,6 +192,24 @@ public class CommandService {
             if (member == null || member.getStatus().equals("REMOVED") || !isEditorOrOwner(member.getRole())) {
                 return rejected(envelope, new Diagnostic(ErrorCode.FORBIDDEN,
                         "Author " + author.getId() + " is not an OWNER or EDITOR of project " + project.getId()));
+            }
+        }
+
+        VcsAction action = handler.vcsAction().orElse(null);
+        if (action == null) {
+            return rejected(envelope, new Diagnostic(ErrorCode.MODEL_INVALID,
+                    "No VCS action is configured for registered command type " + envelope.type()));
+        }
+        if (!PROJECT_CREATE.equals(envelope.type())) {
+            if (project == null || model == null) {
+                return rejected(envelope, new Diagnostic(ErrorCode.PRECONDITION_FAILED,
+                        "Only project.create may execute without an existing project and model"));
+            }
+            vcsAccessService.requireAction(project.getId(), action, author.getId());
+            if (XMI_IMPORT.equals(envelope.type()) && isReplaceMode(envelope.payload())
+                    && member.getRole() != ProjectMemberRole.OWNER) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN",
+                        "Only the project owner can replace the model through XMI import.", List.of(), null);
             }
         }
 
@@ -396,6 +432,17 @@ public class CommandService {
         return envelope.targets().isEmpty() || envelope.targets().get(0) == null
                 ? null
                 : envelope.targets().get(0).id();
+    }
+
+    private boolean isReplaceMode(Object payload) {
+        JsonNode payloadNode;
+        try {
+            payloadNode = objectMapper.valueToTree(payload);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+        return payloadNode != null && payloadNode.path("mode").isTextual()
+                && "REEMPLAZAR".equalsIgnoreCase(payloadNode.path("mode").asText());
     }
 
     private static boolean blank(String value) {

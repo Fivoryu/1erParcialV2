@@ -24,7 +24,7 @@ import org.springframework.stereotype.Component;
 
 /** Creates one UML relationship, its source/target ends, and optional default-view waypoints. */
 @Component
-public class RelationshipCreateHandler implements CommandHandler {
+public class RelationshipCreateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "kind", "name", "source", "target", "waypoints");
     private static final Set<String> END_FIELDS = Set.of("classifierId", "role", "multiplicity", "navigability");

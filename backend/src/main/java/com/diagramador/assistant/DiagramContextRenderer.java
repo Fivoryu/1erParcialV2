@@ -1,6 +1,7 @@
 package com.diagramador.assistant;
 
 import com.diagramador.api.ModelResource;
+import com.diagramador.vcs.VcsRepoContextRenderer;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -8,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -19,12 +21,27 @@ import org.springframework.stereotype.Component;
 public class DiagramContextRenderer {
 
     private final ObjectMapper objectMapper;
+    private final VcsRepoContextRenderer repoContextRenderer;
 
-    public DiagramContextRenderer(ObjectMapper objectMapper) {
+    @Autowired
+    public DiagramContextRenderer(ObjectMapper objectMapper, VcsRepoContextRenderer repoContextRenderer) {
         this.objectMapper = objectMapper;
+        this.repoContextRenderer = repoContextRenderer;
     }
 
+    /** Constructor retained for focused renderer tests that only exercise canonical UML rendering. */
+    public DiagramContextRenderer(ObjectMapper objectMapper) {
+        this(objectMapper, null);
+    }
+
+    /** Adds caller-authorized repository history beside the canonical diagram context. */
     public String render(ModelResource model) {
+        String diagram = renderDiagramOnly(model);
+        return repoContextRenderer == null ? diagram : diagram + "\n\n" + repoContextRenderer.render(model.id());
+    }
+
+    /** Renders only the JSON diagram snapshot for consumers with a strict JSON prompt contract. */
+    public String renderDiagramOnly(ModelResource model) {
         Map<String, Object> context = new LinkedHashMap<>();
         List<Map<String, Object>> classifiers = new ArrayList<>();
         for (ModelResource.ClassifierResource classifier : model.classifiers()) {

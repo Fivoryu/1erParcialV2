@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 
 /** Removes the selected classifier rectangle or relationship path from one shared view. */
 @Component
-public class GeometryRemoveHandler implements CommandHandler {
+public class GeometryRemoveHandler implements CommandHandler.DeleteAction {
 
     private static final Set<String> FIELDS = Set.of("targetType", "viewId", "targetId");
 

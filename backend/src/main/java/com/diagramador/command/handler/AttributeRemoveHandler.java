@@ -7,7 +7,7 @@ import com.diagramador.persistence.UmlAttributeRepository;
 import org.springframework.stereotype.Component;
 
 @Component
-public class AttributeRemoveHandler implements CommandHandler {
+public class AttributeRemoveHandler implements CommandHandler.DeleteAction {
 
     private final CommandHandlerSupport support;
     private final UmlAttributeRepository attributeRepository;

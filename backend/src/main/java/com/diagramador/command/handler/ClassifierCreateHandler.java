@@ -9,7 +9,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ClassifierCreateHandler implements CommandHandler {
+public class ClassifierCreateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "name", "kind", "namespaceId");
 

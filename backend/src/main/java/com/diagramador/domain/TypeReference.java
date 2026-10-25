@@ -49,6 +49,26 @@ public class TypeReference {
         return reference;
     }
 
+    /** Identity-preserving factory used by snapshot materialization. */
+    public static TypeReference forClassifier(UUID id, UmlModel model, Classifier classifier) {
+        TypeReference reference = new TypeReference();
+        reference.id = id;
+        reference.model = model;
+        reference.classifier = classifier;
+        reference.createdAt = OffsetDateTime.now();
+        return reference;
+    }
+
+    /** Identity-preserving factory used by snapshot materialization. */
+    public static TypeReference forPrimitive(UUID id, UmlModel model, String primitiveName) {
+        TypeReference reference = new TypeReference();
+        reference.id = id;
+        reference.model = model;
+        reference.primitiveName = primitiveName;
+        reference.createdAt = OffsetDateTime.now();
+        return reference;
+    }
+
     public static TypeReference forPrimitive(UmlModel model, String primitiveName) {
         TypeReference reference = new TypeReference();
         reference.model = model;

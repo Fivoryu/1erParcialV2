@@ -72,7 +72,14 @@ public class ViewStyle {
 
     public static ViewStyle create(DiagramView view, UUID targetId, String routing, int cornerRadius,
             int strokeWidth, boolean dashed, JsonNode routeAdjustment) {
+        return create(null, view, targetId, routing, cornerRadius, strokeWidth, dashed, routeAdjustment);
+    }
+
+    /** Identity-preserving factory used by snapshot materialization. */
+    public static ViewStyle create(UUID id, DiagramView view, UUID targetId, String routing, int cornerRadius,
+            int strokeWidth, boolean dashed, JsonNode routeAdjustment) {
         ViewStyle style = new ViewStyle();
+        style.id = id;
         style.view = view;
         style.targetId = targetId;
         style.createdAt = OffsetDateTime.now();

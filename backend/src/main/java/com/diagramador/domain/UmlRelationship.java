@@ -47,7 +47,13 @@ public class UmlRelationship {
     }
 
     public static UmlRelationship create(UmlModel model, RelationshipKind kind, String name) {
+        return create(null, model, kind, name);
+    }
+
+    /** Identity-preserving factory used by snapshot materialization. */
+    public static UmlRelationship create(UUID id, UmlModel model, RelationshipKind kind, String name) {
         UmlRelationship relationship = new UmlRelationship();
+        relationship.id = id;
         relationship.model = model;
         relationship.kind = kind;
         relationship.name = name;

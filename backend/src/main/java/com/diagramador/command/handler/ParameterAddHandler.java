@@ -11,7 +11,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ParameterAddHandler implements CommandHandler {
+public class ParameterAddHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "name", "type", "direction", "ordinal");
 

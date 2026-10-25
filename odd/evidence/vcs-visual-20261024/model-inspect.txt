@@ -1,0 +1,23 @@
+latest-cuda: Pulling from docker/model-runner
+e821be2a75fc: Pulling fs layer
+5aa5c2dfcc6f: Pulling fs layer
+ff9efdb88b3f: Pulling fs layer
+2eba0e20a2bc: Pulling fs layer
+4f0795216806: Pulling fs layer
+6f9dbdc6b470: Pulling fs layer
+00cd0c0d76b1: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+078b2c655a88: Pulling fs layer
+217e330c1391: Pulling fs layer
+13ea876ef646: Pulling fs layer
+256437d8566f: Pulling fs layer
+1b6720e439e8: Pulling fs layer
+Digest: sha256:ee3789655a824d9974510e491250c08a1fbf59e3b90c268c0d3db6ee55a5eed5
+Status: Downloaded newer image for docker/model-runner:latest-cuda
+Successfully pulled docker/model-runner:latest-cuda
+Starting model runner container docker-model-runner...
+unable to initialize standalone model runner: unable to initialize standalone model runner container: failed to start container docker-model-runner: Error response from daemon: ports are not available: exposing port TCP 127.0.0.1:12434 -> 127.0.0.1:0: listen tcp4 127.0.0.1:12434: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+
+The port may already be in use by Docker Desktop's Model Runner.
+Try running: docker desktop disable model-runner

@@ -44,7 +44,13 @@ public class DiagramView {
     }
 
     public static DiagramView create(UmlModel model, String name, String viewKind, boolean isDefault) {
+        return create(null, model, name, viewKind, isDefault);
+    }
+
+    /** Identity-preserving factory used by snapshot materialization. */
+    public static DiagramView create(UUID id, UmlModel model, String name, String viewKind, boolean isDefault) {
         DiagramView view = new DiagramView();
+        view.id = id;
         view.model = model;
         view.name = name;
         view.viewKind = viewKind;

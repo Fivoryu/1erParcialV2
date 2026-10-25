@@ -255,6 +255,36 @@ public class ChatService {
         return resource;
     }
 
+    // ---- Proposals (V25) ----
+
+    /**
+     * Saves the PROPOSAL card of a chat suggestion. It joins the caller's transaction so the card
+     * and its {@code chat_proposal} row commit together; {@link #announceAfterCommit} publishes it.
+     */
+    @Transactional
+    public DiagramMessage savePendingProposalMessage(UUID projectId, UUID sessionId, String body) {
+        ChatSession session = requireSessionInProject(projectId, sessionId);
+        return messageRepository.saveAndFlush(
+                DiagramMessage.createProposal(session, currentUser(), sanitizeBody(body)));
+    }
+
+    /** Publishes a saved message once the surrounding transaction commits. */
+    public MessageResource announceAfterCommit(DiagramMessage saved) {
+        MessageResource resource = messageResource(saved);
+        ChatSession session = saved.getSession();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publishMessagePosted(session, resource);
+                }
+            });
+        } else {
+            publishMessagePosted(session, resource);
+        }
+        return resource;
+    }
+
     // ---- Internals ----
 
     private DiagramMessage postMessageInternal(ChatSession session, String body) {

@@ -62,7 +62,14 @@ public class RelationshipEnd {
 
     public static RelationshipEnd create(UmlRelationship relationship, Classifier classifier, short ordinal, String role,
             MultiplicityKind multiplicity, NavigationKind navigability, String aggregationKind) {
+        return create(null, relationship, classifier, ordinal, role, multiplicity, navigability, aggregationKind);
+    }
+
+    /** Identity-preserving factory used by snapshot materialization. */
+    public static RelationshipEnd create(UUID id, UmlRelationship relationship, Classifier classifier, short ordinal,
+            String role, MultiplicityKind multiplicity, NavigationKind navigability, String aggregationKind) {
         RelationshipEnd end = new RelationshipEnd();
+        end.id = id;
         end.relationship = relationship;
         end.classifier = classifier;
         end.ordinal = ordinal;

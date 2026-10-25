@@ -14,7 +14,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ParameterUpdateHandler implements CommandHandler {
+public class ParameterUpdateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("name", "type", "direction", "ordinal", "operationId");
     private static final Set<String> DIRECTIONS = Set.of("IN", "OUT", "INOUT");

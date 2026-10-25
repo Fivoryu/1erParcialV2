@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -85,13 +86,24 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
                 || ACTUATOR_PATH.equals(path) || path.startsWith(ACTUATOR_PATH + "/");
     }
 
-    // The operator must never be able to create projects, run commands, or read models.
+    // The operator cannot create projects, run commands, or read model contents.
     private static boolean isOperatorAllowed(String method, String path) {
+        if (containsDotTraversalSegment(path)) {
+            return false;
+        }
         if ("GET".equalsIgnoreCase(method) && "/projects".equals(path)) {
             return true;
         }
 
         String[] segments = path.split("/", -1);
+        // S6: the platform operator acts as diagram administrator only for version-control endpoints;
+        // commits and branches are the explicitly requested access, not a grant to edit/read live models.
+        if (("GET".equalsIgnoreCase(method) || "POST".equalsIgnoreCase(method)
+                || "PUT".equalsIgnoreCase(method))
+                && segments.length >= 5 && segments[0].isEmpty() && "projects".equals(segments[1])
+                && isUuidPathSegment(segments[2]) && "vcs".equals(segments[3])) {
+            return true;
+        }
         if ("GET".equalsIgnoreCase(method) && segments.length == 4 && segments[0].isEmpty()
                 && "projects".equals(segments[1]) && isUuidPathSegment(segments[2])) {
             return "deployments".equals(segments[3]) || "generation-targets".equals(segments[3]);
@@ -106,6 +118,16 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
                 && "deployments".equals(segments[1]) && isUuidPathSegment(segments[2])
                 && ("claim".equals(segments[3]) || "report".equals(segments[3])
                         || "stop".equals(segments[3]));
+    }
+
+    private static boolean containsDotTraversalSegment(String path) {
+        for (String segment : path.split("/", -1)) {
+            if (".".equals(segment) || "..".equals(segment)
+                    || segment.toLowerCase(Locale.ROOT).contains("%2e")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isUuidPathSegment(String segment) {

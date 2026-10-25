@@ -1,6 +1,7 @@
 package com.diagramador.persistence;
 
 import com.diagramador.domain.DiagramMessage;
+import com.diagramador.domain.MessageKind;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
@@ -29,8 +30,9 @@ public interface DiagramMessageRepository extends JpaRepository<DiagramMessage, 
     int deleteBySession_Id(@Param("sessionId") UUID sessionId);
 
     // T5/L43: pending sources of memory extraction for one diagram, oldest first, capped by the caller.
-    List<DiagramMessage> findBySession_View_IdAndMemoryExtractedFalseOrderByCreatedAtAscIdAsc(UUID viewId,
-            Pageable pageable);
+    // Only what people wrote is a source: an assistant answer or suggestion is a paraphrase, never a decision.
+    List<DiagramMessage> findBySession_View_IdAndKindAndMemoryExtractedFalseOrderByCreatedAtAscIdAsc(UUID viewId,
+            MessageKind kind, Pageable pageable);
 
     @Modifying
     @Query("UPDATE DiagramMessage m SET m.memoryExtracted = true WHERE m.id IN :ids")

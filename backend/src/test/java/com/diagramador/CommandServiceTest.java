@@ -20,6 +20,7 @@ import com.diagramador.domain.ProjectMember;
 import com.diagramador.domain.ProjectMemberRole;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.UserAccount;
+import com.diagramador.domain.VcsAction;
 import com.diagramador.persistence.ClassifierRepository;
 import com.diagramador.persistence.ModelCommandRepository;
 import com.diagramador.persistence.ModelVersionRepository;
@@ -29,6 +30,7 @@ import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.UserAccountRepository;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -110,6 +112,16 @@ class CommandServiceTest extends AbstractPostgresIntegrationTest {
         assertThat(result.diagnostics()).singleElement()
                 .satisfies(diagnostic -> assertThat(diagnostic.code()).isEqualTo(ErrorCode.UNKNOWN_OPERATION));
         assertThat(result.diagnostics().get(0).message()).contains("unknown.command");
+    }
+
+    @Test
+    void everyRegisteredCommandHandlerHasAnExplicitVcsAction() {
+        assertThat(commandService.registeredCommandTypes()).isNotEmpty().allSatisfy(type ->
+                assertThat(commandService.actionFor(type))
+                        .as("registered command %s has an explicit action", type)
+                        .isPresent());
+        assertThat(commandService.actionFor("project.rename")).contains(VcsAction.CREATE);
+        assertThat(commandService.actionFor("unmapped.future.command")).isEmpty();
     }
 
     @Test
@@ -310,6 +322,11 @@ class CommandServiceTest extends AbstractPostgresIntegrationTest {
                 @Override
                 public String type() {
                     return "test.noop";
+                }
+
+                @Override
+                public Optional<VcsAction> vcsAction() {
+                    return Optional.of(VcsAction.ADD);
                 }
 
                 @Override

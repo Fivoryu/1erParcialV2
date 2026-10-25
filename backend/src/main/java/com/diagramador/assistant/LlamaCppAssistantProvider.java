@@ -20,16 +20,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssistantProvider {
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(120);
+    // QA clinic session (L5): a full clinic plan generates 1735 tokens in ~239 s on the target CPU —
+    // prompt processing dominates at 1720 prompt tokens, far off the small-prompt 31.5 tok/s figure.
+    // 300 s covers a cold model load plus the worst realistic plan.
+    private static final Duration TIMEOUT = Duration.ofSeconds(300);
 
     /**
-     * Declared prompt contract version. ia4-01-prompt-v3 is the SECOND and FINAL declared prompt
-     * iteration: v2 rules and examples are kept verbatim and an explicit args schema was added so the
-     * 2B model stops dropping required arguments (rename's new name, attribute types, relationship
-     * kinds) that AssistantApplyService previously had to reject with MISSING_ARGUMENT.
+     * Declared prompt contract version. ia4-01-prompt-v4 keeps the v3 args schema and adds the
+     * everyday-language rule: the diagram owner is not expected to know UML or operation names, so
+     * colloquial phrasing must be mapped to the closest catalog operation instead of rejected.
      * Kept in sync by LlamaCppAssistantProviderPromptTest, which asserts it appears in SYSTEM_PROMPT.
      */
-    static final String PROMPT_VERSION = "ia4-01-prompt-v3";
+    static final String PROMPT_VERSION = "ia4-01-prompt-v4";
 
     // Package-private for the prompt-contract test (LlamaCppAssistantProviderPromptTest).
     static final String SYSTEM_PROMPT = """
@@ -49,7 +51,14 @@ public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssis
             - operation.add → args {"name": "..."}
             - relationship.create → args {"kind": "ASSOCIATION", "source": {"classifierName": "..."}, "target": {"classifierName": "..."}} con kind ∈ {"ASSOCIATION", "COMPOSITION", "AGGREGATION"}
             - constraint.add NO existe en el catálogo: nunca lo propongas.
-            8. Respondé ÚNICAMENTE un objeto JSON válido, sin markdown:
+            8. LENGUAJE COTIDIANO: el usuario no conoce UML ni nombres técnicos. Interpretá palabras de todos los días y elegí la operación más cercana del catálogo sin pedirle que la nombre:
+            - "caja", "rectángulo", "nube", "elemento", "entidad", "cosa que diga X" → classifier.create.
+            - "uní", "conectá", "relacioná", "juntá", "linkeá" A con B → relationship.create con kind ASSOCIATION.
+            - "A está hecho de B", "A contiene B y B no vive sin A" → COMPOSITION; "A tiene varios B", "un A tiene muchos B" → ASSOCIATION.
+            - "A es un tipo de B", "todo A es un B" → generalización (proponela como ASSOCIATION solo si no podés expresarla; si el pedido lo necesita y el catálogo no alcanza, explicalo en la explanation).
+            - "que tenga un campo/atributo X" → attribute.add.
+            - Si usan palabras técnicas correctas, funciona igual: no las rechaces.
+            9. Respondé ÚNICAMENTE un objeto JSON válido, sin markdown:
             {"intent": "plan|explain|clarify|reject", "operations": [{"type": "...", "targetName": "...", "args": {}}], "question": null, "explanation": "..."}
 
             EJEMPLOS (con otros elementos, solo ilustran el criterio):
@@ -58,6 +67,9 @@ public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssis
             Pedido: "Borrá la clase Factura." (existe, única) → {"intent": "plan", "operations": [{"type": "classifier.delete", "targetName": "Factura"}], "question": null, "explanation": ""}
             Pedido: "Renombrá la clase." (sin indicar cuál) → {"intent": "clarify", "operations": [], "question": "¿Qué clase querés renombrar?", "explanation": ""}
             Pedido: "Eliminá la clase Fantasma." (no existe) → {"intent": "reject", "operations": [], "question": null, "explanation": "La clase Fantasma no existe en el diagrama."}
+            Pedido: "Poné una caja que diga Paciente con el nombre y el documento." → {"intent": "plan", "operations": [{"type": "classifier.create", "targetName": "Paciente", "args": {"name": "Paciente"}}, {"type": "attribute.add", "targetName": "Paciente.nombre", "args": {"name": "nombre", "type": "String"}}, {"type": "attribute.add", "targetName": "Paciente.documento", "args": {"name": "documento", "type": "String"}}], "question": null, "explanation": ""}
+            Pedido: "Uní el paciente con su historia clínica." (existen Paciente e HistoriaClinica) → {"intent": "plan", "operations": [{"type": "relationship.create", "targetName": "Paciente->HistoriaClinica", "args": {"kind": "ASSOCIATION", "source": {"classifierName": "Paciente"}, "target": {"classifierName": "HistoriaClinica"}}}], "question": null, "explanation": ""}
+            Pedido: "Un médico tiene muchos turnos." (existen Medico y Turno) → {"intent": "plan", "operations": [{"type": "relationship.create", "targetName": "Medico->Turno", "args": {"kind": "ASSOCIATION", "source": {"classifierName": "Medico"}, "target": {"classifierName": "Turno"}}}], "question": null, "explanation": ""}
             Pedido: "¿Está bien modelado el total?" → {"intent": "explain", "operations": [], "question": null, "explanation": "Te explico cómo está modelado el total..."}
             Pedido: "Hacé abstracta la clase Persona." (existe, única) → {"intent": "plan", "operations": [{"type": "classifier.setAbstract", "targetName": "Persona"}], "question": null, "explanation": ""}
             """.strip();
@@ -76,15 +88,18 @@ public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssis
 
     private final boolean enabled;
     private final String url;
+    private final String model;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
     public LlamaCppAssistantProvider(
             @Value("${diagrammer.assistant.enabled:false}") boolean enabled,
             @Value("${diagrammer.assistant.url:http://127.0.0.1:8099}") String url,
+            @Value("${diagrammer.assistant.model:}") String model,
             ObjectMapper objectMapper) {
         this.enabled = enabled;
         this.url = url;
+        this.model = model == null ? "" : model.trim();
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
     }
@@ -122,12 +137,20 @@ public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssis
     }
 
     private String callCompletions(List<Map<String, Object>> messages) {
-        Map<String, Object> requestBody = Map.of(
-                "messages", messages,
-                "temperature", 0.0,
-                "max_tokens", 512,
-                "stream", false,
-                "chat_template_kwargs", Map.of("enable_thinking", false));
+        Map<String, Object> requestBody = new java.util.LinkedHashMap<>();
+        // Docker Model Runner requires the model; a bare llama.cpp server with one loaded model does not,
+        // so the field is only sent when the deployment names one (L5 of the IA follow-up).
+        if (!model.isEmpty()) {
+            requestBody.put("model", model);
+        }
+        requestBody.put("messages", messages);
+        requestBody.put("temperature", 0.0);
+        // A realistic plan (several classes with attributes and relationships) exceeds 512 output tokens;
+        // the clinic QA session measured the JSON truncating exactly at the ceiling. ~31.5 tok/s decode
+        // means a 2048-token worst case is ~65 s, inside TIMEOUT.
+        requestBody.put("max_tokens", 2048);
+        requestBody.put("stream", false);
+        requestBody.put("chat_template_kwargs", Map.of("enable_thinking", false));
 
         String body;
         try {

@@ -23,7 +23,7 @@ describe('EditorOptionsBar', () => {
 
     expect(markup).toContain('role="toolbar"');
     expect(markup).toContain('aria-label="Editor options"');
-    expect(markup.match(/aria-haspopup="dialog"/g)).toHaveLength(5);
+    expect(markup.match(/aria-haspopup="dialog"/g)).toHaveLength(6);
     const order = markup.match(/data-section="[a-z]+"/g) ?? [];
     expect(order).toEqual([
       'data-section="xmi"',
@@ -31,6 +31,7 @@ describe('EditorOptionsBar', () => {
       'data-section="members"',
       'data-section="review"',
       'data-section="generation"',
+      'data-section="vcs"',
     ]);
   });
 
@@ -38,7 +39,7 @@ describe('EditorOptionsBar', () => {
     const markup = render('members');
 
     expect(markup.match(/aria-expanded="true"/g)).toHaveLength(1);
-    expect(markup.match(/aria-expanded="false"/g)).toHaveLength(4);
+    expect(markup.match(/aria-expanded="false"/g)).toHaveLength(5);
     const membersButton = markup.match(/<button[^>]*data-section="members"[^>]*>/) ?? [];
     expect(membersButton[0]).toContain('aria-expanded="true"');
   });
@@ -47,7 +48,7 @@ describe('EditorOptionsBar', () => {
     const markup = render(null);
 
     expect(markup).not.toContain('aria-expanded="true"');
-    expect(markup.match(/aria-expanded="false"/g)).toHaveLength(5);
+    expect(markup.match(/aria-expanded="false"/g)).toHaveLength(6);
   });
 
   it('renders a badge when a count is provided, including zero', () => {
@@ -71,5 +72,6 @@ describe('EditorOptionsBar', () => {
     expect(markup).toContain('Members');
     expect(markup).toContain('Review');
     expect(markup).toContain('Generation');
+    expect(markup).toContain('Versioning');
   });
 });
