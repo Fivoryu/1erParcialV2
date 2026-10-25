@@ -33,6 +33,27 @@ class RelationshipResourceJsonTest {
     }
 
     @Test
+    void anAssociationClassIsSerialisedOnlyWhenTheRelationshipHasOne() {
+        UUID membership = UUID.randomUUID();
+        RelationshipResource linked = new RelationshipResource(UUID.randomUUID(), "ASSOCIATION", "enrols", null,
+                membership, List.of(), List.of());
+        RelationshipResource plain = new RelationshipResource(UUID.randomUUID(), "ASSOCIATION", "enrols", List.of(),
+                List.of());
+
+        assertThat(objectMapper.valueToTree(linked).path("associationClassId").asText()).isEqualTo(membership.toString());
+        assertThat(objectMapper.valueToTree(plain).has("associationClassId")).isFalse();
+        assertThat(plain.associationClassId()).isNull();
+    }
+
+    @Test
+    void aSnapshotWrittenBeforeAssociationClassesExistReadsBackWithoutOne() throws Exception {
+        UUID id = UUID.randomUUID();
+        String legacy = "{\"id\":\"" + id + "\",\"kind\":\"ASSOCIATION\",\"name\":\"enrols\",\"ends\":[],\"constraints\":[]}";
+
+        assertThat(objectMapper.readValue(legacy, RelationshipResource.class).associationClassId()).isNull();
+    }
+
+    @Test
     void aSnapshotWrittenBeforeStereotypesExistReadsBackWithoutOne() throws Exception {
         UUID id = UUID.randomUUID();
         String legacy = "{\"id\":\"" + id + "\",\"kind\":\"DEPENDENCY\",\"name\":\"needs\",\"ends\":[],\"constraints\":[]}";

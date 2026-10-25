@@ -412,6 +412,216 @@ class T4aRelationshipAndGeometryHandlersTest extends AbstractPostgresIntegration
     }
 
     @Test
+    void anAssociationMayNameAClassThatIsItsAssociationClass() {
+        Fixture fixture = fixture("association-class-create");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID membership = createClassifier(fixture, 2, "Membership");
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("associationClassId", membership);
+
+        assertAccepted(command(fixture, "relationship.create", 3, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of()));
+
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getAssociationClassId())
+                .isEqualTo(membership);
+    }
+
+    @Test
+    void aRelationshipWithoutAnAssociationClassKeepsItNull() {
+        Fixture fixture = fixture("association-class-absent");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+
+        assertAccepted(createRelationship(fixture, 2, relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null));
+
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getAssociationClassId()).isNull();
+    }
+
+    @Test
+    void anAssociationClassCannotBeOneOfTheEndsOfItsOwnAssociation() {
+        Fixture fixture = fixture("association-class-is-an-end");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("associationClassId", classifiers.source());
+
+        CommandResult result = command(fixture, "relationship.create", 2, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of());
+
+        assertRejected(result, ErrorCode.INVALID_PAYLOAD, "associationClassId", "ends");
+        assertThat(relationshipRepository.findById(relationshipId)).isEmpty();
+    }
+
+    @Test
+    void onlyAnAssociationLikeRelationshipHasAnAssociationClass() {
+        Fixture fixture = fixture("association-class-on-dependency");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID membership = createClassifier(fixture, 2, "Membership");
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "DEPENDENCY", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("associationClassId", membership);
+
+        CommandResult result = command(fixture, "relationship.create", 3, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of());
+
+        assertRejected(result, ErrorCode.INVALID_PAYLOAD, "associationClassId", "association");
+        assertThat(relationshipRepository.findById(relationshipId)).isEmpty();
+    }
+
+    @Test
+    void anInterfaceCannotBeAnAssociationClass() {
+        Fixture fixture = fixture("association-class-interface");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID contract = UUID.randomUUID();
+        assertAccepted(command(fixture, "classifier.create", 2,
+                Map.of("id", contract, "name", "Contract", "kind", "INTERFACE"), List.of(), List.of()));
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("associationClassId", contract);
+
+        CommandResult result = command(fixture, "relationship.create", 3, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of());
+
+        assertRejected(result, ErrorCode.INVALID_PAYLOAD, "associationClassId", "class");
+        assertThat(relationshipRepository.findById(relationshipId)).isEmpty();
+    }
+
+    @Test
+    void aClassIsTheAssociationClassOfOneRelationshipOnlyAndTheErrorNamesTheOther() {
+        Fixture fixture = fixture("association-class-twice");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID membership = createClassifier(fixture, 2, "Membership");
+        UUID first = UUID.randomUUID();
+        Map<String, Object> firstPayload = relationshipPayload(first, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        firstPayload.put("associationClassId", membership);
+        assertAccepted(command(fixture, "relationship.create", 3, firstPayload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of()));
+        UUID second = UUID.randomUUID();
+        Map<String, Object> secondPayload = relationshipPayload(second, "AGGREGATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        secondPayload.put("associationClassId", membership);
+
+        CommandResult result = command(fixture, "relationship.create", 4, secondPayload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of());
+
+        assertRejected(result, ErrorCode.PRECONDITION_FAILED, first.toString());
+        assertThat(relationshipRepository.findById(second)).isEmpty();
+        assertThat(relationshipRepository.findById(first).orElseThrow().getAssociationClassId()).isEqualTo(membership);
+    }
+
+    @Test
+    void anAssociationClassFromAnotherModelIsRejectedAndNamed() {
+        Fixture fixture = fixture("association-class-foreign");
+        Fixture otherModel = fixture("association-class-foreign-other");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID foreign = createClassifier(otherModel, 0, "Foreign");
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("associationClassId", foreign);
+
+        CommandResult result = command(fixture, "relationship.create", 2, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of());
+
+        assertRejected(result, ErrorCode.PRECONDITION_FAILED, foreign.toString(), fixture.model().getId().toString());
+        assertThat(relationshipRepository.findById(relationshipId)).isEmpty();
+    }
+
+    @Test
+    void relationshipUpdateSetsKeepsAndClearsTheAssociationClass() {
+        Fixture fixture = fixture("association-class-update");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID membership = createClassifier(fixture, 2, "Membership");
+        UUID relationshipId = UUID.randomUUID();
+        assertAccepted(createRelationship(fixture, 3, relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null));
+
+        assertAccepted(command(fixture, "relationship.update", 4, Map.of("associationClassId", membership),
+                target("relationship", relationshipId), List.of()));
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getAssociationClassId())
+                .isEqualTo(membership);
+
+        assertAccepted(command(fixture, "relationship.update", 5, Map.of("name", "enrols"),
+                target("relationship", relationshipId), List.of()));
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getAssociationClassId())
+                .isEqualTo(membership);
+
+        Map<String, Object> clear = new java.util.HashMap<>();
+        clear.put("associationClassId", null);
+        assertAccepted(command(fixture, "relationship.update", 6, clear,
+                target("relationship", relationshipId), List.of()));
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getAssociationClassId()).isNull();
+    }
+
+    @Test
+    void leavingTheAssociationKindsDropsTheAssociationClass() {
+        Fixture fixture = fixture("association-class-kind-change");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID membership = createClassifier(fixture, 2, "Membership");
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "COMPOSITION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("associationClassId", membership);
+        assertAccepted(command(fixture, "relationship.create", 3, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of()));
+
+        assertAccepted(command(fixture, "relationship.update", 4, Map.of("kind", "AGGREGATION"),
+                target("relationship", relationshipId), List.of()));
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getAssociationClassId())
+                .isEqualTo(membership);
+
+        assertAccepted(command(fixture, "relationship.update", 5, Map.of("kind", "DEPENDENCY"),
+                target("relationship", relationshipId), List.of()));
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getAssociationClassId()).isNull();
+    }
+
+    @Test
+    void deletingTheAssociationClassKeepsTheRelationshipAndReleasesTheLink() {
+        Fixture fixture = fixture("association-class-deleted");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID membership = createClassifier(fixture, 2, "Membership");
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("associationClassId", membership);
+        assertAccepted(command(fixture, "relationship.create", 3, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of()));
+
+        assertAccepted(command(fixture, "classifier.delete", 4, Map.of(), target("classifier", membership),
+                List.of(new Precondition("cascade_count", 1, null))));
+
+        assertThat(classifierRepository.findById(membership)).isEmpty();
+        UmlRelationship survivor = relationshipRepository.findById(relationshipId).orElseThrow();
+        assertThat(survivor.getAssociationClassId()).isNull();
+    }
+
+    @Test
+    void deletingTheRelationshipKeepsTheAssociationClassAsAnOrdinaryClass() {
+        Fixture fixture = fixture("association-class-relationship-deleted");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID membership = createClassifier(fixture, 2, "Membership");
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("associationClassId", membership);
+        assertAccepted(command(fixture, "relationship.create", 3, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of()));
+
+        assertAccepted(command(fixture, "relationship.delete", 4, Map.of(), target("relationship", relationshipId),
+                List.of(new Precondition("cascade_count", 3, null))));
+
+        assertThat(relationshipRepository.findById(relationshipId)).isEmpty();
+        assertThat(classifierRepository.findById(membership)).isPresent();
+    }
+
+    @Test
     void relationshipUpdateRejectsAStereotypeOnANonDependency() {
         Fixture fixture = fixture("stereotype-update-association");
         ClassifierIds classifiers = createClassifiers(fixture);

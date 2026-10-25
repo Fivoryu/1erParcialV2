@@ -130,9 +130,9 @@ public class ModelStateHasher {
                         field("direction", parameter.getDirection()), field("ordinal", parameter.getOrdinal())))
                 .forEach(lines::add);
         relationships.stream().sorted(byId(UmlRelationship::getId))
-                .map(relationship -> withStereotype(line("relationships", relationship.getId(),
+                .map(relationship -> withAssociationClass(withStereotype(line("relationships", relationship.getId(),
                         field("kind", relationship.getKind()), field("name", relationship.getName())),
-                        relationship.getStereotype()))
+                        relationship.getStereotype()), relationship.getAssociationClassId()))
                 .forEach(lines::add);
         relationshipEnds.stream().sorted(byId(RelationshipEnd::getId))
                 .map(end -> line("relationshipEnds", end.getId(), field("relationshipId", id(end.getRelationship())),
@@ -212,9 +212,9 @@ public class ModelStateHasher {
         List<ModelResource.RelationshipResource> relationships = snapshot.relationships().stream()
                 .sorted(Comparator.comparing(value -> value.id().toString())).toList();
         relationships.stream()
-                .map(relationship -> withStereotype(line("relationships", relationship.id(),
+                .map(relationship -> withAssociationClass(withStereotype(line("relationships", relationship.id(),
                         field("kind", relationship.kind()), field("name", relationship.name())),
-                        relationship.stereotype()))
+                        relationship.stereotype()), relationship.associationClassId()))
                 .forEach(lines::add);
         relationships.stream().flatMap(relationship -> relationship.ends().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
@@ -338,6 +338,11 @@ public class ModelStateHasher {
     /** Appended only when set, so a relationship without a stereotype keeps the hash it had before the field existed. */
     private static String withStereotype(String line, String stereotype) {
         return stereotype == null ? line : line + "|" + field("stereotype", stereotype);
+    }
+
+    /** Appended only when set, so an association without a class of its own keeps the hash it had before the field. */
+    private static String withAssociationClass(String line, UUID associationClassId) {
+        return associationClassId == null ? line : line + "|" + field("associationClassId", associationClassId);
     }
 
     private static UUID id(Object entity) {

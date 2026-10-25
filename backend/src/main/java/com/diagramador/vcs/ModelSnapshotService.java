@@ -462,7 +462,7 @@ public class ModelSnapshotService {
                         constraint.getSeverity().name()))
                 .toList();
         return new RelationshipResource(relationship.getId(), relationship.getKind().name(), relationship.getName(),
-                relationship.getStereotype(), ends, constraintResources);
+                relationship.getStereotype(), relationship.getAssociationClassId(), ends, constraintResources);
     }
 
     private String typeName(TypeReference typeReference) {
@@ -649,19 +649,23 @@ public class ModelSnapshotService {
     private void upsertRelationship(UUID modelId, RelationshipResource resource) {
         RelationshipKind kind = RelationshipKind.valueOf(resource.kind());
         entityManager.createNativeQuery("""
-                INSERT INTO diagrammer.uml_relationship (relationship_id, model_id, kind, name, stereotype)
-                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name, :stereotype)
+                INSERT INTO diagrammer.uml_relationship
+                    (relationship_id, model_id, kind, name, stereotype, association_class_id)
+                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name, :stereotype,
+                        :associationClassId)
                 ON CONFLICT (relationship_id) DO UPDATE SET
                     model_id = EXCLUDED.model_id,
                     kind = EXCLUDED.kind,
                     name = EXCLUDED.name,
-                    stereotype = EXCLUDED.stereotype
+                    stereotype = EXCLUDED.stereotype,
+                    association_class_id = EXCLUDED.association_class_id
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("modelId", modelId)
                 .setParameter("kind", kind.name())
                 .setParameter("name", resource.name())
                 .setParameter("stereotype", resource.stereotype())
+                .setParameter("associationClassId", resource.associationClassId())
                 .executeUpdate();
     }
 

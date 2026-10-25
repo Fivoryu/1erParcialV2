@@ -298,7 +298,7 @@ public final class MergeDiff {
         }
         for (RelationshipResource relationship : snapshot.relationships()) {
             Map<String, Object> fields = fields("kind", relationship.kind(), "name", relationship.name(),
-                    "stereotype", relationship.stereotype());
+                    "stereotype", relationship.stereotype(), "associationClassId", relationship.associationClassId());
             add(elements, element("RELATIONSHIP", relationship.id(), relationship.name(), null, fields));
             for (RelationshipEndResource end : relationship.ends()) {
                 Map<String, Object> endFields = fields(
@@ -410,8 +410,8 @@ public final class MergeDiff {
                             && relationshipId.equals(constraint.fields().get("ownerId")))
                     .map(MergeDiff::constraintResource).toList();
             return new RelationshipResource(relationshipId, string(relationship.fields(), "kind"),
-                    string(relationship.fields(), "name"), string(relationship.fields(), "stereotype"), ends,
-                    constraints);
+                    string(relationship.fields(), "name"), string(relationship.fields(), "stereotype"),
+                    uuid(relationship.fields(), "associationClassId"), ends, constraints);
         }).toList();
 
         List<SnapshotModel.SnapshotView> mergedViews = views.stream().map(view -> {

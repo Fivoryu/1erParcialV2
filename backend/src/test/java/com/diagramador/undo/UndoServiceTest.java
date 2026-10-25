@@ -288,6 +288,58 @@ class UndoServiceTest {
     }
 
     @Test
+    void undoOfRelationshipDeleteRestoresTheAssociationClassLink() {
+        Fixture fixture = fixture("undo-relationship-delete-association-class");
+        UUID sourceId = createClassifier(fixture, 0, "Student");
+        UUID targetId = createClassifier(fixture, 1, "Course");
+        UUID membershipId = createClassifier(fixture, 2, "Enrolment");
+        UUID relationshipId = UUID.randomUUID();
+        assertAccepted(command(fixture, "relationship.create", 3,
+                Map.of("id", relationshipId, "kind", "ASSOCIATION", "associationClassId", membershipId,
+                        "source", Map.of("classifierId", sourceId.toString()),
+                        "target", Map.of("classifierId", targetId.toString())),
+                List.of(new Target("classifier", sourceId), new Target("classifier", targetId))));
+        assertAccepted(command(fixture, "relationship.delete", 4, Map.of(),
+                List.of(new Target("relationship", relationshipId)),
+                List.of(new Precondition("cascade_count", 3, null))));
+
+        UndoResult result = undoService.undo(fixture.project().getId());
+
+        assertThat(result.status()).isEqualTo("ACCEPTED");
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getAssociationClassId())
+                .isEqualTo(membershipId);
+    }
+
+    @Test
+    void undoOfRelationshipDeleteStillRestoresTheRelationshipWhenItsAssociationClassIsGone() {
+        Fixture fixture = fixture("undo-relationship-delete-association-class-gone");
+        UUID sourceId = createClassifier(fixture, 0, "Student");
+        UUID targetId = createClassifier(fixture, 1, "Course");
+        UUID membershipId = createClassifier(fixture, 2, "Enrolment");
+        UUID relationshipId = UUID.randomUUID();
+        assertAccepted(command(fixture, "relationship.create", 3,
+                Map.of("id", relationshipId, "kind", "ASSOCIATION", "associationClassId", membershipId,
+                        "source", Map.of("classifierId", sourceId.toString()),
+                        "target", Map.of("classifierId", targetId.toString())),
+                List.of(new Target("classifier", sourceId), new Target("classifier", targetId))));
+        assertAccepted(command(fixture, "relationship.delete", 4, Map.of(),
+                List.of(new Target("relationship", relationshipId)),
+                List.of(new Precondition("cascade_count", 3, null))));
+        // Another editor deletes the association class after this author deleted the relationship.
+        currentUserContext.set(new CurrentUser(fixture.secondEditor().getId(), fixture.secondEditor().getUsername(),
+                "Editor2"));
+        assertAccepted(command(fixture, "classifier.delete", 5, Map.of(),
+                List.of(new Target("classifier", membershipId)),
+                List.of(new Precondition("cascade_count", 1, null))));
+        currentUserContext.set(new CurrentUser(fixture.author().getId(), fixture.author().getUsername(), "Author"));
+
+        UndoResult result = undoService.undo(fixture.project().getId());
+
+        assertThat(result.status()).as("undo of the relationship delete: %s", result).isEqualTo("ACCEPTED");
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getAssociationClassId()).isNull();
+    }
+
+    @Test
     void undoOfCreateWithDependentsIsRejectedWithCascadeRequiredWithoutWorking() {
         Fixture fixture = fixture("undo-cascade-required");
         UUID classifierId = createClassifier(fixture, 0, "Order");

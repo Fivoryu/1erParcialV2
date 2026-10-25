@@ -203,6 +203,8 @@ public class UndoCaptureService {
         snapshot.put("kind", relationship.getKind() == null ? null : relationship.getKind().name());
         snapshot.put("name", relationship.getName());
         snapshot.put("stereotype", relationship.getStereotype());
+        snapshot.put("associationClassId",
+                relationship.getAssociationClassId() == null ? null : relationship.getAssociationClassId().toString());
         List<Map<String, Object>> ends = new ArrayList<>();
         for (RelationshipEnd end : relationshipEndRepository.findByRelationshipId(relationship.getId())) {
             Map<String, Object> endSnapshot = new LinkedHashMap<>();

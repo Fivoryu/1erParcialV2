@@ -167,6 +167,7 @@ public record ModelResource(
             String kind,
             String name,
             @JsonInclude(JsonInclude.Include.NON_NULL) String stereotype,
+            @JsonInclude(JsonInclude.Include.NON_NULL) UUID associationClassId,
             List<RelationshipEndResource> ends,
             List<ConstraintResource> constraints) {
 
@@ -175,10 +176,16 @@ public record ModelResource(
             constraints = constraints == null ? List.of() : List.copyOf(constraints);
         }
 
+        /** A relationship without an association class, which is every one that has no class of its own. */
+        public RelationshipResource(UUID id, String kind, String name, String stereotype,
+                List<RelationshipEndResource> ends, List<ConstraintResource> constraints) {
+            this(id, kind, name, stereotype, null, ends, constraints);
+        }
+
         /** A relationship without a stereotype, which is every one that is not a stereotyped dependency. */
         public RelationshipResource(UUID id, String kind, String name, List<RelationshipEndResource> ends,
                 List<ConstraintResource> constraints) {
-            this(id, kind, name, null, ends, constraints);
+            this(id, kind, name, null, null, ends, constraints);
         }
     }
 
