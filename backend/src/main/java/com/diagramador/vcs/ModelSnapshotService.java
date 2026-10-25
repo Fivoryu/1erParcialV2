@@ -327,6 +327,12 @@ public class ModelSnapshotService {
         deleteMissing(parameterRepository, existingParameters, index.parameters.keySet());
         flushAndClear();
 
+        // A class serves one relationship at a time, and the rows are restored one by one: free every link of the
+        // model first, so a class the snapshot gives to one relationship is not still held by another.
+        entityManager.createNativeQuery("""
+                UPDATE diagrammer.uml_relationship SET association_class_id = NULL
+                WHERE model_id = :modelId AND association_class_id IS NOT NULL
+                """).setParameter("modelId", modelId).executeUpdate();
         for (RelationshipResource resource : sortedById(index.relationships.values(), RelationshipResource::id)) {
             upsertRelationship(modelId, resource);
         }

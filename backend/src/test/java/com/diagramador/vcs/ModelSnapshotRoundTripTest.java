@@ -214,6 +214,35 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void restoringGivesAnAssociationClassBackEvenWhenARelationshipThatIsNotInTheSnapshotHoldsItNow() {
+        Fixture fixture = createRichModel();
+        SnapshotModel earlier = snapshotService.capture(fixture.model());
+        UUID membershipId = classifierRepository.findAll().stream()
+                .filter(classifier -> classifier.getModel().getId().equals(fixture.model().getId()))
+                .filter(classifier -> "Membership".equals(classifier.getName()))
+                .findFirst().orElseThrow().getId();
+        // The class moves to a relationship created after the snapshot. One class serves one relationship, so
+        // restoring has to free it before the earlier relationship can take it back.
+        transactionTemplate.executeWithoutResult(status -> {
+            relationshipRepository.findAll().stream()
+                    .filter(relationship -> relationship.getModel().getId().equals(fixture.model().getId()))
+                    .filter(relationship -> relationship.getKind() == RelationshipKind.AGGREGATION)
+                    .forEach(relationship -> relationship.setAssociationClassId(null));
+            relationshipRepository.flush();
+            UmlRelationship later = relationshipRepository.save(UmlRelationship.create(
+                    classifierRepository.findById(membershipId).orElseThrow().getModel(),
+                    RelationshipKind.ASSOCIATION, "later"));
+            relationshipRepository.flush();
+            later.setAssociationClassId(membershipId);
+        });
+
+        snapshotService.materialize(fixture.model(), earlier);
+
+        assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
+                .isEqualTo(snapshotService.toJson(earlier));
+    }
+
+    @Test
     void materializationIsIdempotentAndDoesNotDuplicateRows() {
         Fixture fixture = createRichModel();
         SnapshotModel snapshot = snapshotService.capture(fixture.model());
