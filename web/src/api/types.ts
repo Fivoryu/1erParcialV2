@@ -381,6 +381,9 @@ export interface ConnectorPathResource {
   y: number;
 }
 
+/** Where the generated backend persists a class. */
+export type PersistenceStore = 'SQL' | 'DOCUMENT';
+
 export interface ClassifierResource {
   id: Uuid;
   name: string;
@@ -390,6 +393,11 @@ export interface ClassifierResource {
   attributes: AttributeResource[];
   operations: OperationResource[];
   constraints: ConstraintResource[];
+  /** The store the user fixed; absent when the automatic classifier decides. */
+  storeOverride?: PersistenceStore;
+  /** The effective store and why; absent for kinds that are not persisted (interfaces, enumerations, packages). */
+  store?: PersistenceStore;
+  storeReason?: string;
 }
 
 export interface AttributeResource {

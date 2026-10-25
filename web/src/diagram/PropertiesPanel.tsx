@@ -11,6 +11,7 @@ import type {
 } from '../api/types';
 import {
   buildClassifierSetNamespaceRequest,
+  buildClassifierSetStoreRequest,
   buildConstraintAddRequest,
   buildConstraintRemoveRequest,
   buildConstraintUpdateRequest,
@@ -31,6 +32,7 @@ import {
   type ViewStyleValues,
 } from './commands';
 import type { CanvasSelection } from './selection';
+import { STORE_LABELS, StoreBadge } from './StoreBadge';
 
 interface PropertiesPanelProps {
   model: ModelResource;
@@ -97,6 +99,51 @@ export function dispatchPackageSelection(
   selectedNamespaceId: string,
 ): void {
   onCommand(buildClassifierSetNamespaceRequest(classifierId, selectedNamespaceId || null));
+}
+
+export function dispatchStoreSelection(
+  onCommand: PropertiesPanelProps['onCommand'],
+  classifierId: string,
+  selectedStore: string,
+): void {
+  onCommand(buildClassifierSetStoreRequest(
+    classifierId,
+    selectedStore === 'SQL' || selectedStore === 'DOCUMENT' ? selectedStore : null,
+  ));
+}
+
+/** Lets the user fix where a class is stored, or hand the choice back to the automatic classifier. */
+function StoreField({
+  classifier,
+  onCommand,
+}: {
+  classifier: ClassifierResource;
+  onCommand: PropertiesPanelProps['onCommand'];
+}) {
+  const automaticLabel = classifier.storeOverride || !classifier.store
+    ? 'Automatic'
+    : `Automatic (${STORE_LABELS[classifier.store]})`;
+  return (
+    <div className="property-store" data-testid="classifier-store-field">
+      <label className="field-label" htmlFor="classifier-store">Storage</label>
+      <select
+        className="classifier-store-select"
+        id="classifier-store"
+        onChange={(event) => dispatchStoreSelection(onCommand, classifier.id, event.target.value)}
+        value={classifier.storeOverride ?? ''}
+      >
+        <option value="">{automaticLabel}</option>
+        <option value="SQL">SQL (relational)</option>
+        <option value="DOCUMENT">Document (MongoDB)</option>
+      </select>
+      {classifier.store && (
+        <p className="property-store-reason" data-testid="classifier-store-reason">
+          <StoreBadge manual={classifier.storeOverride !== undefined} reason={classifier.storeReason ?? ''} store={classifier.store} />
+          <span>{classifier.storeReason}</span>
+        </p>
+      )}
+    </div>
+  );
 }
 
 function ConstraintEditor({
@@ -342,6 +389,7 @@ function ClassifierProperties({
             <span>Abstract class</span>
           </label>
         )}
+        {canBeAbstract && <StoreField classifier={classifier} onCommand={onCommand} />}
         {isEnumeration && (
           <div className="property-actions">
             <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Add literal</button>

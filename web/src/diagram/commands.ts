@@ -10,6 +10,7 @@ import type {
   OperationEnvelope,
   OperationResource,
   ParameterResource,
+  PersistenceStore,
   RelationshipResource,
   RouteAdjustmentResource,
   ViewStyleResource,
@@ -130,6 +131,15 @@ export function buildClassifierSetNamespaceRequest(classifierId: string, namespa
     type: 'classifier.setNamespace',
     targets: [{ scope: 'classifier', id: classifierId }],
     payload: { namespaceId },
+  };
+}
+
+/** A null store hands the choice back to the automatic classifier. */
+export function buildClassifierSetStoreRequest(classifierId: string, store: PersistenceStore | null): ModelCommandRequest {
+  return {
+    type: 'classifier.setStore',
+    targets: [{ scope: 'classifier', id: classifierId }],
+    payload: { store },
   };
 }
 
@@ -601,6 +611,22 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         isAbstract,
         kind: isAbstract ? 'ABSTRACT_CLASS' : classifier.kind === 'ABSTRACT_CLASS' ? 'CLASS' : classifier.kind,
       }));
+    }
+    case 'classifier.setStore': {
+      if (!classifierId || !Object.hasOwn(envelope.payload, 'store')) {
+        return model;
+      }
+      const store = envelope.payload.store;
+      if (store !== null && store !== 'SQL' && store !== 'DOCUMENT') {
+        return model;
+      }
+      // The effective store of a class with no override depends on its relationships and attributes; the
+      // canonical model that follows every command carries it, so only a fixed choice is projected here.
+      return updateClassifier(model, classifierId, ({ storeOverride: _override, store: _store, storeReason: _reason, ...rest }) => (
+        store === null
+          ? rest
+          : { ...rest, storeOverride: store, store, storeReason: 'Set manually.' }
+      ));
     }
     case 'classifier.setNamespace': {
       if (!classifierId || !Object.hasOwn(envelope.payload, 'namespaceId')) {

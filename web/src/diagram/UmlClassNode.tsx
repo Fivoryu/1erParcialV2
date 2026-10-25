@@ -3,6 +3,7 @@ import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflo
 import type { ClassifierResource } from '../api/types';
 import { formatAttribute, formatOperation, operationIsStatic, operationNameIsAbstract, orderedAttributes, orderedOperations } from './uml-format';
 import type { CanvasSelection } from './selection';
+import { StoreBadge } from './StoreBadge';
 import type { TouchedBy } from './touch-highlight';
 
 export interface ClassNodeData extends Record<string, unknown> {
@@ -194,6 +195,13 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
             />
           )}
         </div>
+        {classifier.store && (
+          <StoreBadge
+            manual={classifier.storeOverride !== undefined}
+            store={classifier.store}
+            {...(classifier.storeReason ? { reason: classifier.storeReason } : {})}
+          />
+        )}
         <TouchHighlights touchedBy={touchedBy} />
       </div>
 
