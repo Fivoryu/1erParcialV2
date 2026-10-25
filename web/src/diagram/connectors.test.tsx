@@ -26,6 +26,7 @@ import {
   buildRelationshipEdgePath,
   estimateLabelWidth,
   DIAMOND_BEHIND_ARROW_PATH,
+  CROSS_PATH,
   DIAMOND_PATH,
   HOLLOW_TRIANGLE_MARKER,
   OPEN_ARROW_PATH,
@@ -102,21 +103,21 @@ const markerEnds = [
 ].reverse();
 
 const markerCases = [
-  ['ASSOCIATION', 'solid', 'open-arrow', null, false],
-  ['AGGREGATION', 'solid', 'hollow-diamond-open-arrow', null, false],
-  ['COMPOSITION', 'solid', 'filled-diamond-open-arrow', null, false],
+  ['ASSOCIATION', 'solid', 'open-arrow', 'cross', false],
+  ['AGGREGATION', 'solid', 'hollow-diamond-open-arrow', 'cross', false],
+  ['COMPOSITION', 'solid', 'filled-diamond-open-arrow', 'cross', false],
   ['GENERALIZATION', 'solid', null, 'hollow-triangle', false],
   ['INTERFACE_REALIZATION', 'dashed', null, 'hollow-triangle', true],
-  ['DEPENDENCY', 'dashed', 'open-arrow', null, false],
+  ['DEPENDENCY', 'dashed', 'open-arrow', 'open-arrow', false],
 ] as const;
 
 const navigationMarkerCases = [
-  ['ASSOCIATION', 'open-arrow', 'open-arrow', null, null, false],
-  ['AGGREGATION', 'hollow-diamond-open-arrow', 'open-arrow', 'hollow-diamond', null, false],
-  ['COMPOSITION', 'filled-diamond-open-arrow', 'open-arrow', 'filled-diamond', null, false],
+  ['ASSOCIATION', 'open-arrow', 'open-arrow', 'cross', 'cross', false],
+  ['AGGREGATION', 'hollow-diamond-open-arrow', 'open-arrow', 'hollow-diamond', 'cross', false],
+  ['COMPOSITION', 'filled-diamond-open-arrow', 'open-arrow', 'filled-diamond', 'cross', false],
   ['GENERALIZATION', null, 'hollow-triangle', null, 'hollow-triangle', true],
   ['INTERFACE_REALIZATION', null, 'hollow-triangle', null, 'hollow-triangle', true],
-  ['DEPENDENCY', 'open-arrow', 'open-arrow', null, null, false],
+  ['DEPENDENCY', 'open-arrow', 'open-arrow', null, 'open-arrow', false],
 ] as const;
 
 const labelPlacementCases = [
@@ -167,6 +168,10 @@ describe('UML relationship markers and labels', () => {
       if (fixedByKind) {
         expect(fromSource).toEqual(fromTarget);
         expect(fromSource).toEqual(neither);
+      } else if (kind === 'DEPENDENCY') {
+        // The arrow at the supplier is always there, so only the source end can change the drawing.
+        expect(fromSource).not.toEqual(neither);
+        expect(fromTarget).toEqual(neither);
       } else {
         expect(fromSource).not.toEqual(neither);
         expect(fromTarget).not.toEqual(neither);
@@ -397,6 +402,7 @@ describe('end labels clear the marker', () => {
   it('sizes the clearance from the marker and the stroke width it scales with', () => {
     expect(markerClearance(null, 2)).toBe(0);
     expect(markerClearance('hollow-triangle', 2)).toBeGreaterThan(markerClearance('open-arrow', 2));
+    expect(markerClearance('cross', 2)).toBeGreaterThan(0);
     expect(markerClearance('filled-diamond', 4)).toBe(markerClearance('filled-diamond', 2) * 2 - 6);
   });
 
@@ -417,6 +423,7 @@ describe('relationship markers stay outside the class', () => {
 
   it.each([
     ['open arrow', OPEN_ARROW_PATH],
+    ['cross', CROSS_PATH],
     ['diamond', DIAMOND_PATH],
     ['diamond behind the arrow', DIAMOND_BEHIND_ARROW_PATH],
   ])('draws the %s at non-positive x, never into the class box', (_name, path) => {

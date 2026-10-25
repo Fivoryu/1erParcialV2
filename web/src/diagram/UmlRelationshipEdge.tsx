@@ -33,6 +33,7 @@ export type RelationshipMarker =
   | 'hollow-diamond-open-arrow'
   | 'filled-diamond-open-arrow'
   | 'hollow-triangle'
+  | 'cross'
   | null;
 
 export interface EdgePoint {
@@ -355,6 +356,8 @@ export const HOLLOW_TRIANGLE_MARKER = {
  * the vertex nearest the class) sits at x = 0, on the border.
  */
 export const OPEN_ARROW_PATH = 'M -9 -5 L 0 0 L -9 5';
+/** UML 2.5 marks an end that cannot be navigated with a small x, drawn clear of the class border. */
+export const CROSS_PATH = 'M -12 -5 L -2 5 M -12 5 L -2 -5';
 export const DIAMOND_PATH = 'M 0 0 L -7 -6 L -14 0 L -7 6 Z';
 /** The diamond of a navigable whole end sits behind the arrowhead, still outside the class. */
 export const DIAMOND_BEHIND_ARROW_PATH = 'M -10 0 L -17 -6 L -24 0 L -17 6 Z';
@@ -367,6 +370,7 @@ const MARKER_LENGTH: Record<Exclude<RelationshipMarker, null>, number> = {
   'hollow-diamond-open-arrow': 24,
   'filled-diamond-open-arrow': 24,
   'hollow-triangle': 13,
+  cross: 12,
 };
 
 /** Markers scale with the stroke, so the label has to stay clear of that scaled length. */
@@ -441,19 +445,22 @@ export function relationshipMarkerPresentation(
   const targetNavigable = targetEnd?.navigability === 'NAVIGABLE';
 
   // UML generalization and interface-realization triangles point at the parent; navigability does not add an arrowhead.
+  // An end that is explicitly not navigable carries an x, except where a diamond already marks it.
+  const arrowOrCross = (navigable: boolean, end: RelationshipEndResource | undefined): RelationshipMarker =>
+    navigable ? 'open-arrow' : end?.navigability === 'NOT_NAVIGABLE' ? 'cross' : null;
   switch (kind) {
     case 'AGGREGATION':
       return {
         lineStyle: 'solid',
         sourceMarker: sourceNavigable ? 'hollow-diamond-open-arrow' : 'hollow-diamond',
-        targetMarker: targetNavigable ? 'open-arrow' : null,
+        targetMarker: arrowOrCross(targetNavigable, targetEnd),
         realizationLabelAtTarget: false,
       };
     case 'COMPOSITION':
       return {
         lineStyle: 'solid',
         sourceMarker: sourceNavigable ? 'filled-diamond-open-arrow' : 'filled-diamond',
-        targetMarker: targetNavigable ? 'open-arrow' : null,
+        targetMarker: arrowOrCross(targetNavigable, targetEnd),
         realizationLabelAtTarget: false,
       };
     case 'GENERALIZATION':
@@ -461,6 +468,7 @@ export function relationshipMarkerPresentation(
     case 'INTERFACE_REALIZATION':
       return { lineStyle: 'dashed', sourceMarker: null, targetMarker: 'hollow-triangle', realizationLabelAtTarget: true };
     case 'DEPENDENCY':
+      // A UML dependency always points at its supplier, whatever the navigability says.
       return {
         lineStyle: 'dashed',
         sourceMarker: sourceNavigable ? 'open-arrow' : null,
@@ -471,8 +479,8 @@ export function relationshipMarkerPresentation(
     default:
       return {
         lineStyle: 'solid',
-        sourceMarker: sourceNavigable ? 'open-arrow' : null,
-        targetMarker: targetNavigable ? 'open-arrow' : null,
+        sourceMarker: arrowOrCross(sourceNavigable, sourceEnd),
+        targetMarker: arrowOrCross(targetNavigable, targetEnd),
         realizationLabelAtTarget: false,
       };
   }
@@ -604,6 +612,7 @@ const MARKER_SUFFIXES: Record<Exclude<RelationshipMarker, null>, string> = {
   'hollow-diamond-open-arrow': 'hollow-diamond-open-arrow',
   'filled-diamond-open-arrow': 'filled-diamond-open-arrow',
   'hollow-triangle': 'hollow-triangle',
+  cross: 'cross',
 };
 
 function markerUrl(marker: RelationshipMarker, markerIds: Record<Exclude<RelationshipMarker, null>, string>): string | undefined {
@@ -856,6 +865,9 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
         <marker id={markerIds['filled-diamond-open-arrow']} viewBox="-26 -8 28 16" refX="0" refY="0" markerWidth="28" markerHeight="16" orient="auto-start-reverse" markerUnits="strokeWidth">
           <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
           <path d={DIAMOND_BEHIND_ARROW_PATH} fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
+        </marker>
+        <marker id={markerIds.cross} viewBox="-13 -6 14 12" refX="0" refY="0" markerWidth="14" markerHeight="12" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d={CROSS_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
         </marker>
         <marker
           id={markerIds['hollow-triangle']}
