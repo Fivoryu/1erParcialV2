@@ -23,7 +23,9 @@ import {
   type OrthoHandle,
   manualRouteDropped,
   withoutManualShape,
+  pointAtHalfArcLength,
 } from './orthogonal-routing';
+import { associationClassLink } from './associationClass';
 import { DEFAULT_ROUTING } from './commands';
 import { endOrdinalForLabelSide } from './contextMenuBehavior';
 import { endLabelsApplyTo, formatRelationshipEndLabel, formatRelationshipName } from './uml-format';
@@ -514,6 +516,8 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
   style?: RelationshipEdgeStyle;
   /** Offset along the side that keeps this edge apart from the others joining the same classes. */
   lane?: { source: number; target: number };
+  /** The class that is also this association: a dashed line joins it to the middle of the relationship. */
+  associationClassId?: string;
   onWaypointsChange?: (
     relationshipId: string,
     waypoints: Array<{ x: number; y: number }>,
@@ -749,6 +753,16 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     ? roundedOrthogonalPath(orthogonalPoints, style.cornerRadius)
     : buildRelationshipEdgePath(points);
   const labelPoints: EdgePoint[] = orthogonalPoints ?? points;
+  // UML draws an association class as a dashed line from the middle of its association to the class.
+  const associationClassNode = data.associationClassId
+    ? (allNodes as RoutingNode[]).find((node) => node.id === data.associationClassId)
+    : undefined;
+  const associationClassRectangle = associationClassNode
+    ? routingObstacles([associationClassNode], [])[0]
+    : undefined;
+  const associationClassSegment = associationClassRectangle && labelPoints.length > 0
+    ? associationClassLink(pointAtHalfArcLength(labelPoints), associationClassRectangle)
+    : null;
   const showEndLabels = endLabelsApplyTo(relationship.kind);
   const nameLabel = formatRelationshipName(relationship.name, relationship.stereotype);
   const sourceLabel = showEndLabels ? formatRelationshipEndLabel(orderedEnds[0]!) : '';
@@ -904,6 +918,16 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
           ...((markers.lineStyle === 'dashed' || style.dashed) ? { strokeDasharray: '6 4' } : {}),
         }}
       />
+      {associationClassSegment && (
+        <path
+          className="uml-association-class-link"
+          d={`M ${associationClassSegment.from.x} ${associationClassSegment.from.y} L ${associationClassSegment.to.x} ${associationClassSegment.to.y}`}
+          fill="none"
+          stroke="#526b62"
+          strokeDasharray="6 4"
+          strokeWidth={1.4}
+        />
+      )}
       <EdgeLabelRenderer>
         {sourceLabel && labelPlacements.source && (
           <RelationshipEndLabelAnchor

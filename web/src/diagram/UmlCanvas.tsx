@@ -372,6 +372,7 @@ export function buildFlowEdges(
         waypoints,
         style,
         lane: lanes.get(relationship.id) ?? { source: 0, target: 0 },
+        ...(relationship.associationClassId ? { associationClassId: relationship.associationClassId } : {}),
         ...(onWaypointsChange ? { onWaypointsChange } : {}),
         ...(interactionHandlers?.onRelationshipContextMenu
           ? { onRelationshipContextMenu: interactionHandlers.onRelationshipContextMenu }

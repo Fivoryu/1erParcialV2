@@ -590,6 +590,71 @@ describe('coalesced persisted geometry', () => {
   });
 });
 
+describe('association class', () => {
+  const values = {
+    name: null,
+    kind: 'ASSOCIATION' as const,
+    source: { role: null, multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED' },
+    target: { role: null, multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED' },
+  };
+  const updateWith = (base: ModelResource, payload: Record<string, unknown>) => applyOptimisticCommand(
+    base,
+    buildModelCommandEnvelope(base, { type: 'relationship.update', targets: [{ scope: 'relationship', id: relationshipId }], payload }),
+  ).relationships[0];
+  const linked = { ...model, relationships: [{ ...relationship, kind: 'ASSOCIATION', associationClassId: 'class-1' }] };
+
+  it('sends the association class only when the caller has one to say', () => {
+    expect(buildRelationshipUpdateRequest(relationship, { ...values, associationClassId: 'class-1' }).payload)
+      .toMatchObject({ associationClassId: 'class-1' });
+    expect(buildRelationshipUpdateRequest(relationship, { ...values, associationClassId: null }).payload)
+      .toMatchObject({ associationClassId: null });
+    expect(Object.hasOwn(buildRelationshipUpdateRequest(relationship, values).payload!, 'associationClassId')).toBe(false);
+  });
+
+  it('applies, clears and keeps it, and drops it when the relationship stops being an association', () => {
+    expect(updateWith(linked, { associationClassId: 'class-2' })?.associationClassId).toBe('class-2');
+    expect(updateWith(linked, { associationClassId: null })?.associationClassId).toBeNull();
+    expect(updateWith(linked, { name: 'enrols' })?.associationClassId).toBe('class-1');
+    expect(updateWith(linked, { kind: 'AGGREGATION' })?.associationClassId).toBe('class-1');
+    expect(updateWith(linked, { kind: 'DEPENDENCY' })?.associationClassId).toBeNull();
+  });
+
+  it('releases the link when the class is deleted, as the server does', () => {
+    const doomed = { ...model, relationships: [{ ...relationship, kind: 'ASSOCIATION', associationClassId: 'class-1' }] };
+    const after = applyOptimisticCommand(
+      doomed,
+      buildModelCommandEnvelope(doomed, { type: 'classifier.delete', targets: [{ scope: 'classifier', id: 'class-1' }], payload: {} }),
+    );
+
+    expect(after.relationships[0]?.associationClassId ?? null).toBeNull();
+  });
+
+  it('puts the association class on the edge data', () => {
+    const edge = buildFlowEdges(linked).find((candidate) => candidate.id === relationshipId);
+
+    expect(edge?.data?.associationClassId).toBe('class-1');
+    expect(buildFlowEdges(model).find((candidate) => candidate.id === relationshipId)?.data?.associationClassId)
+      .toBeUndefined();
+  });
+
+  it('offers the select only for an association, with the current class selected', () => {
+    const extra = { ...model.classifiers[0]!, id: 'class-1', name: 'Enrolment' };
+    const render = (kind: string, associationClassId: string | null) => renderToStaticMarkup(createElement(PropertiesPanel, {
+      model: { ...model, classifiers: [...model.classifiers, extra], relationships: [{ ...relationship, kind, associationClassId }] },
+      selection: { kind: 'relationship', relationshipId },
+      onCommand: () => null,
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    const association = render('ASSOCIATION', 'class-1');
+    expect(association).toContain('id="relationship-association-class"');
+    expect(association).toMatch(/value="class-1"[^>]*selected/);
+    expect(association).toContain('Enrolment');
+    expect(render('DEPENDENCY', null)).not.toContain('relationship-association-class');
+  });
+});
+
 describe('dependency stereotypes', () => {
   const values = {
     name: null,

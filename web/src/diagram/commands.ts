@@ -1,4 +1,5 @@
 import { buildOperationEnvelope, type UuidFactory } from '../api/envelope';
+import { isAssociationKind } from './associationClass';
 import type { AnchorSide } from './orthogonal-routing';
 import type {
   AttributeResource,
@@ -210,6 +211,8 @@ export interface RelationshipUpdateValues {
   kind: RelationshipKind;
   /** Left out, the relationship keeps its stereotype; null removes it. */
   stereotype?: string | null;
+  /** Left out, the relationship keeps its association class; null releases it. */
+  associationClassId?: string | null;
   source: { role: string | null; multiplicity: string; navigability: string };
   target: { role: string | null; multiplicity: string; navigability: string };
 }
@@ -225,6 +228,7 @@ export function buildRelationshipUpdateRequest(
       name: values.name,
       kind: values.kind,
       ...(values.stereotype !== undefined ? { stereotype: values.stereotype } : {}),
+      ...(values.associationClassId !== undefined ? { associationClassId: values.associationClassId } : {}),
       source: values.source,
       target: values.target,
     },
@@ -594,6 +598,10 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
       const stereotype = Object.hasOwn(envelope.payload, 'stereotype')
         ? payloadString(envelope, 'stereotype')
         : kind && kind !== 'DEPENDENCY' ? null : undefined;
+      // Same for the association class: an explicit value wins, and a kind that is not an association releases it.
+      const associationClassId = Object.hasOwn(envelope.payload, 'associationClassId')
+        ? payloadString(envelope, 'associationClassId')
+        : kind && !isAssociationKind(kind) ? null : undefined;
       const source = envelope.payload.source as Record<string, unknown> | undefined;
       const target = envelope.payload.target as Record<string, unknown> | undefined;
       return {
@@ -607,6 +615,7 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             ...(kind ? { kind } : {}),
             ...(name !== undefined ? { name } : {}),
             ...(stereotype !== undefined ? { stereotype } : {}),
+            ...(associationClassId !== undefined ? { associationClassId } : {}),
             ends: relationship.ends.map((end) => {
               const update = end.ordinal === 1 ? source : end.ordinal === 2 ? target : undefined;
               if (!update) {
@@ -833,7 +842,12 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
       return {
         ...model,
         classifiers: model.classifiers.filter((classifier) => classifier.id !== classifierId),
-        relationships: model.relationships.filter((relationship) => !removedRelationships.has(relationship.id)),
+        // The server releases the link of an association whose class is deleted and keeps the association.
+        relationships: model.relationships
+          .filter((relationship) => !removedRelationships.has(relationship.id))
+          .map((relationship) => (relationship.associationClassId === classifierId
+            ? { ...relationship, associationClassId: null }
+            : relationship)),
       };
     }
     case 'attribute.remove':

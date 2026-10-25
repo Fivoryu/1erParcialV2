@@ -309,7 +309,7 @@ function collapseOrthoPoints(points: OrthoPoint[]): OrthoPoint[] {
   return result;
 }
 
-function pointAtHalfArcLength(points: OrthoPoint[]): OrthoPoint {
+export function pointAtHalfArcLength(points: OrthoPoint[]): OrthoPoint {
   const first = points[0] ?? { x: 0, y: 0 };
   if (points.length < 2) {
     return first;

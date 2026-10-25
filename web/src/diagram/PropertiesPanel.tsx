@@ -34,6 +34,7 @@ import {
   type ViewStyleValues,
 } from './commands';
 import type { CanvasSelection } from './selection';
+import { associationClassCandidates, isAssociationKind } from './associationClass';
 import { formatStereotype } from './uml-format';
 import { STORE_LABELS, StoreBadge } from './StoreBadge';
 
@@ -436,6 +437,7 @@ function RelationshipProperties({
   const [name, setName] = useState(relationship.name ?? '');
   const [kind, setKind] = useState<RelationshipKind>(relationship.kind as RelationshipKind);
   const [stereotype, setStereotype] = useState(relationship.stereotype ?? '');
+  const [associationClassId, setAssociationClassId] = useState(relationship.associationClassId ?? '');
   const [sourceRole, setSourceRole] = useState(sourceEnd?.role ?? '');
   const [sourceMultiplicity, setSourceMultiplicity] = useState(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
   const [sourceNavigability, setSourceNavigability] = useState(sourceEnd?.navigability ?? 'UNSPECIFIED');
@@ -483,6 +485,7 @@ function RelationshipProperties({
     setName(relationship.name ?? '');
     setKind(relationship.kind as RelationshipKind);
     setStereotype(relationship.stereotype ?? '');
+    setAssociationClassId(relationship.associationClassId ?? '');
     setSourceRole(sourceEnd?.role ?? '');
     setSourceMultiplicity(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
     setSourceNavigability(sourceEnd?.navigability ?? 'UNSPECIFIED');
@@ -494,6 +497,7 @@ function RelationshipProperties({
     relationship.name,
     relationship.kind,
     relationship.stereotype,
+    relationship.associationClassId,
     sourceEnd?.role,
     sourceEnd?.multiplicity,
     sourceEnd?.navigability,
@@ -511,6 +515,7 @@ function RelationshipProperties({
       name: name.trim() || null,
       kind,
       stereotype: kind === 'DEPENDENCY' ? stereotype || null : null,
+      associationClassId: isAssociationKind(kind) ? associationClassId || null : null,
       source: {
         role: sourceRole.trim() || null,
         multiplicity: sourceMultiplicity,
@@ -587,6 +592,21 @@ function RelationshipProperties({
               <option value="">None</option>
               {DEPENDENCY_STEREOTYPES.map((value) => (
                 <option key={value} value={value}>{formatStereotype(value)}</option>
+              ))}
+            </select>
+          </>
+        )}
+        {isAssociationKind(kind) && (
+          <>
+            <label className="field-label" htmlFor="relationship-association-class">Association class <span>Optional</span></label>
+            <select
+              id="relationship-association-class"
+              onChange={(event) => setAssociationClassId(event.target.value)}
+              value={associationClassId}
+            >
+              <option value="">None</option>
+              {associationClassCandidates(model, relationship).map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
               ))}
             </select>
           </>
