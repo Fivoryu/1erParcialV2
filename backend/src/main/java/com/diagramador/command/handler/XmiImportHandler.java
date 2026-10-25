@@ -235,7 +235,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                     new ModelResource.ConstraintResource(mapped(constraintIds, constraint.id()),
                             constraint.expression(), constraint.severity())).toList();
             return new ModelResource.RelationshipResource(mapped(relationshipIds, relationship.id()),
-                    relationship.kind(), relationship.name(), relationship.stereotype(), ends, constraints);
+                    relationship.kind(), relationship.name(), relationship.stereotype(),
+                    mapped(classifierIds, relationship.associationClassId()), ends, constraints);
         }).toList();
         List<ModelResource.ViewResource> views = source.views().stream().map(view -> {
             List<ModelResource.GeometryResource> geometry = view.elementGeometry().stream().map(item ->
@@ -684,9 +685,11 @@ public class XmiImportHandler implements CommandHandler.AddAction {
 
     private void persistRelationships(UmlModel model, ModelResource imported, Map<UUID, Classifier> classifiers,
             Map<UUID, TypeReference> typeReferences) {
+        Set<UUID> takenAssociationClasses = new HashSet<>();
         for (ModelResource.RelationshipResource resource : imported.relationships()) {
             RelationshipKind kind = RelationshipKind.valueOf(resource.kind().toUpperCase(Locale.ROOT));
-            entityManagerInsertRelationship(resource, model.getId(), kind);
+            entityManagerInsertRelationship(resource, model.getId(), kind,
+                    importedAssociationClass(resource, kind, classifiers, takenAssociationClasses));
             UmlRelationship relationship = relationshipRepository.findById(resource.id())
                     .orElseThrow(() -> new IllegalStateException("Imported relationship could not be reloaded"));
             for (ModelResource.RelationshipEndResource end : resource.ends()) {
@@ -697,16 +700,17 @@ public class XmiImportHandler implements CommandHandler.AddAction {
     }
 
     private void entityManagerInsertRelationship(ModelResource.RelationshipResource resource, UUID modelId,
-            RelationshipKind kind) {
+            RelationshipKind kind, UUID associationClassId) {
         entityManager.createNativeQuery("""
-                INSERT INTO diagrammer.uml_relationship (relationship_id, model_id, kind, name, stereotype)
-                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name, :stereotype)
+                INSERT INTO diagrammer.uml_relationship (relationship_id, model_id, kind, name, stereotype, association_class_id)
+                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name, :stereotype, :associationClassId)
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("modelId", modelId)
                 .setParameter("kind", kind.name())
                 .setParameter("name", resource.name())
                 .setParameter("stereotype", importedStereotype(resource, kind))
+                .setParameter("associationClassId", associationClassId)
                 .executeUpdate();
     }
 
@@ -714,6 +718,22 @@ public class XmiImportHandler implements CommandHandler.AddAction {
      * An imported stereotype only counts on a dependency and only when it is one of the UML dependency
      * stereotypes. The reading arrives as a command payload, so anything else is dropped instead of stored.
      */
+    /**
+     * An imported association class only counts on an association, aggregation or composition, when it is a class
+     * of the import that is not one of the ends and no other relationship has taken it. Anything else is dropped.
+     */
+    private static UUID importedAssociationClass(ModelResource.RelationshipResource resource, RelationshipKind kind,
+            Map<UUID, Classifier> classifiers, Set<UUID> taken) {
+        UUID id = resource.associationClassId();
+        Classifier classifier = id == null ? null : classifiers.get(id);
+        boolean association = kind == RelationshipKind.ASSOCIATION || kind == RelationshipKind.AGGREGATION
+                || kind == RelationshipKind.COMPOSITION;
+        boolean isClass = classifier != null
+                && (classifier.getKind() == ClassifierKind.CLASS || classifier.getKind() == ClassifierKind.ABSTRACT_CLASS);
+        boolean isEnd = resource.ends().stream().anyMatch(end -> end.classifierId().equals(id));
+        return association && isClass && !isEnd && taken.add(id) ? id : null;
+    }
+
     private static String importedStereotype(ModelResource.RelationshipResource resource, RelationshipKind kind) {
         if (kind != RelationshipKind.DEPENDENCY || resource.stereotype() == null) {
             return null;

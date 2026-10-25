@@ -579,6 +579,12 @@ public final class XmiSemanticEmitter {
         if (relationship.stereotype() != null && !relationship.stereotype().isBlank()) {
             properties.setAttribute("stereotype", relationship.stereotype().toLowerCase(Locale.ROOT));
         }
+        // The class that is also this association has no place in the extension either, so it travels as a vendor
+        // `associationClass` property holding the XMI id of the class, and only when that class is in the export.
+        if (relationship.associationClassId() != null
+                && context.emittableClassifierIds.contains(relationship.associationClassId())) {
+            properties.setAttribute("associationClass", XmiIdCodec.classifierId(relationship.associationClassId()));
+        }
         connector.appendChild(properties);
 
         Element modifiers = document.createElement("modifiers");

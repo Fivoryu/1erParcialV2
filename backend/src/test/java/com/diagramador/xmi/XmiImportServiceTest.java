@@ -239,6 +239,59 @@ class XmiImportServiceTest {
         });
     }
 
+    @Test
+    void anExportedAssociationClassSurvivesImportIntoTheDatabaseAndIntoAnotherProject() throws Exception {
+        Fixture first = existingProject("Association class import project one");
+        Fixture second = existingProject("Association class import project two");
+        byte[] bytes = associationClassXmi("Association class view");
+
+        XmiImportService.XmiImportResult one = importBytes(first, bytes, XmiImportMode.AGREGAR);
+        assertThat(one.command().status()).as("first import: %s", one.command().diagnostics())
+                .isEqualTo(CommandStatus.ACCEPTED);
+        XmiImportService.XmiImportResult two = importBytes(second, bytes, XmiImportMode.AGREGAR);
+        assertThat(two.command().status()).as("second import: %s", two.command().diagnostics())
+                .isEqualTo(CommandStatus.ACCEPTED);
+
+        for (Fixture fixture : List.of(first, second)) {
+            var relationship = relationshipRepository.findAll().stream()
+                    .filter(candidate -> candidate.getModel().getId().equals(fixture.model().getId()))
+                    .findFirst().orElseThrow();
+            assertThat(relationship.getAssociationClassId()).isNotNull();
+            assertThat(classifierRepository.findById(relationship.getAssociationClassId()))
+                    .get().satisfies(linked -> {
+                        assertThat(linked.getName()).isEqualTo("Enrolment Association class view");
+                        assertThat(linked.getModel().getId()).isEqualTo(fixture.model().getId());
+                    });
+        }
+    }
+
+    private byte[] associationClassXmi(String viewName) {
+        java.util.function.LongFunction<UUID> id = value ->
+                UUID.fromString("00000000-0000-0000-0000-%012x".formatted(value));
+        java.util.function.BiFunction<Long, String, com.diagramador.api.ModelResource.ClassifierResource> clazz =
+                (value, name) -> new com.diagramador.api.ModelResource.ClassifierResource(id.apply(value),
+                        name + " " + viewName, ClassifierKind.CLASS, false, null, List.of(), List.of(), List.of());
+        var association = new com.diagramador.api.ModelResource.RelationshipResource(id.apply(910), "ASSOCIATION",
+                "studies", null, id.apply(902),
+                List.of(new com.diagramador.api.ModelResource.RelationshipEndResource(id.apply(911), id.apply(900),
+                                null, MultiplicityKind.EXACTLY_ONE, com.diagramador.domain.NavigationKind.UNSPECIFIED,
+                                "none", (short) 1),
+                        new com.diagramador.api.ModelResource.RelationshipEndResource(id.apply(912), id.apply(901),
+                                null, MultiplicityKind.EXACTLY_ONE, com.diagramador.domain.NavigationKind.UNSPECIFIED,
+                                "none", (short) 2)), List.of());
+        var view = new com.diagramador.api.ModelResource.ViewResource(id.apply(300), viewName, true,
+                List.of(new com.diagramador.api.ModelResource.GeometryResource(id.apply(500), com.diagramador.domain.TargetType.CLASSIFIER,
+                                id.apply(900), 40, 60, 200, 100, 0),
+                        new com.diagramador.api.ModelResource.GeometryResource(id.apply(501), com.diagramador.domain.TargetType.CLASSIFIER,
+                                id.apply(901), 320, 60, 200, 100, 1),
+                        new com.diagramador.api.ModelResource.GeometryResource(id.apply(502), com.diagramador.domain.TargetType.CLASSIFIER,
+                                id.apply(902), 180, 240, 200, 100, 2)), List.of());
+        var model = new com.diagramador.api.ModelResource(id.apply(1), id.apply(2), 3, id.apply(3), List.of(view),
+                List.of(clazz.apply(900L, "Student"), clazz.apply(901L, "Course"), clazz.apply(902L, "Enrolment")),
+                List.of(association));
+        return new XmiSemanticEmitter().emit(model).document().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     private byte[] stereotypedDependencyXmi(String stereotype, String viewName) {
         java.util.function.LongFunction<UUID> id = value ->
                 UUID.fromString("00000000-0000-0000-0000-%012x".formatted(value));

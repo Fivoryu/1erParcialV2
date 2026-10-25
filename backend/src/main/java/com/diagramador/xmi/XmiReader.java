@@ -342,7 +342,7 @@ public final class XmiReader {
                                 ? RelationshipKind.AGGREGATION.name() : RelationshipKind.ASSOCIATION.name();
                 result.add(new RelationshipResource(relationshipId, kind,
                         nonempty(association.getAttribute("name"), extensionConnector == null ? null : extensionConnector.name()),
-                        ends, readConstraints(association)));
+                        null, associationClass(extensionConnector), ends, readConstraints(association)));
             }
             for (Element generalization : descendants(model, "generalization")) {
                 String rawId = xmi(generalization, "id");
@@ -714,10 +714,18 @@ public final class XmiReader {
             }
         }
 
+        /** The class an association names as its own, when the connector carries one. */
+        private UUID associationClass(ExtensionConnector connector) {
+            String written = connector == null || connector.associationClass() == null
+                    ? "" : connector.associationClass().trim();
+            return written.isEmpty() ? null : uuid(written);
+        }
+
         private ExtensionConnector readExtensionConnector(Element connector) {
             Element properties = child(connector, "properties");
             return new ExtensionConnector(xmi(connector, "idref"), connector.getAttribute("name"),
                     properties == null ? "" : properties.getAttribute("stereotype"),
+                    properties == null ? "" : properties.getAttribute("associationClass"),
                     readExtensionEnd(child(connector, "source")), readExtensionEnd(child(connector, "target")));
         }
 
@@ -984,8 +992,8 @@ public final class XmiReader {
             String multiplicity, String aggregation, NavigationKind navigability) {
     }
 
-    private record ExtensionConnector(String id, String name, String stereotype, ExtensionEnd source,
-            ExtensionEnd target) {
+    private record ExtensionConnector(String id, String name, String stereotype, String associationClass,
+            ExtensionEnd source, ExtensionEnd target) {
     }
 
     private record ParsedDiagram(UUID id, String name, List<XmiReadingResult.FigurePlacement> figures,

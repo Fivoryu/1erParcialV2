@@ -585,6 +585,31 @@ class XmiSemanticEmitterTest {
     }
 
     @Test
+    void anAssociationClassTravelsInTheConnectorPropertiesAndAPlainAssociationAddsNothing() throws Exception {
+        String document = emitter.emit(associationClassModel(id(902))).document();
+        Element connectorProperties = findDirectNoNamespace(find(parse(document), null, "connector"), "properties");
+
+        assertThat(connectorProperties.getAttribute("associationClass")).isEqualTo(XmiIdCodec.classifierId(id(902)));
+        assertThat(emitter.emit(associationClassModel(null)).document()).doesNotContain("associationClass");
+    }
+
+    @Test
+    void anAssociationClassReadsBackAndAPlainAssociationReadsBackWithoutOne() {
+        byte[] linked = emitter.emit(associationClassModel(id(902))).document()
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] plain = emitter.emit(associationClassModel(null)).document()
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(new XmiReader().read(linked).model().relationships())
+                .singleElement().satisfies(relationship -> {
+                    assertThat(relationship.kind()).isEqualTo("ASSOCIATION");
+                    assertThat(relationship.associationClassId()).isEqualTo(id(902));
+                });
+        assertThat(new XmiReader().read(plain).model().relationships())
+                .singleElement().satisfies(relationship -> assertThat(relationship.associationClassId()).isNull());
+    }
+
+    @Test
     void emittedCanonicalModelReadsBackWithSemanticsAndDiagramAnchors() {
         ModelResource source = sampleModel();
         List<GeometryResource> geometry = new ArrayList<>();
@@ -863,6 +888,21 @@ class XmiSemanticEmitterTest {
                 List.of(end(id(911), id(900), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
                         end(id(912), id(901), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 2)), List.of());
         return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(client, supplier), List.of(dependency));
+    }
+
+    private static ModelResource associationClassModel(UUID associationClassId) {
+        ClassifierResource student = new ClassifierResource(id(900), "Student", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        ClassifierResource course = new ClassifierResource(id(901), "Course", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        ClassifierResource enrolment = new ClassifierResource(id(902), "Enrolment", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        RelationshipResource studies = new RelationshipResource(id(910), "ASSOCIATION", "studies", null,
+                associationClassId,
+                List.of(end(id(911), id(900), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
+                        end(id(912), id(901), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 2)), List.of());
+        return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(student, course, enrolment),
+                List.of(studies));
     }
 
     private static UUID id(long value) {
