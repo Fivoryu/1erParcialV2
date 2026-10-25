@@ -14,6 +14,7 @@ import com.diagramador.domain.ExchangeStatus;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.OperationParameter;
+import com.diagramador.domain.DependencyStereotype;
 import com.diagramador.domain.RelationshipEnd;
 import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.SeverityKind;
@@ -234,7 +235,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                     new ModelResource.ConstraintResource(mapped(constraintIds, constraint.id()),
                             constraint.expression(), constraint.severity())).toList();
             return new ModelResource.RelationshipResource(mapped(relationshipIds, relationship.id()),
-                    relationship.kind(), relationship.name(), ends, constraints);
+                    relationship.kind(), relationship.name(), relationship.stereotype(), ends, constraints);
         }).toList();
         List<ModelResource.ViewResource> views = source.views().stream().map(view -> {
             List<ModelResource.GeometryResource> geometry = view.elementGeometry().stream().map(item ->
@@ -698,14 +699,30 @@ public class XmiImportHandler implements CommandHandler.AddAction {
     private void entityManagerInsertRelationship(ModelResource.RelationshipResource resource, UUID modelId,
             RelationshipKind kind) {
         entityManager.createNativeQuery("""
-                INSERT INTO diagrammer.uml_relationship (relationship_id, model_id, kind, name)
-                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name)
+                INSERT INTO diagrammer.uml_relationship (relationship_id, model_id, kind, name, stereotype)
+                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name, :stereotype)
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("modelId", modelId)
                 .setParameter("kind", kind.name())
                 .setParameter("name", resource.name())
+                .setParameter("stereotype", importedStereotype(resource, kind))
                 .executeUpdate();
+    }
+
+    /**
+     * An imported stereotype only counts on a dependency and only when it is one of the UML dependency
+     * stereotypes. The reading arrives as a command payload, so anything else is dropped instead of stored.
+     */
+    private static String importedStereotype(ModelResource.RelationshipResource resource, RelationshipKind kind) {
+        if (kind != RelationshipKind.DEPENDENCY || resource.stereotype() == null) {
+            return null;
+        }
+        try {
+            return DependencyStereotype.valueOf(resource.stereotype().toUpperCase(Locale.ROOT)).name();
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private void insertRelationshipEnd(ModelResource.RelationshipEndResource end, UUID relationshipId,
