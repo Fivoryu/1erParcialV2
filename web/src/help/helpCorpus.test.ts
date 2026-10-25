@@ -117,4 +117,20 @@ describe('help corpus', () => {
       expect(slugs, `missing topic "${expected}"`).toContain(expected);
     }
   });
+
+  it('sends the assistant to the shared team chat and no longer mentions a separate assistant panel', () => {
+    const assistant = HELP_TOPICS.find((topic) => topic.slug === 'assistant-with-natural-language');
+
+    expect(assistant?.section).toBe('collaboration');
+    expect(assistant?.steps.join(' ')).toContain('Suggest change');
+    for (const topic of HELP_TOPICS) {
+      expect(topic.steps.join(' ').toLowerCase(), topic.slug).not.toContain('assistant panel');
+    }
+  });
+
+  it('tells a reviewer that Explain with AI and Propose a fix open the team chat with a draft', () => {
+    const review = HELP_TOPICS.find((topic) => topic.slug === 'review-the-diagram');
+
+    expect(review?.steps.join(' ')).toContain('team chat');
+  });
 });

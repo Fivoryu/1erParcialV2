@@ -110,8 +110,8 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     steps: [
       'Open Review from the editor option bar and use Run review to refresh UML validation and backend readiness.',
       'Read the grouped errors and warnings, then check the blocking diagnostics for the displayed generation profile.',
-      'Editors and owners can choose Explain with AI or Propose a fix; the assistant opens with a draft, and Consultar is always a separate action.',
-      'Review any proposed plan before choosing Aplicar cambios; nothing is sent or changed automatically.',
+      'Editors and owners can choose Explain with AI or Propose a fix; the team chat opens with a draft, and sending or suggesting is always a separate action.',
+      'A proposed change appears as a card in the team chat for everyone to see; nothing changes until an editor presses Accept and apply.',
       'Choose Generation for destination-specific checks such as the database engine.',
     ],
     keywords: ['review', 'validation', 'readiness', 'issues', 'diagram', 'uml'],
@@ -149,14 +149,15 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     slug: 'assistant-with-natural-language',
     title: 'Assistant with natural language',
     summary:
-      'Describe a change in plain language and the assistant proposes a plan you review before anything is applied.',
+      'Describe a change in plain language in the team chat and the assistant posts a proposal the whole team can see before anything is applied.',
     steps: [
-      'Open the assistant panel from the editor.',
-      'Write the change you want, for example to create a class with an attribute and relate it to another.',
-      'Review the proposed plan; you can accept it, reject it or ask for clarification.',
+      'Press the assistant button, or open Collaboration: the assistant lives in the team chat that every collaborator of the diagram shares.',
+      'Write the change you want, for example to create a class with an attribute, relate it to another, or make one class use another with a «use» dependency, and press Suggest change.',
+      'The assistant posts a card with the proposed change to the whole chat; an editor can press Accept and apply or Reject.',
       'Accepted changes go through the normal command pipeline, so you can undo them like manual edits.',
     ],
-    keywords: ['assistant', 'ai', 'natural language', 'plan', 'preview', 'confirm', 'undo'],
+    section: 'collaboration',
+    keywords: ['assistant', 'ai', 'natural language', 'plan', 'preview', 'confirm', 'undo', 'team chat', 'stereotype', 'dependency'],
   },
   {
     slug: 'diagram-chat',

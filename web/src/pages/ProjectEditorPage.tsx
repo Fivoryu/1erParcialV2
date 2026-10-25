@@ -45,7 +45,6 @@ import { useEditingLease } from '../collaboration/useEditingLease';
 import UmlCanvas from '../diagram/UmlCanvas';
 import { useUndoRedoShortcuts } from '../diagram/useUndoRedoShortcuts';
 import PropertiesPanel from '../diagram/PropertiesPanel';
-import AssistantPanel from '../assistant/AssistantPanel';
 import { createDiagramNames } from '../assistant/assistantNames';
 import { chatAskErrorMessage } from '../assistant/chatAskFailure';
 import GenerationPanel from '../generation/GenerationPanel';
@@ -196,8 +195,6 @@ export default function ProjectEditorPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [openSection, setOpenSection] = useState<EditorSectionId | null>(null);
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  const [assistantSeed, setAssistantSeed] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStepIndex, setTourStepIndex] = useState(0);
   const modelRef = useRef<ModelResource | null>(null);
@@ -781,14 +778,12 @@ export default function ProjectEditorPage() {
   const openTour = useCallback(() => {
     setTourStepIndex(0);
     setOpenSection(null);
-    setAssistantOpen(false);
     setTourOpen(true);
   }, []);
   const changeTourStep = useCallback((requestedIndex: number) => {
     const nextIndex = clampTourStepIndex(requestedIndex);
     setTourStepIndex(nextIndex);
     setOpenSection(getTourStep(nextIndex).section ?? null);
-    setAssistantOpen(false);
   }, []);
   const finishTour = useCallback(() => {
     if (projectId) {
@@ -797,17 +792,14 @@ export default function ProjectEditorPage() {
     setTourOpen(false);
   }, [projectId]);
 
-  // `openSection` and `assistantOpen` are independent, so opening the assistant
-  // from the floating button must close any open section dialog first: two open
-  // dialogs would mean two backdrops, two focus traps and two scroll locks.
+  // The assistant has no panel of its own: it lives in the team chat, so every request, proposal and
+  // decision is visible to all collaborators of the diagram. Opening it opens that chat, with the draft
+  // the caller prepared (a review finding to explain or fix) when there is one.
   const handleOpenAssistant = useCallback((seed?: string) => {
-    setOpenSection(null);
-    setAssistantSeed(seed ?? null);
-    setAssistantOpen(true);
-  }, []);
-  const closeAssistant = useCallback(() => {
-    setAssistantOpen(false);
-    setAssistantSeed(null);
+    if (seed !== undefined) {
+      setChatDraft(seed);
+    }
+    setOpenSection('collaboration');
   }, []);
   const diagramNames = useMemo(() => (model ? createDiagramNames(model) : null), [model]);
   const touchedElements = useMemo(() => groupTouchesByElement(presence), [presence]);
@@ -1354,28 +1346,16 @@ export default function ProjectEditorPage() {
               />
             </Modal>
 
-            <Modal
-              open={assistantOpen}
-              title="Asistente de modelo"
-              size="md"
-              titleVisible={false}
-              onClose={closeAssistant}
-            >
-              <AssistantPanel
-                currentRevision={model.revision}
-                initialUtterance={assistantSeed ?? undefined}
-                model={model}
-                projectId={project.id}
-              />
-            </Modal>
-
-            <FloatingAssistantButton open={assistantOpen} onOpen={handleOpenAssistant} />
+            <FloatingAssistantButton
+              open={activeSection?.id === 'collaboration'}
+              onOpen={() => handleOpenAssistant()}
+            />
             <HelpGuide
               api={api}
               openSection={openSection}
               onNavigateToSection={handleNavigateToSection}
             />
-            {tourOpen && openSection === null && !assistantOpen && project.id === projectId && (
+            {tourOpen && openSection === null && project.id === projectId && (
               <TourOverlay
                 stepIndex={tourStepIndex}
                 onPrevious={() => changeTourStep(previousTourStepIndex(tourStepIndex))}
