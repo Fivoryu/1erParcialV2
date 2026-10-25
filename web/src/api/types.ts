@@ -445,6 +445,8 @@ export interface RelationshipResource {
   id: Uuid;
   kind: string;
   name: string | null;
+  /** UML dependency stereotype (USE, IMPORT, ...); only a DEPENDENCY has one. Absent when it has none. */
+  stereotype?: string | null;
   ends: RelationshipEndResource[];
   constraints: ConstraintResource[];
 }

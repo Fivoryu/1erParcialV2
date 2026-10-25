@@ -24,7 +24,7 @@ import {
 } from './orthogonal-routing';
 import { DEFAULT_ROUTING } from './commands';
 import { endOrdinalForLabelSide } from './contextMenuBehavior';
-import { endLabelsApplyTo, formatRelationshipEndLabel } from './uml-format';
+import { endLabelsApplyTo, formatRelationshipEndLabel, formatRelationshipName } from './uml-format';
 
 export type RelationshipMarker =
   | 'open-arrow'
@@ -748,6 +748,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     : buildRelationshipEdgePath(points);
   const labelPoints: EdgePoint[] = orthogonalPoints ?? points;
   const showEndLabels = endLabelsApplyTo(relationship.kind);
+  const nameLabel = formatRelationshipName(relationship.name, relationship.stereotype);
   const sourceLabel = showEndLabels ? formatRelationshipEndLabel(orderedEnds[0]!) : '';
   const targetLabel = showEndLabels ? formatRelationshipEndLabel(orderedEnds[1]!) : '';
   const strokeForMarkers = style.strokeWidth > 0 ? style.strokeWidth : EDGE_STROKE_WIDTH_PX;
@@ -756,7 +757,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
       source: sourceLabel,
       target: targetLabel,
       ...(markers.realizationLabelAtTarget ? { targetStereotype: '«realize»' } : {}),
-      name: relationship.name ?? '',
+      name: nameLabel,
     }, {
       source: markerClearance(markers.sourceMarker, strokeForMarkers),
       target: markerClearance(markers.targetMarker, strokeForMarkers),
@@ -915,11 +916,11 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             {markers.realizationLabelAtTarget && <span className="uml-edge-stereotype">«realize»</span>}
           </RelationshipEndLabelAnchor>
         )}
-        {relationship.name && labelPlacements.name && (
+        {nameLabel && labelPlacements.name && (
           <div
             className="uml-edge-name uml-edge-label-position"
             style={{ transform: `translate(-50%, -50%) translate(${labelPlacements.name.x}px, ${labelPlacements.name.y}px)` }}
-          >{relationship.name}</div>
+          >{nameLabel}</div>
         )}
         {props.selected && style.routing !== 'ORTHOGONAL' && (
           <>

@@ -22,6 +22,7 @@ import {
   buildRelationshipUpdateRequest,
   buildStyleSetRequest,
   DEFAULT_ROUTING,
+  DEPENDENCY_STEREOTYPES,
   mergeViewStyleUpdate,
   RELATIONSHIP_KINDS,
   type ConstraintOwnerType,
@@ -33,6 +34,7 @@ import {
   type ViewStyleValues,
 } from './commands';
 import type { CanvasSelection } from './selection';
+import { formatStereotype } from './uml-format';
 import { STORE_LABELS, StoreBadge } from './StoreBadge';
 
 interface PropertiesPanelProps {
@@ -433,6 +435,7 @@ function RelationshipProperties({
   const targetEnd = ends[1];
   const [name, setName] = useState(relationship.name ?? '');
   const [kind, setKind] = useState<RelationshipKind>(relationship.kind as RelationshipKind);
+  const [stereotype, setStereotype] = useState(relationship.stereotype ?? '');
   const [sourceRole, setSourceRole] = useState(sourceEnd?.role ?? '');
   const [sourceMultiplicity, setSourceMultiplicity] = useState(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
   const [sourceNavigability, setSourceNavigability] = useState(sourceEnd?.navigability ?? 'UNSPECIFIED');
@@ -479,6 +482,7 @@ function RelationshipProperties({
   useEffect(() => {
     setName(relationship.name ?? '');
     setKind(relationship.kind as RelationshipKind);
+    setStereotype(relationship.stereotype ?? '');
     setSourceRole(sourceEnd?.role ?? '');
     setSourceMultiplicity(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
     setSourceNavigability(sourceEnd?.navigability ?? 'UNSPECIFIED');
@@ -489,6 +493,7 @@ function RelationshipProperties({
     relationship.id,
     relationship.name,
     relationship.kind,
+    relationship.stereotype,
     sourceEnd?.role,
     sourceEnd?.multiplicity,
     sourceEnd?.navigability,
@@ -505,6 +510,7 @@ function RelationshipProperties({
     onCommand(buildRelationshipUpdateRequest(relationship, {
       name: name.trim() || null,
       kind,
+      stereotype: kind === 'DEPENDENCY' ? stereotype || null : null,
       source: {
         role: sourceRole.trim() || null,
         multiplicity: sourceMultiplicity,
@@ -570,6 +576,21 @@ function RelationshipProperties({
             <option key={value} value={value}>{RELATIONSHIP_KIND_LABELS[value]}</option>
           ))}
         </select>
+        {kind === 'DEPENDENCY' && (
+          <>
+            <label className="field-label" htmlFor="relationship-stereotype">Stereotype <span>Optional</span></label>
+            <select
+              id="relationship-stereotype"
+              onChange={(event) => setStereotype(event.target.value)}
+              value={stereotype}
+            >
+              <option value="">None</option>
+              {DEPENDENCY_STEREOTYPES.map((value) => (
+                <option key={value} value={value}>{formatStereotype(value)}</option>
+              ))}
+            </select>
+          </>
+        )}
         {endFields('source', sourceClassifier?.name, sourceRole, setSourceRole, sourceMultiplicity,
           setSourceMultiplicity, sourceNavigability, setSourceNavigability)}
         {endFields('target', targetClassifier?.name, targetRole, setTargetRole, targetMultiplicity,

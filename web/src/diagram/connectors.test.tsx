@@ -590,6 +590,52 @@ describe('coalesced persisted geometry', () => {
   });
 });
 
+describe('dependency stereotypes', () => {
+  const values = {
+    name: null,
+    kind: 'DEPENDENCY' as const,
+    source: { role: null, multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED' },
+    target: { role: null, multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED' },
+  };
+
+  it('sends the stereotype only when the caller has one to say, so other updates leave it alone', () => {
+    expect(buildRelationshipUpdateRequest(relationship, { ...values, stereotype: 'USE' }).payload)
+      .toMatchObject({ stereotype: 'USE' });
+    expect(buildRelationshipUpdateRequest(relationship, { ...values, stereotype: null }).payload)
+      .toMatchObject({ stereotype: null });
+    expect(Object.hasOwn(buildRelationshipUpdateRequest(relationship, values).payload!, 'stereotype')).toBe(false);
+  });
+
+  it('applies a stereotype, clears it, and drops it when the relationship stops being a dependency', () => {
+    const dependency = { ...model, relationships: [{ ...relationship, kind: 'DEPENDENCY', stereotype: 'USE' }] };
+    const apply = (base: ModelResource, payload: Record<string, unknown>) => applyOptimisticCommand(
+      base,
+      buildModelCommandEnvelope(base, { type: 'relationship.update', targets: [{ scope: 'relationship', id: relationshipId }], payload }),
+    ).relationships[0];
+
+    expect(apply(dependency, { stereotype: 'IMPORT' })?.stereotype).toBe('IMPORT');
+    expect(apply(dependency, { stereotype: null })?.stereotype).toBeNull();
+    expect(apply(dependency, { name: 'needs' })?.stereotype).toBe('USE');
+    expect(apply(dependency, { kind: 'ASSOCIATION' })?.stereotype).toBeNull();
+  });
+
+  it('offers the stereotype select only for a dependency, with the current one selected', () => {
+    const render = (kind: string, stereotype: string | null) => renderToStaticMarkup(createElement(PropertiesPanel, {
+      model: { ...model, relationships: [{ ...relationship, kind, stereotype }] },
+      selection: { kind: 'relationship', relationshipId },
+      onCommand: () => null,
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    const dependency = render('DEPENDENCY', 'IMPORT');
+    expect(dependency).toContain('id="relationship-stereotype"');
+    expect(dependency).toMatch(/value="IMPORT"[^>]*selected/);
+    expect(dependency).toContain('«import»');
+    expect(render('ASSOCIATION', null)).not.toContain('relationship-stereotype');
+  });
+});
+
 describe('edge selection across a model sync', () => {
   it('keeps the edge that was selected when the edges are rebuilt', () => {
     const first = model.relationships[0]!;

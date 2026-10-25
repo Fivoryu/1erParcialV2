@@ -35,6 +35,22 @@ export const RELATIONSHIP_KINDS: readonly RelationshipKind[] = [
   'DEPENDENCY',
 ];
 
+/** The UML 2.5 dependency stereotypes, in the order the properties panel offers them. */
+export const DEPENDENCY_STEREOTYPES = [
+  'USE',
+  'IMPORT',
+  'ACCESS',
+  'INCLUDE',
+  'EXTEND',
+  'INSTANTIATE',
+  'CALL',
+  'CREATE',
+  'DERIVE',
+  'REFINE',
+  'TRACE',
+] as const;
+export type DependencyStereotype = (typeof DEPENDENCY_STEREOTYPES)[number];
+
 export interface ModelCommandRequest {
   type: string;
   targets?: CommandTarget[];
@@ -192,6 +208,8 @@ export function buildRelationshipCreateRequest(
 export interface RelationshipUpdateValues {
   name: string | null;
   kind: RelationshipKind;
+  /** Left out, the relationship keeps its stereotype; null removes it. */
+  stereotype?: string | null;
   source: { role: string | null; multiplicity: string; navigability: string };
   target: { role: string | null; multiplicity: string; navigability: string };
 }
@@ -206,6 +224,7 @@ export function buildRelationshipUpdateRequest(
     payload: {
       name: values.name,
       kind: values.kind,
+      ...(values.stereotype !== undefined ? { stereotype: values.stereotype } : {}),
       source: values.source,
       target: values.target,
     },
@@ -571,6 +590,10 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
       }
       const kind = payloadString(envelope, 'kind');
       const name = Object.hasOwn(envelope.payload, 'name') ? payloadString(envelope, 'name') : undefined;
+      // Mirrors the server: an explicit stereotype wins, and leaving the dependency kind drops it.
+      const stereotype = Object.hasOwn(envelope.payload, 'stereotype')
+        ? payloadString(envelope, 'stereotype')
+        : kind && kind !== 'DEPENDENCY' ? null : undefined;
       const source = envelope.payload.source as Record<string, unknown> | undefined;
       const target = envelope.payload.target as Record<string, unknown> | undefined;
       return {
@@ -583,6 +606,7 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             ...relationship,
             ...(kind ? { kind } : {}),
             ...(name !== undefined ? { name } : {}),
+            ...(stereotype !== undefined ? { stereotype } : {}),
             ends: relationship.ends.map((end) => {
               const update = end.ordinal === 1 ? source : end.ordinal === 2 ? target : undefined;
               if (!update) {
