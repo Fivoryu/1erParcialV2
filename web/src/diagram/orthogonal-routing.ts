@@ -335,6 +335,32 @@ function pointAtHalfArcLength(points: OrthoPoint[]): OrthoPoint {
   return points[points.length - 1]!;
 }
 
+/**
+ * An adjustment the user really shaped by hand: more than the single corridor at offset zero the auto route
+ * has. One that only stores the connected sides is not a manual route, so losing it costs the user nothing.
+ */
+function hasManualShape(adjustment: OrthoAdjustment | null | undefined): boolean {
+  return Boolean(adjustment) && !(adjustment!.corridors.length === 1 && adjustment!.corridors[0] === 0
+    && adjustment!.levels.length === 0);
+}
+
+/**
+ * True when the user bent this route by hand and the router is not drawing those bends any more, because a
+ * class was moved so the dominant axis flipped, or another class now stands in the way. The bends are still
+ * stored and come back if the layout does, which is why the editor says so instead of dropping them silently.
+ */
+export function manualRouteDropped(route: OrthoRoute, adjustment: OrthoAdjustment | null | undefined): boolean {
+  return route.ignoredAdjustment && hasManualShape(adjustment);
+}
+
+/** The adjustment without the hand-made bends: back to the auto shape, keeping the connected sides if any. */
+export function withoutManualShape(adjustment: OrthoAdjustment | null | undefined): OrthoAdjustment | null {
+  if (!adjustment?.anchors) {
+    return null;
+  }
+  return { axis: adjustment.axis, corridors: [0], levels: [], anchors: adjustment.anchors };
+}
+
 /** Above this many grid cells the search is skipped; the router then falls back to its plain route. */
 const MAX_SEARCH_GRID_CELLS = 40_000;
 

@@ -11,6 +11,7 @@ import {
   dragAnchorHandle,
   dragOrthoHandle,
   isAdjustmentApplicable,
+  manualRouteDropped,
   orthogonalRoute,
   orthogonalWaypoints,
   sideLanes,
@@ -20,6 +21,7 @@ import {
   roundToOrthoGrid,
   slideCorridor,
   slideLevel,
+  withoutManualShape,
   type AnchorSide,
   type OrthoAdjustment,
   type OrthoRectangle,
@@ -1144,5 +1146,51 @@ describe('orthogonalRoute between perpendicular sides with classes in the way', 
 
     expect(route.points.length).toBeGreaterThanOrEqual(2);
     expect(orthogonal(route.points)).toBe(true);
+  });
+});
+
+describe('a manual route that no longer applies', () => {
+  const left = { x: 0, y: 0, width: 100, height: 100 };
+  const right = { x: 400, y: 0, width: 100, height: 100 };
+  const below = { x: 0, y: 400, width: 100, height: 100 };
+  const manual = { axis: 'H' as const, corridors: [40, 70], levels: [-12] };
+
+  it('is not reported while the stored bends still apply', () => {
+    const route = orthogonalRoute(left, right, manual);
+
+    expect(route.ignoredAdjustment).toBe(false);
+    expect(manualRouteDropped(route, manual)).toBe(false);
+  });
+
+  it('is reported when moving a class flips the dominant axis and the user had bent the route', () => {
+    const route = orthogonalRoute(left, below, manual);
+
+    expect(route.ignoredAdjustment).toBe(true);
+    expect(manualRouteDropped(route, manual)).toBe(true);
+  });
+
+  it('is not reported for an adjustment that only stores the connected sides', () => {
+    const sidesOnly = {
+      axis: 'H' as const,
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'E' as const, offset: 0 }, target: { side: 'N' as const, offset: 0 } },
+    };
+    const route = orthogonalRoute(left, { x: 400, y: 300, width: 100, height: 100 }, sidesOnly);
+
+    expect(route.ignoredAdjustment).toBe(true);
+    expect(manualRouteDropped(route, sidesOnly)).toBe(false);
+  });
+
+  it('is not reported when there is no adjustment at all', () => {
+    expect(manualRouteDropped(orthogonalRoute(left, below), null)).toBe(false);
+  });
+
+  it('discards the bends and keeps the connected sides', () => {
+    const anchors = { source: { side: 'E' as const, offset: 0 }, target: { side: 'W' as const, offset: 0 } };
+
+    expect(withoutManualShape({ ...manual, anchors })).toEqual({ axis: 'H', corridors: [0], levels: [], anchors });
+    expect(withoutManualShape(manual)).toBeNull();
+    expect(withoutManualShape(null)).toBeNull();
   });
 });

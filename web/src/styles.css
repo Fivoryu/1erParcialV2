@@ -4045,3 +4045,24 @@ h3 {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* The hand-made bends of a route are paused when a layout change makes them stop fitting; the chip says so and
+   lets the user discard them. It sits on the edge like the other controls, so it opts back into pointer events. */
+.uml-route-paused {
+  position: absolute;
+  z-index: 7;
+  padding: 2px 8px;
+  border: 1px solid #b7791f;
+  border-radius: 999px;
+  background: #fff8e6;
+  color: #7a4d0a;
+  font-size: 10px;
+  line-height: 1.4;
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.uml-route-paused:hover,
+.uml-route-paused:focus-visible {
+  background: #ffefc2;
+}

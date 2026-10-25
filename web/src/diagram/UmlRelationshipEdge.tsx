@@ -21,6 +21,8 @@ import {
   roundToOrthoGrid,
   type OrthoAdjustment,
   type OrthoHandle,
+  manualRouteDropped,
+  withoutManualShape,
 } from './orthogonal-routing';
 import { DEFAULT_ROUTING } from './commands';
 import { endOrdinalForLabelSide } from './contextMenuBehavior';
@@ -836,6 +838,13 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     data.onRouteAdjustmentChange?.(relationship.id, next, true);
   }
 
+  function discardPausedManualRoute(): void {
+    const next = withoutManualShape(adjustmentRef.current);
+    adjustmentRef.current = next;
+    setAdjustment(next);
+    data.onRouteAdjustmentChange?.(relationship.id, next, true);
+  }
+
   function removeRouteBend(): void {
     const current = adjustmentRef.current;
     if (!current || current.corridors.length <= 1) {
@@ -921,6 +930,18 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             className="uml-edge-name uml-edge-label-position"
             style={{ transform: `translate(-50%, -50%) translate(${labelPlacements.name.x}px, ${labelPlacements.name.y}px)` }}
           >{nameLabel}</div>
+        )}
+        {route && manualRouteDropped(route, adjustment) && (
+          <button
+            aria-label="The manual route of this relationship no longer fits the layout, so the automatic route is drawn. Discard the manual bends."
+            className="uml-route-paused nodrag nopan"
+            onClick={discardPausedManualRoute}
+            style={{ transform: `translate(-50%, -50%) translate(${middle.x}px, ${middle.y - 22}px)` }}
+            title="Your manual bends are paused: they no longer fit this layout. Click to discard them."
+            type="button"
+          >
+            Manual route paused
+          </button>
         )}
         {props.selected && style.routing !== 'ORTHOGONAL' && (
           <>
