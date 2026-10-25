@@ -21,6 +21,7 @@ import {
   buildParameterUpdateRequest,
   buildRelationshipUpdateRequest,
   buildStyleSetRequest,
+  DEFAULT_ROUTING,
   mergeViewStyleUpdate,
   RELATIONSHIP_KINDS,
   type ConstraintOwnerType,
@@ -444,7 +445,7 @@ function RelationshipProperties({
   const styleRow = model.view_style?.find((row) => row.viewId === defaultViewId
     && row.targetId === relationship.id);
   const currentStyle: ViewStyleValues = {
-    routing: styleRow?.routing ?? 'STRAIGHT',
+    routing: styleRow?.routing ?? DEFAULT_ROUTING,
     cornerRadius: styleRow?.cornerRadius ?? 0,
     strokeWidth: styleRow?.strokeWidth ?? 2,
     dashed: styleRow?.dashed ?? false,
@@ -472,7 +473,7 @@ function RelationshipProperties({
       targetId: relationship.id,
       waypoints: [],
     }));
-    setStyle({ routing: 'STRAIGHT' });
+    setStyle({ routing: DEFAULT_ROUTING });
   }
 
   useEffect(() => {

@@ -26,6 +26,7 @@ import {
   estimateLabelWidth,
   HOLLOW_TRIANGLE_MARKER,
   hollowTriangleGeometry,
+  routingObstacles,
   placeRelationshipLabels,
   RelationshipEndLabels,
   relationshipMarkerPresentation,
@@ -460,7 +461,7 @@ describe('coalesced persisted geometry', () => {
 
     expect(customer?.position).toEqual({ x: 96, y: 72 });
     expect(customer?.width).toBe(240);
-    expect(customer?.height).toBe(160);
+    expect(customer?.style?.minHeight).toBe(160);
     expect(subscription?.position).toEqual({ x: 456, y: 72 });
     expect(connector?.data?.waypoints).toEqual([{ x: 360, y: 144 }, { x: 420, y: 144 }]);
 
@@ -495,6 +496,31 @@ describe('coalesced persisted geometry', () => {
   });
 });
 
+describe('edge selection across a model sync', () => {
+  it('keeps the edge that was selected when the edges are rebuilt', () => {
+    const first = model.relationships[0]!;
+    const twin = { ...first, id: 'twin-relationship' };
+    const synced = { ...model, relationships: [first, twin] };
+    const before = buildFlowEdges(synced).map((edge) => (edge.id === first.id ? { ...edge, selected: true } : edge));
+
+    const after = buildFlowEdges(synced, undefined, undefined, before);
+
+    expect(after.map((edge) => [edge.id, edge.selected ?? false])).toEqual([[first.id, true], [twin.id, false]]);
+  });
+});
+
+describe('parallel relationship lanes', () => {
+  it('gives each relationship between the same two classes its own lane on the edge data', () => {
+    const first = model.relationships[0]!;
+    const twin = { ...first, id: 'twin-relationship' };
+    const lonely = buildFlowEdges(model).find((edge) => edge.id === first.id);
+    const paired = buildFlowEdges({ ...model, relationships: [first, twin] });
+
+    expect(lonely?.data?.lane).toBe(0);
+    expect(paired.map((edge) => edge.data?.lane)).toEqual([-8, 8]);
+  });
+});
+
 describe('relationship route & style (IA4-07)', () => {
   const styledModel: ModelResource = {
     ...model,
@@ -521,7 +547,7 @@ describe('relationship route & style (IA4-07)', () => {
 
     const plain = buildFlowEdges(model).find((edge) => edge.id === relationshipId);
     expect(plain?.data?.style).toEqual({
-      routing: 'STRAIGHT',
+      routing: 'ORTHOGONAL',
       cornerRadius: 0,
       strokeWidth: 2,
       dashed: false,
@@ -572,7 +598,7 @@ describe('relationship route & style (IA4-07)', () => {
     expect(panel).toMatch(/id="relationship-dashed"[^>]*checked/);
   });
 
-  it('falls back to straight, solid defaults when no style row exists', () => {
+  it('falls back to orthogonal, solid defaults when no style row exists', () => {
     const panel = renderToStaticMarkup(createElement(PropertiesPanel, {
       model,
       selection: { kind: 'relationship', relationshipId },
@@ -581,7 +607,7 @@ describe('relationship route & style (IA4-07)', () => {
       onSelect: () => undefined,
     }));
 
-    expect(panel).toMatch(/value="STRAIGHT"[^>]*selected/);
+    expect(panel).toMatch(/value="ORTHOGONAL"[^>]*selected/);
     expect(panel).toMatch(/id="relationship-corner-radius"[^>]*value="0"/);
     expect(panel).toMatch(/id="relationship-stroke-width"[^>]*value="2"/);
     expect(panel).not.toMatch(/id="relationship-dashed"[^>]*checked/);

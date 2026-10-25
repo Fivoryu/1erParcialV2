@@ -19,6 +19,7 @@ import {
   buildGeometrySetRequest,
   buildRelationshipCreateRequest,
   buildStyleSetRequest,
+  DEFAULT_ROUTING,
   mergeViewStyleUpdate,
   RELATIONSHIP_KINDS,
 } from './commands';
@@ -201,7 +202,10 @@ export function buildFlowNodes(
         y: 56 + row * 260,
       },
       width: geometry?.w ?? previous?.width ?? DEFAULT_NODE_WIDTH,
-      height: geometry?.h ?? previous?.height ?? defaultHeight(classifier),
+      // The height is left to the card. A stored height was captured while the class was still
+      // empty, so it only works as a floor: as a fixed height it clipped every class that grew
+      // after that, leaving its handles and the routes attached in the middle of the box.
+      style: { minHeight: geometry?.h ?? defaultHeight(classifier) },
       ...(zIndex !== undefined ? { zIndex } : {}),
       data,
       ...(previous?.selected !== undefined ? { selected: previous.selected } : {}),
@@ -246,6 +250,20 @@ export function chooseHandles(
   };
 }
 
+/**
+ * Both handle types share each side's position, so React Flow resolves a connection by handle
+ * type, not by gesture. The direction of a UML relationship is the one the user drew: from the
+ * class the drag started on to the class it ended on.
+ */
+export function connectionDirection(
+  source: string,
+  target: string,
+  startedOn: string | null,
+): { sourceId: string; targetId: string } {
+  const startedOnTarget = startedOn === target && startedOn !== source;
+  return startedOnTarget ? { sourceId: target, targetId: source } : { sourceId: source, targetId: target };
+}
+
 function classifierRectangles(model: ModelResource): Map<string, NodeRectangle> {
   const rectangles = new Map<string, NodeRectangle>();
   model.classifiers.forEach((classifier, index) => {
@@ -270,7 +288,11 @@ export function buildFlowEdges(
     onEdgeEndpointsChange?: RelationshipEdgeData['onEdgeEndpointsChange'];
     onRouteAdjustmentChange?: RelationshipEdgeData['onRouteAdjustmentChange'];
   },
+  previous: readonly RelationshipFlowEdge[] = [],
 ): RelationshipFlowEdge[] {
+  // A rebuild must not drop the edge the user just clicked: its anchor and bend handles only
+  // render while it is selected, and the rebuild runs again right after the click.
+  const selectedIds = new Set(previous.filter((edge) => edge.selected).map((edge) => edge.id));
   const view = defaultView(model);
   const rectangles = classifierRectangles(model);
   const viewStyles = model.view_style ?? [];
@@ -297,7 +319,7 @@ export function buildFlowEdges(
       .sort((left, right) => left.ordinal - right.ordinal)
       .map(({ x, y }) => ({ x, y })) ?? [];
     const style = {
-      routing: styleRow?.routing ?? 'STRAIGHT',
+      routing: styleRow?.routing ?? DEFAULT_ROUTING,
       cornerRadius: styleRow?.cornerRadius ?? 0,
       strokeWidth: styleRow?.strokeWidth ?? 2,
       dashed: styleRow?.dashed ?? false,
@@ -329,6 +351,7 @@ export function buildFlowEdges(
       },
       selectable: true,
       deletable: false,
+      ...(selectedIds.has(relationship.id) ? { selected: true } : {}),
     }];
   });
 }
@@ -356,6 +379,7 @@ function CanvasFrame(props: UmlCanvasProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   // Latest endpoint anchors per edge, reported by UmlRelationshipEdge after each
   // render; only the edge component knows the resolved sourceX/Y and targetX/Y.
+  const connectStartNodeRef = useRef<string | null>(null);
   const edgeEndpointsRef = useRef(new Map<string, { source: EdgePoint; target: EdgePoint }>());
   const initialNodes = useMemo(
     () => buildFlowNodes(props.model, [], props.onCommand, props.onSelect, undefined, props.touchedElements),
@@ -476,7 +500,7 @@ function CanvasFrame(props: UmlCanvasProps) {
       onRelationshipContextMenu: openRelationshipEndContextMenu,
       onEdgeEndpointsChange: rememberEdgeEndpoints,
       onRouteAdjustmentChange: updateRouteAdjustment,
-    }));
+    }, edgesRef.current));
     if (unplaced.length > 0 && pendingFitRef.current === null) {
       // A node handed over in this render is not yet measured by React Flow, so a
       // synchronous fitView would silently drop it from the fit bounds. Record the
@@ -610,7 +634,7 @@ function CanvasFrame(props: UmlCanvasProps) {
 
   function handleConnect(connection: Connection): void {
     if (connection.source && connection.target) {
-      setConnectionDraft({ sourceId: connection.source, targetId: connection.target });
+      setConnectionDraft(connectionDirection(connection.source, connection.target, connectStartNodeRef.current));
       setConnectionKind('ASSOCIATION');
     }
   }
@@ -779,6 +803,7 @@ function CanvasFrame(props: UmlCanvasProps) {
           onNodeClick={(_, node) => props.onSelect({ kind: 'classifier', classifierId: node.id })}
           onNodeContextMenu={(event, node) => openContextMenu(event, { kind: 'classifier', classifierId: node.id })}
           onNodeDragStop={(_, node) => settleNodeGeometry(node)}
+          onConnectStart={(_, params) => { connectStartNodeRef.current = params.nodeId; }}
           onConnect={handleConnect}
           onEdgeClick={(_, edge) => props.onSelect({ kind: 'relationship', relationshipId: edge.id })}
           onEdgeContextMenu={(event, edge) => openContextMenu(event, {

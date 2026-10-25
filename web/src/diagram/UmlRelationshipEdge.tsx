@@ -22,6 +22,7 @@ import {
   type OrthoAdjustment,
   type OrthoHandle,
 } from './orthogonal-routing';
+import { DEFAULT_ROUTING } from './commands';
 import { endOrdinalForLabelSide } from './contextMenuBehavior';
 import { formatRelationshipEndLabel } from './uml-format';
 
@@ -459,7 +460,7 @@ export interface RelationshipEdgeStyle {
 }
 
 export const DEFAULT_EDGE_STYLE: RelationshipEdgeStyle = {
-  routing: 'STRAIGHT',
+  routing: DEFAULT_ROUTING,
   cornerRadius: 0,
   strokeWidth: 2,
   dashed: false,

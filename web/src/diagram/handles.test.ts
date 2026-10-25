@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseHandles } from './UmlCanvas';
+import { chooseHandles, connectionDirection } from './UmlCanvas';
 
 const rectangle = (x: number, y: number, width = 260, height = 200) => ({ x, y, width, height });
 
@@ -86,5 +86,23 @@ describe('chooseHandles with stored anchors (ANC-06)', () => {
       .toEqual({ sourceHandle: auto.sourceHandle, targetHandle: 'target-left' });
     expect(chooseHandles(left, right, { source: null as never, target: { side: 'N', offset: 0 } }))
       .toEqual({ sourceHandle: auto.sourceHandle, targetHandle: 'target-top' });
+  });
+});
+
+describe('connectionDirection', () => {
+  it('keeps the pair React Flow resolved when the drag started on the source class', () => {
+    expect(connectionDirection('a', 'b', 'a')).toEqual({ sourceId: 'a', targetId: 'b' });
+  });
+
+  it('flips the pair when the drag started on the class React Flow resolved as target', () => {
+    expect(connectionDirection('a', 'b', 'b')).toEqual({ sourceId: 'b', targetId: 'a' });
+  });
+
+  it('keeps the pair when no drag start was recorded', () => {
+    expect(connectionDirection('a', 'b', null)).toEqual({ sourceId: 'a', targetId: 'b' });
+  });
+
+  it('keeps a self connection as it came', () => {
+    expect(connectionDirection('a', 'a', 'a')).toEqual({ sourceId: 'a', targetId: 'a' });
   });
 });

@@ -246,6 +246,9 @@ export function buildGeometrySetRequest(payload: GeometryUpdate): ModelCommandRe
 
 export type RoutingMode = 'STRAIGHT' | 'FREE' | 'ORTHOGONAL';
 
+/** A relationship with no stored style row is drawn orthogonally, the UML 2.5 class-diagram convention. */
+export const DEFAULT_ROUTING: RoutingMode = 'ORTHOGONAL';
+
 /** The appearance fields plus the adjustment, without the (view, target) identity. */
 export interface ViewStyleValues {
   routing: RoutingMode;
