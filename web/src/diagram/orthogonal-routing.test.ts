@@ -13,6 +13,7 @@ import {
   isAdjustmentApplicable,
   orthogonalRoute,
   orthogonalWaypoints,
+  parallelLanes,
   projectAnchorOnBorder,
   removeJog,
   roundedOrthogonalPath,
@@ -835,5 +836,147 @@ describe('orthogonal route generator degenerate inputs (pure, no rendering)', ()
     const path = roundedOrthogonalPath([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 50, y: 0 }], 10);
     expect(path).not.toContain('NaN');
     expect(path).toBe('M 0 0 L 0 0 L 50 0');
+  });
+});
+
+describe('orthogonalRoute across a gap too narrow for the stubs', () => {
+  function crossesInterior(points: { x: number; y: number }[], rectangle: OrthoRectangle): boolean {
+    const right = rectangle.x + rectangle.width;
+    const bottom = rectangle.y + rectangle.height;
+    return points.slice(1).some((next, index) => {
+      const previous = points[index]!;
+      if (previous.y === next.y) {
+        return previous.y > rectangle.y && previous.y < bottom
+          && Math.max(Math.min(previous.x, next.x), rectangle.x) < Math.min(Math.max(previous.x, next.x), right);
+      }
+      return previous.x > rectangle.x && previous.x < right
+        && Math.max(Math.min(previous.y, next.y), rectangle.y) < Math.min(Math.max(previous.y, next.y), bottom);
+    });
+  }
+
+  it('crosses through the vertical gap instead of cutting a class when the sides face away', () => {
+    // Observed in the editor: the source sits up and to the right of the target with a 4px
+    // horizontal gap, so the source leaves west, the target leaves east, and their stubs overlap.
+    const upperRight = { x: 690, y: 0, width: 170, height: 64 };
+    const lowerLeft = { x: 513, y: 160, width: 173, height: 64 };
+
+    const route = orthogonalRoute(upperRight, lowerLeft);
+
+    expect(route.points.slice(1).every((next, index) => next.x === route.points[index]!.x
+      || next.y === route.points[index]!.y)).toBe(true);
+    expect(crossesInterior(route.points, upperRight)).toBe(false);
+    expect(crossesInterior(route.points, lowerLeft)).toBe(false);
+  });
+
+  it('does the same when the classes are stacked the other way round', () => {
+    const lowerRight = { x: 690, y: 160, width: 170, height: 64 };
+    const upperLeft = { x: 513, y: 0, width: 173, height: 64 };
+
+    const route = orthogonalRoute(lowerRight, upperLeft);
+
+    expect(crossesInterior(route.points, lowerRight)).toBe(false);
+    expect(crossesInterior(route.points, upperLeft)).toBe(false);
+  });
+});
+
+describe('parallel lanes', () => {
+  it('shifts both ends of an auto route by the lane, keeping the pair parallel', () => {
+    const centred = orthogonalRoute(source, alignedRight);
+    const shifted = orthogonalRoute(source, alignedRight, null, 16);
+
+    expect(centred.points).toEqual([{ x: 100, y: 50 }, { x: 300, y: 50 }]);
+    expect(shifted.points).toEqual([{ x: 100, y: 66 }, { x: 300, y: 66 }]);
+  });
+
+  it('lets a stored anchor win over the lane', () => {
+    const route = orthogonalRoute(source, alignedRight, {
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'E', offset: -10 }, target: { side: 'W', offset: -10 } },
+    }, 16);
+
+    expect(route.points[0]).toEqual({ x: 100, y: 40 });
+  });
+
+  it('spreads relationships between the same pair of classes, whichever way they point', () => {
+    const lanes = parallelLanes([
+      { id: 'r1', sourceId: 'a', targetId: 'b' },
+      { id: 'r2', sourceId: 'b', targetId: 'a' },
+      { id: 'r3', sourceId: 'a', targetId: 'c' },
+    ]);
+
+    expect(lanes.get('r1')).toBe(-8);
+    expect(lanes.get('r2')).toBe(8);
+    expect(lanes.get('r3')).toBe(0);
+  });
+});
+
+describe('orthogonalRoute around classes in between', () => {
+  function crosses(points: { x: number; y: number }[], rectangle: OrthoRectangle): boolean {
+    const right = rectangle.x + rectangle.width;
+    const bottom = rectangle.y + rectangle.height;
+    return points.slice(1).some((next, index) => {
+      const previous = points[index]!;
+      if (previous.y === next.y) {
+        return previous.y > rectangle.y && previous.y < bottom
+          && Math.max(Math.min(previous.x, next.x), rectangle.x) < Math.min(Math.max(previous.x, next.x), right);
+      }
+      return previous.x > rectangle.x && previous.x < right
+        && Math.max(Math.min(previous.y, next.y), rectangle.y) < Math.min(Math.max(previous.y, next.y), bottom);
+    });
+  }
+  const isOrthogonal = (points: { x: number; y: number }[]) => points.slice(1)
+    .every((next, index) => next.x === points[index]!.x || next.y === points[index]!.y);
+
+  it('leaves a route alone when nothing is in the way', () => {
+    const farAway = { x: 200, y: 600, width: 100, height: 60 };
+
+    expect(orthogonalRoute(source, alignedRight, null, 0, [farAway]).points)
+      .toEqual(orthogonalRoute(source, alignedRight).points);
+  });
+
+  it('goes around a class standing between two aligned classes', () => {
+    const between = { x: 160, y: 20, width: 100, height: 60 };
+
+    const direct = orthogonalRoute(source, alignedRight);
+    const route = orthogonalRoute(source, alignedRight, null, 0, [between]);
+
+    expect(crosses(direct.points, between)).toBe(true);
+    expect(isOrthogonal(route.points)).toBe(true);
+    expect(crosses(route.points, between)).toBe(false);
+    expect(crosses(route.points, source)).toBe(false);
+    expect(crosses(route.points, alignedRight)).toBe(false);
+  });
+
+  it('goes around several classes in a row', () => {
+    const first = { x: 140, y: 10, width: 60, height: 80 };
+    const second = { x: 210, y: -40, width: 50, height: 180 };
+
+    const route = orthogonalRoute(source, alignedRight, null, 0, [first, second]);
+
+    expect(isOrthogonal(route.points)).toBe(true);
+    expect(crosses(route.points, first)).toBe(false);
+    expect(crosses(route.points, second)).toBe(false);
+  });
+
+  it('still returns a route when no way around exists', () => {
+    const wall = { x: -500, y: -500, width: 1500, height: 50 };
+    const floor = { x: -500, y: 450, width: 1500, height: 50 };
+    const between = { x: 160, y: -450, width: 100, height: 900 };
+
+    const route = orthogonalRoute(source, alignedRight, null, 0, [wall, floor, between]);
+
+    expect(route.points.length).toBeGreaterThanOrEqual(2);
+    expect(isOrthogonal(route.points)).toBe(true);
+  });
+
+  it('keeps a hand-placed route as the user left it, even through a class', () => {
+    const between = { x: 160, y: 20, width: 100, height: 60 };
+    const adjustment = { axis: 'H' as const, corridors: [24], levels: [] };
+
+    const route = orthogonalRoute(source, alignedRight, adjustment, 0, [between]);
+
+    expect(route.points).toEqual(orthogonalRoute(source, alignedRight, adjustment).points);
   });
 });

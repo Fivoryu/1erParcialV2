@@ -335,6 +335,29 @@ function pointAtHalfArcLength(points: OrthoPoint[]): OrthoPoint {
   return points[points.length - 1]!;
 }
 
+/** Distance between two relationships that share the same pair of classes. */
+export const PARALLEL_LANE_SPACING = 16;
+
+/**
+ * One lane offset per relationship, centred on the side: a pair of classes joined by n
+ * relationships spreads them PARALLEL_LANE_SPACING apart, whichever way each one points. The
+ * order is the order given, so an edge keeps its lane while the others stay as they are.
+ */
+export function parallelLanes(
+  relationships: readonly { id: string; sourceId: string; targetId: string }[],
+): Map<string, number> {
+  const groups = new Map<string, string[]>();
+  for (const { id, sourceId, targetId } of relationships) {
+    const key = [sourceId, targetId].sort().join('|');
+    groups.set(key, [...(groups.get(key) ?? []), id]);
+  }
+  const lanes = new Map<string, number>();
+  for (const ids of groups.values()) {
+    ids.forEach((id, index) => lanes.set(id, (index - (ids.length - 1) / 2) * PARALLEL_LANE_SPACING));
+  }
+  return lanes;
+}
+
 /**
  * Frame-relative orthogonal route (ROR-03): a staircase that exits the source
  * on the dominant axis, runs through K corridors and K-1 levels, and enters
@@ -346,9 +369,18 @@ export function orthogonalRoute(
   source: OrthoRectangle,
   target: OrthoRectangle,
   adjustment?: OrthoAdjustment | null,
+  lane = 0,
+  obstacles: readonly OrthoRectangle[] = [],
 ): OrthoRoute {
-  const resolvedSource = anchorPoint(source, resolveAnchorEnd(adjustment?.anchors, 'source'), autoAnchorSide(source, target, 'source'));
-  const resolvedTarget = anchorPoint(target, resolveAnchorEnd(adjustment?.anchors, 'target'), autoAnchorSide(source, target, 'target'));
+  // The classes the route must not enter: its own two ends and every other class in the diagram.
+  const blockers = [source, target, ...obstacles];
+  // An end without a stored anchor sits on its auto side, shifted by the lane so relationships
+  // between the same two classes run side by side instead of on top of each other.
+  const endAnchor = (end: 'source' | 'target'): RelationshipAnchor | null =>
+    resolveAnchorEnd(adjustment?.anchors, end)
+    ?? (lane === 0 ? null : { side: autoAnchorSide(source, target, end), offset: lane });
+  const resolvedSource = anchorPoint(source, endAnchor('source'), autoAnchorSide(source, target, 'source'));
+  const resolvedTarget = anchorPoint(target, endAnchor('target'), autoAnchorSide(source, target, 'target'));
   const normalSource = anchorNormal(resolvedSource.side);
   const normalTarget = anchorNormal(resolvedTarget.side);
   const sourceVertical = normalSource.axis === 'y';
@@ -402,7 +434,7 @@ export function orthogonalRoute(
       stubTarget,
       targetAnchorPoint,
     ]));
-    const points = options.find((candidate) => !routeEntersRectangles(candidate, [source, target])) ?? options[0]!;
+    const points = options.find((candidate) => !routeEntersRectangles(candidate, blockers)) ?? options[0]!;
     return {
       axis: pairAxis,
       points,
@@ -500,9 +532,26 @@ export function orthogonalRoute(
     : { low: Math.min(source.x, target.x), high: Math.max(source.x + source.width, target.x + target.width) };
   const lateralLow = perpendicularAxisBounds.low - ANCHOR_STUB;
   const lateralHigh = perpendicularAxisBounds.high + ANCHOR_STUB;
-  const lateralOrder = Math.abs((vS + vT) / 2 - lateralLow) <= Math.abs(lateralHigh - (vS + vT) / 2)
+  // When the classes do not overlap on the perpendicular axis, the empty band between them is
+  // the shortest place to cross: both stubs reach it without passing the other class. It is
+  // what saves a pair whose sides face away from each other across a gap narrower than the stubs.
+  const [sourceLow, sourceHigh] = axis === 'H' ? [source.y, source.y + source.height] : [source.x, source.x + source.width];
+  const [targetLow, targetHigh] = axis === 'H' ? [target.y, target.y + target.height] : [target.x, target.x + target.width];
+  const gapLateral = sourceHigh <= targetLow
+    ? (sourceHigh + targetLow) / 2
+    : targetHigh <= sourceLow ? (targetHigh + sourceLow) / 2 : null;
+  const outerOrder = Math.abs((vS + vT) / 2 - lateralLow) <= Math.abs(lateralHigh - (vS + vT) / 2)
     ? [lateralLow, lateralHigh]
     : [lateralHigh, lateralLow];
+  // With other classes around, any of their borders (plus a stub of room) is a place where a
+  // detour can run, and so is a line past all of them. The nearest to the pair is tried first,
+  // so the route threads between classes before it gives up and circles the whole diagram.
+  const detourOrder = obstacles.length === 0 ? outerOrder : [...new Set(
+    blockers.flatMap((rectangle) => (axis === 'H'
+      ? [rectangle.y - ANCHOR_STUB, rectangle.y + rectangle.height + ANCHOR_STUB]
+      : [rectangle.x - ANCHOR_STUB, rectangle.x + rectangle.width + ANCHOR_STUB])),
+  )].sort((left, right) => Math.abs(left - (vS + vT) / 2) - Math.abs(right - (vS + vT) / 2));
+  const lateralOrder = gapLateral === null ? detourOrder : [gapLateral, ...detourOrder];
 
   // An adjustment the user stored is an explicit instruction, so honour it with the primary
   // crossing: a bend they placed by hand must never be silently replaced. The exception is an
@@ -519,7 +568,7 @@ export function orthogonalRoute(
       ...crossingOptions.map((value) => ({ points: staircaseAt(value), crossing: value as number | null })),
       ...lateralOrder.map((lateral) => ({ points: lateralAt(lateral), crossing: null as number | null })),
     ];
-  const chosen = candidates.find((candidate) => !routeEntersRectangles(candidate.points, [source, target]))
+  const chosen = candidates.find((candidate) => !routeEntersRectangles(candidate.points, blockers))
     ?? candidates[0]!;
 
   const autoCorridor = chosen.crossing ?? (uA + uB) / 2;

@@ -24,7 +24,7 @@ import {
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildUnplacedGeometryRequests, type UnplacedGeometryAttempt } from './unplaced-geometry';
-import type { AnchorSide, RelationshipAnchor } from './orthogonal-routing';
+import { parallelLanes, type AnchorSide, type RelationshipAnchor } from './orthogonal-routing';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
 import UmlRelationshipEdge, { type EdgePoint, type RelationshipEdgeData, type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
@@ -274,6 +274,10 @@ export function buildFlowEdges(
   const view = defaultView(model);
   const rectangles = classifierRectangles(model);
   const viewStyles = model.view_style ?? [];
+  const lanes = parallelLanes(model.relationships.flatMap((relationship) => {
+    const [first, second] = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
+    return first && second ? [{ id: relationship.id, sourceId: first.classifierId, targetId: second.classifierId }] : [];
+  }));
   return model.relationships.flatMap((relationship) => {
     const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
     const sourceEnd = ends[0];
@@ -311,6 +315,7 @@ export function buildFlowEdges(
         targetEnd,
         waypoints,
         style,
+        lane: lanes.get(relationship.id) ?? 0,
         ...(onWaypointsChange ? { onWaypointsChange } : {}),
         ...(interactionHandlers?.onRelationshipContextMenu
           ? { onRelationshipContextMenu: interactionHandlers.onRelationshipContextMenu }

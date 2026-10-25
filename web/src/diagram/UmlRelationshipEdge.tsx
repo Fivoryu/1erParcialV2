@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
   useInternalNode,
+  useNodes,
   useReactFlow,
   type Edge,
   type EdgeProps,
@@ -472,6 +473,8 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
   waypoints: Array<{ x: number; y: number }>;
   /** IA4-07: per-view appearance; absent in older payloads. */
   style?: RelationshipEdgeStyle;
+  /** Offset along the side that keeps this edge apart from the others joining the same classes. */
+  lane?: number;
   onWaypointsChange?: (
     relationshipId: string,
     waypoints: Array<{ x: number; y: number }>,
@@ -597,10 +600,42 @@ function rectangleForInternalNode(node: {
   return { x: position.x, y: position.y, width, height };
 }
 
+/** Minimal view of a React Flow node, enough to decide whether a route has to go around it. */
+interface RoutingNode {
+  id: string;
+  position: EdgePoint;
+  width?: number | undefined;
+  height?: number | undefined;
+  measured?: { width?: number | undefined; height?: number | undefined } | undefined;
+  data?: unknown;
+}
+
+/**
+ * The rectangles an orthogonal route has to keep out of besides its own two ends. A package is
+ * left out: it surrounds its classes, so treating it as a wall would shut every edge inside it.
+ */
+export function routingObstacles(nodes: readonly RoutingNode[], excludedIds: readonly string[]): EdgeRectangle[] {
+  return nodes.flatMap((node) => {
+    const classifier = (node.data as { classifier?: { kind?: string } } | undefined)?.classifier;
+    const width = node.measured?.width ?? node.width;
+    const height = node.measured?.height ?? node.height;
+    if (excludedIds.includes(node.id) || classifier?.kind === 'PACKAGE'
+      || width === undefined || height === undefined || width <= 0 || height <= 0) {
+      return [];
+    }
+    return [{ x: node.position.x, y: node.position.y, width, height }];
+  });
+}
+
 export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdge>) {
   const { screenToFlowPosition } = useReactFlow();
   const sourceNode = useInternalNode(props.source);
   const targetNode = useInternalNode(props.target);
+  const allNodes = useNodes();
+  const obstacles = useMemo(
+    () => routingObstacles(allNodes as RoutingNode[], [props.source, props.target]),
+    [allNodes, props.source, props.target],
+  );
   const markerPrefix = useId().replaceAll(':', '');
   const markerIds = Object.fromEntries(Object.entries(MARKER_SUFFIXES)
     .map(([marker, suffix]) => [marker, `${markerPrefix}-${suffix}`])) as Record<Exclude<RelationshipMarker, null>, string>;
@@ -664,7 +699,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
   // the current hand adjustment; STRAIGHT and FREE render the persisted waypoint polyline
   // (existing behavior).
   const route = style.routing === 'ORTHOGONAL' && sourceRectangle && targetRectangle
-    ? orthogonalRoute(sourceRectangle, targetRectangle, adjustment)
+    ? orthogonalRoute(sourceRectangle, targetRectangle, adjustment, data.lane ?? 0, obstacles)
     : null;
   const orthogonalPoints = route?.points ?? null;
   const path = orthogonalPoints
