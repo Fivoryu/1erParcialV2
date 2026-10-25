@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.diagramador.domain.GenerationProfile;
 import com.diagramador.domain.GenerationRun;
 import com.diagramador.domain.GenerationTarget;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.TemplateVersion;
 import com.diagramador.domain.VerificationState;
 import com.diagramador.generation.DomainModelIR.EnumDeclaration;
@@ -121,13 +122,15 @@ public final class GenerationArtifactBundleBuilder {
             addErrorResponse(list, "500", "Unexpected server error");
             collection.set("get", list);
             collection.set("post", createOperation(type.javaName() + "Dto"));
-            List<QueryFieldCatalog.QueryField> queryFields = QueryFieldCatalog.fields(type, ir);
-            paths.put(collectionPath + "/query", objectMapper.createObjectNode()
-                    .set("get", queryOperation(type.javaName() + "Dto")));
-            paths.put(collectionPath + "/values", objectMapper.createObjectNode()
-                    .set("get", valuesOperation(type.javaName(), queryFields)));
-            paths.put(collectionPath + "/aggregate", objectMapper.createObjectNode()
-                    .set("get", aggregateOperation(type.javaName(), queryFields)));
+            if (type.store() != PersistenceStore.DOCUMENT) {
+                List<QueryFieldCatalog.QueryField> queryFields = QueryFieldCatalog.fields(type, ir);
+                paths.put(collectionPath + "/query", objectMapper.createObjectNode()
+                        .set("get", queryOperation(type.javaName() + "Dto")));
+                paths.put(collectionPath + "/values", objectMapper.createObjectNode()
+                        .set("get", valuesOperation(type.javaName(), queryFields)));
+                paths.put(collectionPath + "/aggregate", objectMapper.createObjectNode()
+                        .set("get", aggregateOperation(type.javaName(), queryFields)));
+            }
 
             String itemPath = collectionPath + "/{id}";
             ObjectNode item = paths.computeIfAbsent(itemPath, ignored -> objectMapper.createObjectNode());

@@ -12,7 +12,10 @@ public record GenerationBaseline(
         String javaVersion,
         String springBootVersion,
         String postgresImage,
-        String runtimeBaseImage) {
+        String runtimeBaseImage,
+        String mongoImage) {
+
+    private static final String DEFAULT_MONGO_IMAGE = "mongo:7";
 
     private static final String RESOURCE_NAME = "/baseline.properties";
 
@@ -21,6 +24,13 @@ public record GenerationBaseline(
         springBootVersion = required(springBootVersion, "spring.boot.version");
         postgresImage = required(postgresImage, "postgres.image");
         runtimeBaseImage = required(runtimeBaseImage, "runtime.base.image");
+        mongoImage = required(mongoImage, "mongo.image");
+    }
+
+    /** A baseline for a purely relational stack: the MongoDB image falls back to the default one. */
+    public GenerationBaseline(String javaVersion, String springBootVersion, String postgresImage,
+            String runtimeBaseImage) {
+        this(javaVersion, springBootVersion, postgresImage, runtimeBaseImage, DEFAULT_MONGO_IMAGE);
     }
 
     public static GenerationBaseline load() {
@@ -32,7 +42,8 @@ public record GenerationBaseline(
             values.load(new InputStreamReader(stream, StandardCharsets.UTF_8));
             return new GenerationBaseline(values.getProperty("java.version"),
                     values.getProperty("spring.boot.version"), values.getProperty("postgres.image"),
-                    values.getProperty("runtime.base.image"));
+                    values.getProperty("runtime.base.image"),
+                    values.getProperty("mongo.image", DEFAULT_MONGO_IMAGE));
         } catch (IOException exception) {
             throw new IllegalStateException("Classpath resource " + RESOURCE_NAME + " could not be read", exception);
         }

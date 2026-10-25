@@ -3,8 +3,10 @@ package com.diagramador.generation;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.SeverityKind;
+import com.diagramador.storage.PersistenceStoreClassifier;
 import com.diagramador.generation.DomainModelIR.CollectionIntent;
 import com.diagramador.generation.DomainModelIR.EnumDeclaration;
 import com.diagramador.generation.DomainModelIR.FieldDeclaration;
@@ -102,10 +104,11 @@ public final class DomainModelIRMapper {
         }
 
         List<PackageDeclaration> packages = buildPackages(classifiers, classifiersById, typeNamesById, diagnostics);
-        List<TypeDeclaration> types = buildTypes(snapshot, classifiers, classifiersById, typeReferencesById,
-                typeNamesById, primitiveTypes, diagnostics);
+        Map<UUID, PersistenceStoreClassifier.Decision> stores = PersistenceStoreClassifier.classify(snapshot);
+        List<TypeDeclaration> types = withStores(buildTypes(snapshot, classifiers, classifiersById,
+                typeReferencesById, typeNamesById, primitiveTypes, diagnostics), stores);
         RelationshipMapping relationshipMapping = buildRelationships(snapshot, classifiersById, typeNamesById,
-                diagnostics);
+                stores, diagnostics);
         List<EnumDeclaration> enums = buildEnums(snapshot, classifiers, classifiersById, typeNamesById, diagnostics);
         rejectUnmappedConstraints(snapshot, diagnostics);
 
@@ -113,6 +116,20 @@ public final class DomainModelIRMapper {
                 relationshipMapping, packages);
         return new DomainModelIR(packages, types, relationshipMapping.relationships(), sourceToArtifacts, diagnostics,
                 enums);
+    }
+
+    /** Stamps every class with the store the classifier chose, so the emitters never decide it again. */
+    private static List<TypeDeclaration> withStores(List<TypeDeclaration> types,
+            Map<UUID, PersistenceStoreClassifier.Decision> decisions) {
+        List<TypeDeclaration> stamped = new ArrayList<>();
+        for (TypeDeclaration type : types) {
+            PersistenceStoreClassifier.Decision decision = decisions.get(type.sourceId());
+            stamped.add(decision == null ? type : new TypeDeclaration(type.sourceId(), type.packageSourceId(),
+                    type.classifierKind(), type.sourceName(), type.javaName(), type.javaPackageName(),
+                    type.tableName(), type.isAbstract(), type.fields(), type.operations(), decision.store(),
+                    decision.reason()));
+        }
+        return stamped;
     }
 
     private List<PackageDeclaration> buildPackages(
@@ -313,6 +330,7 @@ public final class DomainModelIRMapper {
             InputSnapshot snapshot,
             Map<UUID, ClassifierElement> classifiersById,
             Map<UUID, TypeName> typeNamesById,
+            Map<UUID, PersistenceStoreClassifier.Decision> stores,
             List<GenerationDiagnostic> diagnostics) {
         Map<UUID, List<RelationshipEndElement>> endsByRelationship = new HashMap<>();
         for (RelationshipEndElement end : snapshot.relationshipEnds().stream().sorted(END_ORDER).toList()) {
@@ -378,7 +396,10 @@ public final class DomainModelIRMapper {
                     oneEnd.multiplicity() != MultiplicityKind.EXACTLY_ONE, inverseCollectionEmitted, lifecycleIntent));
 
             Set<String> relationshipArtifacts = new TreeSet<>();
-            relationshipArtifacts.add("src/main/resources/db/migration/V1__init.sql");
+            // The reference column lives with the owning (to-many) end, so only a relational owner touches the schema.
+            if (isRelational(stores, manyEnd.classifierId())) {
+                relationshipArtifacts.add(MIGRATION_PATH);
+            }
             addEntityArtifact(relationshipArtifacts, manyEnd.classifierId(), typeNamesById);
             addEntityArtifact(relationshipArtifacts, oneEnd.classifierId(), typeNamesById);
             artifactPathsByRelationship.put(relationship.id(), relationshipArtifacts);
@@ -474,23 +495,28 @@ public final class DomainModelIRMapper {
             List<PackageDeclaration> packages) {
         Map<UUID, Set<String>> pathsBySourceId = new TreeMap<>(UUID_ORDER);
         Map<UUID, Set<String>> typePathsById = new HashMap<>();
+        List<String> projectMigration = types.stream().anyMatch(type -> type.store() == PersistenceStore.SQL)
+                ? List.of(MIGRATION_PATH)
+                : List.of();
 
         for (TypeDeclaration type : types) {
             Set<String> paths = artifactPaths(type);
             typePathsById.put(type.sourceId(), paths);
             addPaths(pathsBySourceId, type.sourceId(), paths);
+            List<String> typeMigration = type.store() == PersistenceStore.SQL ? List.of(MIGRATION_PATH) : List.of();
             for (FieldDeclaration field : type.fields()) {
-                addPaths(pathsBySourceId, field.sourceId(), List.of(
-                        entityArtifactPath(type), "src/main/resources/db/migration/V1__init.sql"));
-                addTypeUseMapping(pathsBySourceId, field.type());
+                List<String> fieldPaths = new ArrayList<>(List.of(entityArtifactPath(type)));
+                fieldPaths.addAll(typeMigration);
+                addPaths(pathsBySourceId, field.sourceId(), fieldPaths);
+                addTypeUseMapping(pathsBySourceId, field.type(), typeMigration);
             }
             for (OperationSignature operation : type.operations()) {
                 String servicePath = serviceArtifactPath(type);
                 addPaths(pathsBySourceId, operation.sourceId(), List.of(servicePath));
-                addTypeUseMapping(pathsBySourceId, operation.returnType());
+                addTypeUseMapping(pathsBySourceId, operation.returnType(), projectMigration);
                 for (ParameterDeclaration parameter : operation.parameters()) {
                     addPaths(pathsBySourceId, parameter.sourceId(), List.of(servicePath));
-                    addTypeUseMapping(pathsBySourceId, parameter.type());
+                    addTypeUseMapping(pathsBySourceId, parameter.type(), projectMigration);
                 }
             }
         }
@@ -514,11 +540,16 @@ public final class DomainModelIRMapper {
                 .toList();
     }
 
-    private void addTypeUseMapping(Map<UUID, Set<String>> pathsBySourceId, TypeUse type) {
-        if (type.sourceTypeReferenceId() != null) {
-            addPaths(pathsBySourceId, type.sourceTypeReferenceId(),
-                    List.of("src/main/resources/db/migration/V1__init.sql"));
+    private void addTypeUseMapping(Map<UUID, Set<String>> pathsBySourceId, TypeUse type,
+            List<String> migrationPaths) {
+        if (type.sourceTypeReferenceId() != null && !migrationPaths.isEmpty()) {
+            addPaths(pathsBySourceId, type.sourceTypeReferenceId(), migrationPaths);
         }
+    }
+
+    private static boolean isRelational(Map<UUID, PersistenceStoreClassifier.Decision> stores, UUID classifierId) {
+        PersistenceStoreClassifier.Decision decision = stores.get(classifierId);
+        return decision == null || decision.store() == PersistenceStore.SQL;
     }
 
     private Set<String> artifactPaths(TypeDeclaration type) {
@@ -796,6 +827,8 @@ public final class DomainModelIRMapper {
         }
         pathsBySourceId.computeIfAbsent(sourceId, ignored -> new TreeSet<>()).addAll(paths);
     }
+
+    private static final String MIGRATION_PATH = "src/main/resources/db/migration/V1__init.sql";
 
     private record TypeName(String sourceName, String javaName, String javaPackageName) {
     }

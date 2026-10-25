@@ -7,9 +7,11 @@ import com.diagramador.generation.DomainModelIR.LifecycleIntent;
 import com.diagramador.generation.DomainModelIR.OperationSignature;
 import com.diagramador.generation.DomainModelIR.RelationshipDescriptor;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.generation.DomainModelIR.TypeDeclaration;
 import com.diagramador.generation.DomainModelIR.TypeUse;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -70,9 +72,11 @@ public final class DomainProjectEmitter {
         Map<UUID, EntityPlan> plans = createPlans(target.basePackage(), ir.types(), enumPlans);
         attachRelationships(plans, ir.relationships());
         validatePlans(plans.values());
+        boolean hasSql = plans.values().stream().anyMatch(plan -> !plan.document());
+        boolean hasDocument = plans.values().stream().anyMatch(EntityPlan::document);
 
         TreeMap<String, String> files = new TreeMap<>();
-        put(files, ".env.example", envExample(target));
+        put(files, ".env.example", envExample(target, hasSql, hasDocument));
         put(files, ".gitignore", lines(
                 "/target/",
                 ".env",
@@ -80,31 +84,39 @@ public final class DomainProjectEmitter {
                 ".vscode/",
                 "*.iml"));
         put(files, "Dockerfile", dockerfile());
-        put(files, "README.md", readme(target));
-        put(files, "docker-compose.yml", compose(target));
-        put(files, "pom.xml", pom(target));
+        put(files, "README.md", readme(target, hasSql, hasDocument, plans.values()));
+        put(files, "docker-compose.yml", compose(target, hasSql, hasDocument));
+        put(files, "pom.xml", pom(target, hasSql, hasDocument));
         put(files, javaPath(target.basePackage() + ".api", "ApiErrorResponse"), apiErrorResponse(target));
         put(files, javaPath(target.basePackage() + ".api", "GeneratedApiException"), generatedApiException(target));
         put(files, javaPath(target.basePackage() + ".api", "GeneratedApiExceptionHandler"),
                 generatedApiExceptionHandler(target));
         put(files, javaPath(target.basePackage(), "GeneratedApplication"), application(target));
-        put(files, javaPath(target.basePackage() + ".api", "QuerySupport"), querySupport(target));
+        if (hasSql) {
+            put(files, javaPath(target.basePackage() + ".api", "QuerySupport"), querySupport(target));
+        }
 
         List<EntityPlan> orderedPlans = plans.values().stream()
                 .sorted((left, right) -> left.qualifiedName.compareTo(right.qualifiedName)).toList();
         for (EntityPlan plan : orderedPlans) {
-            put(files, entityPath(plan), entitySource(plan, plans, enumPlans));
+            put(files, entityPath(plan), plan.document() ? documentSource(plan, plans, enumPlans)
+                    : entitySource(plan, plans, enumPlans));
             put(files, dtoPath(plan, target.basePackage()), dtoSource(plan, target.basePackage()));
             put(files, repositoryPath(plan, target.basePackage()), repositorySource(plan, target.basePackage()));
-            put(files, servicePath(plan, target.basePackage()), serviceSource(plan, target.basePackage(),
-                    QueryFieldCatalog.fields(plan.type, ir), enumPlans));
-            put(files, controllerPath(plan, target.basePackage()), controllerSource(plan, target.basePackage()));
+            put(files, servicePath(plan, target.basePackage()), plan.document()
+                    ? documentServiceSource(plan, target.basePackage())
+                    : serviceSource(plan, target.basePackage(), QueryFieldCatalog.fields(plan.type, ir), enumPlans));
+            put(files, controllerPath(plan, target.basePackage()),
+                    controllerSource(plan, target.basePackage(), !plan.document()));
         }
         for (EnumPlan enumPlan : enumPlans.values()) {
             put(files, javaPath(enumPlan.packageName(), enumPlan.declaration().javaName()), enumSource(enumPlan));
         }
-        put(files, "src/main/resources/application.yml", applicationYaml());
-        put(files, "src/main/resources/db/migration/V1__init.sql", migration(orderedPlans));
+        put(files, "src/main/resources/application.yml", applicationYaml(hasSql, hasDocument));
+        if (hasSql) {
+            put(files, "src/main/resources/db/migration/V1__init.sql", migration(orderedPlans.stream()
+                    .filter(plan -> !plan.document()).toList()));
+        }
 
         files.forEach((path, content) -> {
             if (!path.startsWith("/") && !path.contains("\\") && !path.contains("../")
@@ -193,7 +205,8 @@ public final class DomainProjectEmitter {
             requireJavaIdentifier(relationship.owningFieldName(), "owning relationship field");
             requireSqlIdentifier(snakeCase(relationship.owningFieldName()) + "_id", "relationship column");
             owner.owningRelationships.add(new OwningRelationshipPlan(relationship, referenced));
-            if (relationship.inverseCollectionEmitted()) {
+            // A reference by id has no inverse side: there is no association for the other class to map.
+            if (relationship.inverseCollectionEmitted() && !idReference(owner, referenced)) {
                 requireJavaIdentifier(relationship.inverseCollectionFieldName(), "inverse relationship field");
                 referenced.inverseRelationships.add(new InverseRelationshipPlan(relationship, owner));
             }
@@ -204,9 +217,9 @@ public final class DomainProjectEmitter {
         for (EntityPlan plan : plans) {
             Set<String> names = new TreeSet<>();
             names.add("id");
-            plan.attributes.forEach(attribute -> requireUnique(names, attribute.source().javaName(), plan));
+            plan.attributes.forEach(attribute -> requireUnique(names, propertyName(plan, attribute), plan));
             plan.owningRelationships.forEach(relationship -> requireUnique(names,
-                    relationship.descriptor().owningFieldName(), plan));
+                    propertyName(plan, relationship), plan));
             plan.inverseRelationships.forEach(relationship -> requireUnique(names,
                     relationship.descriptor().inverseCollectionFieldName(), plan));
             for (OperationSignature operation : plan.type.operations()) {
@@ -241,9 +254,11 @@ public final class DomainProjectEmitter {
             imports.add("jakarta.persistence.EnumType");
             imports.add("jakarta.persistence.Enumerated");
         }
-        plan.attributes.stream().filter(attribute -> attribute.referencedType() != null)
+        plan.attributes.stream().filter(attribute -> attribute.referencedType() != null
+                && !idReference(plan, attribute))
                 .forEach(attribute -> imports.add(attribute.referencedType().qualifiedName));
-        plan.owningRelationships.forEach(relationship -> imports.add(relationship.referenced().qualifiedName));
+        plan.owningRelationships.stream().filter(relationship -> !idReference(plan, relationship.referenced()))
+                .forEach(relationship -> imports.add(relationship.referenced().qualifiedName));
         plan.inverseRelationships.forEach(relationship -> imports.add(relationship.owning().qualifiedName));
         plan.attributes.stream().filter(attribute -> attribute.referencedType() == null)
                 .map(AttributePlan::javaType).filter(DomainProjectEmitter::isImportable)
@@ -274,6 +289,9 @@ public final class DomainProjectEmitter {
                         .append(javaString(quoted(plan.type.tableName() + "_id"))).append("))\n")
                         .append("    @Column(name = ").append(javaString(quoted("value")))
                         .append(", nullable = ").append(field.nullable()).append(")\n");
+            } else if (idReference(plan, attribute)) {
+                source.append("    @Column(name = ").append(javaString(quoted(attribute.columnName() + "_id")))
+                        .append(", nullable = ").append(field.nullable()).append(")\n");
             } else if (attribute.referencedType() != null) {
                 source.append("    @ManyToOne(fetch = FetchType.LAZY, optional = ").append(field.nullable())
                         .append(")\n")
@@ -286,10 +304,11 @@ public final class DomainProjectEmitter {
             if (attribute.enumType() != null) {
                 source.append("    @Enumerated(EnumType.STRING)\n");
             }
-            String declarationType = field.collectionIntent() == CollectionIntent.COLLECTION
+            String declarationType = idReference(plan, attribute) ? "UUID"
+                    : field.collectionIntent() == CollectionIntent.COLLECTION
                     ? "List<" + boxed(attribute.javaType()) + ">"
                     : attribute.javaType();
-            source.append("    private ").append(declarationType).append(' ').append(field.javaName());
+            source.append("    private ").append(declarationType).append(' ').append(propertyName(plan, attribute));
             if (field.collectionIntent() == CollectionIntent.COLLECTION) {
                 source.append(" = new ArrayList<>()");
             } else if (attribute.javaDefaultValue() != null) {
@@ -300,6 +319,14 @@ public final class DomainProjectEmitter {
 
         for (OwningRelationshipPlan relation : plan.owningRelationships) {
             RelationshipDescriptor descriptor = relation.descriptor();
+            if (idReference(plan, relation.referenced())) {
+                source.append('\n')
+                        .append("    @Column(name = ")
+                        .append(javaString(quoted(snakeCase(descriptor.owningFieldName()) + "_id")))
+                        .append(", nullable = ").append(descriptor.owningFieldNullable()).append(")\n")
+                        .append("    private UUID ").append(propertyName(plan, relation)).append(";\n");
+                continue;
+            }
             source.append('\n')
                     .append("    @ManyToOne(fetch = FetchType.LAZY, optional = ")
                     .append(descriptor.owningFieldNullable()).append(")\n")
@@ -324,15 +351,17 @@ public final class DomainProjectEmitter {
         source.append("\n    public ").append(plan.type.javaName()).append("() {\n    }\n")
                 .append("\n    public UUID getId() {\n        return id;\n    }\n");
         for (AttributePlan attribute : plan.attributes) {
-            String type = attribute.source().collectionIntent() == CollectionIntent.COLLECTION
+            String type = idReference(plan, attribute) ? "UUID"
+                    : attribute.source().collectionIntent() == CollectionIntent.COLLECTION
                     ? "List<" + boxed(attribute.javaType()) + ">"
                     : attribute.javaType();
-            appendGetter(source, type, attribute.source().javaName());
-            appendSetter(source, type, attribute.source().javaName());
+            appendGetter(source, type, propertyName(plan, attribute));
+            appendSetter(source, type, propertyName(plan, attribute));
         }
         for (OwningRelationshipPlan relation : plan.owningRelationships) {
-            appendGetter(source, relation.referenced().qualifiedName, relation.descriptor().owningFieldName());
-            appendSetter(source, relation.referenced().qualifiedName, relation.descriptor().owningFieldName());
+            String type = idReference(plan, relation.referenced()) ? "UUID" : relation.referenced().qualifiedName;
+            appendGetter(source, type, propertyName(plan, relation));
+            appendSetter(source, type, propertyName(plan, relation));
         }
         for (InverseRelationshipPlan relation : plan.inverseRelationships) {
             appendGetter(source, "List<" + relation.owning().qualifiedName + ">",
@@ -373,7 +402,9 @@ public final class DomainProjectEmitter {
             if (attribute.referencedType() != null) {
                 componentName += "Id";
                 componentType = "UUID";
-                expression = getter + " == null ? null : " + getter + ".getId()";
+                expression = idReference(plan, attribute)
+                        ? "source.get" + capitalize(propertyName(plan, attribute)) + "()"
+                        : getter + " == null ? null : " + getter + ".getId()";
             } else if (field.collectionIntent() == CollectionIntent.COLLECTION) {
                 componentType = "List<" + boxed(attribute.javaType()) + ">";
                 expression = getter + " == null ? List.of() : List.copyOf(" + getter + ")";
@@ -387,8 +418,11 @@ public final class DomainProjectEmitter {
             RelationshipDescriptor descriptor = relationship.descriptor();
             String name = descriptor.owningFieldName() + "Id";
             String getter = "source.get" + capitalize(descriptor.owningFieldName()) + "()";
-            addDtoComponent(components, expressions, componentNames, "UUID", name,
-                    getter + " == null ? null : " + getter + ".getId()", !descriptor.owningFieldNullable());
+            String expression = idReference(plan, relationship.referenced())
+                    ? "source.get" + capitalize(propertyName(plan, relationship)) + "()"
+                    : getter + " == null ? null : " + getter + ".getId()";
+            addDtoComponent(components, expressions, componentNames, "UUID", name, expression,
+                    !descriptor.owningFieldNullable());
         }
 
         StringBuilder source = new StringBuilder("package ").append(dtoPackage).append(";\n\n");
@@ -415,6 +449,18 @@ public final class DomainProjectEmitter {
     private String repositorySource(EntityPlan plan, String rootPackage) {
         String packageName = rootPackage + ".repository";
         String repositoryName = plan.type.javaName() + "Repository";
+        if (plan.document()) {
+            return lines(
+                    "package " + packageName + ";",
+                    "",
+                    "import " + plan.qualifiedName + ";",
+                    "import java.util.UUID;",
+                    "import org.springframework.data.mongodb.repository.MongoRepository;",
+                    "",
+                    "public interface " + repositoryName + " extends MongoRepository<" + plan.type.javaName()
+                            + ", UUID> {",
+                    "}");
+        }
         return lines(
                 "package " + packageName + ";",
                 "",
@@ -433,8 +479,10 @@ public final class DomainProjectEmitter {
         String packageName = rootPackage + ".service";
         String dtoName = plan.type.javaName() + "Dto";
         String repositoryName = plan.type.javaName() + "Repository";
-        boolean hasReferences = plan.attributes.stream().anyMatch(attribute -> attribute.referencedType() != null)
-                || !plan.owningRelationships.isEmpty();
+        boolean hasReferences = plan.attributes.stream().anyMatch(attribute -> attribute.referencedType() != null
+                && !idReference(plan, attribute))
+                || plan.owningRelationships.stream()
+                        .anyMatch(relationship -> !idReference(plan, relationship.referenced()));
         StringBuilder source = new StringBuilder();
         source.append("package ").append(packageName).append(";\n\n")
                 .append("import ").append(rootPackage).append(".api.QuerySupport;\n")
@@ -511,20 +559,25 @@ public final class DomainProjectEmitter {
             FieldDeclaration field = attribute.source();
             String component = field.javaName() + (attribute.referencedType() == null ? "" : "Id");
             String value = "request." + component + "()";
-            if (attribute.referencedType() != null) {
+            if (idReference(plan, attribute)) {
+                // Kept as the referenced id: there is no association to resolve across stores.
+                value = "request." + component + "()";
+            } else if (attribute.referencedType() != null) {
                 value = "resolveReference(" + value + ", \"" + component + "\", "
                         + attribute.referencedType().qualifiedName + ".class)";
             } else if (field.collectionIntent() == CollectionIntent.COLLECTION) {
                 value = value + " == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(" + value + ")";
             }
-            source.append("        entity.set").append(capitalize(field.javaName())).append('(')
+            source.append("        entity.set").append(capitalize(propertyName(plan, attribute))).append('(')
                     .append(value).append(");\n");
         }
         for (OwningRelationshipPlan relationship : plan.owningRelationships) {
             String component = relationship.descriptor().owningFieldName() + "Id";
-            String value = "resolveReference(request." + component + "(), \"" + component + "\", "
-                    + relationship.referenced().qualifiedName + ".class)";
-            source.append("        entity.set").append(capitalize(relationship.descriptor().owningFieldName()))
+            String value = idReference(plan, relationship.referenced())
+                    ? "request." + component + "()"
+                    : "resolveReference(request." + component + "(), \"" + component + "\", "
+                            + relationship.referenced().qualifiedName + ".class)";
+            source.append("        entity.set").append(capitalize(propertyName(plan, relationship)))
                     .append('(').append(value).append(");\n");
         }
         source.append("    }\n");
@@ -540,10 +593,128 @@ public final class DomainProjectEmitter {
         return source.toString();
     }
 
-    private String controllerSource(EntityPlan plan, String rootPackage) {
+    /** A class persisted as a Spring Data MongoDB document; references to other classes are kept as ids. */
+    private String documentSource(EntityPlan plan, Map<UUID, EntityPlan> plans, Map<UUID, EnumPlan> enumPlans) {
+        TreeSet<String> imports = new TreeSet<>(Set.of("java.util.UUID", "org.springframework.data.annotation.Id",
+                "org.springframework.data.mongodb.core.mapping.Document"));
+        if (plan.attributes.stream()
+                .anyMatch(attribute -> attribute.source().collectionIntent() == CollectionIntent.COLLECTION)) {
+            imports.add("java.util.ArrayList");
+            imports.add("java.util.List");
+        }
+        plan.attributes.stream().filter(attribute -> attribute.referencedType() == null)
+                .map(AttributePlan::javaType).filter(DomainProjectEmitter::isImportable).forEach(imports::add);
+
+        StringBuilder source = new StringBuilder();
+        source.append("package ").append(plan.packageName).append(";\n\n");
+        imports.forEach(name -> source.append("import ").append(name).append(";\n"));
+        boolean abstractClass = plan.type.isAbstract() || plan.type.classifierKind() == ClassifierKind.ABSTRACT_CLASS
+                || plan.type.operations().stream().anyMatch(OperationSignature::isAbstract);
+        source.append("\n@Document(collection = ").append(javaString(plan.type.tableName())).append(")\n")
+                .append("public ").append(abstractClass ? "abstract " : "").append("class ")
+                .append(plan.type.javaName()).append(" {\n")
+                .append("    @Id\n")
+                .append("    private UUID id = UUID.randomUUID();\n");
+        for (AttributePlan attribute : plan.attributes) {
+            FieldDeclaration field = attribute.source();
+            String declarationType = idReference(plan, attribute) ? "UUID"
+                    : field.collectionIntent() == CollectionIntent.COLLECTION
+                    ? "List<" + boxed(attribute.javaType()) + ">"
+                    : attribute.javaType();
+            source.append("\n    private ").append(declarationType).append(' ')
+                    .append(propertyName(plan, attribute));
+            if (field.collectionIntent() == CollectionIntent.COLLECTION) {
+                source.append(" = new ArrayList<>()");
+            } else if (attribute.javaDefaultValue() != null) {
+                source.append(" = ").append(attribute.javaDefaultValue());
+            }
+            source.append(";\n");
+        }
+        for (OwningRelationshipPlan relation : plan.owningRelationships) {
+            source.append("\n    private UUID ").append(propertyName(plan, relation)).append(";\n");
+        }
+        source.append("\n    public ").append(plan.type.javaName()).append("() {\n    }\n")
+                .append("\n    public UUID getId() {\n        return id;\n    }\n");
+        for (AttributePlan attribute : plan.attributes) {
+            String type = idReference(plan, attribute) ? "UUID"
+                    : attribute.source().collectionIntent() == CollectionIntent.COLLECTION
+                    ? "List<" + boxed(attribute.javaType()) + ">"
+                    : attribute.javaType();
+            appendGetter(source, type, propertyName(plan, attribute));
+            appendSetter(source, type, propertyName(plan, attribute));
+        }
+        for (OwningRelationshipPlan relation : plan.owningRelationships) {
+            appendGetter(source, "UUID", propertyName(plan, relation));
+            appendSetter(source, "UUID", propertyName(plan, relation));
+        }
+        appendOperationStubs(source, plan, plans, enumPlans);
+        source.append("}\n");
+        return source.toString();
+    }
+
+    /** CRUD over a MongoDB repository; documents expose no query endpoints and need no transactions. */
+    private String documentServiceSource(EntityPlan plan, String rootPackage) {
+        String dtoName = plan.type.javaName() + "Dto";
+        String repositoryName = plan.type.javaName() + "Repository";
+        String entity = plan.type.javaName();
+        StringBuilder source = new StringBuilder();
+        source.append("package ").append(rootPackage).append(".service;\n\n")
+                .append("import ").append(rootPackage).append(".api.dto.").append(dtoName).append(";\n")
+                .append("import ").append(rootPackage).append(".repository.").append(repositoryName).append(";\n")
+                .append("import ").append(plan.qualifiedName).append(";\n")
+                .append("import java.util.List;\n")
+                .append("import java.util.Optional;\n")
+                .append("import java.util.UUID;\n")
+                .append("import org.springframework.stereotype.Service;\n")
+                .append("\n@Service\npublic class ").append(entity).append("Service {\n")
+                .append("    private final ").append(repositoryName).append(" repository;\n")
+                .append("\n    public ").append(entity).append("Service(").append(repositoryName)
+                .append(" repository) {\n        this.repository = repository;\n    }\n")
+                .append("\n    public List<").append(dtoName).append("> list() {\n")
+                .append("        return repository.findAll().stream().map(").append(dtoName).append("::from).toList();\n")
+                .append("    }\n")
+                .append("\n    public Optional<").append(dtoName).append("> findById(UUID id) {\n")
+                .append("        return repository.findById(id).map(").append(dtoName).append("::from);\n")
+                .append("    }\n")
+                .append("\n    public ").append(dtoName).append(" create(").append(dtoName)
+                .append(" request) {\n        ").append(entity).append(" entity = new ").append(entity)
+                .append("();\n        applyRequest(entity, request);\n")
+                .append("        return ").append(dtoName).append(".from(repository.save(entity));\n    }\n")
+                .append("\n    public Optional<").append(dtoName).append("> update(UUID id, ").append(dtoName)
+                .append(" request) {\n")
+                .append("        return repository.findById(id).map(entity -> {\n")
+                .append("            applyRequest(entity, request);\n")
+                .append("            return ").append(dtoName).append(".from(repository.save(entity));\n")
+                .append("        });\n    }\n")
+                .append("\n    public boolean delete(UUID id) {\n")
+                .append("        if (!repository.existsById(id)) {\n            return false;\n        }\n")
+                .append("        repository.deleteById(id);\n        return true;\n    }\n")
+                .append("\n    private void applyRequest(").append(entity).append(" entity, ").append(dtoName)
+                .append(" request) {\n");
+        for (AttributePlan attribute : plan.attributes) {
+            FieldDeclaration field = attribute.source();
+            String component = field.javaName() + (attribute.referencedType() == null ? "" : "Id");
+            String value = "request." + component + "()";
+            if (attribute.referencedType() == null && field.collectionIntent() == CollectionIntent.COLLECTION) {
+                value = value + " == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(" + value + ")";
+            }
+            source.append("        entity.set").append(capitalize(propertyName(plan, attribute))).append('(')
+                    .append(value).append(");\n");
+        }
+        for (OwningRelationshipPlan relationship : plan.owningRelationships) {
+            String component = relationship.descriptor().owningFieldName() + "Id";
+            source.append("        entity.set").append(capitalize(propertyName(plan, relationship)))
+                    .append("(request.").append(component).append("());\n");
+        }
+        source.append("    }\n}\n");
+        return source.toString();
+    }
+
+    /** The query endpoints exist only for relational classes: they are compiled against the JPA query support. */
+    private String controllerSource(EntityPlan plan, String rootPackage, boolean withQuery) {
         String dtoName = plan.type.javaName() + "Dto";
         String serviceName = plan.type.javaName() + "Service";
-        return lines(
+        List<String> out = new ArrayList<>(List.of(
                 "package " + rootPackage + ".api;",
                 "",
                 "import " + rootPackage + ".api.dto." + dtoName + ";",
@@ -560,10 +731,15 @@ public final class DomainProjectEmitter {
                 "import org.springframework.web.bind.annotation.PostMapping;",
                 "import org.springframework.web.bind.annotation.PutMapping;",
                 "import org.springframework.web.bind.annotation.RequestBody;",
-                "import org.springframework.web.bind.annotation.RequestMapping;",
-                "import org.springframework.web.bind.annotation.RequestParam;",
-                "import org.springframework.web.bind.annotation.RestController;",
-                "import org.springframework.util.MultiValueMap;",
+                "import org.springframework.web.bind.annotation.RequestMapping;"));
+        if (withQuery) {
+            out.add("import org.springframework.web.bind.annotation.RequestParam;");
+        }
+        out.add("import org.springframework.web.bind.annotation.RestController;");
+        if (withQuery) {
+            out.add("import org.springframework.util.MultiValueMap;");
+        }
+        out.addAll(List.of(
                 "",
                 "@RestController",
                 "@RequestMapping(\"/api/" + plan.type.tableName() + "\")",
@@ -578,33 +754,37 @@ public final class DomainProjectEmitter {
                 "    public List<" + dtoName + "> list() {",
                 "        return service.list();",
                 "    }",
-                "",
-                "    // Filters are read raw from the query string: a typed List<String> would split values on commas.",
-                "    @GetMapping(\"/query\")",
-                "    public QuerySupport.Page<" + dtoName + "> query(@RequestParam MultiValueMap<String, String> params,",
-                "            @RequestParam(required = false) String sort, @RequestParam(required = false) Integer page,",
-                "            @RequestParam(required = false) Integer size) {",
-                "        return service.query(filters(params), sort, page, size);",
-                "    }",
-                "",
-                "    @GetMapping(\"/values\")",
-                "    public List<Object> values(@RequestParam MultiValueMap<String, String> params,",
-                "            @RequestParam(required = false) String field) {",
-                "        return service.values(field, filters(params));",
-                "    }",
-                "",
-                "    @GetMapping(\"/aggregate\")",
-                "    public List<QuerySupport.Bucket> aggregate(@RequestParam MultiValueMap<String, String> params,",
-                "            @RequestParam(required = false) String op, @RequestParam(required = false) String field,",
-                "            @RequestParam(required = false) String groupBy) {",
-                "        return service.aggregate(op, field, groupBy, filters(params));",
-                "    }",
-                "",
-                "    private static List<String> filters(MultiValueMap<String, String> params) {",
-                "        List<String> filters = params.get(\"filter\");",
-                "        return filters == null ? List.of() : filters;",
-                "    }",
-                "",
+                ""));
+        if (withQuery) {
+            out.addAll(List.of(
+                    "    // Filters are read raw from the query string: a typed List<String> would split values on commas.",
+                    "    @GetMapping(\"/query\")",
+                    "    public QuerySupport.Page<" + dtoName + "> query(@RequestParam MultiValueMap<String, String> params,",
+                    "            @RequestParam(required = false) String sort, @RequestParam(required = false) Integer page,",
+                    "            @RequestParam(required = false) Integer size) {",
+                    "        return service.query(filters(params), sort, page, size);",
+                    "    }",
+                    "",
+                    "    @GetMapping(\"/values\")",
+                    "    public List<Object> values(@RequestParam MultiValueMap<String, String> params,",
+                    "            @RequestParam(required = false) String field) {",
+                    "        return service.values(field, filters(params));",
+                    "    }",
+                    "",
+                    "    @GetMapping(\"/aggregate\")",
+                    "    public List<QuerySupport.Bucket> aggregate(@RequestParam MultiValueMap<String, String> params,",
+                    "            @RequestParam(required = false) String op, @RequestParam(required = false) String field,",
+                    "            @RequestParam(required = false) String groupBy) {",
+                    "        return service.aggregate(op, field, groupBy, filters(params));",
+                    "    }",
+                    "",
+                    "    private static List<String> filters(MultiValueMap<String, String> params) {",
+                    "        List<String> filters = params.get(\"filter\");",
+                    "        return filters == null ? List.of() : filters;",
+                    "    }",
+                    ""));
+        }
+        out.addAll(List.of(
                 "    @PostMapping",
                 "    public ResponseEntity<" + dtoName + "> create(@Valid @RequestBody " + dtoName + " request) {",
                 "        return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));",
@@ -630,7 +810,8 @@ public final class DomainProjectEmitter {
                 "        }",
                 "        return ResponseEntity.noContent().build();",
                 "    }",
-                "}");
+                "}"));
+        return lines(out.toArray(String[]::new));
     }
 
     private String querySupport(TargetNames target) {
@@ -1078,8 +1259,8 @@ public final class DomainProjectEmitter {
                 "}");
     }
 
-    private String pom(TargetNames target) {
-        return lines(
+    private String pom(TargetNames target, boolean hasSql, boolean hasDocument) {
+        List<String> out = new ArrayList<>(List.of(
                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                 "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"",
                 "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"",
@@ -1099,36 +1280,22 @@ public final class DomainProjectEmitter {
                 "    <java.version>" + baseline.javaVersion() + "</java.version>",
                 "    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>",
                 "  </properties>",
-                "  <dependencies>",
-                "    <dependency>",
-                "      <groupId>org.springframework.boot</groupId>",
-                "      <artifactId>spring-boot-starter-web</artifactId>",
-                "    </dependency>",
-                "    <dependency>",
-                "      <groupId>org.springframework.boot</groupId>",
-                "      <artifactId>spring-boot-starter-data-jpa</artifactId>",
-                "    </dependency>",
-                "    <dependency>",
-                "      <groupId>org.springframework.boot</groupId>",
-                "      <artifactId>spring-boot-starter-validation</artifactId>",
-                "    </dependency>",
-                "    <dependency>",
-                "      <groupId>org.springframework.boot</groupId>",
-                "      <artifactId>spring-boot-starter-actuator</artifactId>",
-                "    </dependency>",
-                "    <dependency>",
-                "      <groupId>org.flywaydb</groupId>",
-                "      <artifactId>flyway-core</artifactId>",
-                "    </dependency>",
-                "    <dependency>",
-                "      <groupId>org.flywaydb</groupId>",
-                "      <artifactId>flyway-database-postgresql</artifactId>",
-                "    </dependency>",
-                "    <dependency>",
-                "      <groupId>org.postgresql</groupId>",
-                "      <artifactId>postgresql</artifactId>",
-                "      <scope>runtime</scope>",
-                "    </dependency>",
+                "  <dependencies>"));
+        dependency(out, "org.springframework.boot", "spring-boot-starter-web", null);
+        if (hasSql) {
+            dependency(out, "org.springframework.boot", "spring-boot-starter-data-jpa", null);
+        }
+        dependency(out, "org.springframework.boot", "spring-boot-starter-validation", null);
+        dependency(out, "org.springframework.boot", "spring-boot-starter-actuator", null);
+        if (hasSql) {
+            dependency(out, "org.flywaydb", "flyway-core", null);
+            dependency(out, "org.flywaydb", "flyway-database-postgresql", null);
+            dependency(out, "org.postgresql", "postgresql", "runtime");
+        }
+        if (hasDocument) {
+            dependency(out, "org.springframework.boot", "spring-boot-starter-data-mongodb", null);
+        }
+        out.addAll(List.of(
                 "    <!-- spring-boot-starter-security is omitted: version " + baseline.springBootVersion()
                         + " is unavailable in the local offline dependency cache. -->",
                 "  </dependencies>",
@@ -1140,28 +1307,51 @@ public final class DomainProjectEmitter {
                 "      </plugin>",
                 "    </plugins>",
                 "  </build>",
-                "</project>");
+                "</project>"));
+        return lines(out.toArray(String[]::new));
     }
 
-    private String applicationYaml() {
-        return lines(
-                "spring:",
-                "  datasource:",
-                "    url: ${SPRING_DATASOURCE_URL}",
-                "    username: ${SPRING_DATASOURCE_USERNAME}",
-                "    password: ${SPRING_DATASOURCE_PASSWORD}",
-                "  jpa:",
-                "    hibernate:",
-                "      ddl-auto: validate",
-                "    open-in-view: false",
-                "  flyway:",
-                "    enabled: true",
-                "    locations: classpath:db/migration",
+    private static void dependency(List<String> out, String groupId, String artifactId, String scope) {
+        out.add("    <dependency>");
+        out.add("      <groupId>" + groupId + "</groupId>");
+        out.add("      <artifactId>" + artifactId + "</artifactId>");
+        if (scope != null) {
+            out.add("      <scope>" + scope + "</scope>");
+        }
+        out.add("    </dependency>");
+    }
+
+    private String applicationYaml(boolean hasSql, boolean hasDocument) {
+        List<String> out = new ArrayList<>();
+        out.add("spring:");
+        if (hasSql) {
+            out.addAll(List.of(
+                    "  datasource:",
+                    "    url: ${SPRING_DATASOURCE_URL}",
+                    "    username: ${SPRING_DATASOURCE_USERNAME}",
+                    "    password: ${SPRING_DATASOURCE_PASSWORD}",
+                    "  jpa:",
+                    "    hibernate:",
+                    "      ddl-auto: validate",
+                    "    open-in-view: false",
+                    "  flyway:",
+                    "    enabled: true",
+                    "    locations: classpath:db/migration"));
+        }
+        if (hasDocument) {
+            out.addAll(List.of(
+                    "  data:",
+                    "    mongodb:",
+                    "      uri: ${SPRING_DATA_MONGODB_URI}",
+                    "      uuid-representation: standard"));
+        }
+        out.addAll(List.of(
                 "management:",
                 "  endpoints:",
                 "    web:",
                 "      exposure:",
-                "        include: health");
+                "        include: health"));
+        return lines(out.toArray(String[]::new));
     }
 
     private String dockerfile() {
@@ -1184,12 +1374,13 @@ public final class DomainProjectEmitter {
      * The application is published on every interface and the database only on loopback: a client on the same
      * network needs the first, and nothing outside the machine needs the second.
      */
-    private String compose(TargetNames target) {
+    private String compose(TargetNames target, boolean hasSql, boolean hasDocument) {
         String slug = target.slug();
-        return lines(
+        String stores = hasSql && hasDocument ? "PostgreSQL and MongoDB" : hasDocument ? "MongoDB" : "PostgreSQL";
+        List<String> out = new ArrayList<>(List.of(
                 "name: generated-" + slug,
                 "",
-                "# One Compose project per destination: its own application service, its own PostgreSQL, and its",
+                "# One Compose project per destination: its own application service, its own " + stores + ", and its",
                 "# own database volume. No secret is stored in this file.",
                 "#",
                 "# Port policy: the application is published on every interface, because a client on the same network has",
@@ -1197,36 +1388,76 @@ public final class DomainProjectEmitter {
                 "# the Compose network, and nothing outside this machine should be able to open it. Binding it to every",
                 "# interface would put the generated database on the network.",
                 "",
-                "services:",
-                "  " + slug + "-db:",
-                "    image: " + baseline.postgresImage(),
-                "    environment:",
-                "      POSTGRES_DB: ${GENERATED_DB_NAME}",
-                "      POSTGRES_USER: ${GENERATED_DB_USER}",
-                "      POSTGRES_PASSWORD: ${GENERATED_DB_PASSWORD}",
-                "    ports:",
-                "      - \"127.0.0.1:${GENERATED_POSTGRES_HOST_PORT:-25433}:5432\"",
-                "    volumes:",
-                "      - " + slug + "-postgres-data:/var/lib/postgresql/data",
-                "    healthcheck:",
-                "      test: [\"CMD-SHELL\", \"pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}\"]",
-                "      interval: 5s",
-                "      timeout: 3s",
-                "      retries: 12",
-                "",
+                "services:"));
+        if (hasSql) {
+            out.addAll(List.of(
+                    "  " + slug + "-db:",
+                    "    image: " + baseline.postgresImage(),
+                    "    environment:",
+                    "      POSTGRES_DB: ${GENERATED_DB_NAME}",
+                    "      POSTGRES_USER: ${GENERATED_DB_USER}",
+                    "      POSTGRES_PASSWORD: ${GENERATED_DB_PASSWORD}",
+                    "    ports:",
+                    "      - \"127.0.0.1:${GENERATED_POSTGRES_HOST_PORT:-25433}:5432\"",
+                    "    volumes:",
+                    "      - " + slug + "-postgres-data:/var/lib/postgresql/data",
+                    "    healthcheck:",
+                    "      test: [\"CMD-SHELL\", \"pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}\"]",
+                    "      interval: 5s",
+                    "      timeout: 3s",
+                    "      retries: 12",
+                    ""));
+        }
+        if (hasDocument) {
+            out.addAll(List.of(
+                    "  " + slug + "-mongo:",
+                    "    image: " + baseline.mongoImage(),
+                    "    environment:",
+                    "      MONGO_INITDB_ROOT_USERNAME: ${GENERATED_MONGO_USER}",
+                    "      MONGO_INITDB_ROOT_PASSWORD: ${GENERATED_MONGO_PASSWORD}",
+                    "      MONGO_INITDB_DATABASE: ${GENERATED_MONGO_DB}",
+                    "    ports:",
+                    "      - \"127.0.0.1:${GENERATED_MONGO_HOST_PORT:-27018}:27017\"",
+                    "    volumes:",
+                    "      - " + slug + "-mongo-data:/data/db",
+                    "    healthcheck:",
+                    "      test: [\"CMD\", \"mongosh\", \"--quiet\", \"--eval\", \"db.adminCommand('ping').ok\"]",
+                    "      interval: 5s",
+                    "      timeout: 3s",
+                    "      retries: 12",
+                    ""));
+        }
+        out.addAll(List.of(
                 "  " + slug + ":",
                 "    build:",
                 "      context: .",
                 "      dockerfile: Dockerfile",
-                "    environment:",
-                "      SPRING_DATASOURCE_URL: jdbc:postgresql://" + slug + "-db:5432/${GENERATED_DB_NAME}",
-                "      SPRING_DATASOURCE_USERNAME: ${GENERATED_DB_USER}",
-                "      SPRING_DATASOURCE_PASSWORD: ${GENERATED_DB_PASSWORD}",
+                "    environment:"));
+        if (hasSql) {
+            out.addAll(List.of(
+                    "      SPRING_DATASOURCE_URL: jdbc:postgresql://" + slug + "-db:5432/${GENERATED_DB_NAME}",
+                    "      SPRING_DATASOURCE_USERNAME: ${GENERATED_DB_USER}",
+                    "      SPRING_DATASOURCE_PASSWORD: ${GENERATED_DB_PASSWORD}"));
+        }
+        if (hasDocument) {
+            out.add("      SPRING_DATA_MONGODB_URI: mongodb://${GENERATED_MONGO_USER}:${GENERATED_MONGO_PASSWORD}@"
+                    + slug + "-mongo:27017/${GENERATED_MONGO_DB}?authSource=admin");
+        }
+        out.addAll(List.of(
                 "    ports:",
                 "      - \"${GENERATED_HTTP_HOST_PORT:-19001}:8080\"",
-                "    depends_on:",
-                "      " + slug + "-db:",
-                "        condition: service_healthy",
+                "    depends_on:"));
+        if (hasSql) {
+            out.addAll(List.of(
+                    "      " + slug + "-db:",
+                    "        condition: service_healthy"));
+        }
+        if (hasDocument) {
+            out.addAll(List.of(
+                    "      " + slug + "-mongo:",
+                    "        condition: service_healthy"));
+        }
+        out.addAll(List.of(
                 "    healthcheck:",
                 "      test: [\"CMD-SHELL\", \"wget -q --spider http://127.0.0.1:8080/actuator/health\"]",
                 "      interval: 10s",
@@ -1234,35 +1465,60 @@ public final class DomainProjectEmitter {
                 "      retries: 12",
                 "      start_period: 30s",
                 "",
-                "volumes:",
-                "  " + slug + "-postgres-data:");
+                "volumes:"));
+        if (hasSql) {
+            out.add("  " + slug + "-postgres-data:");
+        }
+        if (hasDocument) {
+            out.add("  " + slug + "-mongo-data:");
+        }
+        return lines(out.toArray(String[]::new));
     }
 
     /** The values a destination must set before it can start. It documents them without carrying a secret. */
-    private String envExample(TargetNames target) {
-        return lines(
+    private String envExample(TargetNames target, boolean hasSql, boolean hasDocument) {
+        List<String> out = new ArrayList<>(List.of(
                 "# Deployment values for the generated backend `" + target.slug() + "`.",
                 "#",
                 "# Copy this file to .env in this directory and set every value before running",
                 "# `docker compose up -d --build`. Compose reads .env automatically. This example file carries no",
                 "# usable secret, and the emitted .gitignore keeps the real .env out of version control.",
-                "",
-                "# Database created and used by this destination alone.",
-                "GENERATED_DB_NAME=generated_db",
-                "GENERATED_DB_USER=generated_user",
-                "GENERATED_DB_PASSWORD=replace-with-a-local-only-value",
-                "",
+                ""));
+        if (hasSql) {
+            out.addAll(List.of(
+                    "# Database created and used by this destination alone.",
+                    "GENERATED_DB_NAME=generated_db",
+                    "GENERATED_DB_USER=generated_user",
+                    "GENERATED_DB_PASSWORD=replace-with-a-local-only-value",
+                    ""));
+        }
+        if (hasDocument) {
+            out.addAll(List.of(
+                    "# MongoDB database created and used by this destination alone. The user and password go into a",
+                    "# connection string, so keep them free of characters that need URL encoding (: / @ ? #).",
+                    "GENERATED_MONGO_DB=generated_documents",
+                    "GENERATED_MONGO_USER=generated_user",
+                    "GENERATED_MONGO_PASSWORD=replace-with-a-local-only-value",
+                    ""));
+        }
+        out.addAll(List.of(
                 "# Host ports for this destination, one pair per destination from the 1900N and 2543N ranges:",
                 "# 19001/25433 for the first, 19002/25434 for the second, and so on.",
                 "# The application port is published on every interface, so a client on the same network can reach it:",
                 "# http://<this-machine>:19001/api/...",
                 "# The database port is published on 127.0.0.1 only and is not reachable from the network, on purpose.",
-                "GENERATED_HTTP_HOST_PORT=19001",
-                "GENERATED_POSTGRES_HOST_PORT=25433");
+                "GENERATED_HTTP_HOST_PORT=19001"));
+        if (hasSql) {
+            out.add("GENERATED_POSTGRES_HOST_PORT=25433");
+        }
+        if (hasDocument) {
+            out.add("GENERATED_MONGO_HOST_PORT=27018");
+        }
+        return lines(out.toArray(String[]::new));
     }
 
-    private String readme(TargetNames target) {
-        return lines(
+    private String readme(TargetNames target, boolean hasSql, boolean hasDocument, Collection<EntityPlan> plans) {
+        List<String> out = new ArrayList<>(List.of(
                 "# Generated backend for target `" + target.slug() + "`",
                 "",
                 "This project was emitted from a normalized UML domain IR. Its package and artifact names derive from the generation target key.",
@@ -1270,29 +1526,56 @@ public final class DomainProjectEmitter {
                 "## Build and database configuration",
                 "",
                 "Build with `mvn -o -B package` when the Spring Boot " + baseline.springBootVersion()
-                        + " dependency set is present in the local Maven cache.",
-                "Set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the runtime environment.",
-                "Flyway applies `src/main/resources/db/migration/V1__init.sql` at startup.",
-                "List and lookup services map entities to DTOs inside read-only transactions; the API does not serialize lazy entities.",
+                        + " dependency set is present in the local Maven cache."));
+        if (hasSql) {
+            out.addAll(List.of(
+                    "Set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the runtime environment.",
+                    "Flyway applies `src/main/resources/db/migration/V1__init.sql` at startup.",
+                    "List and lookup services map entities to DTOs inside read-only transactions; the API does not serialize lazy entities."));
+        }
+        if (hasDocument) {
+            out.add("Set `SPRING_DATA_MONGODB_URI` in the runtime environment; document classes are stored in MongoDB with standard UUID ids.");
+        }
+        out.addAll(List.of(
                 "",
                 "## Deploy with Docker Compose",
                 "",
                 "1. `mvn -o -B package` leaves the runnable jar in `target/`.",
                 "2. Copy `.env.example` to `.env` and set every value. The emitted `.gitignore` keeps `.env` out of version control.",
-                "3. `docker compose up -d --build` starts this destination and its own PostgreSQL.",
-                "4. `curl http://localhost:19001/actuator/health` answers `{\"status\":\"UP\"}` once Flyway applied the migration.",
+                "3. `docker compose up -d --build` starts this destination and its own " + (hasSql && hasDocument
+                        ? "PostgreSQL and MongoDB." : hasDocument ? "MongoDB." : "PostgreSQL."),
+                "4. `curl http://localhost:19001/actuator/health` answers `{\"status\":\"UP\"}` once "
+                        + (hasSql ? "Flyway applied the migration." : "the application started."),
                 "",
                 "Each destination is its own Compose project with its own database volume, so two destinations of the same model run at the same time as long as their host port pairs differ. Take the pair from the `1900N` and `2543N` ranges: `19001`/`25433` for the first destination, `19002`/`25434` for the second, and so on.",
                 "",
                 "## What is reachable from where",
                 "",
                 "The application port is published on **every interface**, so another device on the same network reaches this backend at `http://<this-machine>:19001`. That is deliberate: it is what lets a client on the same network call this API.",
-                "The database port is published on **`127.0.0.1` only**. The application reaches its database over the Compose network, so nothing outside this machine needs the port, and binding it to every interface would put this generated database on the network.",
+                "The database port is published on **`127.0.0.1` only**. The application reaches its database over the Compose network, so nothing outside this machine needs the port, and binding it to every interface would put this generated database on the network."));
+        if (hasDocument) {
+            out.add("");
+            out.add("## Persistence stores");
+            out.add("");
+            out.add("Each class of the model is stored where its signals say, and the reason is recorded here. A class can be forced to a store from the editor.");
+            out.add("");
+            plans.stream().sorted((left, right) -> left.qualifiedName.compareTo(right.qualifiedName)).forEach(plan ->
+                    out.add("- `" + plan.type.javaName() + "`: " + (plan.document() ? "document (MongoDB)" : "relational (PostgreSQL)")
+                            + (plan.type.storeReason() == null ? "" : ". " + plan.type.storeReason())));
+            out.add("");
+            out.add("Limits of the document classes:");
+            out.add("");
+            out.add("- A reference from or to a document is stored as the referenced `UUID`. There is no foreign key and no join, so nothing checks that the referenced object exists or removes the reference when it is deleted.");
+            out.add("- Document classes expose list, lookup, create, update and delete. The `/query`, `/values` and `/aggregate` endpoints exist only for relational classes.");
+            out.add("- A composition does not cascade a delete across stores.");
+        }
+        out.addAll(List.of(
                 "",
                 "## Security limitation",
                 "",
                 "The Spring Boot security starter is intentionally omitted because version " + baseline.springBootVersion()
-                        + " is unavailable in the configured local offline Maven cache. This emitted backend has no generated authentication or authorization layer and must not be exposed to untrusted networks until an approved security dependency and policy are supplied.");
+                        + " is unavailable in the configured local offline Maven cache. This emitted backend has no generated authentication or authorization layer and must not be exposed to untrusted networks until an approved security dependency and policy are supplied."));
+        return lines(out.toArray(String[]::new));
     }
 
     private String migration(List<EntityPlan> plans) {
@@ -1320,7 +1603,7 @@ public final class DomainProjectEmitter {
                         + (descriptor.owningFieldNullable() ? "" : " NOT NULL"));
             }
             for (AttributePlan attribute : plan.attributes) {
-                if (attribute.referencedType() != null
+                if (attribute.referencedType() != null && !idReference(plan, attribute)
                         && attribute.source().collectionIntent() != CollectionIntent.COLLECTION) {
                     String columnName = attribute.columnName() + "_id";
                     String constraint = foreignKeyName(plan.type.tableName(), columnName);
@@ -1329,6 +1612,9 @@ public final class DomainProjectEmitter {
                 }
             }
             for (OwningRelationshipPlan relationship : plan.owningRelationships) {
+                if (idReference(plan, relationship.referenced())) {
+                    continue;
+                }
                 String columnName = snakeCase(relationship.descriptor().owningFieldName()) + "_id";
                 String constraint = foreignKeyName(plan.type.tableName(), columnName);
                 columns.add("CONSTRAINT " + quoted(constraint) + " FOREIGN KEY (" + quoted(columnName)
@@ -1734,6 +2020,29 @@ public final class DomainProjectEmitter {
             this.packageName = packageName;
             this.qualifiedName = qualifiedName;
         }
+
+        private boolean document() {
+            return type.store() == PersistenceStore.DOCUMENT;
+        }
+    }
+
+    /** A reference between classes of different stores, or from a document, is kept as the referenced id. */
+    private static boolean idReference(EntityPlan owner, EntityPlan referenced) {
+        return owner.document() || referenced.document();
+    }
+
+    private static boolean idReference(EntityPlan owner, AttributePlan attribute) {
+        return attribute.referencedType() != null && idReference(owner, attribute.referencedType());
+    }
+
+    /** The Java property of an attribute: an id reference is a UUID property named after the attribute plus Id. */
+    private static String propertyName(EntityPlan owner, AttributePlan attribute) {
+        return idReference(owner, attribute) ? attribute.source().javaName() + "Id" : attribute.source().javaName();
+    }
+
+    private static String propertyName(EntityPlan owner, OwningRelationshipPlan relationship) {
+        String name = relationship.descriptor().owningFieldName();
+        return idReference(owner, relationship.referenced()) ? name + "Id" : name;
     }
 
     private record AttributePlan(FieldDeclaration source, String javaType, String sqlType, String columnName,

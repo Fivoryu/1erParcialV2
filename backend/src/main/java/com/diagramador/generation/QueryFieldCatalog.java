@@ -1,5 +1,6 @@
 package com.diagramador.generation;
 
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.generation.DomainModelIR.CollectionIntent;
 import com.diagramador.generation.DomainModelIR.EnumDeclaration;
 import com.diagramador.generation.DomainModelIR.FieldDeclaration;
@@ -42,7 +43,11 @@ public final class QueryFieldCatalog {
     private QueryFieldCatalog() {
     }
 
+    /** A document class exposes no query endpoints, so it has no query fields. */
     public static List<QueryField> fields(TypeDeclaration type, DomainModelIR ir) {
+        if (type.store() == PersistenceStore.DOCUMENT) {
+            return List.of();
+        }
         Map<UUID, TypeDeclaration> types = ir.types().stream()
                 .collect(Collectors.toMap(TypeDeclaration::sourceId, Function.identity(), (left, right) -> left));
         Map<UUID, EnumDeclaration> enums = ir.enums().stream()
@@ -69,6 +74,11 @@ public final class QueryFieldCatalog {
 
     private static void addReference(List<QueryField> fields, String fieldName, TypeDeclaration referenced,
             Map<UUID, EnumDeclaration> enums) {
+        if (referenced.store() == PersistenceStore.DOCUMENT) {
+            // Kept as a plain id column: the document is in another store, so there is nothing to join.
+            fields.add(new QueryField(fieldName + "Id", fieldName + "Id", Kind.UUID, null, referenced.tableName()));
+            return;
+        }
         fields.add(new QueryField(fieldName + "Id", fieldName + ".id", Kind.UUID, null, referenced.tableName()));
         fields.addAll(scalars(referenced, enums, fieldName + "."));
     }
