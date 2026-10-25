@@ -552,6 +552,22 @@ class AssistantApplyServiceTest {
     }
 
     @Test
+    void relationshipCreateRefusesAnAssociationClassThatNamesNoClass() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.create", null, Map.of(
+                        "kind", "ASSOCIATION",
+                        "associationClass", Map.of("classifierName", "Nowhere"),
+                        "source", Map.of("classifierName", "Persona"),
+                        "target", Map.of("classifierName", "Persona")))), 7L));
+
+        assertThat(response.steps().get(0).status()).isEqualTo("REJECTED");
+        verify(commandService, never()).execute(any());
+    }
+
+    @Test
     void relationshipCreateWithoutAnAssociationClassSendsNoKeyForIt() {
         when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L));
         when(commandService.execute(any())).thenReturn(accepted(8L));

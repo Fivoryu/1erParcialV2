@@ -326,6 +326,9 @@ public class AssistantApplyService {
                 UUID associationClass = associationClassArg(args.get("associationClass"), model);
                 if (associationClass != null) {
                     payload.put("associationClassId", associationClass.toString());
+                } else if (args.get("associationClass") != null) {
+                    // Same as an update: a class it could not name refuses the step instead of dropping the link.
+                    yield unresolvableTarget(operation.type());
                 }
                 if (args.get("waypoints") != null) {
                     payload.put("waypoints", args.get("waypoints"));
