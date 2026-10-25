@@ -39,21 +39,37 @@ class DiagramContextRendererStereotypeTest {
         assertThat(relationship.fieldNames()).toIterable().containsExactly("kind", "source", "target");
     }
 
+    @Test
+    void anAssociationClassCarriesItsNameInTheContext() throws Exception {
+        JsonNode relationship = render("ASSOCIATION", null, true).path("relationships").get(0);
+
+        assertThat(relationship.path("associationClass").asText()).isEqualTo("Invoice");
+        assertThat(render("ASSOCIATION", null, false).path("relationships").get(0).has("associationClass")).isFalse();
+    }
+
     private JsonNode render(String kind, String stereotype) throws Exception {
+        return render(kind, stereotype, false);
+    }
+
+    private JsonNode render(String kind, String stereotype, boolean withAssociationClass) throws Exception {
         UUID orderId = UUID.randomUUID();
         UUID customerId = UUID.randomUUID();
         ClassifierResource order = new ClassifierResource(orderId, "Order", ClassifierKind.CLASS, false, null,
                 List.of(), List.of(), List.of());
         ClassifierResource customer = new ClassifierResource(customerId, "Customer", ClassifierKind.CLASS, false,
                 null, List.of(), List.of(), List.of());
+        UUID invoiceId = UUID.randomUUID();
+        ClassifierResource invoice = new ClassifierResource(invoiceId, "Invoice", ClassifierKind.CLASS, false,
+                null, List.of(), List.of(), List.of());
         RelationshipResource relationship = new RelationshipResource(UUID.randomUUID(), kind, null, stereotype,
+                withAssociationClass ? invoiceId : null,
                 List.of(new RelationshipEndResource(UUID.randomUUID(), orderId, null, MultiplicityKind.EXACTLY_ONE,
                                 NavigationKind.UNSPECIFIED, "none", (short) 1),
                         new RelationshipEndResource(UUID.randomUUID(), customerId, null,
                                 MultiplicityKind.EXACTLY_ONE, NavigationKind.UNSPECIFIED, "none", (short) 2)),
                 List.of());
         ModelResource model = new ModelResource(UUID.randomUUID(), UUID.randomUUID(), 1, UUID.randomUUID(),
-                List.of(), List.of(order, customer), List.of(relationship));
+                List.of(), List.of(order, customer, invoice), List.of(relationship));
         return objectMapper.readTree(renderer.renderDiagramOnly(model));
     }
 }

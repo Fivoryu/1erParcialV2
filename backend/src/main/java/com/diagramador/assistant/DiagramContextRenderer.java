@@ -86,6 +86,10 @@ public class DiagramContextRenderer {
             if (relationship.stereotype() != null) {
                 relationshipJson.put("stereotype", relationship.stereotype());
             }
+            if (relationship.associationClassId() != null
+                    && classifierNames.containsKey(relationship.associationClassId())) {
+                relationshipJson.put("associationClass", classifierNames.get(relationship.associationClassId()));
+            }
             String source = relationship.ends().size() > 0
                     ? classifierNames.get(relationship.ends().get(0).classifierId()) : null;
             String target = relationship.ends().size() > 1

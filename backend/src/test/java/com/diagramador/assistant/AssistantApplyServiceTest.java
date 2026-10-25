@@ -536,6 +536,77 @@ class AssistantApplyServiceTest {
     }
 
     @Test
+    void relationshipCreatePassesTheAssociationClassResolvedByName() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+
+        service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.create", null, Map.of(
+                        "kind", "ASSOCIATION",
+                        "associationClass", Map.of("classifierName", "persona"),
+                        "source", Map.of("classifierName", "Persona"),
+                        "target", Map.of("classifierName", "Persona")))), 7L));
+
+        assertThat(lastPayload()).containsEntry("associationClassId", model(7L).classifiers().get(0).id().toString());
+    }
+
+    @Test
+    void relationshipCreateWithoutAnAssociationClassSendsNoKeyForIt() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+
+        service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.create", null, Map.of(
+                        "kind", "ASSOCIATION",
+                        "source", Map.of("classifierName", "Persona"),
+                        "target", Map.of("classifierName", "Persona")))), 7L));
+
+        assertThat(lastPayload()).doesNotContainKey("associationClassId");
+    }
+
+    @Test
+    void relationshipUpdateMaySetOnlyTheAssociationClass() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(modelWithDependency(7L), modelWithDependency(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+
+        service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(new AssistantApplyOp("relationship.update",
+                RELATIONSHIP_ID, Map.of("associationClass", Map.of("classifierName", "Persona")))), 7L));
+
+        assertThat(lastPayload()).containsOnlyKeys("associationClassId");
+        assertThat(lastPayload().get("associationClassId")).isNotNull();
+    }
+
+    @Test
+    void relationshipUpdateWithANullAssociationClassAsksToReleaseIt() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(modelWithDependency(7L), modelWithDependency(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+        java.util.HashMap<String, Object> release = new java.util.HashMap<>();
+        release.put("associationClass", null);
+
+        service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.update", RELATIONSHIP_ID, release)), 7L));
+
+        assertThat(lastPayload()).containsOnlyKeys("associationClassId").containsEntry("associationClassId", null);
+    }
+
+    @Test
+    void relationshipUpdateRefusesAnAssociationClassThatNamesNoClass() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(modelWithDependency(7L), modelWithDependency(8L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.update", RELATIONSHIP_ID,
+                        Map.of("associationClass", Map.of("classifierName", "Nowhere")))), 7L));
+
+        assertThat(response.steps().get(0).status()).isEqualTo("REJECTED");
+        verify(commandService, never()).execute(any());
+    }
+
+    @Test
     void relationshipCreateWithoutAStereotypeSendsNoStereotypeKey() {
         when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L));
         when(commandService.execute(any())).thenReturn(accepted(8L));

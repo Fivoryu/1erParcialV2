@@ -16,8 +16,14 @@ class LlamaCppAssistantProviderPromptTest {
 
     @Test
     void promptDeclaresTheV3ContractVersion() {
-        assertThat(PROMPT).contains("ia4-02-prompt-v5");
+        assertThat(PROMPT).contains("ia4-02-prompt-v6");
         assertThat(PROMPT).doesNotContain("ia4-01-prompt-v4").doesNotContain("ia4-01-prompt-v3");
+    }
+
+    @Test
+    void promptTeachesTheAssociationClassOfAnAssociation() {
+        assertThat(PROMPT).contains("\"associationClass\": {\"classifierName\"");
+        assertThat(PROMPT).contains("\"associationClass\": null suelta");
     }
 
     @Test

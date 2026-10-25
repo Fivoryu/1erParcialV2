@@ -323,6 +323,10 @@ public class AssistantApplyService {
                 if (text(args.get("stereotype")) != null) {
                     payload.put("stereotype", text(args.get("stereotype")).toUpperCase());
                 }
+                UUID associationClass = associationClassArg(args.get("associationClass"), model);
+                if (associationClass != null) {
+                    payload.put("associationClassId", associationClass.toString());
+                }
                 if (args.get("waypoints") != null) {
                     payload.put("waypoints", args.get("waypoints"));
                 }
@@ -342,10 +346,22 @@ public class AssistantApplyService {
                     payload.put("stereotype", text(args.get("stereotype")) == null ? null
                             : text(args.get("stereotype")).toUpperCase());
                 }
+                if (args.containsKey("associationClass")) {
+                    // A null association class asks the command to release it; a name that does not resolve
+                    // refuses the step so the plan cannot silently drop a link it could not name.
+                    UUID associationClass = associationClassArg(args.get("associationClass"), model);
+                    if (associationClass != null) {
+                        payload.put("associationClassId", associationClass.toString());
+                    } else if (args.get("associationClass") == null) {
+                        payload.put("associationClassId", null);
+                    } else {
+                        yield unresolvableTarget(operation.type());
+                    }
+                }
                 copyEndUpdate(payload, "source", args.get("source"));
                 copyEndUpdate(payload, "target", args.get("target"));
                 if (payload.isEmpty()) {
-                    yield missing("name|kind|stereotype|source|target", operation.type());
+                    yield missing("name|kind|stereotype|associationClass|source|target", operation.type());
                 }
                 yield mapped(payload, targets("relationship", operation.targetId()), List.of());
             }
@@ -385,6 +401,11 @@ public class AssistantApplyService {
             return operation.targetId();
         }
         return classifierIdByName(model, text(args.get("targetClassifierName")));
+    }
+
+    /** The class named as an association class, as {"classifierName": "..."} or as the bare name. */
+    private static UUID associationClassArg(Object raw, ModelResource model) {
+        return raw instanceof String name ? classifierIdByName(model, name) : classifierEndArg(raw, model);
     }
 
     private static UUID classifierEndArg(Object raw, ModelResource model) {
