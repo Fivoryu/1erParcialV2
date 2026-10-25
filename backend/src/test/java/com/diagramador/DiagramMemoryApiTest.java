@@ -85,6 +85,31 @@ class DiagramMemoryApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void assistantAnswersAreNeverSourcesOfMemory() throws Exception {
+        String owner = username("owner");
+        UUID projectId = createProject(owner);
+        UUID viewId = defaultViewId(projectId);
+        UUID sessionId = createSession(owner, projectId, viewId, "Respuestas");
+        String humanId = postMessage(owner, projectId, sessionId, "Decidimos que Paciente nunca se borra");
+        String answerId = postMessage(owner, projectId, sessionId, "El Paciente se desactiva automaticamente");
+        jdbcTemplate.update("UPDATE diagrammer.diagram_message SET kind = 'AI' WHERE message_id = ?::uuid", answerId);
+        when(chatAssistantProvider.chat(anyList())).thenReturn("{\"memories\":["
+                + memoryCandidate("Paciente se desactiva automaticamente", "DECISION", answerId) + ","
+                + memoryCandidate("Paciente nunca se borra", "DECISION", humanId) + "]}");
+
+        mockMvc.perform(extract(owner, projectId, viewId)).andExpect(status().isOk());
+
+        org.mockito.ArgumentCaptor<java.util.List<com.diagramador.assistant.ChatAssistantProvider.Turn>> turns =
+                org.mockito.ArgumentCaptor.forClass(java.util.List.class);
+        verify(chatAssistantProvider).chat(turns.capture());
+        assertThat(turns.getValue().toString()).contains("nunca se borra").doesNotContain("automaticamente");
+        JsonNode memories = memories(owner, projectId, viewId, null);
+        assertThat(memories).hasSize(1);
+        assertThat(memories.get(0).path("content").asText()).isEqualTo("Paciente nunca se borra");
+        assertThat(memories.get(0).path("sourceMessageId").asText()).isEqualTo(humanId);
+    }
+
+    @Test
     void ambiguousUtterancesBecomeHypothesesNeverConfirmedDecisions() throws Exception {
         String owner = username("owner");
         UUID projectId = createProject(owner);

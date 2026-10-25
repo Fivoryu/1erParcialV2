@@ -68,7 +68,6 @@ class ChatMemoryAgentApiTest extends AuthenticatedApiTest {
         when(chatAssistantProvider.chat(anyList())).thenReturn(
                 extraction(memoryCandidate("auto-memory-marker", "DECISION", firstQuestion)),
                 "La decisión quedó registrada.",
-                extraction(""),
                 "La decisión fue auto-memory-marker.");
 
         mockMvc.perform(ask(owner, projectId, firstSession, firstQuestion)).andExpect(status().isAccepted());
@@ -83,8 +82,9 @@ class ChatMemoryAgentApiTest extends AuthenticatedApiTest {
 
         ArgumentCaptor<List<ChatAssistantProvider.Turn>> calls = ArgumentCaptor.captor();
         org.mockito.Mockito.verify(chatAssistantProvider,
-                org.mockito.Mockito.timeout(5_000).times(4)).chat(calls.capture());
-        String secondSessionContext = calls.getAllValues().get(3).stream()
+                org.mockito.Mockito.timeout(5_000).times(3)).chat(calls.capture());
+        // The assistant's own answer is not a memory source, so the second ask extracts nothing.
+        String secondSessionContext = calls.getAllValues().get(2).stream()
                 .map(ChatAssistantProvider.Turn::content).reduce("", (left, right) -> left + "\n" + right);
         assertThat(secondSessionContext).contains("auto-memory-marker");
         assertThat(secondSessionContext).contains("Contexto actual del diagrama");
