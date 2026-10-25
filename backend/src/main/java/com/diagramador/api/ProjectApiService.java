@@ -420,7 +420,7 @@ public class ProjectApiService {
                         constraint.getSeverity().name()))
                 .toList();
         return new RelationshipResource(relationship.getId(), relationship.getKind().name(), relationship.getName(),
-                ends, constraintResources);
+                relationship.getStereotype(), ends, constraintResources);
     }
 
     private String typeName(TypeReference typeReference) {

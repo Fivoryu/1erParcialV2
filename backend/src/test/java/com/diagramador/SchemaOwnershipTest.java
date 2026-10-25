@@ -79,7 +79,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
                     "visibility", "is_abstract", "is_static", "ordinal", "created_at")),
             Map.entry("operation_parameter", Set.of("parameter_id", "operation_id", "type_reference_id", "name",
                     "direction", "ordinal")),
-            Map.entry("uml_relationship", Set.of("relationship_id", "model_id", "kind", "name", "created_at")),
+            Map.entry("uml_relationship", Set.of("relationship_id", "model_id", "kind", "name", "stereotype", "created_at")),
             Map.entry("relationship_end", Set.of("relationship_end_id", "relationship_id", "classifier_id", "ordinal",
                     "role", "multiplicity", "navigability", "aggregation_kind")),
             Map.entry("uml_constraint", Set.of("constraint_id", "model_id", "owner_type", "owner_id", "expression",

@@ -462,7 +462,7 @@ public class ModelSnapshotService {
                         constraint.getSeverity().name()))
                 .toList();
         return new RelationshipResource(relationship.getId(), relationship.getKind().name(), relationship.getName(),
-                ends, constraintResources);
+                relationship.getStereotype(), ends, constraintResources);
     }
 
     private String typeName(TypeReference typeReference) {
@@ -649,17 +649,19 @@ public class ModelSnapshotService {
     private void upsertRelationship(UUID modelId, RelationshipResource resource) {
         RelationshipKind kind = RelationshipKind.valueOf(resource.kind());
         entityManager.createNativeQuery("""
-                INSERT INTO diagrammer.uml_relationship (relationship_id, model_id, kind, name)
-                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name)
+                INSERT INTO diagrammer.uml_relationship (relationship_id, model_id, kind, name, stereotype)
+                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name, :stereotype)
                 ON CONFLICT (relationship_id) DO UPDATE SET
                     model_id = EXCLUDED.model_id,
                     kind = EXCLUDED.kind,
-                    name = EXCLUDED.name
+                    name = EXCLUDED.name,
+                    stereotype = EXCLUDED.stereotype
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("modelId", modelId)
                 .setParameter("kind", kind.name())
                 .setParameter("name", resource.name())
+                .setParameter("stereotype", resource.stereotype())
                 .executeUpdate();
     }
 

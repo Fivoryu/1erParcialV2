@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class RelationshipUpdateHandler implements CommandHandler.AddAction {
 
-    private static final Set<String> FIELDS = Set.of("name", "kind", "source", "target");
+    private static final Set<String> FIELDS = Set.of("name", "kind", "stereotype", "source", "target");
     private static final Set<String> END_FIELDS = Set.of("role", "multiplicity", "navigability");
 
     private final CommandHandlerSupport support;
@@ -53,6 +53,12 @@ public class RelationshipUpdateHandler implements CommandHandler.AddAction {
         updateEnd(payload, "source", source);
         updateEnd(payload, "target", target);
         relationship.setKind(kind);
+        if (payload.has("stereotype")) {
+            relationship.setStereotype(support.dependencyStereotype(payload, "stereotype", kind));
+        } else if (kind != RelationshipKind.DEPENDENCY) {
+            // Leaving the dependency kind drops the stereotype with it: nothing else may carry one.
+            relationship.setStereotype(null);
+        }
         CommandHandlerSupport.AggregationKinds aggregation = support.aggregationKinds(kind);
         source.setAggregationKind(aggregation.source());
         target.setAggregationKind(aggregation.target());

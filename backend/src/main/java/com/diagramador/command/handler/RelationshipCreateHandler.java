@@ -26,7 +26,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class RelationshipCreateHandler implements CommandHandler.AddAction {
 
-    private static final Set<String> FIELDS = Set.of("id", "kind", "name", "source", "target", "waypoints");
+    private static final Set<String> FIELDS = Set.of("id", "kind", "name", "stereotype", "source", "target", "waypoints");
     private static final Set<String> END_FIELDS = Set.of("classifierId", "role", "multiplicity", "navigability");
 
     private final CommandHandlerSupport support;
@@ -63,8 +63,9 @@ public class RelationshipCreateHandler implements CommandHandler.AddAction {
         List<Waypoint> waypoints = payload.has("waypoints") ? waypoints(payload.get("waypoints")) : List.of();
         DiagramView defaultView = payload.has("waypoints") ? support.defaultDiagramView(context.model()) : null;
         String name = support.optionalText(payload, "name");
+        String stereotype = support.dependencyStereotype(payload, "stereotype", kind);
 
-        support.insertRelationship(context, id, kind, name);
+        support.insertRelationship(context, id, kind, name, stereotype);
         context.entityManager().flush();
         UmlRelationship relationship = relationshipRepository.findById(id)
                 .orElseThrow(() -> new IllegalStateException("Created relationship " + id + " cannot be reloaded"));

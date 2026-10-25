@@ -139,6 +139,12 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
         SnapshotModel targetSnapshot = snapshotService.capture(target);
         assertThat(snapshotService.toJson(targetSnapshot)).isEqualTo(sourceJson);
         assertThat(elementIds(targetSnapshot)).containsExactlyInAnyOrderElementsOf(elementIds(captured));
+        assertThat(targetSnapshot.relationships()).anySatisfy(relationship -> {
+            assertThat(relationship.kind()).isEqualTo("DEPENDENCY");
+            assertThat(relationship.stereotype()).isEqualTo("USE");
+        });
+        assertThat(targetSnapshot.relationships().stream().filter(relationship -> "AGGREGATION".equals(relationship.kind()))
+                .allMatch(relationship -> relationship.stereotype() == null)).isTrue();
     }
 
     @Test
@@ -149,6 +155,24 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
         assertThat(snapshot.viewStyle()).anySatisfy(style -> assertThat(style.routeAdjustment()).isNotNull());
         assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(stateHasher.hash(fixture.model()));
         assertThat(stateHasher.hash(snapshot)).isEqualTo(stateHasher.hash(fixture.model()));
+    }
+
+    @Test
+    void aStereotypeIsPartOfTheStateHashAndNothingElseChangesWithoutIt() {
+        Fixture fixture = createRichModel();
+        String withUse = snapshotService.stateHash(fixture.model());
+        SnapshotModel snapshot = snapshotService.capture(fixture.model());
+        assertThat(stateHasher.hash(snapshot)).isEqualTo(withUse);
+
+        setDependencyStereotype(fixture, "IMPORT");
+        String withImport = snapshotService.stateHash(fixture.model());
+        setDependencyStereotype(fixture, null);
+        String withNone = snapshotService.stateHash(fixture.model());
+        setDependencyStereotype(fixture, "USE");
+
+        assertThat(withImport).isNotEqualTo(withUse);
+        assertThat(withNone).isNotEqualTo(withUse).isNotEqualTo(withImport);
+        assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(withUse);
     }
 
     @Test
@@ -232,6 +256,14 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
             relationshipEndRepository.save(RelationshipEnd.create(relationship, abstractClassifier, (short) 2, "record",
                     MultiplicityKind.ZERO_OR_MANY, NavigationKind.NOT_NAVIGABLE, "NONE"));
 
+            UmlRelationship dependency = relationshipRepository.save(
+                    UmlRelationship.create(managedModel, RelationshipKind.DEPENDENCY, "needs"));
+            dependency.setStereotype("USE");
+            relationshipEndRepository.save(RelationshipEnd.create(dependency, concreteClassifier, (short) 1, null,
+                    MultiplicityKind.EXACTLY_ONE, NavigationKind.UNSPECIFIED, "NONE"));
+            relationshipEndRepository.save(RelationshipEnd.create(dependency, abstractClassifier, (short) 2, null,
+                    MultiplicityKind.EXACTLY_ONE, NavigationKind.NAVIGABLE, "NONE"));
+
             constraintRepository.save(UmlConstraint.create(managedModel, TargetType.CLASSIFIER,
                     concreteClassifier.getId(), "self.name <> null", SeverityKind.ERROR));
             constraintRepository.save(UmlConstraint.create(managedModel, TargetType.RELATIONSHIP,
@@ -261,6 +293,13 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
             return concreteClassifier.getId();
         });
         return new Fixture(model, mutableClassifierId);
+    }
+
+    private void setDependencyStereotype(Fixture fixture, String stereotype) {
+        transactionTemplate.executeWithoutResult(status -> relationshipRepository.findAll().stream()
+                .filter(relationship -> relationship.getModel().getId().equals(fixture.model().getId()))
+                .filter(relationship -> relationship.getKind() == RelationshipKind.DEPENDENCY)
+                .forEach(relationship -> relationship.setStereotype(stereotype)));
     }
 
     private UmlModel createEmptyModel() {

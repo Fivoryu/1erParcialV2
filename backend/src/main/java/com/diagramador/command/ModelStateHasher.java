@@ -130,8 +130,9 @@ public class ModelStateHasher {
                         field("direction", parameter.getDirection()), field("ordinal", parameter.getOrdinal())))
                 .forEach(lines::add);
         relationships.stream().sorted(byId(UmlRelationship::getId))
-                .map(relationship -> line("relationships", relationship.getId(),
-                        field("kind", relationship.getKind()), field("name", relationship.getName())))
+                .map(relationship -> withStereotype(line("relationships", relationship.getId(),
+                        field("kind", relationship.getKind()), field("name", relationship.getName())),
+                        relationship.getStereotype()))
                 .forEach(lines::add);
         relationshipEnds.stream().sorted(byId(RelationshipEnd::getId))
                 .map(end -> line("relationshipEnds", end.getId(), field("relationshipId", id(end.getRelationship())),
@@ -211,8 +212,9 @@ public class ModelStateHasher {
         List<ModelResource.RelationshipResource> relationships = snapshot.relationships().stream()
                 .sorted(Comparator.comparing(value -> value.id().toString())).toList();
         relationships.stream()
-                .map(relationship -> line("relationships", relationship.id(),
-                        field("kind", relationship.kind()), field("name", relationship.name())))
+                .map(relationship -> withStereotype(line("relationships", relationship.id(),
+                        field("kind", relationship.kind()), field("name", relationship.name())),
+                        relationship.stereotype()))
                 .forEach(lines::add);
         relationships.stream().flatMap(relationship -> relationship.ends().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
@@ -331,6 +333,11 @@ public class ModelStateHasher {
     /** Appended only when set, so a model without a manual store keeps the hash it had before the field existed. */
     private static String withStore(String line, PersistenceStore storeOverride) {
         return storeOverride == null ? line : line + "|" + field("storeOverride", storeOverride);
+    }
+
+    /** Appended only when set, so a relationship without a stereotype keeps the hash it had before the field existed. */
+    private static String withStereotype(String line, String stereotype) {
+        return stereotype == null ? line : line + "|" + field("stereotype", stereotype);
     }
 
     private static UUID id(Object entity) {

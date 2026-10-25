@@ -250,6 +250,9 @@ public class UndoService {
         if (!snapshot.path("name").isNull() && !snapshot.path("name").isMissingNode()) {
             payload.put("name", snapshot.path("name").asText());
         }
+        if (!snapshot.path("stereotype").isNull() && !snapshot.path("stereotype").isMissingNode()) {
+            payload.put("stereotype", snapshot.path("stereotype").asText());
+        }
         payload.put("source", Map.of("classifierId", source.path("classifierId").asText()));
         payload.put("target", Map.of("classifierId", target.path("classifierId").asText()));
         return Inverse.of(new OperationEnvelope(UUID.randomUUID(), "relationship.create", author(), projectId,

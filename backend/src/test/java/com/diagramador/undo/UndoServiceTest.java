@@ -265,6 +265,29 @@ class UndoServiceTest {
     }
 
     @Test
+    void undoOfRelationshipDeleteRestoresTheStereotypeOfADependency() {
+        Fixture fixture = fixture("undo-relationship-delete-stereotype");
+        UUID sourceId = createClassifier(fixture, 0, "Order");
+        UUID targetId = createClassifier(fixture, 1, "Customer");
+        UUID relationshipId = UUID.randomUUID();
+        assertAccepted(command(fixture, "relationship.create", 2,
+                Map.of("id", relationshipId, "kind", "DEPENDENCY", "stereotype", "INCLUDE",
+                        "source", Map.of("classifierId", sourceId.toString()),
+                        "target", Map.of("classifierId", targetId.toString())),
+                List.of(new Target("classifier", sourceId), new Target("classifier", targetId))));
+        assertAccepted(command(fixture, "relationship.delete", 3, Map.of(),
+                List.of(new Target("relationship", relationshipId)),
+                List.of(new Precondition("cascade_count", 3, null))));
+
+        UndoResult result = undoService.undo(fixture.project().getId());
+
+        assertThat(result.status()).isEqualTo("ACCEPTED");
+        var restored = relationshipRepository.findById(relationshipId).orElseThrow();
+        assertThat(restored.getKind()).isEqualTo(com.diagramador.domain.RelationshipKind.DEPENDENCY);
+        assertThat(restored.getStereotype()).isEqualTo("INCLUDE");
+    }
+
+    @Test
     void undoOfCreateWithDependentsIsRejectedWithCascadeRequiredWithoutWorking() {
         Fixture fixture = fixture("undo-cascade-required");
         UUID classifierId = createClassifier(fixture, 0, "Order");

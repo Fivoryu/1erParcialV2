@@ -278,6 +278,155 @@ class T4aRelationshipAndGeometryHandlersTest extends AbstractPostgresIntegration
     }
 
     @Test
+    void dependencyCreateStoresItsStereotypeAndIgnoresCase() {
+        Fixture fixture = fixture("dependency-stereotype-create");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "DEPENDENCY", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("stereotype", "use");
+
+        assertAccepted(command(fixture, "relationship.create", 2, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of()));
+
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getStereotype()).isEqualTo("USE");
+    }
+
+    @Test
+    void aRelationshipWithoutAStereotypeKeepsItNull() {
+        Fixture fixture = fixture("dependency-without-stereotype");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+
+        assertAccepted(createRelationship(fixture, 2, relationshipId, "DEPENDENCY", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null));
+
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getStereotype()).isNull();
+    }
+
+    @Test
+    void stereotypeIsRejectedOnAnythingButADependency() {
+        Fixture fixture = fixture("stereotype-on-association");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("stereotype", "USE");
+
+        CommandResult result = command(fixture, "relationship.create", 2, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of());
+
+        assertRejected(result, ErrorCode.INVALID_PAYLOAD, "stereotype", "dependenc");
+        assertThat(relationshipRepository.findById(relationshipId)).isEmpty();
+    }
+
+    @Test
+    void anUnknownStereotypeIsRejectedAndNamed() {
+        Fixture fixture = fixture("stereotype-unknown");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "DEPENDENCY", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("stereotype", "TELEPORT");
+
+        CommandResult result = command(fixture, "relationship.create", 2, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of());
+
+        assertRejected(result, ErrorCode.INVALID_PAYLOAD, "stereotype", "TELEPORT");
+        assertThat(relationshipRepository.findById(relationshipId)).isEmpty();
+    }
+
+    @Test
+    void relationshipUpdateSetsAndClearsTheStereotype() {
+        Fixture fixture = fixture("stereotype-update");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+        assertAccepted(createRelationship(fixture, 2, relationshipId, "DEPENDENCY", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null));
+
+        assertAccepted(command(fixture, "relationship.update", 3, Map.of("stereotype", "IMPORT"),
+                target("relationship", relationshipId), List.of()));
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getStereotype()).isEqualTo("IMPORT");
+
+        Map<String, Object> clear = new java.util.HashMap<>();
+        clear.put("stereotype", null);
+        assertAccepted(command(fixture, "relationship.update", 4, clear,
+                target("relationship", relationshipId), List.of()));
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getStereotype()).isNull();
+    }
+
+    @Test
+    void leavingDependencyDropsTheStereotypeAndTheUpdateOfOtherFieldsKeepsIt() {
+        Fixture fixture = fixture("stereotype-kind-change");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "DEPENDENCY", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("stereotype", "INCLUDE");
+        assertAccepted(command(fixture, "relationship.create", 2, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of()));
+
+        assertAccepted(command(fixture, "relationship.update", 3, Map.of("name", "needs"),
+                target("relationship", relationshipId), List.of()));
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getStereotype()).isEqualTo("INCLUDE");
+
+        assertAccepted(command(fixture, "relationship.update", 4, Map.of("kind", "ASSOCIATION"),
+                target("relationship", relationshipId), List.of()));
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getStereotype()).isNull();
+    }
+
+    @Test
+    void anUpdateMayTurnARelationshipIntoAStereotypedDependencyInOneCommand() {
+        Fixture fixture = fixture("stereotype-kind-and-value");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+        assertAccepted(createRelationship(fixture, 2, relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null));
+
+        assertAccepted(command(fixture, "relationship.update", 3, Map.of("kind", "DEPENDENCY", "stereotype", "extend"),
+                target("relationship", relationshipId), List.of()));
+
+        UmlRelationship updated = relationshipRepository.findById(relationshipId).orElseThrow();
+        assertThat(updated.getKind()).isEqualTo(RelationshipKind.DEPENDENCY);
+        assertThat(updated.getStereotype()).isEqualTo("EXTEND");
+    }
+
+    @Test
+    void anUpdateThatLeavesDependencyWhileNamingAStereotypeIsRejectedAndChangesNothing() {
+        Fixture fixture = fixture("stereotype-leaving-with-value");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+        Map<String, Object> payload = relationshipPayload(relationshipId, "DEPENDENCY", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null);
+        payload.put("stereotype", "USE");
+        assertAccepted(command(fixture, "relationship.create", 2, payload,
+                classifierTargets(classifiers.source(), classifiers.target()), List.of()));
+
+        CommandResult result = command(fixture, "relationship.update", 3,
+                Map.of("kind", "ASSOCIATION", "stereotype", "USE"), target("relationship", relationshipId), List.of());
+
+        assertRejected(result, ErrorCode.INVALID_PAYLOAD, "stereotype", "dependenc");
+        UmlRelationship unchanged = relationshipRepository.findById(relationshipId).orElseThrow();
+        assertThat(unchanged.getKind()).isEqualTo(RelationshipKind.DEPENDENCY);
+        assertThat(unchanged.getStereotype()).isEqualTo("USE");
+    }
+
+    @Test
+    void relationshipUpdateRejectsAStereotypeOnANonDependency() {
+        Fixture fixture = fixture("stereotype-update-association");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+        assertAccepted(createRelationship(fixture, 2, relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of(), Map.of(), null));
+
+        CommandResult result = command(fixture, "relationship.update", 3, Map.of("stereotype", "USE"),
+                target("relationship", relationshipId), List.of());
+
+        assertRejected(result, ErrorCode.INVALID_PAYLOAD, "stereotype", "dependenc");
+        assertThat(relationshipRepository.findById(relationshipId).orElseThrow().getStereotype()).isNull();
+    }
+
+    @Test
     void relationshipCreatePersistsWaypointsAndDeleteWritesTombstonesForRelationshipAndEnds() {
         Fixture fixture = fixture("relationship-delete-tombstones");
         ClassifierIds classifiers = createClassifiers(fixture);
