@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseHandles, connectionDirection } from './UmlCanvas';
+import { chooseHandles, connectionDirection, connectionSides, differingSides } from './UmlCanvas';
 
 const rectangle = (x: number, y: number, width = 260, height = 200) => ({ x, y, width, height });
 
@@ -104,5 +104,36 @@ describe('connectionDirection', () => {
 
   it('keeps a self connection as it came', () => {
     expect(connectionDirection('a', 'a', 'a')).toEqual({ sourceId: 'a', targetId: 'a' });
+  });
+});
+
+describe('connectionSides', () => {
+  it('reads the side of each end from the handles, source first', () => {
+    expect(connectionSides('source-right', 'target-left', false)).toEqual({ source: 'E', target: 'W' });
+    expect(connectionSides('source-top', 'target-bottom', false)).toEqual({ source: 'N', target: 'S' });
+  });
+
+  it('swaps the handles when the drag started on the class React Flow resolved as target', () => {
+    // The user dragged from `target-right` of class A to `source-left` of class B: A is the source.
+    expect(connectionSides('source-left', 'target-right', true)).toEqual({ source: 'E', target: 'W' });
+  });
+
+  it('gives up on a side it cannot read', () => {
+    expect(connectionSides(null, 'target-left', false)).toBeNull();
+    expect(connectionSides('source-diagonal', 'target-left', false)).toBeNull();
+  });
+});
+
+describe('differingSides', () => {
+  const left = rectangle(0, 0, 100, 100);
+  const right = rectangle(300, 0, 100, 100);
+
+  it('keeps nothing when the user chose the sides the router would pick anyway', () => {
+    expect(differingSides({ source: 'E', target: 'W' }, left, right)).toBeNull();
+  });
+
+  it('keeps the sides when either end was moved off the automatic one', () => {
+    expect(differingSides({ source: 'S', target: 'W' }, left, right)).toEqual({ source: 'S', target: 'W' });
+    expect(differingSides({ source: 'E', target: 'N' }, left, right)).toEqual({ source: 'E', target: 'N' });
   });
 });

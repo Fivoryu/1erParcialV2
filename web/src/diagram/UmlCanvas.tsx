@@ -13,9 +13,10 @@ import {
   type EdgeTypes,
   type NodeTypes,
 } from '@xyflow/react';
-import type { ClassifierResource, ModelResource } from '../api/types';
+import type { ClassifierResource, ModelResource, OperationEnvelope } from '../api/types';
 import type { GeometryUpdate, ModelCommandRequest, ClassifierKind, RelationshipKind, ViewStyleUpdate } from './commands';
 import {
+  buildAnchorStyleRequest,
   buildGeometrySetRequest,
   buildRelationshipCreateRequest,
   buildStyleSetRequest,
@@ -25,7 +26,7 @@ import {
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildUnplacedGeometryRequests, type UnplacedGeometryAttempt } from './unplaced-geometry';
-import { parallelLanes, type AnchorSide, type RelationshipAnchor } from './orthogonal-routing';
+import { autoAnchorSide, sideLanes, type AnchorSide, type RelationshipAnchor } from './orthogonal-routing';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
 import UmlRelationshipEdge, { type EdgePoint, type RelationshipEdgeData, type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
@@ -70,7 +71,8 @@ interface UmlCanvasProps {
   model: ModelResource;
   selection: CanvasSelection | null;
   onSelect: (selection: CanvasSelection | null) => void;
-  onCommand: (request: ModelCommandRequest) => void;
+  /** Returns the envelope it dispatched, so a caller can refer to the element a command creates. */
+  onCommand: (request: ModelCommandRequest) => OperationEnvelope | null | void;
   onAddClassifier: (kind: ClassifierKind) => void;
   onDelete: (selection: CanvasSelection) => void;
   touchedElements?: TouchedElement[];
@@ -250,6 +252,38 @@ export function chooseHandles(
   };
 }
 
+const SIDE_OF_HANDLE: Record<string, AnchorSide> = { top: 'N', right: 'E', bottom: 'S', left: 'W' };
+
+/**
+ * The side each end of a new relationship was connected through, read from the handle ids
+ * (`source-right`, `target-top`, ...). `flipped` is true when connectionDirection swapped the pair,
+ * so the handle that React Flow called the target belongs to the end the user started from.
+ */
+export function connectionSides(
+  sourceHandle: string | null | undefined,
+  targetHandle: string | null | undefined,
+  flipped: boolean,
+): { source: AnchorSide; target: AnchorSide } | null {
+  const sideOf = (handle: string | null | undefined) => SIDE_OF_HANDLE[(handle ?? '').split('-')[1] ?? ''];
+  const source = sideOf(flipped ? targetHandle : sourceHandle);
+  const target = sideOf(flipped ? sourceHandle : targetHandle);
+  return source && target ? { source, target } : null;
+}
+
+/**
+ * Keeps the connected sides only when the router would not have picked them anyway. A side stored
+ * for no reason would pin the route to the centre of that side and take the end out of its lane.
+ */
+export function differingSides(
+  sides: { source: AnchorSide; target: AnchorSide },
+  source: NodeRectangle,
+  target: NodeRectangle,
+): { source: AnchorSide; target: AnchorSide } | null {
+  return sides.source === autoAnchorSide(source, target, 'source') && sides.target === autoAnchorSide(source, target, 'target')
+    ? null
+    : sides;
+}
+
 /**
  * Both handle types share each side's position, so React Flow resolves a connection by handle
  * type, not by gesture. The direction of a UML relationship is the one the user drew: from the
@@ -296,10 +330,10 @@ export function buildFlowEdges(
   const view = defaultView(model);
   const rectangles = classifierRectangles(model);
   const viewStyles = model.view_style ?? [];
-  const lanes = parallelLanes(model.relationships.flatMap((relationship) => {
+  const lanes = sideLanes(model.relationships.flatMap((relationship) => {
     const [first, second] = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
     return first && second ? [{ id: relationship.id, sourceId: first.classifierId, targetId: second.classifierId }] : [];
-  }));
+  }), rectangles);
   return model.relationships.flatMap((relationship) => {
     const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
     const sourceEnd = ends[0];
@@ -337,7 +371,7 @@ export function buildFlowEdges(
         targetEnd,
         waypoints,
         style,
-        lane: lanes.get(relationship.id) ?? 0,
+        lane: lanes.get(relationship.id) ?? { source: 0, target: 0 },
         ...(onWaypointsChange ? { onWaypointsChange } : {}),
         ...(interactionHandlers?.onRelationshipContextMenu
           ? { onRelationshipContextMenu: interactionHandlers.onRelationshipContextMenu }
@@ -374,7 +408,12 @@ function CanvasFrame(props: UmlCanvasProps) {
   const styleCoalescer = useMemo(() => createGeometryCoalescer<ViewStyleUpdate>((_elementId, payload) => {
     props.onCommand(buildStyleSetRequest(payload));
   }), [props.onCommand]);
-  const [connectionDraft, setConnectionDraft] = useState<{ sourceId: string; targetId: string } | null>(null);
+  const [connectionDraft, setConnectionDraft] = useState<{
+    sourceId: string;
+    targetId: string;
+    /** The sides the user connected through, when they could be read from the handles. */
+    sides: { source: AnchorSide; target: AnchorSide } | null;
+  } | null>(null);
   const [connectionKind, setConnectionKind] = useState<RelationshipKind>('ASSOCIATION');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   // Latest endpoint anchors per edge, reported by UmlRelationshipEdge after each
@@ -634,8 +673,33 @@ function CanvasFrame(props: UmlCanvasProps) {
 
   function handleConnect(connection: Connection): void {
     if (connection.source && connection.target) {
-      setConnectionDraft(connectionDirection(connection.source, connection.target, connectStartNodeRef.current));
+      const direction = connectionDirection(connection.source, connection.target, connectStartNodeRef.current);
+      const flipped = direction.sourceId !== connection.source;
+      setConnectionDraft({ ...direction, sides: connectionSides(connection.sourceHandle, connection.targetHandle, flipped) });
       setConnectionKind('ASSOCIATION');
+    }
+  }
+
+  /**
+   * The user chose where the relationship attaches by picking the dots; keep it, unless that is
+   * what the router would have chosen. The command is queued behind the create, which has already
+   * put the relationship in the optimistic model.
+   */
+  function keepConnectedSides(
+    envelope: OperationEnvelope | null | void,
+    draft: { sourceId: string; targetId: string; sides: { source: AnchorSide; target: AnchorSide } | null },
+  ): void {
+    const relationshipId = envelope && typeof envelope.payload.id === 'string' ? envelope.payload.id : null;
+    if (!relationshipId || !viewId || !draft.sides || draft.sourceId === draft.targetId) {
+      return;
+    }
+    const sourceNode = nodesRef.current.find((node) => node.id === draft.sourceId);
+    const targetNode = nodesRef.current.find((node) => node.id === draft.targetId);
+    const kept = sourceNode && targetNode
+      ? differingSides(draft.sides, rectangleForNode(sourceNode), rectangleForNode(targetNode))
+      : draft.sides;
+    if (kept) {
+      props.onCommand(buildAnchorStyleRequest(viewId, relationshipId, kept));
     }
   }
 
@@ -644,11 +708,12 @@ function CanvasFrame(props: UmlCanvasProps) {
     if (!connectionDraft) {
       return;
     }
-    props.onCommand(buildRelationshipCreateRequest(
+    const envelope = props.onCommand(buildRelationshipCreateRequest(
       connectionDraft.sourceId,
       connectionDraft.targetId,
       connectionKind,
     ));
+    keepConnectedSides(envelope, connectionDraft);
     setConnectionDraft(null);
   }
 

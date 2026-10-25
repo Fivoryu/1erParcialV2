@@ -472,7 +472,7 @@ export function relationshipMarkerPresentation(
       return {
         lineStyle: 'dashed',
         sourceMarker: sourceNavigable ? 'open-arrow' : null,
-        targetMarker: targetNavigable ? 'open-arrow' : null,
+        targetMarker: 'open-arrow',
         realizationLabelAtTarget: false,
       };
     case 'ASSOCIATION':
@@ -511,7 +511,7 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
   /** IA4-07: per-view appearance; absent in older payloads. */
   style?: RelationshipEdgeStyle;
   /** Offset along the side that keeps this edge apart from the others joining the same classes. */
-  lane?: number;
+  lane?: { source: number; target: number };
   onWaypointsChange?: (
     relationshipId: string,
     waypoints: Array<{ x: number; y: number }>,

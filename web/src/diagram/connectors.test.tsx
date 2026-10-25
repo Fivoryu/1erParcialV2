@@ -610,8 +610,8 @@ describe('parallel relationship lanes', () => {
     const lonely = buildFlowEdges(model).find((edge) => edge.id === first.id);
     const paired = buildFlowEdges({ ...model, relationships: [first, twin] });
 
-    expect(lonely?.data?.lane).toBe(0);
-    expect(paired.map((edge) => edge.data?.lane)).toEqual([-8, 8]);
+    expect(lonely?.data?.lane).toEqual({ source: 0, target: 0 });
+    expect(paired.map((edge) => edge.data?.lane)).toEqual([{ source: -8, target: -8 }, { source: 8, target: 8 }]);
   });
 });
 

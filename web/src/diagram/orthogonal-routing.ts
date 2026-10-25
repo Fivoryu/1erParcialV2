@@ -338,22 +338,54 @@ function pointAtHalfArcLength(points: OrthoPoint[]): OrthoPoint {
 /** Distance between two relationships that share the same pair of classes. */
 export const PARALLEL_LANE_SPACING = 16;
 
+/** The offset of each end of one relationship along the side it leaves or enters through. */
+export interface OrthoLane {
+  source: number;
+  target: number;
+}
+
 /**
- * One lane offset per relationship, centred on the side: a pair of classes joined by n
- * relationships spreads them PARALLEL_LANE_SPACING apart, whichever way each one points. The
- * order is the order given, so an edge keeps its lane while the others stay as they are.
+ * One lane per end of every relationship, so relationships that attach to the same side of a
+ * class fan out instead of lying on top of each other. They are ordered by where their other end
+ * sits along that side's axis, which keeps them from crossing, and by the order given when that
+ * ties, which keeps the relationships between one pair of classes parallel at both ends. A
+ * relationship that shares its sides with nothing stays on their centre. A relationship of a class
+ * with itself loops out from the corner, so its lane starts at zero and grows with each further one.
  */
-export function parallelLanes(
+export function sideLanes(
   relationships: readonly { id: string; sourceId: string; targetId: string }[],
-): Map<string, number> {
-  const groups = new Map<string, string[]>();
-  for (const { id, sourceId, targetId } of relationships) {
-    const key = [sourceId, targetId].sort().join('|');
-    groups.set(key, [...(groups.get(key) ?? []), id]);
-  }
-  const lanes = new Map<string, number>();
-  for (const ids of groups.values()) {
-    ids.forEach((id, index) => lanes.set(id, (index - (ids.length - 1) / 2) * PARALLEL_LANE_SPACING));
+  rectangles: ReadonlyMap<string, OrthoRectangle>,
+): Map<string, OrthoLane> {
+  const lanes = new Map<string, OrthoLane>();
+  const selfCount = new Map<string, number>();
+  const sides = new Map<string, { id: string; end: 'source' | 'target'; key: number; order: number }[]>();
+  relationships.forEach(({ id, sourceId, targetId }, order) => {
+    lanes.set(id, { source: 0, target: 0 });
+    if (sourceId === targetId) {
+      const index = selfCount.get(sourceId) ?? 0;
+      selfCount.set(sourceId, index + 1);
+      lanes.set(id, { source: index * PARALLEL_LANE_SPACING, target: index * PARALLEL_LANE_SPACING });
+      return;
+    }
+    const source = rectangles.get(sourceId);
+    const target = rectangles.get(targetId);
+    if (!source || !target) {
+      return;
+    }
+    for (const [end, own, other, ownId] of [['source', source, target, sourceId], ['target', target, source, targetId]] as const) {
+      const side = autoAnchorSide(source, target, end);
+      const key = side === 'E' || side === 'W' ? other.y + other.height / 2 : other.x + other.width / 2;
+      const group = `${ownId}|${side}`;
+      sides.set(group, [...(sides.get(group) ?? []), { id, end, key, order }]);
+      void own;
+    }
+  });
+  for (const group of sides.values()) {
+    [...group]
+      .sort((left, right) => left.key - right.key || left.order - right.order)
+      .forEach(({ id, end }, index) => {
+        lanes.get(id)![end] = (index - (group.length - 1) / 2) * PARALLEL_LANE_SPACING;
+      });
   }
   return lanes;
 }
@@ -369,16 +401,48 @@ export function orthogonalRoute(
   source: OrthoRectangle,
   target: OrthoRectangle,
   adjustment?: OrthoAdjustment | null,
-  lane = 0,
+  lane: number | OrthoLane = 0,
   obstacles: readonly OrthoRectangle[] = [],
 ): OrthoRoute {
   // The classes the route must not enter: its own two ends and every other class in the diagram.
+  const laneOf = (end: 'source' | 'target') => (typeof lane === 'number' ? lane : lane[end]);
   const blockers = [source, target, ...obstacles];
+
+  // A class related to itself: the UML loop out of the east side, round the top-right corner and
+  // back into the north side. Each further self relationship (lane) swings wider than the last.
+  if (source.width > 0 && source.height > 0
+    && source.x === target.x && source.y === target.y && source.width === target.width && source.height === target.height) {
+    const east = anchorPoint(source, { side: 'E', offset: -Math.round(source.height / 4) }, 'E');
+    const north = anchorPoint(target, { side: 'N', offset: Math.round(target.width / 4) }, 'N');
+    const reach = ANCHOR_STUB + Math.max(0, laneOf('source'));
+    const points = [
+      { x: east.x, y: east.y },
+      { x: east.x + reach, y: east.y },
+      { x: east.x + reach, y: north.y - reach },
+      { x: north.x, y: north.y - reach },
+      { x: north.x, y: north.y },
+    ];
+    return {
+      axis: 'H',
+      points,
+      autoCorridor: east.x + reach,
+      levelMid: north.y - reach,
+      corridors: [],
+      levels: [],
+      corridorHandles: [],
+      levelHandles: [],
+      addBendAnchor: { x: east.x + reach, y: north.y - reach },
+      ignoredAdjustment: adjustment != null,
+      pair: 'perpendicular',
+      sourceAnchor: east,
+      targetAnchor: north,
+    };
+  }
   // An end without a stored anchor sits on its auto side, shifted by the lane so relationships
   // between the same two classes run side by side instead of on top of each other.
   const endAnchor = (end: 'source' | 'target'): RelationshipAnchor | null =>
     resolveAnchorEnd(adjustment?.anchors, end)
-    ?? (lane === 0 ? null : { side: autoAnchorSide(source, target, end), offset: lane });
+    ?? (laneOf(end) === 0 ? null : { side: autoAnchorSide(source, target, end), offset: laneOf(end) });
   const resolvedSource = anchorPoint(source, endAnchor('source'), autoAnchorSide(source, target, 'source'));
   const resolvedTarget = anchorPoint(target, endAnchor('target'), autoAnchorSide(source, target, 'target'));
   const normalSource = anchorNormal(resolvedSource.side);

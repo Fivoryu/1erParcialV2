@@ -1,4 +1,5 @@
 import { buildOperationEnvelope, type UuidFactory } from '../api/envelope';
+import type { AnchorSide } from './orthogonal-routing';
 import type {
   AttributeResource,
   ClassifierResource,
@@ -281,6 +282,31 @@ export function mergeViewStyleUpdate(
     merged.routeAdjustment = null;
   }
   return merged;
+}
+
+/**
+ * The style that keeps the sides the user connected through: an orthogonal route anchored at the
+ * centre of each side, with the auto shape in between (one corridor, no levels).
+ */
+export function buildAnchorStyleRequest(
+  viewId: string,
+  relationshipId: string,
+  sides: { source: AnchorSide; target: AnchorSide },
+): ModelCommandRequest {
+  const axis = sides.source === 'N' || sides.source === 'S' ? 'V' : 'H';
+  return buildStyleSetRequest(mergeViewStyleUpdate(
+    viewId,
+    relationshipId,
+    { routing: 'ORTHOGONAL', cornerRadius: 0, strokeWidth: 2, dashed: false, routeAdjustment: null },
+    {
+      routeAdjustment: {
+        axis,
+        corridors: [0],
+        levels: [],
+        anchors: { source: { side: sides.source, offset: 0 }, target: { side: sides.target, offset: 0 } },
+      },
+    },
+  ));
 }
 
 export function buildStyleSetRequest(payload: ViewStyleUpdate): ModelCommandRequest {

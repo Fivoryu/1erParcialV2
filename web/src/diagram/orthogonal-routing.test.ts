@@ -13,7 +13,7 @@ import {
   isAdjustmentApplicable,
   orthogonalRoute,
   orthogonalWaypoints,
-  parallelLanes,
+  sideLanes,
   projectAnchorOnBorder,
   removeJog,
   roundedOrthogonalPath,
@@ -879,13 +879,20 @@ describe('orthogonalRoute across a gap too narrow for the stubs', () => {
   });
 });
 
-describe('parallel lanes', () => {
-  it('shifts both ends of an auto route by the lane, keeping the pair parallel', () => {
+describe('lanes', () => {
+  const a = { x: 0, y: 0, width: 100, height: 100 };
+  const above = { x: 300, y: -200, width: 100, height: 100 };
+  const below = { x: 300, y: 100, width: 100, height: 100 };
+
+  it('shifts each end of an auto route by its own lane', () => {
     const centred = orthogonalRoute(source, alignedRight);
     const shifted = orthogonalRoute(source, alignedRight, null, 16);
+    const apart = orthogonalRoute(source, alignedRight, null, { source: 8, target: -8 });
 
     expect(centred.points).toEqual([{ x: 100, y: 50 }, { x: 300, y: 50 }]);
     expect(shifted.points).toEqual([{ x: 100, y: 66 }, { x: 300, y: 66 }]);
+    expect(apart.sourceAnchor.y).toBe(58);
+    expect(apart.targetAnchor.y).toBe(42);
   });
 
   it('lets a stored anchor win over the lane', () => {
@@ -899,16 +906,42 @@ describe('parallel lanes', () => {
     expect(route.points[0]).toEqual({ x: 100, y: 40 });
   });
 
-  it('spreads relationships between the same pair of classes, whichever way they point', () => {
-    const lanes = parallelLanes([
-      { id: 'r1', sourceId: 'a', targetId: 'b' },
-      { id: 'r2', sourceId: 'b', targetId: 'a' },
-      { id: 'r3', sourceId: 'a', targetId: 'c' },
-    ]);
+  it('spreads relationships between the same pair of classes in the same order at both ends', () => {
+    const lanes = sideLanes(
+      [{ id: 'r1', sourceId: 'a', targetId: 'b' }, { id: 'r2', sourceId: 'b', targetId: 'a' }],
+      new Map([['a', a], ['b', { x: 300, y: 0, width: 100, height: 100 }]]),
+    );
 
-    expect(lanes.get('r1')).toBe(-8);
-    expect(lanes.get('r2')).toBe(8);
-    expect(lanes.get('r3')).toBe(0);
+    expect(lanes.get('r1')).toEqual({ source: -8, target: -8 });
+    expect(lanes.get('r2')).toEqual({ source: 8, target: 8 });
+  });
+
+  it('spreads relationships of different pairs that leave through the same side, upper target first', () => {
+    const lanes = sideLanes(
+      [{ id: 'toLower', sourceId: 'a', targetId: 'c' }, { id: 'toUpper', sourceId: 'a', targetId: 'b' }],
+      new Map([['a', a], ['b', above], ['c', below]]),
+    );
+
+    expect(lanes.get('toUpper')!.source).toBe(-8);
+    expect(lanes.get('toLower')!.source).toBe(8);
+    expect(lanes.get('toUpper')!.target).toBe(0);
+    expect(lanes.get('toLower')!.target).toBe(0);
+  });
+
+  it('leaves a relationship that shares nothing on the centre of its sides', () => {
+    const lanes = sideLanes([{ id: 'r', sourceId: 'a', targetId: 'b' }], new Map([['a', a], ['b', above]]));
+
+    expect(lanes.get('r')).toEqual({ source: 0, target: 0 });
+  });
+
+  it('starts self relationships at the corner and grows them outward, never centred', () => {
+    const lanes = sideLanes(
+      [{ id: 's1', sourceId: 'a', targetId: 'a' }, { id: 's2', sourceId: 'a', targetId: 'a' }],
+      new Map([['a', a]]),
+    );
+
+    expect(lanes.get('s1')).toEqual({ source: 0, target: 0 });
+    expect(lanes.get('s2')).toEqual({ source: 16, target: 16 });
   });
 });
 
@@ -978,5 +1011,41 @@ describe('orthogonalRoute around classes in between', () => {
     const route = orthogonalRoute(source, alignedRight, adjustment, 0, [between]);
 
     expect(route.points).toEqual(orthogonalRoute(source, alignedRight, adjustment).points);
+  });
+});
+
+describe('orthogonalRoute for a class related to itself', () => {
+  const self = { x: 100, y: 100, width: 200, height: 80 };
+  const interior = (points: { x: number; y: number }[]) => points.slice(1).some((next, index) => {
+    const previous = points[index]!;
+    const inside = (x: number, y: number) => x > self.x && x < self.x + self.width && y > self.y && y < self.y + self.height;
+    return inside((previous.x + next.x) / 2, (previous.y + next.y) / 2);
+  });
+
+  it('draws the UML corner loop: out of the east side, round the top-right corner, back into the north side', () => {
+    const route = orthogonalRoute(self, self);
+
+    expect(route.points[0]!.x).toBe(self.x + self.width);
+    expect(route.points.at(-1)!.y).toBe(self.y);
+    expect(route.points.length).toBe(5);
+    expect(route.points.slice(1).every((next, index) => next.x === route.points[index]!.x
+      || next.y === route.points[index]!.y)).toBe(true);
+    expect(interior(route.points)).toBe(false);
+  });
+
+  it('keeps both ends on the border, apart from each other', () => {
+    const route = orthogonalRoute(self, self);
+
+    expect(route.sourceAnchor.side).toBe('E');
+    expect(route.targetAnchor.side).toBe('N');
+    expect(route.sourceAnchor).not.toEqual(route.targetAnchor);
+  });
+
+  it('grows the loop for each further lane so several self relationships do not overlap', () => {
+    const first = orthogonalRoute(self, self, null, 0);
+    const second = orthogonalRoute(self, self, null, 16);
+
+    expect(second.points[1]!.x).toBeGreaterThan(first.points[1]!.x);
+    expect(second.points[2]!.y).toBeLessThan(first.points[2]!.y);
   });
 });
