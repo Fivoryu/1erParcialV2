@@ -20,12 +20,17 @@ import {
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildFlowEdges, buildFlowNodes } from './UmlCanvas';
+import { endLabelsApplyTo } from './uml-format';
 import { UmlClassNode } from './UmlClassNode';
 import {
   buildRelationshipEdgePath,
   estimateLabelWidth,
+  DIAMOND_BEHIND_ARROW_PATH,
+  DIAMOND_PATH,
   HOLLOW_TRIANGLE_MARKER,
+  OPEN_ARROW_PATH,
   hollowTriangleGeometry,
+  markerClearance,
   routingObstacles,
   placeRelationshipLabels,
   RelationshipEndLabels,
@@ -215,8 +220,8 @@ describe('UML relationship markers and labels', () => {
       realizationLabelAtTarget: true,
     }));
 
-    expect(markup).toContain('customer [0..*]');
-    expect(markup).toContain('subscriptions [1..*]');
+    expect(markup).toContain('customer 0..*');
+    expect(markup).toContain('subscriptions 1..*');
     expect(markup).toContain('«realize»');
     expect(markup).not.toContain(sourceId);
     expect(markup).not.toContain(targetId);
@@ -304,8 +309,8 @@ describe('relationship label geometry', () => {
       targetBorder,
     ];
     const placements = placeRelationshipLabels(points, sourceRectangle, targetRectangle, {
-      source: 'customer [0..*]',
-      target: 'subscriptions [1..*]',
+      source: 'customer 0..*',
+      target: 'subscriptions 1..*',
       name: 'owns',
     });
     const intersects = (
@@ -349,6 +354,88 @@ describe('relationship label geometry', () => {
         expect(intersects(visibleBounds[left]!, visibleBounds[right]!)).toBe(false);
       }
     }
+  });
+});
+
+describe('routing obstacles', () => {
+  const node = (id: string, x: number, kind = 'CLASS', size: { width?: number; height?: number } = { width: 100, height: 60 }) => ({
+    id,
+    position: { x, y: 10 },
+    ...size,
+    data: { classifier: { kind } },
+  });
+
+  it('takes every class except the two ends of the relationship', () => {
+    const obstacles = routingObstacles([node('a', 0), node('b', 200), node('c', 400)], ['a', 'c']);
+
+    expect(obstacles).toEqual([{ x: 200, y: 10, width: 100, height: 60 }]);
+  });
+
+  it('leaves packages out, because the classes they contain are not blocked by them', () => {
+    expect(routingObstacles([node('p', 0, 'PACKAGE'), node('b', 200)], [])).toEqual([{ x: 200, y: 10, width: 100, height: 60 }]);
+  });
+
+  it('prefers the measured size and skips a node that has none yet', () => {
+    const measured = { ...node('m', 0), measured: { width: 120, height: 90 } };
+
+    expect(routingObstacles([measured, node('unsized', 300, 'CLASS', {})], [])).toEqual([{ x: 0, y: 10, width: 120, height: 90 }]);
+  });
+});
+
+describe('end labels clear the marker', () => {
+  const sourceRectangle = { x: 0, y: 0, width: 100, height: 120 };
+  const targetRectangle = { x: 400, y: 0, width: 100, height: 120 };
+  const points = [{ x: 100, y: 60 }, { x: 400, y: 60 }];
+
+  it('keeps the source label past the marker drawn at that end of the line', () => {
+    const plain = placeRelationshipLabels(points, sourceRectangle, targetRectangle, { source: '1', target: '', name: '' });
+    const cleared = placeRelationshipLabels(points, sourceRectangle, targetRectangle, { source: '1', target: '', name: '' }, { source: 30, target: 0 });
+
+    expect(cleared.source!.estimatedBounds.x).toBeGreaterThanOrEqual(plain.source!.estimatedBounds.x + 30);
+  });
+
+  it('sizes the clearance from the marker and the stroke width it scales with', () => {
+    expect(markerClearance(null, 2)).toBe(0);
+    expect(markerClearance('hollow-triangle', 2)).toBeGreaterThan(markerClearance('open-arrow', 2));
+    expect(markerClearance('filled-diamond', 4)).toBe(markerClearance('filled-diamond', 2) * 2 - 6);
+  });
+
+  it('shows no end labels on generalization, realization or dependency', () => {
+    expect(endLabelsApplyTo('ASSOCIATION')).toBe(true);
+    expect(endLabelsApplyTo('AGGREGATION')).toBe(true);
+    expect(endLabelsApplyTo('COMPOSITION')).toBe(true);
+    expect(endLabelsApplyTo('GENERALIZATION')).toBe(false);
+    expect(endLabelsApplyTo('INTERFACE_REALIZATION')).toBe(false);
+    expect(endLabelsApplyTo('DEPENDENCY')).toBe(false);
+  });
+});
+
+describe('relationship markers stay outside the class', () => {
+  const xs = (path: string) => [...path.matchAll(/-?\d+(?:\.\d+)?/g)]
+    .map((match) => Number(match[0]))
+    .filter((_, index) => index % 2 === 0);
+
+  it.each([
+    ['open arrow', OPEN_ARROW_PATH],
+    ['diamond', DIAMOND_PATH],
+    ['diamond behind the arrow', DIAMOND_BEHIND_ARROW_PATH],
+  ])('draws the %s at non-positive x, never into the class box', (_name, path) => {
+    expect(Math.max(...xs(path))).toBeLessThanOrEqual(0);
+  });
+
+  it('puts the tip of the open arrow and the vertex of the diamond on the border', () => {
+    expect(xs(OPEN_ARROW_PATH)).toContain(0);
+    expect(xs(DIAMOND_PATH)).toContain(0);
+  });
+});
+
+describe('node height follows the card', () => {
+  it('uses the stored height only as a minimum, so a class that grew past it is never clipped', () => {
+    const node = buildFlowNodes(model, [], () => undefined, () => undefined).find((candidate) => candidate.id === sourceId);
+
+    expect(node?.width).toBe(240);
+    expect(node?.height).toBeUndefined();
+    expect(node?.style).toEqual({ minHeight: 160 });
   });
 });
 

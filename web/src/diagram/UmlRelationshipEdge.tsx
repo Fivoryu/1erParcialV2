@@ -24,7 +24,7 @@ import {
 } from './orthogonal-routing';
 import { DEFAULT_ROUTING } from './commands';
 import { endOrdinalForLabelSide } from './contextMenuBehavior';
-import { formatRelationshipEndLabel } from './uml-format';
+import { endLabelsApplyTo, formatRelationshipEndLabel } from './uml-format';
 
 export type RelationshipMarker =
   | 'open-arrow'
@@ -292,14 +292,16 @@ export function placeRelationshipLabels(
   sourceRectangle: EdgeRectangle,
   targetRectangle: EdgeRectangle,
   texts: RelationshipLabelTexts,
+  clearance: { source: number; target: number } = { source: 0, target: 0 },
 ): RelationshipLabelPlacements {
-  const nodeObstacles = [
-    expandRectangle(sourceRectangle, LABEL_NODE_PADDING_PX),
-    expandRectangle(targetRectangle, LABEL_NODE_PADDING_PX),
+  // An end label keeps off its own marker as well as its class; the other labels only keep off the classes.
+  const nodeObstaclesFor = (sourcePadding: number, targetPadding: number) => [
+    expandRectangle(sourceRectangle, LABEL_NODE_PADDING_PX + sourcePadding),
+    expandRectangle(targetRectangle, LABEL_NODE_PADDING_PX + targetPadding),
   ];
   const placedBoxes: EdgeRectangle[] = [];
   const pathLength = pathSegments(points).reduce((length, segment) => length + segment.length, 0);
-  const place = (labelTexts: string[], preferredDistance: number) => {
+  const place = (labelTexts: string[], preferredDistance: number, nodeObstacles: EdgeRectangle[]) => {
     const visibleTexts = labelTexts.filter(Boolean);
     if (!visibleTexts.length) {
       return null;
@@ -316,9 +318,9 @@ export function placeRelationshipLabels(
     return placement;
   };
 
-  const source = place([texts.source], 0);
-  const target = place([texts.target, texts.targetStereotype ?? ''], pathLength);
-  const name = place([texts.name], pathLength / 2);
+  const source = place([texts.source], 0, nodeObstaclesFor(clearance.source, 0));
+  const target = place([texts.target, texts.targetStereotype ?? ''], pathLength, nodeObstaclesFor(0, clearance.target));
+  const name = place([texts.name], pathLength / 2, nodeObstaclesFor(0, 0));
   return { source, target, name };
 }
 
@@ -345,6 +347,32 @@ export const HOLLOW_TRIANGLE_MARKER = {
   markerUnits: 'strokeWidth',
   path: `M ${HOLLOW_TRIANGLE_TIP.x} ${HOLLOW_TRIANGLE_TIP.y} L ${HOLLOW_TRIANGLE_BASE_LEFT.x} ${HOLLOW_TRIANGLE_BASE_LEFT.y} L ${HOLLOW_TRIANGLE_BASE_RIGHT.x} ${HOLLOW_TRIANGLE_BASE_RIGHT.y} Z`,
 } as const;
+
+/**
+ * Every marker is drawn at non-positive local x. SVG orients an end marker along the direction of
+ * travel and a start marker against it, so in both cases negative x is the side of the border that
+ * lies outside the class; positive x is inside the box, where the class card hides it. The tip (or
+ * the vertex nearest the class) sits at x = 0, on the border.
+ */
+export const OPEN_ARROW_PATH = 'M -9 -5 L 0 0 L -9 5';
+export const DIAMOND_PATH = 'M 0 0 L -7 -6 L -14 0 L -7 6 Z';
+/** The diamond of a navigable whole end sits behind the arrowhead, still outside the class. */
+export const DIAMOND_BEHIND_ARROW_PATH = 'M -10 0 L -17 -6 L -24 0 L -17 6 Z';
+
+/** How far each marker reaches along the line from the class border, in stroke-width units. */
+const MARKER_LENGTH: Record<Exclude<RelationshipMarker, null>, number> = {
+  'open-arrow': 9,
+  'hollow-diamond': 14,
+  'filled-diamond': 14,
+  'hollow-diamond-open-arrow': 24,
+  'filled-diamond-open-arrow': 24,
+  'hollow-triangle': 13,
+};
+
+/** Markers scale with the stroke, so the label has to stay clear of that scaled length. */
+export function markerClearance(marker: RelationshipMarker, strokeWidth: number): number {
+  return marker ? MARKER_LENGTH[marker] * strokeWidth + 6 : 0;
+}
 
 export interface HollowTriangleGeometry {
   pathEnd: EdgePoint;
@@ -535,12 +563,15 @@ export function RelationshipEndLabelAnchor({
   end,
   position,
   labelGroup = false,
+  showEndLabel = true,
   onContextMenu,
   children,
 }: {
   side: 'source' | 'target';
   end: RelationshipEndResource;
   position: RelationshipLabelPlacement;
+  /** False for kinds without end notation, where only the stereotype group remains. */
+  showEndLabel?: boolean;
   /** Flex layout for label groups sharing one position (target end + stereotype). */
   labelGroup?: boolean;
   onContextMenu?: ((event: MouseEvent<HTMLDivElement>, endOrdinal: number) => void) | undefined;
@@ -560,7 +591,7 @@ export function RelationshipEndLabelAnchor({
       }}
       style={{ transform: `translate(-50%, -50%) translate(${position.x}px, ${position.y}px)` }}
     >
-      <RelationshipEndLabel end={end} side={side} />
+      {showEndLabel && <RelationshipEndLabel end={end} side={side} />}
       {children}
     </div>
   );
@@ -707,14 +738,19 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     ? roundedOrthogonalPath(orthogonalPoints, style.cornerRadius)
     : buildRelationshipEdgePath(points);
   const labelPoints: EdgePoint[] = orthogonalPoints ?? points;
-  const sourceLabel = formatRelationshipEndLabel(orderedEnds[0]!);
-  const targetLabel = formatRelationshipEndLabel(orderedEnds[1]!);
+  const showEndLabels = endLabelsApplyTo(relationship.kind);
+  const sourceLabel = showEndLabels ? formatRelationshipEndLabel(orderedEnds[0]!) : '';
+  const targetLabel = showEndLabels ? formatRelationshipEndLabel(orderedEnds[1]!) : '';
+  const strokeForMarkers = style.strokeWidth > 0 ? style.strokeWidth : EDGE_STROKE_WIDTH_PX;
   const labelPlacements = sourceRectangle && targetRectangle
     ? placeRelationshipLabels(labelPoints, sourceRectangle, targetRectangle, {
       source: sourceLabel,
       target: targetLabel,
       ...(markers.realizationLabelAtTarget ? { targetStereotype: '«realize»' } : {}),
       name: relationship.name ?? '',
+    }, {
+      source: markerClearance(markers.sourceMarker, strokeForMarkers),
+      target: markerClearance(markers.targetMarker, strokeForMarkers),
     })
     : { source: null, target: null, name: null };
   const middle = pointAlongSegment(points[0]!, points[points.length - 1]!, 0.5);
@@ -804,22 +840,22 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
   return (
     <>
       <defs>
-        <marker id={markerIds['open-arrow']} viewBox="0 -6 10 12" refX="0" refY="0" markerWidth="10" markerHeight="12" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 0 -5 L 9 0 L 0 5" fill="none" stroke="#526b62" strokeWidth="1.4" />
+        <marker id={markerIds['open-arrow']} viewBox="-10 -6 11 12" refX="0" refY="0" markerWidth="11" markerHeight="12" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
         </marker>
-        <marker id={markerIds['hollow-diamond']} viewBox="0 -7 14 14" refX="0" refY="0" markerWidth="14" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 0 0 L 7 -6 L 14 0 L 7 6 Z" fill="white" stroke="#526b62" strokeWidth="1.4" />
+        <marker id={markerIds['hollow-diamond']} viewBox="-15 -7 16 14" refX="0" refY="0" markerWidth="16" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d={DIAMOND_PATH} fill="white" stroke="#526b62" strokeWidth="1.4" />
         </marker>
-        <marker id={markerIds['filled-diamond']} viewBox="0 -7 14 14" refX="0" refY="0" markerWidth="14" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 0 0 L 7 -6 L 14 0 L 7 6 Z" fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
+        <marker id={markerIds['filled-diamond']} viewBox="-15 -7 16 14" refX="0" refY="0" markerWidth="16" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d={DIAMOND_PATH} fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
         </marker>
         <marker id={markerIds['hollow-diamond-open-arrow']} viewBox="-26 -8 28 16" refX="0" refY="0" markerWidth="28" markerHeight="16" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 9 -5 L 0 0 L 9 5" fill="none" stroke="#526b62" strokeWidth="1.4" />
-          <path d="M -24 0 L -18 -6 L -12 0 L -18 6 Z" fill="white" stroke="#526b62" strokeWidth="1.4" />
+          <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
+          <path d={DIAMOND_BEHIND_ARROW_PATH} fill="white" stroke="#526b62" strokeWidth="1.4" />
         </marker>
         <marker id={markerIds['filled-diamond-open-arrow']} viewBox="-26 -8 28 16" refX="0" refY="0" markerWidth="28" markerHeight="16" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 9 -5 L 0 0 L 9 5" fill="none" stroke="#526b62" strokeWidth="1.4" />
-          <path d="M -24 0 L -18 -6 L -12 0 L -18 6 Z" fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
+          <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
+          <path d={DIAMOND_BEHIND_ARROW_PATH} fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
         </marker>
         <marker
           id={markerIds['hollow-triangle']}
@@ -861,6 +897,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             labelGroup
             onContextMenu={(event, endOrdinal) => data.onRelationshipContextMenu?.(event, relationship.id, endOrdinal)}
             position={labelPlacements.target}
+            showEndLabel={showEndLabels}
             side="target"
           >
             {markers.realizationLabelAtTarget && <span className="uml-edge-stereotype">«realize»</span>}
