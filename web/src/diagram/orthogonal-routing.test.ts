@@ -1049,3 +1049,100 @@ describe('orthogonalRoute for a class related to itself', () => {
     expect(second.points[2]!.y).toBeLessThan(first.points[2]!.y);
   });
 });
+
+describe('orthogonalRoute between perpendicular sides with classes in the way', () => {
+  const crossesInterior = (points: { x: number; y: number }[], rectangle: OrthoRectangle) => points.slice(1).some((next, index) => {
+    const previous = points[index]!;
+    const right = rectangle.x + rectangle.width;
+    const bottom = rectangle.y + rectangle.height;
+    if (previous.y === next.y) {
+      return previous.y > rectangle.y && previous.y < bottom
+        && Math.max(Math.min(previous.x, next.x), rectangle.x) < Math.min(Math.max(previous.x, next.x), right);
+    }
+    return previous.x > rectangle.x && previous.x < right
+      && Math.max(Math.min(previous.y, next.y), rectangle.y) < Math.min(Math.max(previous.y, next.y), bottom);
+  });
+  const orthogonal = (points: { x: number; y: number }[]) => points.slice(1)
+    .every((next, index) => next.x === points[index]!.x || next.y === points[index]!.y);
+
+  // The source leaves through its east side and the target is entered through its north side.
+  const from = { x: 0, y: 0, width: 100, height: 100 };
+  const to = { x: 400, y: 300, width: 100, height: 100 };
+  const anchored = {
+    axis: 'H' as const,
+    corridors: [0],
+    levels: [],
+    anchors: { source: { side: 'E' as const, offset: 0 }, target: { side: 'N' as const, offset: 0 } },
+  };
+
+  it('keeps the plain corner route when nothing is in the way', () => {
+    const route = orthogonalRoute(from, to, anchored);
+
+    expect(route.points).toEqual([{ x: 100, y: 50 }, { x: 450, y: 50 }, { x: 450, y: 300 }]);
+  });
+
+  it('finds another way when a class blocks each of the two corners', () => {
+    const blocksHorizontalFirst = { x: 200, y: 20, width: 100, height: 60 };
+    const blocksVerticalFirst = { x: 80, y: 150, width: 100, height: 60 };
+
+    const route = orthogonalRoute(from, to, anchored, 0, [blocksHorizontalFirst, blocksVerticalFirst]);
+
+    expect(orthogonal(route.points)).toBe(true);
+    for (const rectangle of [from, to, blocksHorizontalFirst, blocksVerticalFirst]) {
+      expect(crossesInterior(route.points, rectangle)).toBe(false);
+    }
+    expect(route.points[0]).toEqual({ x: 100, y: 50 });
+    expect(route.points.at(-1)).toEqual({ x: 450, y: 300 });
+    // It still arrives straight down into the north side, against that side's outward normal.
+    expect(route.points.at(-2)!.x).toBe(450);
+    expect(route.points.at(-2)!.y).toBeLessThan(300);
+  });
+
+  it('searches a way through when the usual detours of two aligned classes are blocked too', () => {
+    const left = { x: 0, y: 0, width: 100, height: 100 };
+    const right = { x: 400, y: 0, width: 100, height: 100 };
+    // The straight line is blocked by the middle class, and the two stubs' columns are blocked above and below,
+    // so none of the usual crossings or detours is clear; a way still exists between them.
+    const middle = { x: 180, y: -60, width: 40, height: 160 };
+    const aboveStub = { x: 110, y: -1000, width: 30, height: 960 };
+    const belowStub = { x: 110, y: 60, width: 30, height: 300 };
+
+    const route = orthogonalRoute(left, right, null, 0, [middle, aboveStub, belowStub]);
+
+    expect(orthogonal(route.points)).toBe(true);
+    for (const rectangle of [left, right, middle, aboveStub, belowStub]) {
+      expect(crossesInterior(route.points, rectangle)).toBe(false);
+    }
+    expect(route.points[0]).toEqual({ x: 100, y: 50 });
+    expect(route.points.at(-1)).toEqual({ x: 400, y: 50 });
+  });
+
+  it('stays fast and still returns a route on a crowded diagram where the search is skipped or has to give up', () => {
+    const crowd = Array.from({ length: 120 }, (_, index) => ({
+      x: 160 + (index % 12) * 14,
+      y: -400 + Math.floor(index / 12) * 90,
+      width: 10,
+      height: 80,
+    }));
+    const started = Date.now();
+
+    const route = orthogonalRoute(from, to, anchored, 0, crowd);
+
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(route.points.length).toBeGreaterThanOrEqual(2);
+    expect(orthogonal(route.points)).toBe(true);
+  });
+
+  it('still returns a route when the target is walled in', () => {
+    const walls = [
+      { x: 330, y: 200, width: 250, height: 20 },
+      { x: 330, y: 200, width: 20, height: 250 },
+      { x: 560, y: 200, width: 20, height: 250 },
+    ];
+
+    const route = orthogonalRoute(from, to, anchored, 0, walls);
+
+    expect(route.points.length).toBeGreaterThanOrEqual(2);
+    expect(orthogonal(route.points)).toBe(true);
+  });
+});

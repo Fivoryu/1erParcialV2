@@ -335,6 +335,128 @@ function pointAtHalfArcLength(points: OrthoPoint[]): OrthoPoint {
   return points[points.length - 1]!;
 }
 
+/** Above this many grid cells the search is skipped; the router then falls back to its plain route. */
+const MAX_SEARCH_GRID_CELLS = 40_000;
+
+/** A binary min-heap, so the search takes the cheapest frontier entry without re-sorting every step. */
+class MinHeap<T> {
+  private readonly items: T[] = [];
+
+  constructor(private readonly priority: (item: T) => number) {}
+
+  get size(): number {
+    return this.items.length;
+  }
+
+  push(item: T): void {
+    this.items.push(item);
+    let index = this.items.length - 1;
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (this.priority(this.items[parent]!) <= this.priority(this.items[index]!)) {
+        break;
+      }
+      [this.items[parent], this.items[index]] = [this.items[index]!, this.items[parent]!];
+      index = parent;
+    }
+  }
+
+  pop(): T | undefined {
+    const top = this.items[0];
+    const last = this.items.pop();
+    if (last !== undefined && this.items.length > 0) {
+      this.items[0] = last;
+      let index = 0;
+      for (;;) {
+        const left = index * 2 + 1;
+        const right = left + 1;
+        let smallest = index;
+        if (left < this.items.length && this.priority(this.items[left]!) < this.priority(this.items[smallest]!)) {
+          smallest = left;
+        }
+        if (right < this.items.length && this.priority(this.items[right]!) < this.priority(this.items[smallest]!)) {
+          smallest = right;
+        }
+        if (smallest === index) {
+          break;
+        }
+        [this.items[smallest], this.items[index]] = [this.items[index]!, this.items[smallest]!];
+        index = smallest;
+      }
+    }
+    return top;
+  }
+}
+
+/**
+ * Last resort when no simple route clears the classes in the way: the shortest orthogonal path between
+ * two points over the grid that the classes' borders (plus some room) and the two points themselves
+ * define, with the fewest bends first and the shortest length second. It never enters a class's
+ * interior, and it returns null when none exists (the target is walled in).
+ */
+function searchOrthogonalPath(from: OrthoPoint, to: OrthoPoint, blockers: readonly OrthoRectangle[]): OrthoPoint[] | null {
+  const room = ANCHOR_STUB / 2;
+  const unique = (values: number[]) => [...new Set(values)].sort((left, right) => left - right);
+  const xs = unique([from.x, to.x, ...blockers.flatMap((rectangle) => [rectangle.x - room, rectangle.x + rectangle.width + room])]);
+  const ys = unique([from.y, to.y, ...blockers.flatMap((rectangle) => [rectangle.y - room, rectangle.y + rectangle.height + room])]);
+  const start = { i: xs.indexOf(from.x), j: ys.indexOf(from.y) };
+  const goal = { i: xs.indexOf(to.x), j: ys.indexOf(to.y) };
+  const directions = [{ di: 1, dj: 0 }, { di: -1, dj: 0 }, { di: 0, dj: 1 }, { di: 0, dj: -1 }];
+  const BEND = 1_000_000;
+  const key = (i: number, j: number, direction: number) => `${i},${j},${direction}`;
+  const best = new Map<string, number>();
+  const previous = new Map<string, string>();
+  // A grid this large means a diagram this crowded: keep the plain fallback instead of a slow search.
+  if (xs.length * ys.length > MAX_SEARCH_GRID_CELLS) {
+    return null;
+  }
+  const queue = new MinHeap<{ i: number; j: number; direction: number; cost: number }>((entry) => entry.cost);
+  queue.push({ ...start, direction: -1, cost: 0 });
+  best.set(key(start.i, start.j, -1), 0);
+  const free = (a: OrthoPoint, b: OrthoPoint) => blockers.every((rectangle) => !segmentEntersRectangle(a, b, rectangle));
+  let finalKey: string | null = null;
+  while (queue.size > 0) {
+    const current = queue.pop()!;
+    const currentKey = key(current.i, current.j, current.direction);
+    if (current.cost > (best.get(currentKey) ?? Number.POSITIVE_INFINITY)) {
+      continue;
+    }
+    if (current.i === goal.i && current.j === goal.j) {
+      finalKey = currentKey;
+      break;
+    }
+    directions.forEach(({ di, dj }, direction) => {
+      const i = current.i + di;
+      const j = current.j + dj;
+      if (i < 0 || j < 0 || i >= xs.length || j >= ys.length) {
+        return;
+      }
+      const a = { x: xs[current.i]!, y: ys[current.j]! };
+      const b = { x: xs[i]!, y: ys[j]! };
+      if (!free(a, b)) {
+        return;
+      }
+      const cost = current.cost + Math.abs(b.x - a.x) + Math.abs(b.y - a.y)
+        + (current.direction !== -1 && current.direction !== direction ? BEND : 0);
+      const nextKey = key(i, j, direction);
+      if (cost < (best.get(nextKey) ?? Number.POSITIVE_INFINITY)) {
+        best.set(nextKey, cost);
+        previous.set(nextKey, currentKey);
+        queue.push({ i, j, direction, cost });
+      }
+    });
+  }
+  if (finalKey === null) {
+    return null;
+  }
+  const path: OrthoPoint[] = [];
+  for (let at: string | undefined = finalKey; at !== undefined; at = previous.get(at)) {
+    const [i, j] = at.split(',').map(Number);
+    path.unshift({ x: xs[i!]!, y: ys[j!]! });
+  }
+  return collapseOrthoPoints(path);
+}
+
 /** Distance between two relationships that share the same pair of classes. */
 export const PARALLEL_LANE_SPACING = 16;
 
@@ -498,7 +620,14 @@ export function orthogonalRoute(
       stubTarget,
       targetAnchorPoint,
     ]));
-    const points = options.find((candidate) => !routeEntersRectangles(candidate, blockers)) ?? options[0]!;
+    const clear = options.find((candidate) => !routeEntersRectangles(candidate, blockers));
+    // With other classes around and no simple corner clear of them, look for a way between the stubs.
+    const detour = clear === undefined && obstacles.length > 0
+      ? searchOrthogonalPath(stubSource, stubTarget, blockers)
+      : null;
+    const points = clear ?? (detour === null
+      ? options[0]!
+      : collapseOrthoPoints([sourceAnchorPoint, stubSource, ...detour, stubTarget, targetAnchorPoint]));
     return {
       axis: pairAxis,
       points,
@@ -632,8 +761,17 @@ export function orthogonalRoute(
       ...crossingOptions.map((value) => ({ points: staircaseAt(value), crossing: value as number | null })),
       ...lateralOrder.map((lateral) => ({ points: lateralAt(lateral), crossing: null as number | null })),
     ];
-  const chosen = candidates.find((candidate) => !routeEntersRectangles(candidate.points, blockers))
-    ?? candidates[0]!;
+  const clearCandidate = candidates.find((candidate) => !routeEntersRectangles(candidate.points, blockers));
+  // A hand-placed route is kept as the user left it; an automatic one searches before giving up.
+  const searched = clearCandidate === undefined && !honoured && obstacles.length > 0
+    ? searchOrthogonalPath(stubSource, stubTarget, blockers)
+    : null;
+  const chosen = clearCandidate ?? (searched === null
+    ? candidates[0]!
+    : {
+      points: collapseOrthoPoints([toPoint(uS, vS), ...searched, toPoint(uT, vT)]),
+      crossing: null as number | null,
+    });
 
   const autoCorridor = chosen.crossing ?? (uA + uB) / 2;
   const corridors = chosen.crossing === null ? [] : corridorOffsets.map((offset) => chosen.crossing! + offset);
