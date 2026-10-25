@@ -83,6 +83,9 @@ public class DiagramContextRenderer {
         for (ModelResource.RelationshipResource relationship : model.relationships()) {
             Map<String, Object> relationshipJson = new LinkedHashMap<>();
             relationshipJson.put("kind", relationship.kind());
+            if (relationship.stereotype() != null) {
+                relationshipJson.put("stereotype", relationship.stereotype());
+            }
             String source = relationship.ends().size() > 0
                     ? classifierNames.get(relationship.ends().get(0).classifierId()) : null;
             String target = relationship.ends().size() > 1

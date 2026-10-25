@@ -48,6 +48,7 @@ class AssistantApplyServiceTest {
     private static final UUID PROJECT_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
     private static final UUID MODEL_ID = UUID.fromString("15000000-0000-0000-0000-000000000001");
     private static final UUID USER_ID = UUID.fromString("11000000-0000-0000-0000-000000000001");
+    private static final UUID RELATIONSHIP_ID = UUID.fromString("40000000-0000-0000-0000-000000000001");
     private static final UUID CLASSIFIER_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
     private static final UUID UNKNOWN_ID = UUID.fromString("29000000-0000-0000-0000-000000000009");
 
@@ -516,6 +517,101 @@ class AssistantApplyServiceTest {
         Map<String, Object> payload = (Map<String, Object>) envelopes.getValue().payload();
         assertThat(payload).containsEntry("kind", "ASSOCIATION");
         assertThat(response.steps().get(0).status()).isEqualTo("ACCEPTED");
+    }
+
+    @Test
+    void relationshipCreatePassesTheStereotypeOfADependencyInUpperCase() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.create", null, Map.of(
+                        "kind", "dependency", "stereotype", "use",
+                        "source", Map.of("classifierName", "Persona"),
+                        "target", Map.of("classifierName", "Persona")))), 7L));
+
+        assertThat(response.steps().get(0).status()).isEqualTo("ACCEPTED");
+        assertThat(lastPayload()).containsEntry("kind", "DEPENDENCY").containsEntry("stereotype", "USE");
+    }
+
+    @Test
+    void relationshipCreateWithoutAStereotypeSendsNoStereotypeKey() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L), model(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+
+        service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.create", null, Map.of(
+                        "kind", "DEPENDENCY",
+                        "source", Map.of("classifierName", "Persona"),
+                        "target", Map.of("classifierName", "Persona")))), 7L));
+
+        assertThat(lastPayload()).doesNotContainKey("stereotype");
+    }
+
+    @Test
+    void relationshipUpdateMaySetOnlyTheStereotype() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(modelWithDependency(7L), modelWithDependency(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.update", RELATIONSHIP_ID, Map.of("stereotype", "import"))), 7L));
+
+        assertThat(response.steps().get(0).status()).isEqualTo("ACCEPTED");
+        assertThat(lastPayload()).containsOnlyKeys("stereotype").containsEntry("stereotype", "IMPORT");
+    }
+
+    @Test
+    void relationshipUpdateWithANullStereotypeAsksToRemoveIt() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(modelWithDependency(7L), modelWithDependency(8L));
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+        AssistantApplyService service = service();
+        Map<String, Object> args = new java.util.HashMap<>();
+        args.put("stereotype", null);
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.update", RELATIONSHIP_ID, args)), 7L));
+
+        assertThat(response.steps().get(0).status()).isEqualTo("ACCEPTED");
+        assertThat(lastPayload()).containsKey("stereotype").containsEntry("stereotype", null);
+    }
+
+    @Test
+    void relationshipUpdateWithNothingToChangeIsStillRejectedAsMissingAnArgument() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(modelWithDependency(7L));
+        AssistantApplyService service = service();
+
+        AssistantApplyResponse response = service.apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("relationship.update", RELATIONSHIP_ID, Map.of())), 7L));
+
+        assertThat(response.steps().get(0).status()).isEqualTo("REJECTED");
+        assertThat(response.steps().get(0).diagnostics()).extracting(AssistantPlanResponse.Diagnostic::code)
+                .containsExactly("MISSING_ARGUMENT");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> lastPayload() {
+        ArgumentCaptor<OperationEnvelope> envelopes = ArgumentCaptor.forClass(OperationEnvelope.class);
+        verify(commandService).execute(envelopes.capture());
+        return (Map<String, Object>) envelopes.getValue().payload();
+    }
+
+    private static ModelResource modelWithDependency(long revision) {
+        ModelResource base = model(revision);
+        return new ModelResource(MODEL_ID, PROJECT_ID, revision, UUID.randomUUID(), List.of(), base.classifiers(),
+                List.of(new com.diagramador.api.ModelResource.RelationshipResource(RELATIONSHIP_ID, "DEPENDENCY",
+                        "needs", "USE",
+                        List.of(new com.diagramador.api.ModelResource.RelationshipEndResource(
+                                        UUID.fromString("50000000-0000-0000-0000-000000000001"), CLASSIFIER_ID, null,
+                                        com.diagramador.domain.MultiplicityKind.EXACTLY_ONE,
+                                        com.diagramador.domain.NavigationKind.UNSPECIFIED, "none", (short) 1),
+                                new com.diagramador.api.ModelResource.RelationshipEndResource(
+                                        UUID.fromString("50000000-0000-0000-0000-000000000002"), CLASSIFIER_ID, null,
+                                        com.diagramador.domain.MultiplicityKind.EXACTLY_ONE,
+                                        com.diagramador.domain.NavigationKind.UNSPECIFIED, "none", (short) 2)),
+                        List.of())));
     }
 
     private AssistantApplyService service() {

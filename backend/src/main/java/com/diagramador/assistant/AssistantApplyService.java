@@ -320,6 +320,9 @@ public class AssistantApplyService {
                 if (text(args.get("name")) != null) {
                     payload.put("name", text(args.get("name")));
                 }
+                if (text(args.get("stereotype")) != null) {
+                    payload.put("stereotype", text(args.get("stereotype")).toUpperCase());
+                }
                 if (args.get("waypoints") != null) {
                     payload.put("waypoints", args.get("waypoints"));
                 }
@@ -334,10 +337,15 @@ public class AssistantApplyService {
                 if (text(args.get("kind")) != null) {
                     payload.put("kind", text(args.get("kind")).toUpperCase());
                 }
+                if (args.containsKey("stereotype")) {
+                    // A null or blank stereotype asks the command to remove it; the handler validates the rest.
+                    payload.put("stereotype", text(args.get("stereotype")) == null ? null
+                            : text(args.get("stereotype")).toUpperCase());
+                }
                 copyEndUpdate(payload, "source", args.get("source"));
                 copyEndUpdate(payload, "target", args.get("target"));
                 if (payload.isEmpty()) {
-                    yield missing("name|kind|source|target", operation.type());
+                    yield missing("name|kind|stereotype|source|target", operation.type());
                 }
                 yield mapped(payload, targets("relationship", operation.targetId()), List.of());
             }
