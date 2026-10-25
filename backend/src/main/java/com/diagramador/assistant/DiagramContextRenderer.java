@@ -48,6 +48,13 @@ public class DiagramContextRenderer {
             Map<String, Object> classifierJson = new LinkedHashMap<>();
             classifierJson.put("name", classifier.name());
             classifierJson.put("kind", classifier.kind() == null ? null : classifier.kind().name());
+            if (classifier.store() != null) {
+                // Where the generated backend persists the class; a reference across stores is an id, not a join.
+                classifierJson.put("store", classifier.store().name());
+                if (classifier.storeOverride() != null) {
+                    classifierJson.put("storeSetManually", true);
+                }
+            }
             List<Map<String, Object>> attributes = new ArrayList<>();
             for (ModelResource.AttributeResource attribute : classifier.attributes()) {
                 Map<String, Object> attributeJson = new LinkedHashMap<>();
