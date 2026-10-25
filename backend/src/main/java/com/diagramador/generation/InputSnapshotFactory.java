@@ -4,6 +4,7 @@ import com.diagramador.command.ValidationState;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ModelVersion;
 import com.diagramador.domain.OperationParameter;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.RelationshipEnd;
 import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
@@ -96,7 +97,7 @@ public class InputSnapshotFactory {
         List<InputSnapshot.ClassifierElement> classifiers = classifierRows.stream()
                 .map(classifier -> new InputSnapshot.ClassifierElement(classifier.getId(),
                         id(classifier.getNamespace()), classifier.getKind(), classifier.getName(),
-                        classifier.isAbstract()))
+                        classifier.isAbstract(), classifier.getStoreOverride()))
                 .toList();
         List<InputSnapshot.AttributeElement> attributes = attributeRows.stream()
                 .sorted(byId(UmlAttribute::getId))
@@ -157,9 +158,10 @@ public class InputSnapshotFactory {
             List<InputSnapshot.ConstraintElement> constraints) {
         List<String> lines = new ArrayList<>();
         classifiers.stream().sorted(byId(InputSnapshot.ClassifierElement::id))
-                .map(classifier -> line("classifiers", classifier.id(),
+                .map(classifier -> withStore(line("classifiers", classifier.id(),
                         field("namespaceId", classifier.namespaceId()), field("kind", classifier.kind()),
-                        field("name", classifier.name()), field("isAbstract", classifier.isAbstract())))
+                        field("name", classifier.name()), field("isAbstract", classifier.isAbstract())),
+                        classifier.storeOverride()))
                 .forEach(lines::add);
         attributes.stream().sorted(byId(InputSnapshot.AttributeElement::id))
                 .map(attribute -> line("attributes", attribute.id(),
@@ -216,6 +218,11 @@ public class InputSnapshotFactory {
 
     private static String field(String name, Object value) {
         return name + "=" + String.valueOf(value);
+    }
+
+    /** Appended only when set, so a model without a manual store keeps the projection it had before the field. */
+    private static String withStore(String line, PersistenceStore storeOverride) {
+        return storeOverride == null ? line : line + "|" + field("storeOverride", storeOverride);
     }
 
     private static UUID id(Classifier classifier) {

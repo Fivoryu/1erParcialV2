@@ -175,6 +175,33 @@ class T3aCommandHandlersTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void classifierSetStoreFixesAndClearsTheManualPersistenceStore() {
+        Fixture fixture = fixture();
+        UUID classId = UUID.randomUUID();
+        UUID interfaceId = UUID.randomUUID();
+        assertAccepted(command(fixture, "classifier.create", 0, Map.of("id", classId, "name", "Order",
+                "kind", "CLASS"), List.of()));
+        assertThat(classifierRepository.findById(classId).orElseThrow().getStoreOverride()).isNull();
+
+        assertAccepted(command(fixture, "classifier.setStore", 1, Map.of("store", "DOCUMENT"),
+                target("classifier", classId)));
+        assertThat(classifierRepository.findById(classId).orElseThrow().getStoreOverride())
+                .isEqualTo(com.diagramador.domain.PersistenceStore.DOCUMENT);
+
+        assertAccepted(command(fixture, "classifier.setStore", 2, java.util.Collections.singletonMap("store", null),
+                target("classifier", classId)));
+        assertThat(classifierRepository.findById(classId).orElseThrow().getStoreOverride()).isNull();
+
+        assertRejected(command(fixture, "classifier.setStore", 3, Map.of("store", "GRAPH"),
+                target("classifier", classId)), ErrorCode.PRECONDITION_FAILED, "SQL, DOCUMENT");
+        assertAccepted(command(fixture, "classifier.create", 3, Map.of("id", interfaceId, "name", "Port",
+                "kind", "INTERFACE"), List.of()));
+        assertRejected(command(fixture, "classifier.setStore", 4, Map.of("store", "SQL"),
+                target("classifier", interfaceId)), ErrorCode.PRECONDITION_FAILED, "INTERFACE");
+        assertThat(classifierRepository.findById(interfaceId).orElseThrow().getStoreOverride()).isNull();
+    }
+
+    @Test
     void duplicateClassifierNameIsRejectedOnCreateAndRename() {
         Fixture fixture = fixture();
         UUID first = UUID.randomUUID();

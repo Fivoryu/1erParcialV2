@@ -70,7 +70,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("tombstone", Set.of("tombstone_id", "model_id", "target_type", "target_id", "cascade_id",
                     "command_id", "deleted_at")),
             Map.entry("classifier",  Set.of("classifier_id", "model_id", "namespace_id", "kind", "name", "is_abstract",
-                    "created_at")),
+                    "store_override", "created_at")),
             Map.entry("type_reference", Set.of("type_reference_id", "model_id", "classifier_id", "primitive_name",
                     "created_at")),
             Map.entry("uml_attribute", Set.of("attribute_id", "classifier_id", "type_reference_id", "name", "kind",

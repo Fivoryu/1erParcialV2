@@ -161,6 +161,7 @@ public class UndoCaptureService {
         snapshot.put("name", classifier.getName());
         snapshot.put("kind", classifier.getKind() == null ? null : classifier.getKind().name());
         snapshot.put("isAbstract", classifier.isAbstract());
+        snapshot.put("store", classifier.getStoreOverride() == null ? null : classifier.getStoreOverride().name());
         snapshot.put("namespaceId", classifier.getNamespace() == null ? null
                 : classifier.getNamespace().getId().toString());
         return snapshot;

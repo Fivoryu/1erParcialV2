@@ -10,6 +10,7 @@ import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.VcsCommit;
 import java.util.ArrayDeque;
@@ -261,7 +262,7 @@ public final class MergeDiff {
         for (ClassifierResource classifier : snapshot.classifiers()) {
             Map<String, Object> fields = fields(
                     "name", classifier.name(), "kind", classifier.kind(), "isAbstract", classifier.isAbstract(),
-                    "namespaceId", classifier.namespaceId());
+                    "namespaceId", classifier.namespaceId(), "storeOverride", classifier.storeOverride());
             add(elements, element("CLASSIFIER", classifier.id(), classifier.name(), null, fields));
             for (AttributeResource attribute : classifier.attributes()) {
                 Map<String, Object> childFields = fields(
@@ -394,7 +395,8 @@ public final class MergeDiff {
                     .map(MergeDiff::constraintResource).toList();
             return new ClassifierResource(classifierId, string(classifier.fields(), "name"),
                     (ClassifierKind) classifier.fields().get("kind"), bool(classifier.fields(), "isAbstract"),
-                    uuid(classifier.fields(), "namespaceId"), attributes, operations, constraints);
+                    uuid(classifier.fields(), "namespaceId"), attributes, operations, constraints,
+                    (PersistenceStore) classifier.fields().get("storeOverride"), null, null);
         }).toList();
 
         List<RelationshipResource> mergedRelationships = relationships.stream().map(relationship -> {

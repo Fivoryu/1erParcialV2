@@ -144,6 +144,8 @@ public class UndoService {
                     originalTargets, baseRevision, modelId, projectId);
             case "classifier.setAbstract" -> inverseOfSnapshotUpdate(entry, "classifier.setAbstract", "isAbstract",
                     originalTargets, baseRevision, modelId, projectId);
+            case "classifier.setStore" -> inverseOfSnapshotUpdate(entry, "classifier.setStore", "store",
+                    originalTargets, baseRevision, modelId, projectId);
             case "attribute.add" -> Inverse.of(new OperationEnvelope(UUID.randomUUID(), "attribute.remove",
                     author(), projectId, modelId, baseRevision,
                     List.of(new Target("attribute", uuid(payload.path("id")))), List.of(), Map.of(),
@@ -194,7 +196,9 @@ public class UndoService {
                         + ".");
             }
         } else {
-            payload = Map.of(valueField, objectMapper.convertValue(snapshot.path(valueField), Object.class));
+            // A HashMap, not Map.of: restoring "no override" legitimately carries a null value.
+            payload = new java.util.HashMap<>();
+            payload.put(valueField, objectMapper.convertValue(snapshot.path(valueField), Object.class));
         }
         return Inverse.of(new OperationEnvelope(UUID.randomUUID(), inverseType, author(), projectId,
                 modelId, baseRevision, originalTargets, List.of(), payload, CommandOrigin.UNDO,

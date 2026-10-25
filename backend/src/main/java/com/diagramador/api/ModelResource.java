@@ -1,9 +1,11 @@
 package com.diagramador.api;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.TargetType;
 import java.util.List;
 import java.util.UUID;
@@ -95,12 +97,28 @@ public record ModelResource(
             UUID namespaceId,
             List<AttributeResource> attributes,
             List<OperationResource> operations,
-            List<ConstraintResource> constraints) {
+            List<ConstraintResource> constraints,
+            @JsonInclude(JsonInclude.Include.NON_NULL) PersistenceStore storeOverride,
+            @JsonInclude(JsonInclude.Include.NON_NULL) PersistenceStore store,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String storeReason) {
 
         public ClassifierResource {
             attributes = attributes == null ? List.of() : List.copyOf(attributes);
             operations = operations == null ? List.of() : List.copyOf(operations);
             constraints = constraints == null ? List.of() : List.copyOf(constraints);
+        }
+
+        /** A classifier without a store decision: the override is unset and the effective store is not computed. */
+        public ClassifierResource(UUID id, String name, ClassifierKind kind, boolean isAbstract, UUID namespaceId,
+                List<AttributeResource> attributes, List<OperationResource> operations,
+                List<ConstraintResource> constraints) {
+            this(id, name, kind, isAbstract, namespaceId, attributes, operations, constraints, null, null, null);
+        }
+
+        /** The same classifier carrying the effective store and the reason the classifier gave for it. */
+        public ClassifierResource withStore(PersistenceStore effectiveStore, String reason) {
+            return new ClassifierResource(id, name, kind, isAbstract, namespaceId, attributes, operations,
+                    constraints, storeOverride, effectiveStore, reason);
         }
     }
 

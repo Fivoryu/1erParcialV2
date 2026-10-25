@@ -421,7 +421,8 @@ public class ModelSnapshotService {
                 .toList();
         UUID namespaceId = classifier.getNamespace() == null ? null : classifier.getNamespace().getId();
         return new ClassifierResource(classifier.getId(), classifier.getName(), classifier.getKind(),
-                classifier.isAbstract(), namespaceId, attributes, operations, constraintResources);
+                classifier.isAbstract(), namespaceId, attributes, operations, constraintResources,
+                classifier.getStoreOverride(), null, null);
     }
 
     private ModelResource.AttributeResource attributeResource(UmlAttribute attribute) {
@@ -528,14 +529,16 @@ public class ModelSnapshotService {
     private void upsertClassifier(UUID modelId, ClassifierResource resource, UUID namespaceId) {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.classifier
-                    (classifier_id, model_id, namespace_id, kind, name, is_abstract)
-                VALUES (:id, :modelId, :namespaceId, CAST(:kind AS diagrammer.classifier_kind), :name, :isAbstract)
+                    (classifier_id, model_id, namespace_id, kind, name, is_abstract, store_override)
+                VALUES (:id, :modelId, :namespaceId, CAST(:kind AS diagrammer.classifier_kind), :name, :isAbstract,
+                    :storeOverride)
                 ON CONFLICT (classifier_id) DO UPDATE SET
                     model_id = EXCLUDED.model_id,
                     namespace_id = EXCLUDED.namespace_id,
                     kind = EXCLUDED.kind,
                     name = EXCLUDED.name,
-                    is_abstract = EXCLUDED.is_abstract
+                    is_abstract = EXCLUDED.is_abstract,
+                    store_override = EXCLUDED.store_override
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("modelId", modelId)
@@ -543,6 +546,7 @@ public class ModelSnapshotService {
                 .setParameter("kind", resource.kind().name())
                 .setParameter("name", resource.name())
                 .setParameter("isAbstract", resource.isAbstract())
+                .setParameter("storeOverride", resource.storeOverride() == null ? null : resource.storeOverride().name())
                 .executeUpdate();
     }
 

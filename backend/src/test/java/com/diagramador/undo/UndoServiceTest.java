@@ -144,6 +144,19 @@ class UndoServiceTest {
     }
 
     @Test
+    void undoOfClassifierSetStoreRestoresThePreviousStoreIncludingNoOverride() {
+        Fixture fixture = fixture("undo-set-store");
+        UUID classifierId = createClassifier(fixture, 0, "Order");
+        assertAccepted(command(fixture, "classifier.setStore", 1, Map.of("store", "DOCUMENT"),
+                List.of(new Target("classifier", classifierId))));
+
+        UndoResult result = undoService.undo(fixture.project().getId());
+
+        assertThat(result.status()).isEqualTo("ACCEPTED");
+        assertThat(classifierRepository.findById(classifierId).orElseThrow().getStoreOverride()).isNull();
+    }
+
+    @Test
     void undoOfAttributeAddAppliesTheInverseRemove() {
         Fixture fixture = fixture("undo-attribute-add");
         UUID classifierId = createClassifier(fixture, 0, "Order");

@@ -48,6 +48,11 @@ public class Classifier {
     @Column(name = "is_abstract", nullable = false)
     private boolean isAbstract;
 
+    /** Manual persistence choice; null leaves the decision to the automatic classifier. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "store_override", length = 16)
+    private PersistenceStore storeOverride;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -118,6 +123,14 @@ public class Classifier {
         }
         this.isAbstract = isAbstract;
         this.kind = isAbstract ? ClassifierKind.ABSTRACT_CLASS : ClassifierKind.CLASS;
+    }
+
+    public PersistenceStore getStoreOverride() {
+        return storeOverride;
+    }
+
+    public void setStoreOverride(PersistenceStore storeOverride) {
+        this.storeOverride = storeOverride;
     }
 
     public OffsetDateTime getCreatedAt() {
