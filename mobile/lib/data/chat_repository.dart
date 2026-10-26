@@ -12,7 +12,7 @@ class ChatRepository {
   }) {
     if (!service.matchesChatPlatform(scope.platform)) {
       throw ArgumentError(
-        'Chat scope does not match the authenticated platform',
+        'El ámbito del chat no coincide con la plataforma autenticada.',
       );
     }
   }
@@ -24,7 +24,7 @@ class ChatRepository {
   /// Refresh is bounded and additive: incomplete pages never erase local drafts.
   Future<List<LocalConversation>> refreshConversations(String token) async {
     if (_syncing) {
-      throw StateError('History synchronization is already running');
+      throw StateError('La sincronización del historial ya está en curso.');
     }
     _syncing = true;
     try {
@@ -42,7 +42,7 @@ class ChatRepository {
         );
         final items = response['items'];
         if (items is! List || items.length > 100) {
-          throw const FormatException('Invalid conversation page');
+          throw const FormatException('La página de conversaciones no es válida.');
         }
         for (final value in items) {
           final item = Map<String, dynamic>.from(value as Map);
@@ -69,11 +69,11 @@ class ChatRepository {
             items.isEmpty ||
             !seen.add(next) ||
             (items.last as Map)['id'] != next) {
-          throw const FormatException('Invalid conversation cursor');
+          throw const FormatException('El cursor de conversaciones no es válido.');
         }
         cursor = next;
       }
-      throw StateError('Conversation synchronization exceeded its page limit');
+      throw StateError('La sincronización de conversaciones superó el límite de páginas.');
     } finally {
       _syncing = false;
     }
@@ -84,7 +84,7 @@ class ChatRepository {
     LocalConversation conversation,
   ) async {
     if (conversation.scope != scope) {
-      throw StateError('Foreign conversation scope');
+      throw StateError('El ámbito de la conversación no corresponde.');
     }
     await store.saveConversation(conversation);
     await service.chatRequest(
@@ -101,13 +101,13 @@ class ChatRepository {
 
   Future<void> syncMessages(String token, String conversationId) async {
     if (_syncing) {
-      throw StateError('History synchronization is already running');
+      throw StateError('La sincronización del historial ya está en curso.');
     }
     _syncing = true;
     try {
       final conversations = await store.listConversations(scope);
       if (!conversations.any((c) => c.id == conversationId)) {
-        throw StateError('Conversation is unavailable in this scope');
+        throw StateError('La conversación no está disponible en este ámbito.');
       }
       final local = await store.messages(scope, conversationId);
       for (final message in local.where((m) => m.sequence == null)) {
@@ -134,7 +134,7 @@ class ChatRepository {
         );
         final items = response['items'];
         if (items is! List || items.length > 100) {
-          throw const FormatException('Invalid history page');
+          throw const FormatException('La página del historial no es válida.');
         }
         for (final item in items) {
           final remote = ChatMessage.fromJson(
@@ -143,7 +143,7 @@ class ChatRepository {
           if (remote.sequence == null ||
               remote.sequence! <= cursor ||
               remote.role == 'system') {
-            throw const FormatException('Invalid history sequence');
+            throw const FormatException('La secuencia del historial no es válida.');
           }
           cursor = remote.sequence!;
           final original = known[remote.id];
@@ -151,7 +151,7 @@ class ChatRepository {
             if (original.role != remote.role ||
                 original.content != remote.content ||
                 !_sameJson(original.metadata ?? {}, remote.metadata ?? {})) {
-              throw StateError('Remote message conflicts with local history');
+              throw StateError('El mensaje remoto no coincide con el historial local.');
             }
           } else {
             await store.appendMessage(scope, conversationId, remote);
@@ -161,10 +161,10 @@ class ChatRepository {
         final next = response['nextCursor'];
         if (next == null) return;
         if (items.isEmpty || int.tryParse(next.toString()) != cursor) {
-          throw const FormatException('Invalid history cursor');
+          throw const FormatException('El cursor del historial no es válido.');
         }
       }
-      throw StateError('History synchronization exceeded its page limit');
+      throw StateError('La sincronización del historial superó el límite de páginas.');
     } finally {
       _syncing = false;
     }

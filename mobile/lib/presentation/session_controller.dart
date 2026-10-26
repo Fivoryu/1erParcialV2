@@ -63,7 +63,7 @@ class SessionController extends ChangeNotifier {
   Future<void> expireIfCurrent(UserSession requestSession) async {
     if (!identical(_session, requestSession)) return;
     await logout();
-    _error = 'Your session expired. Sign in again.';
+    _error = 'Tu sesión venció. Inicia sesión de nuevo.';
     notifyListeners();
   }
 }

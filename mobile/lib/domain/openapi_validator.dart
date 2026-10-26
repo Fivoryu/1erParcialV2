@@ -12,11 +12,11 @@ class OpenApiValidator {
         !proposal.path.startsWith('/') ||
         proposal.path.contains('://') ||
         proposal.path.contains('..')) {
-      throw const FormatException('Unsupported operation.');
+      throw const FormatException('La operación no es compatible.');
     }
     final paths = openApi['paths'];
     if (paths is! Map) {
-      throw const FormatException('The selected contract has no paths.');
+      throw const FormatException('El contrato seleccionado no contiene rutas.');
     }
     final pathItem = _matchPath(
       Map<String, dynamic>.from(paths),
@@ -24,13 +24,13 @@ class OpenApiValidator {
     );
     if (pathItem == null) {
       throw const FormatException(
-        'The proposed route is not in the selected contract.',
+        'La ruta propuesta no está en el contrato seleccionado.',
       );
     }
     final operation = pathItem[proposal.method.toLowerCase()];
     if (operation is! Map) {
       throw const FormatException(
-        'The selected contract does not allow that method.',
+        'El contrato seleccionado no permite ese método.',
       );
     }
     _validateQuery(proposal, operation);
@@ -48,7 +48,7 @@ class OpenApiValidator {
       }
     } else if (proposal.body != null) {
       throw const FormatException(
-        'This operation does not accept a request body.',
+        'Esta operación no admite un cuerpo de solicitud.',
       );
     }
   }
@@ -64,27 +64,27 @@ class OpenApiValidator {
     };
     if (proposal.query.isEmpty && !declared.values.any((p) => p['required'] == true)) return;
     if (proposal.method != 'GET' || proposal.query.length > 24) {
-      throw const FormatException('Query parameters are only allowed on reads.');
+      throw const FormatException('Los parámetros de consulta solo se permiten en operaciones de lectura.');
     }
     final counts = <String, int>{};
     for (final parameter in proposal.query) {
       final declaration = declared[parameter.name];
       if (declaration == null) {
-        throw FormatException('Unknown query parameter: ${parameter.name}');
+        throw FormatException('Parámetro de consulta desconocido: ${parameter.name}');
       }
       if (parameter.value.length > 256 || RegExp(r'[\x00-\x1F\x7F]').hasMatch(parameter.value)) {
-        throw const FormatException('Query value is too long or contains control characters.');
+        throw const FormatException('El valor del parámetro de consulta es demasiado largo o contiene caracteres de control.');
       }
       final schema = declaration['schema'] is Map ? declaration['schema'] as Map : const {};
       final repeatable = schema['type'] == 'array';
       counts[parameter.name] = (counts[parameter.name] ?? 0) + 1;
       if (counts[parameter.name]! > 1 && !repeatable) {
-        throw FormatException('Query parameter repeated: ${parameter.name}');
+        throw FormatException('El parámetro de consulta está repetido: ${parameter.name}');
       }
       final valueSchema = repeatable && schema['items'] is Map ? schema['items'] as Map : schema;
       final allowed = valueSchema['enum'];
       if (allowed is List && !allowed.contains(parameter.value)) {
-        throw FormatException('Query value not allowed for ${parameter.name}.');
+        throw FormatException('El valor de consulta no está permitido para ${parameter.name}.');
       }
       if (valueSchema['type'] == 'integer') {
         final number = int.tryParse(parameter.value);
@@ -92,13 +92,13 @@ class OpenApiValidator {
         if (number == null ||
             (minimum is num && number < minimum) ||
             (maximum is num && number > maximum)) {
-          throw FormatException('Query value out of range for ${parameter.name}.');
+          throw FormatException('El valor de consulta está fuera del rango permitido para ${parameter.name}.');
         }
       }
     }
     for (final entry in declared.entries) {
       if (entry.value['required'] == true && !counts.containsKey(entry.key)) {
-        throw FormatException('Missing query parameter: ${entry.key}');
+        throw FormatException('Falta el parámetro de consulta: ${entry.key}');
       }
     }
   }
@@ -136,7 +136,7 @@ class OpenApiValidator {
     if (ref is! String) return schema;
     if (!ref.startsWith('#/components/schemas/')) {
       throw const FormatException(
-        'Only local component schemas are supported.',
+        'Solo se admiten esquemas de componentes locales.',
       );
     }
     final name = ref.substring('#/components/schemas/'.length);
@@ -144,7 +144,7 @@ class OpenApiValidator {
     final schemas = components is Map ? components['schemas'] : null;
     final resolved = schemas is Map ? schemas[name] : null;
     if (resolved is! Map) {
-      throw const FormatException('The contract references an unknown schema.');
+      throw const FormatException('El contrato hace referencia a un esquema desconocido.');
     }
     return Map<String, dynamic>.from(resolved);
   }
@@ -157,12 +157,12 @@ class OpenApiValidator {
     schema = _resolve(schema, openApi);
     if (value == null) {
       if (schema['nullable'] == true) return;
-      throw const FormatException('A required value cannot be null.');
+      throw const FormatException('Un valor obligatorio no puede ser nulo.');
     }
     final type = schema['type'];
     if (type == 'object') {
       if (value is! Map) {
-        throw const FormatException('Request body must be an object.');
+        throw const FormatException('El cuerpo de la solicitud debe ser un objeto.');
       }
       final properties = Map<String, dynamic>.from(
         schema['properties'] as Map? ?? {},
@@ -170,13 +170,13 @@ class OpenApiValidator {
       final required = (schema['required'] as List? ?? const []).cast<String>();
       for (final key in required) {
         if (!value.containsKey(key)) {
-          throw FormatException('Missing required field: $key');
+          throw FormatException('Falta el campo obligatorio: $key');
         }
       }
       if (value.keys.any(
         (key) => key is! String || !properties.containsKey(key),
       )) {
-        throw const FormatException('Request body contains an unknown field.');
+        throw const FormatException('El cuerpo de la solicitud contiene un campo desconocido.');
       }
       value.forEach(
         (key, child) => _validateSchema(
@@ -187,32 +187,32 @@ class OpenApiValidator {
       );
     } else if (type == 'array') {
       if (value is! List) {
-        throw const FormatException('Request body must be an array.');
+        throw const FormatException('El cuerpo de la solicitud debe ser una lista.');
       }
       final items = schema['items'];
       if (items is! Map) {
-        throw const FormatException('Array schema has no item type.');
+        throw const FormatException('El esquema de la lista no especifica el tipo de sus elementos.');
       }
       for (final item in value) {
         _validateSchema(item, Map<String, dynamic>.from(items), openApi);
       }
     } else if (type == 'string') {
       if (value is! String) {
-        throw const FormatException('Value must be a string.');
+        throw const FormatException('El valor debe ser texto.');
       }
       if (schema['format'] == 'uuid' && !_uuid.hasMatch(value)) {
-        throw const FormatException('Value must be a UUID.');
+        throw const FormatException('El valor debe ser un UUID.');
       }
       final literals = schema['enum'];
       if (literals is List && !literals.contains(value)) {
-        throw FormatException('Value must be one of ${literals.join(', ')}.');
+        throw FormatException('El valor debe ser uno de estos: ${literals.join(', ')}.');
       }
     } else if (type == 'integer' && value is! int) {
-      throw const FormatException('Value must be an integer.');
+      throw const FormatException('El valor debe ser un número entero.');
     } else if (type == 'number' && value is! num) {
-      throw const FormatException('Value must be a number.');
+      throw const FormatException('El valor debe ser un número.');
     } else if (type == 'boolean' && value is! bool) {
-      throw const FormatException('Value must be a boolean.');
+      throw const FormatException('El valor debe ser verdadero o falso.');
     }
   }
 }

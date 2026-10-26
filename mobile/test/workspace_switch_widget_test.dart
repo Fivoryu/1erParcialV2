@@ -34,7 +34,7 @@ void main() {
       await controller.selectBackend(f.switchSession, f.switchA);
       await showWorkspace(tester, controller, api);
       expect(find.byType(TextField), findsNothing);
-      await tester.tap(find.text('Open agent'));
+      await tester.tap(find.text('Abrir agente'));
       await tester.pumpAndSettle();
       final request = find.byKey(const ValueKey('operation-request'));
       expect(request, findsOneWidget);
@@ -48,11 +48,11 @@ void main() {
       );
       await tester.enterText(field, 'Read notes');
       expect(controller.requestDraft, 'Read notes');
-      await tester.tap(find.byTooltip('Settings'));
+      await tester.tap(find.byTooltip('Configuración'));
       await tester.pumpAndSettle();
       expect(find.byType(TextField), findsNothing);
       expect(
-        find.text(controller.mnnStatus.isLoaded ? 'AI ready' : 'Load AI'),
+        find.text(controller.mnnStatus.isLoaded ? 'IA lista' : 'Cargar IA'),
         findsOneWidget,
       );
       expect(api.calls, isEmpty);
@@ -69,13 +69,13 @@ void main() {
         body: 'A-only-result',
       );
       final (session, _) = await showWorkspace(tester, controller, api);
-      expect(find.text('Leave backend'), findsOneWidget);
-      await tester.tap(find.text('Open agent'));
+      expect(find.text('Desconectar backend'), findsOneWidget);
+      await tester.tap(find.text('Abrir agente'));
       await tester.pumpAndSettle();
       expect(find.textContaining('A-only-result'), findsOneWidget);
-      await tester.tap(find.byTooltip('Back'));
+      await tester.tap(find.byTooltip('Volver'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Leave backend'));
+      await tester.tap(find.text('Desconectar backend'));
       await tester.pumpAndSettle();
       expect(session.authenticated, isTrue);
       expect(controller.project, f.switchProject);
@@ -92,8 +92,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.backend, f.switchB);
       expect(controller.contract!.deploymentId, 'b');
-      expect(find.text('Contract hash-b'), findsOneWidget);
-      expect(find.text('Contract hash-a'), findsNothing);
+      expect(find.text('Contrato hash-b'), findsOneWidget);
+      expect(find.text('Contrato hash-a'), findsNothing);
       expect(api.calls, isEmpty);
     },
   );
@@ -117,7 +117,7 @@ void main() {
       tester.state<FormFieldState<GeneratedBackend>>(backend).value,
       isNull,
     );
-    expect(find.text('Contract hash-a'), findsNothing);
+    expect(find.text('Contrato hash-a'), findsNothing);
     expect(api.calls, isEmpty);
   });
 }

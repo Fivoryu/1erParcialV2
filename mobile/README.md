@@ -1,6 +1,6 @@
 # Diagrammer Mobile
 
-Android Flutter client for authenticated generated-backend access.
+Android Flutter client for authenticated generated-backend access. App-authored screens, accessibility labels, confirmations, and status/error messages use Spanish. API identifiers, model protocols, and existing conversation content are unchanged.
 
 ## Local AI seam
 
@@ -14,11 +14,11 @@ Provide a HTTPS platform URL with `--dart-define=PLATFORM_URL=https://host`. HTT
 
 ## Backend switching
 
-Only one generated backend is selected at a time. **Leave backend** clears its active contract, proposal, result and error, while keeping the platform login, project list and loaded local model. Selecting another backend loads its own frozen contract and pending proposal.
+Only one generated backend is selected at a time. **Desconectar backend** clears its active contract, proposal, result and error, while keeping the platform login, project list and loaded local model. Selecting another backend loads its own frozen contract and pending proposal.
 
 Pending proposal JSON is unchanged. A separate secure-storage inspection marker is scoped to the user, project, deployment and frozen contract hash. An unknown or still-running operation on backend A cannot be retried blindly by switching to B and back. Leaving does not roll back an operation that has already been dispatched; inspect that backend before a manual retry. Stale responses cannot populate the newly selected backend.
 ## Navigation and model setup
 
-After login, **Backends** lists project/deployment choices. **Open agent** opens only the selected backend's agent. **Settings** contains local AI and account controls. Child screens have a Back button; Android Back also returns through the route stack. Going back preserves the session, active backend, request draft, model and proposal. It does not send an operation. **Leave backend** and **Sign out** are separate actions.
+After login, **Backends** lists project/deployment choices. **Abrir agente** opens only the selected backend's agent. **Configuración** contains local AI and account controls. Child screens have a **Volver** button; Android Back also returns through the route stack. Going back preserves the session, active backend, request draft, model and proposal. It does not send an operation. **Desconectar backend** and **Cerrar sesión** are separate actions.
 
-Settings detects the existing Qwen3.5-0.8B package in this app's internal or app-specific external `files/models/qwen3.5-0.8b` directory. Tap **Load AI** once; no path entry is needed. Detection checks package presence; loading still verifies all six pinned hashes and CPU-only configuration. It does not download files or request shared-storage permissions. A missing package shows an explicit unavailable state and **Check again**. Loading is serialized with release and late completion after logout cannot restore loaded status. Native load latency is not eliminated by automatic discovery.
+Settings detects the existing Qwen3.5-0.8B package in this app's internal or app-specific external `files/models/qwen3.5-0.8b` directory. Tap **Cargar IA** once; no path entry is needed. Detection checks package presence; loading still verifies all six pinned hashes and CPU-only configuration. It does not download files or request shared-storage permissions. A missing package shows an explicit unavailable state and **Volver a comprobar**. Loading is serialized with release and late completion after logout cannot restore loaded status. Native load latency is not eliminated by automatic discovery.

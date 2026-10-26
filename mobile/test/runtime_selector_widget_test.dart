@@ -17,7 +17,7 @@ class UnavailableGemma extends runtime.FakeGemma {
     available: false,
     modelPresent: false,
     loaded: false,
-    message: 'Optional Gemma runtime is unavailable in this build.',
+    message: 'El entorno opcional de Gemma no está disponible en esta compilación.',
   );
 }
 
@@ -70,11 +70,11 @@ void main() {
       await chooseGemma(tester);
       expect(controller.selectedRuntime, LocalRuntime.gemma);
       expect(find.text('Gemma (LiteRT)'), findsOneWidget);
-      await tester.tap(find.text('Load AI'));
+      await tester.tap(find.text('Cargar IA'));
       await tester.pumpAndSettle();
       expect(events, containsAllInOrder(['qwen.release', 'gemma.load']));
       expect(events, isNot(contains('qwen.load')));
-      expect(find.text('AI ready'), findsOneWidget);
+      expect(find.text('IA lista'), findsOneWidget);
       expect(controller.backend, fixture.switchA);
       expect(controller.requestDraft, 'Keep this draft');
       expect(tester.takeException(), isNull);
@@ -92,11 +92,11 @@ void main() {
     await showSettings(tester, controller);
     await chooseGemma(tester);
     expect(
-      find.text('Optional Gemma runtime is unavailable in this build.'),
+      find.text('El entorno opcional de Gemma no está disponible en esta compilación.'),
       findsOneWidget,
     );
     final load = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Load AI'),
+      find.widgetWithText(FilledButton, 'Cargar IA'),
     );
     expect(load.onPressed, isNull);
     expect(events, isNot(contains('gemma.load')));
@@ -114,7 +114,7 @@ void main() {
     );
     await showSettings(tester, controller);
     await chooseGemma(tester);
-    await tester.tap(find.text('Load AI'));
+    await tester.tap(find.text('Cargar IA'));
     await tester.pump();
     final selector = tester.widget<DropdownButtonFormField<LocalRuntime>>(
       find.byKey(const ValueKey('local-runtime-selector')),

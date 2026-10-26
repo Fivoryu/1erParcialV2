@@ -39,7 +39,7 @@ void main() {
     await c.loadDetectedModel();
     expect(mnn.loads, 0);
     expect(c.mnnStatus.isLoaded, isFalse);
-    expect(c.mnnStatus.message, contains('not installed'));
+    expect(c.mnnStatus.message, contains('no está instalado'));
   });
   test('logout fences delayed model load and releases ownership', () async {
     final mnn = DetectedMnn()..loading = Completer<MnnStatus>();

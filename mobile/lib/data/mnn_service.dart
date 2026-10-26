@@ -28,11 +28,11 @@ class MethodChannelMnnService
       return await _channel.invokeMethod<String>('discoverModel');
     } on MissingPluginException {
       throw const MnnUnavailableException(
-        'Local AI discovery is unavailable in this build.',
+        'La detección de IA local no está disponible en esta compilación.',
       );
     } on PlatformException catch (error) {
       throw MnnUnavailableException(
-        error.message ?? 'Could not detect the installed local model.',
+        error.message ?? 'No se pudo detectar el modelo local instalado.',
       );
     }
   }
@@ -41,7 +41,7 @@ class MethodChannelMnnService
   Future<MnnStatus> loadModel(String directory) async {
     if (directory.trim().isEmpty) {
       throw const MnnUnavailableException(
-        'Choose the local Qwen model directory first.',
+        'Primero selecciona el directorio del modelo local Qwen.',
       );
     }
     try {
@@ -53,16 +53,18 @@ class MethodChannelMnnService
         modelDirectory: directory,
         isLoaded: value?['loaded'] == true,
         message:
-            value?['message'] as String? ?? 'Local model status is unknown.',
+            _localizeMnnStatus(
+              value?['message'] as String? ?? 'Se desconoce el estado del modelo local.',
+            ),
       );
     } on MissingPluginException {
       throw const MnnUnavailableException(
-        'The Android MNN bridge is not installed. Local AI is unavailable until the verified JNI bridge is added.',
+        'El puente MNN de Android no está instalado. La IA local no estará disponible hasta que se añada el puente JNI verificado.',
       );
     } on PlatformException catch (error) {
       throw MnnUnavailableException(
         error.message ??
-            'The local MNN runtime could not load the selected model.',
+            'El entorno MNN local no pudo cargar el modelo seleccionado.',
       );
     }
   }
@@ -78,7 +80,7 @@ class MethodChannelMnnService
   Future<String> _generate(String prompt, int maxTokens, String method) async {
     if (prompt.length > 32768 || maxTokens < 1 || maxTokens > 512) {
       throw const MnnUnavailableException(
-        'The local prompt exceeds the safety limit.',
+        'El mensaje para el modelo local supera el límite de seguridad.',
       );
     }
     try {
@@ -88,17 +90,17 @@ class MethodChannelMnnService
       });
       if (response == null || response.length > 32768) {
         throw const MnnUnavailableException(
-          'The local runtime returned no usable proposal.',
+          'El entorno local no devolvió una propuesta utilizable.',
         );
       }
       return response;
     } on MissingPluginException {
       throw const MnnUnavailableException(
-        'Local AI is unavailable because the Android MNN bridge is not installed.',
+        'La IA local no está disponible porque el puente MNN de Android no está instalado.',
       );
     } on PlatformException catch (error) {
       throw MnnUnavailableException(
-        error.message ?? 'The local MNN runtime failed.',
+        error.message ?? 'Falló el entorno MNN local.',
       );
     }
   }
@@ -119,3 +121,16 @@ class MnnUnavailableException implements Exception {
   @override
   String toString() => message;
 }
+
+String _localizeMnnStatus(String message) => message
+    .replaceAll('device-local CPU', 'local en el dispositivo · CPU')
+    .replaceAll('device-local GPU', 'local en el dispositivo · GPU')
+    .replaceAll(
+      'The local runtime has been released.',
+      'Se liberó el entorno de ejecución local.',
+    )
+    .replaceAll('Local inference failed.', 'Falló la inferencia local.')
+    .replaceAll(
+      'The native MNN library is unavailable for this device ABI.',
+      'La biblioteca nativa de MNN no está disponible para esta arquitectura de dispositivo.',
+    );

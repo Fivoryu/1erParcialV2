@@ -88,7 +88,7 @@ void main() {
         ..contract = contract
         ..setProposal(OperationProposal.parse(raw));
       await c.propose(f.session, 'Create a note');
-      expect(c.error, contains('invalid proposal'));
+      expect(c.error, contains('propuesta no válida'));
       expect(c.proposal!.encode(), raw);
       expect(store.pending, before);
       expect(api.writes, 0);

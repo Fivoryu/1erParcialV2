@@ -27,30 +27,30 @@ class AgentContract {
   OperationProposal operation(AgentAction action, {Map<String, RecordRef> refs = const {}}) {
     final entity = action.payload['entity'];
     final base = entities[entity];
-    if (base == null) throw const FormatException('Unknown entity.');
+    if (base == null) throw const FormatException('Entidad desconocida.');
     var id = action.payload['id'];
     // Record refs ("#1") resolve against this run's read observations; an
     // unknown or foreign-entity ref never falls back to a guess.
     if (id is String && id.startsWith('#')) {
       final ref = refs[id];
       if (ref == null) {
-        throw const FormatException('Unknown record ref.');
+        throw const FormatException('Referencia de registro desconocida.');
       }
       if (entity is! String ||
           ref.entity.toLowerCase() != entity.toLowerCase()) {
-        throw const FormatException('Record ref does not match the entity.');
+        throw const FormatException('La referencia del registro no corresponde a la entidad.');
       }
       id = ref.id;
     }
     if (id != null && (id is! String || !uuid.hasMatch(id))) {
-      throw const FormatException('Exact UUID required.');
+      throw const FormatException('Se requiere un UUID exacto.');
     }
     final method = switch (action.tag) {
       'read' => 'GET',
       'create' => 'POST',
       'update' => 'PUT',
       'delete_preview' => 'DELETE',
-      _ => throw const FormatException('Not a tool.'),
+      _ => throw const FormatException('No es una herramienta válida.'),
     };
     final proposal = OperationProposal(
       method: method,
@@ -61,7 +61,7 @@ class AgentContract {
         proposal.path.contains('#') ||
         proposal.path.contains('%') ||
         proposal.path.contains('//')) {
-      throw const FormatException('Unsafe route.');
+      throw const FormatException('La ruta no es segura.');
     }
     const OpenApiValidator().validate(proposal, openApi);
     return proposal;
@@ -265,7 +265,7 @@ class AgentContract {
   List<Map<String, dynamic>> get compactDescriptor {
     final result = <Map<String, dynamic>>[];
     final paths = openApi['paths'];
-    if (paths is! Map) throw const FormatException('Contract has no paths.');
+    if (paths is! Map) throw const FormatException('El contrato no contiene rutas.');
     for (final entry in entities.entries) {
       final base = entry.value;
       final baseItem = paths[base];

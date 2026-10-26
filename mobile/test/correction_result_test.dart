@@ -38,9 +38,9 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Gateway result'), findsOneWidget);
+    expect(find.text('Resultado de la puerta de enlace'), findsOneWidget);
     expect(find.textContaining('"created": true'), findsOneWidget);
-    expect(find.text('Review proposal'), findsNothing);
+    expect(find.text('Revisar propuesta'), findsNothing);
   });
   test('known gateway failure retains result without unknown guard', () async {
     final api = KnownFailure();

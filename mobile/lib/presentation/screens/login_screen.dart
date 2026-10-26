@@ -35,23 +35,23 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Connect to your platform',
+                    'Conectate a tu plataforma',
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Sign in to select an authorized generated backend.',
+                    'Inicia sesión para seleccionar un backend generado autorizado.',
                   ),
                   const SizedBox(height: 24),
                   TextField(
                     controller: _username,
-                    decoration: const InputDecoration(labelText: 'Username'),
+                    decoration: const InputDecoration(labelText: 'Usuario'),
                     autofillHints: const [AutofillHints.username],
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _password,
-                    decoration: const InputDecoration(labelText: 'Password'),
+                    decoration: const InputDecoration(labelText: 'Contraseña'),
                     obscureText: true,
                     autofillHints: const [AutofillHints.password],
                   ),
@@ -80,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
                     ),
-                    child: Text(_submitting ? 'Signing in…' : 'Sign in'),
+                    child: Text(_submitting ? 'Iniciando sesión…' : 'Iniciar sesión'),
                   ),
                 ],
               ),

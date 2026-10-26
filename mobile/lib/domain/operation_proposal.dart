@@ -47,7 +47,7 @@ class OperationProposal {
 
   static OperationProposal parse(String value) {
     if (value.length > 32768) {
-      throw const FormatException('The local proposal is too large.');
+      throw const FormatException('La propuesta local es demasiado grande.');
     }
     // Recognize one complete presentation wrapper, never extract or repair JSON.
     final trimmed = value.trim();
@@ -59,7 +59,7 @@ class OperationProposal {
         decoded['method'] is! String ||
         decoded['path'] is! String) {
       throw const FormatException(
-        'The local model did not return the required proposal JSON.',
+        'El modelo local no devolvió el JSON de propuesta requerido.',
       );
     }
     return OperationProposal(

@@ -95,7 +95,7 @@ class BackendSchema {
 
   factory BackendSchema.parse(Map<String, dynamic> openApi) {
     final paths = openApi['paths'];
-    if (paths is! Map) throw const FormatException('Contract has no paths.');
+    if (paths is! Map) throw const FormatException('El contrato no contiene rutas.');
     final schemas = (openApi['components'] is Map ? (openApi['components'] as Map)['schemas'] : null);
     final entities = <String, EntitySchema>{};
     for (final rawKey in paths.keys) {
@@ -109,7 +109,7 @@ class BackendSchema {
       // Generated helper routes (/api/x/query) are capabilities of x, not entities.
       if (_subRoutes.contains(segments.last) && paths.containsKey(parent)) continue;
       final name = segments.last;
-      if (entities.containsKey(name)) throw const FormatException('Ambiguous entity name.');
+      if (entities.containsKey(name)) throw const FormatException('El nombre de la entidad es ambiguo.');
       final item = paths[rawKey];
       final idItem = paths['$rawKey/{id}'];
       final methods = <String>{
