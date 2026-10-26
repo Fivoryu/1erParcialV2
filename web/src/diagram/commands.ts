@@ -1,4 +1,6 @@
 import { buildOperationEnvelope, type UuidFactory } from '../api/envelope';
+import { isAssociationKind } from './associationClass';
+import type { AnchorSide } from './orthogonal-routing';
 import type {
   AttributeResource,
   ClassifierResource,
@@ -10,6 +12,7 @@ import type {
   OperationEnvelope,
   OperationResource,
   ParameterResource,
+  PersistenceStore,
   RelationshipResource,
   RouteAdjustmentResource,
   ViewStyleResource,
@@ -32,6 +35,22 @@ export const RELATIONSHIP_KINDS: readonly RelationshipKind[] = [
   'INTERFACE_REALIZATION',
   'DEPENDENCY',
 ];
+
+/** The UML 2.5 dependency stereotypes, in the order the properties panel offers them. */
+export const DEPENDENCY_STEREOTYPES = [
+  'USE',
+  'IMPORT',
+  'ACCESS',
+  'INCLUDE',
+  'EXTEND',
+  'INSTANTIATE',
+  'CALL',
+  'CREATE',
+  'DERIVE',
+  'REFINE',
+  'TRACE',
+] as const;
+export type DependencyStereotype = (typeof DEPENDENCY_STEREOTYPES)[number];
 
 export interface ModelCommandRequest {
   type: string;
@@ -133,6 +152,15 @@ export function buildClassifierSetNamespaceRequest(classifierId: string, namespa
   };
 }
 
+/** A null store hands the choice back to the automatic classifier. */
+export function buildClassifierSetStoreRequest(classifierId: string, store: PersistenceStore | null): ModelCommandRequest {
+  return {
+    type: 'classifier.setStore',
+    targets: [{ scope: 'classifier', id: classifierId }],
+    payload: { store },
+  };
+}
+
 export function buildClassifierCreateEnvelope(
   model: ModelResource,
   kind: ClassifierKind,
@@ -181,6 +209,10 @@ export function buildRelationshipCreateRequest(
 export interface RelationshipUpdateValues {
   name: string | null;
   kind: RelationshipKind;
+  /** Left out, the relationship keeps its stereotype; null removes it. */
+  stereotype?: string | null;
+  /** Left out, the relationship keeps its association class; null releases it. */
+  associationClassId?: string | null;
   source: { role: string | null; multiplicity: string; navigability: string };
   target: { role: string | null; multiplicity: string; navigability: string };
 }
@@ -195,6 +227,8 @@ export function buildRelationshipUpdateRequest(
     payload: {
       name: values.name,
       kind: values.kind,
+      ...(values.stereotype !== undefined ? { stereotype: values.stereotype } : {}),
+      ...(values.associationClassId !== undefined ? { associationClassId: values.associationClassId } : {}),
       source: values.source,
       target: values.target,
     },
@@ -236,6 +270,9 @@ export function buildGeometrySetRequest(payload: GeometryUpdate): ModelCommandRe
 
 export type RoutingMode = 'STRAIGHT' | 'FREE' | 'ORTHOGONAL';
 
+/** A relationship with no stored style row is drawn orthogonally, the UML 2.5 class-diagram convention. */
+export const DEFAULT_ROUTING: RoutingMode = 'ORTHOGONAL';
+
 /** The appearance fields plus the adjustment, without the (view, target) identity. */
 export interface ViewStyleValues {
   routing: RoutingMode;
@@ -268,6 +305,31 @@ export function mergeViewStyleUpdate(
     merged.routeAdjustment = null;
   }
   return merged;
+}
+
+/**
+ * The style that keeps the sides the user connected through: an orthogonal route anchored at the
+ * centre of each side, with the auto shape in between (one corridor, no levels).
+ */
+export function buildAnchorStyleRequest(
+  viewId: string,
+  relationshipId: string,
+  sides: { source: AnchorSide; target: AnchorSide },
+): ModelCommandRequest {
+  const axis = sides.source === 'N' || sides.source === 'S' ? 'V' : 'H';
+  return buildStyleSetRequest(mergeViewStyleUpdate(
+    viewId,
+    relationshipId,
+    { routing: 'ORTHOGONAL', cornerRadius: 0, strokeWidth: 2, dashed: false, routeAdjustment: null },
+    {
+      routeAdjustment: {
+        axis,
+        corridors: [0],
+        levels: [],
+        anchors: { source: { side: sides.source, offset: 0 }, target: { side: sides.target, offset: 0 } },
+      },
+    },
+  ));
 }
 
 export function buildStyleSetRequest(payload: ViewStyleUpdate): ModelCommandRequest {
@@ -532,6 +594,14 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
       }
       const kind = payloadString(envelope, 'kind');
       const name = Object.hasOwn(envelope.payload, 'name') ? payloadString(envelope, 'name') : undefined;
+      // Mirrors the server: an explicit stereotype wins, and leaving the dependency kind drops it.
+      const stereotype = Object.hasOwn(envelope.payload, 'stereotype')
+        ? payloadString(envelope, 'stereotype')
+        : kind && kind !== 'DEPENDENCY' ? null : undefined;
+      // Same for the association class: an explicit value wins, and a kind that is not an association releases it.
+      const associationClassId = Object.hasOwn(envelope.payload, 'associationClassId')
+        ? payloadString(envelope, 'associationClassId')
+        : kind && !isAssociationKind(kind) ? null : undefined;
       const source = envelope.payload.source as Record<string, unknown> | undefined;
       const target = envelope.payload.target as Record<string, unknown> | undefined;
       return {
@@ -544,6 +614,8 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             ...relationship,
             ...(kind ? { kind } : {}),
             ...(name !== undefined ? { name } : {}),
+            ...(stereotype !== undefined ? { stereotype } : {}),
+            ...(associationClassId !== undefined ? { associationClassId } : {}),
             ends: relationship.ends.map((end) => {
               const update = end.ordinal === 1 ? source : end.ordinal === 2 ? target : undefined;
               if (!update) {
@@ -601,6 +673,22 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         isAbstract,
         kind: isAbstract ? 'ABSTRACT_CLASS' : classifier.kind === 'ABSTRACT_CLASS' ? 'CLASS' : classifier.kind,
       }));
+    }
+    case 'classifier.setStore': {
+      if (!classifierId || !Object.hasOwn(envelope.payload, 'store')) {
+        return model;
+      }
+      const store = envelope.payload.store;
+      if (store !== null && store !== 'SQL' && store !== 'DOCUMENT') {
+        return model;
+      }
+      // The effective store of a class with no override depends on its relationships and attributes; the
+      // canonical model that follows every command carries it, so only a fixed choice is projected here.
+      return updateClassifier(model, classifierId, ({ storeOverride: _override, store: _store, storeReason: _reason, ...rest }) => (
+        store === null
+          ? rest
+          : { ...rest, storeOverride: store, store, storeReason: 'Set manually.' }
+      ));
     }
     case 'classifier.setNamespace': {
       if (!classifierId || !Object.hasOwn(envelope.payload, 'namespaceId')) {
@@ -754,7 +842,12 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
       return {
         ...model,
         classifiers: model.classifiers.filter((classifier) => classifier.id !== classifierId),
-        relationships: model.relationships.filter((relationship) => !removedRelationships.has(relationship.id)),
+        // The server releases the link of an association whose class is deleted and keeps the association.
+        relationships: model.relationships
+          .filter((relationship) => !removedRelationships.has(relationship.id))
+          .map((relationship) => (relationship.associationClassId === classifierId
+            ? { ...relationship, associationClassId: null }
+            : relationship)),
       };
     }
     case 'attribute.remove':

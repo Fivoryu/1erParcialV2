@@ -7,6 +7,7 @@ import com.diagramador.domain.ConnectorPath;
 import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.ElementGeometry;
 import com.diagramador.domain.OperationParameter;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.RelationshipEnd;
 import com.diagramador.domain.UmlAttribute;
 import com.diagramador.domain.UmlConstraint;
@@ -102,9 +103,10 @@ public class ModelStateHasher {
         }
 
         classifiers.stream().sorted(byId(Classifier::getId))
-                .map(classifier -> line("classifiers", classifier.getId(),
+                .map(classifier -> withStore(line("classifiers", classifier.getId(),
                         field("namespaceId", id(classifier.getNamespace())), field("kind", classifier.getKind()),
-                        field("name", classifier.getName()), field("isAbstract", classifier.isAbstract())))
+                        field("name", classifier.getName()), field("isAbstract", classifier.isAbstract())),
+                        classifier.getStoreOverride()))
                 .forEach(lines::add);
         attributes.stream().sorted(byId(UmlAttribute::getId))
                 .map(attribute -> line("attributes", attribute.getId(),
@@ -128,8 +130,9 @@ public class ModelStateHasher {
                         field("direction", parameter.getDirection()), field("ordinal", parameter.getOrdinal())))
                 .forEach(lines::add);
         relationships.stream().sorted(byId(UmlRelationship::getId))
-                .map(relationship -> line("relationships", relationship.getId(),
-                        field("kind", relationship.getKind()), field("name", relationship.getName())))
+                .map(relationship -> withAssociationClass(withStereotype(line("relationships", relationship.getId(),
+                        field("kind", relationship.getKind()), field("name", relationship.getName())),
+                        relationship.getStereotype()), relationship.getAssociationClassId()))
                 .forEach(lines::add);
         relationshipEnds.stream().sorted(byId(RelationshipEnd::getId))
                 .map(end -> line("relationshipEnds", end.getId(), field("relationshipId", id(end.getRelationship())),
@@ -176,9 +179,10 @@ public class ModelStateHasher {
         List<ModelResource.ClassifierResource> classifiers = snapshot.classifiers().stream()
                 .sorted(Comparator.comparing(value -> value.id().toString())).toList();
         classifiers.stream()
-                .map(classifier -> line("classifiers", classifier.id(),
+                .map(classifier -> withStore(line("classifiers", classifier.id(),
                         field("namespaceId", classifier.namespaceId()), field("kind", classifier.kind()),
-                        field("name", classifier.name()), field("isAbstract", classifier.isAbstract())))
+                        field("name", classifier.name()), field("isAbstract", classifier.isAbstract())),
+                        classifier.storeOverride()))
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.attributes().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
@@ -208,8 +212,9 @@ public class ModelStateHasher {
         List<ModelResource.RelationshipResource> relationships = snapshot.relationships().stream()
                 .sorted(Comparator.comparing(value -> value.id().toString())).toList();
         relationships.stream()
-                .map(relationship -> line("relationships", relationship.id(),
-                        field("kind", relationship.kind()), field("name", relationship.name())))
+                .map(relationship -> withAssociationClass(withStereotype(line("relationships", relationship.id(),
+                        field("kind", relationship.kind()), field("name", relationship.name())),
+                        relationship.stereotype()), relationship.associationClassId()))
                 .forEach(lines::add);
         relationships.stream().flatMap(relationship -> relationship.ends().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
@@ -323,6 +328,21 @@ public class ModelStateHasher {
 
     private static String field(String name, Object value) {
         return name + "=" + String.valueOf(value);
+    }
+
+    /** Appended only when set, so a model without a manual store keeps the hash it had before the field existed. */
+    private static String withStore(String line, PersistenceStore storeOverride) {
+        return storeOverride == null ? line : line + "|" + field("storeOverride", storeOverride);
+    }
+
+    /** Appended only when set, so a relationship without a stereotype keeps the hash it had before the field existed. */
+    private static String withStereotype(String line, String stereotype) {
+        return stereotype == null ? line : line + "|" + field("stereotype", stereotype);
+    }
+
+    /** Appended only when set, so an association without a class of its own keeps the hash it had before the field. */
+    private static String withAssociationClass(String line, UUID associationClassId) {
+        return associationClassId == null ? line : line + "|" + field("associationClassId", associationClassId);
     }
 
     private static UUID id(Object entity) {

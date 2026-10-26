@@ -13,18 +13,20 @@ import {
   type EdgeTypes,
   type NodeTypes,
 } from '@xyflow/react';
-import type { ClassifierResource, ModelResource } from '../api/types';
+import type { ClassifierResource, ModelResource, OperationEnvelope } from '../api/types';
 import type { GeometryUpdate, ModelCommandRequest, ClassifierKind, RelationshipKind, ViewStyleUpdate } from './commands';
 import {
+  buildAnchorStyleRequest,
   buildGeometrySetRequest,
   buildRelationshipCreateRequest,
   buildStyleSetRequest,
+  DEFAULT_ROUTING,
   mergeViewStyleUpdate,
   RELATIONSHIP_KINDS,
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildUnplacedGeometryRequests, type UnplacedGeometryAttempt } from './unplaced-geometry';
-import type { AnchorSide, RelationshipAnchor } from './orthogonal-routing';
+import { autoAnchorSide, sideLanes, type AnchorSide, type RelationshipAnchor } from './orthogonal-routing';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
 import UmlRelationshipEdge, { type EdgePoint, type RelationshipEdgeData, type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
@@ -57,19 +59,20 @@ const nodeTypes: NodeTypes = { umlClass: UmlClassNode };
 const edgeTypes: EdgeTypes = { umlRelationship: UmlRelationshipEdge };
 
 const RELATIONSHIP_KIND_LABELS: Record<RelationshipKind, string> = {
-  ASSOCIATION: 'Association',
-  AGGREGATION: 'Aggregation',
-  COMPOSITION: 'Composition',
-  GENERALIZATION: 'Generalization',
-  INTERFACE_REALIZATION: 'Interface realization',
-  DEPENDENCY: 'Dependency',
+  ASSOCIATION: 'Asociación',
+  AGGREGATION: 'Agregación',
+  COMPOSITION: 'Composición',
+  GENERALIZATION: 'Generalización',
+  INTERFACE_REALIZATION: 'Realización de interfaz',
+  DEPENDENCY: 'Dependencia',
 };
 
 interface UmlCanvasProps {
   model: ModelResource;
   selection: CanvasSelection | null;
   onSelect: (selection: CanvasSelection | null) => void;
-  onCommand: (request: ModelCommandRequest) => void;
+  /** Returns the envelope it dispatched, so a caller can refer to the element a command creates. */
+  onCommand: (request: ModelCommandRequest) => OperationEnvelope | null | void;
   onAddClassifier: (kind: ClassifierKind) => void;
   onDelete: (selection: CanvasSelection) => void;
   touchedElements?: TouchedElement[];
@@ -201,7 +204,10 @@ export function buildFlowNodes(
         y: 56 + row * 260,
       },
       width: geometry?.w ?? previous?.width ?? DEFAULT_NODE_WIDTH,
-      height: geometry?.h ?? previous?.height ?? defaultHeight(classifier),
+      // The height is left to the card. A stored height was captured while the class was still
+      // empty, so it only works as a floor: as a fixed height it clipped every class that grew
+      // after that, leaving its handles and the routes attached in the middle of the box.
+      style: { minHeight: geometry?.h ?? defaultHeight(classifier) },
       ...(zIndex !== undefined ? { zIndex } : {}),
       data,
       ...(previous?.selected !== undefined ? { selected: previous.selected } : {}),
@@ -246,6 +252,52 @@ export function chooseHandles(
   };
 }
 
+const SIDE_OF_HANDLE: Record<string, AnchorSide> = { top: 'N', right: 'E', bottom: 'S', left: 'W' };
+
+/**
+ * The side each end of a new relationship was connected through, read from the handle ids
+ * (`source-right`, `target-top`, ...). `flipped` is true when connectionDirection swapped the pair,
+ * so the handle that React Flow called the target belongs to the end the user started from.
+ */
+export function connectionSides(
+  sourceHandle: string | null | undefined,
+  targetHandle: string | null | undefined,
+  flipped: boolean,
+): { source: AnchorSide; target: AnchorSide } | null {
+  const sideOf = (handle: string | null | undefined) => SIDE_OF_HANDLE[(handle ?? '').split('-')[1] ?? ''];
+  const source = sideOf(flipped ? targetHandle : sourceHandle);
+  const target = sideOf(flipped ? sourceHandle : targetHandle);
+  return source && target ? { source, target } : null;
+}
+
+/**
+ * Keeps the connected sides only when the router would not have picked them anyway. A side stored
+ * for no reason would pin the route to the centre of that side and take the end out of its lane.
+ */
+export function differingSides(
+  sides: { source: AnchorSide; target: AnchorSide },
+  source: NodeRectangle,
+  target: NodeRectangle,
+): { source: AnchorSide; target: AnchorSide } | null {
+  return sides.source === autoAnchorSide(source, target, 'source') && sides.target === autoAnchorSide(source, target, 'target')
+    ? null
+    : sides;
+}
+
+/**
+ * Both handle types share each side's position, so React Flow resolves a connection by handle
+ * type, not by gesture. The direction of a UML relationship is the one the user drew: from the
+ * class the drag started on to the class it ended on.
+ */
+export function connectionDirection(
+  source: string,
+  target: string,
+  startedOn: string | null,
+): { sourceId: string; targetId: string } {
+  const startedOnTarget = startedOn === target && startedOn !== source;
+  return startedOnTarget ? { sourceId: target, targetId: source } : { sourceId: source, targetId: target };
+}
+
 function classifierRectangles(model: ModelResource): Map<string, NodeRectangle> {
   const rectangles = new Map<string, NodeRectangle>();
   model.classifiers.forEach((classifier, index) => {
@@ -270,10 +322,18 @@ export function buildFlowEdges(
     onEdgeEndpointsChange?: RelationshipEdgeData['onEdgeEndpointsChange'];
     onRouteAdjustmentChange?: RelationshipEdgeData['onRouteAdjustmentChange'];
   },
+  previous: readonly RelationshipFlowEdge[] = [],
 ): RelationshipFlowEdge[] {
+  // A rebuild must not drop the edge the user just clicked: its anchor and bend handles only
+  // render while it is selected, and the rebuild runs again right after the click.
+  const selectedIds = new Set(previous.filter((edge) => edge.selected).map((edge) => edge.id));
   const view = defaultView(model);
   const rectangles = classifierRectangles(model);
   const viewStyles = model.view_style ?? [];
+  const lanes = sideLanes(model.relationships.flatMap((relationship) => {
+    const [first, second] = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
+    return first && second ? [{ id: relationship.id, sourceId: first.classifierId, targetId: second.classifierId }] : [];
+  }), rectangles);
   return model.relationships.flatMap((relationship) => {
     const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
     const sourceEnd = ends[0];
@@ -293,7 +353,7 @@ export function buildFlowEdges(
       .sort((left, right) => left.ordinal - right.ordinal)
       .map(({ x, y }) => ({ x, y })) ?? [];
     const style = {
-      routing: styleRow?.routing ?? 'STRAIGHT',
+      routing: styleRow?.routing ?? DEFAULT_ROUTING,
       cornerRadius: styleRow?.cornerRadius ?? 0,
       strokeWidth: styleRow?.strokeWidth ?? 2,
       dashed: styleRow?.dashed ?? false,
@@ -311,6 +371,8 @@ export function buildFlowEdges(
         targetEnd,
         waypoints,
         style,
+        lane: lanes.get(relationship.id) ?? { source: 0, target: 0 },
+        ...(relationship.associationClassId ? { associationClassId: relationship.associationClassId } : {}),
         ...(onWaypointsChange ? { onWaypointsChange } : {}),
         ...(interactionHandlers?.onRelationshipContextMenu
           ? { onRelationshipContextMenu: interactionHandlers.onRelationshipContextMenu }
@@ -324,6 +386,7 @@ export function buildFlowEdges(
       },
       selectable: true,
       deletable: false,
+      ...(selectedIds.has(relationship.id) ? { selected: true } : {}),
     }];
   });
 }
@@ -346,11 +409,17 @@ function CanvasFrame(props: UmlCanvasProps) {
   const styleCoalescer = useMemo(() => createGeometryCoalescer<ViewStyleUpdate>((_elementId, payload) => {
     props.onCommand(buildStyleSetRequest(payload));
   }), [props.onCommand]);
-  const [connectionDraft, setConnectionDraft] = useState<{ sourceId: string; targetId: string } | null>(null);
+  const [connectionDraft, setConnectionDraft] = useState<{
+    sourceId: string;
+    targetId: string;
+    /** The sides the user connected through, when they could be read from the handles. */
+    sides: { source: AnchorSide; target: AnchorSide } | null;
+  } | null>(null);
   const [connectionKind, setConnectionKind] = useState<RelationshipKind>('ASSOCIATION');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   // Latest endpoint anchors per edge, reported by UmlRelationshipEdge after each
   // render; only the edge component knows the resolved sourceX/Y and targetX/Y.
+  const connectStartNodeRef = useRef<string | null>(null);
   const edgeEndpointsRef = useRef(new Map<string, { source: EdgePoint; target: EdgePoint }>());
   const initialNodes = useMemo(
     () => buildFlowNodes(props.model, [], props.onCommand, props.onSelect, undefined, props.touchedElements),
@@ -471,7 +540,7 @@ function CanvasFrame(props: UmlCanvasProps) {
       onRelationshipContextMenu: openRelationshipEndContextMenu,
       onEdgeEndpointsChange: rememberEdgeEndpoints,
       onRouteAdjustmentChange: updateRouteAdjustment,
-    }));
+    }, edgesRef.current));
     if (unplaced.length > 0 && pendingFitRef.current === null) {
       // A node handed over in this render is not yet measured by React Flow, so a
       // synchronous fitView would silently drop it from the fit bounds. Record the
@@ -605,8 +674,33 @@ function CanvasFrame(props: UmlCanvasProps) {
 
   function handleConnect(connection: Connection): void {
     if (connection.source && connection.target) {
-      setConnectionDraft({ sourceId: connection.source, targetId: connection.target });
+      const direction = connectionDirection(connection.source, connection.target, connectStartNodeRef.current);
+      const flipped = direction.sourceId !== connection.source;
+      setConnectionDraft({ ...direction, sides: connectionSides(connection.sourceHandle, connection.targetHandle, flipped) });
       setConnectionKind('ASSOCIATION');
+    }
+  }
+
+  /**
+   * The user chose where the relationship attaches by picking the dots; keep it, unless that is
+   * what the router would have chosen. The command is queued behind the create, which has already
+   * put the relationship in the optimistic model.
+   */
+  function keepConnectedSides(
+    envelope: OperationEnvelope | null | void,
+    draft: { sourceId: string; targetId: string; sides: { source: AnchorSide; target: AnchorSide } | null },
+  ): void {
+    const relationshipId = envelope && typeof envelope.payload.id === 'string' ? envelope.payload.id : null;
+    if (!relationshipId || !viewId || !draft.sides || draft.sourceId === draft.targetId) {
+      return;
+    }
+    const sourceNode = nodesRef.current.find((node) => node.id === draft.sourceId);
+    const targetNode = nodesRef.current.find((node) => node.id === draft.targetId);
+    const kept = sourceNode && targetNode
+      ? differingSides(draft.sides, rectangleForNode(sourceNode), rectangleForNode(targetNode))
+      : draft.sides;
+    if (kept) {
+      props.onCommand(buildAnchorStyleRequest(viewId, relationshipId, kept));
     }
   }
 
@@ -615,11 +709,12 @@ function CanvasFrame(props: UmlCanvasProps) {
     if (!connectionDraft) {
       return;
     }
-    props.onCommand(buildRelationshipCreateRequest(
+    const envelope = props.onCommand(buildRelationshipCreateRequest(
       connectionDraft.sourceId,
       connectionDraft.targetId,
       connectionKind,
     ));
+    keepConnectedSides(envelope, connectionDraft);
     setConnectionDraft(null);
   }
 
@@ -695,38 +790,38 @@ function CanvasFrame(props: UmlCanvasProps) {
     : null;
 
   return (
-    <section className="surface diagram-panel" aria-label="Class diagram editor">
+    <section className="surface diagram-panel" aria-label="Editor de diagramas de clases">
       <div className="diagram-toolbar">
         <div className="diagram-toolbar-title">
-          <p className="eyebrow">Class diagram</p>
+          <p className="eyebrow">Diagrama de clases</p>
           <span className="mode-chip">UML 2.5</span>
         </div>
-        <div className="diagram-toolbar-actions" aria-label="Diagram tools">
-          <p className="diagram-connection-hint">Drag from one class dot to another to connect them.</p>
+        <div className="diagram-toolbar-actions" aria-label="Herramientas del diagrama">
+          <p className="diagram-connection-hint">Arrastra desde el punto de una clase hasta otra para conectarlas.</p>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('CLASS')} type="button">
-            + Class
+            + Clase
           </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('ABSTRACT_CLASS')} type="button">
-            + Abstract class
+            + Clase abstracta
           </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('INTERFACE')} type="button">
-            + Interface
+            + Interfaz
           </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('ENUMERATION')} type="button">
-            + Enumeration
+            + Enumeración
           </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('PACKAGE')} type="button">
-            + Package
+            + Paquete
           </button>
           <button className="button button-secondary button-compact" onClick={() => void fitView({ padding: 0.2 })} type="button">
-            Fit to view
+            Ajustar a la vista
           </button>
         </div>
       </div>
       {connectionDraft && (
-        <form className="connection-kind-picker" aria-label="Choose relationship kind" onSubmit={createRelationship}>
+        <form className="connection-kind-picker" aria-label="Elegir tipo de relación" onSubmit={createRelationship}>
           <label className="field-label" htmlFor="relationship-kind">
-            Connect {sourceName ?? 'class'} to {targetName ?? 'class'}
+            Conectar {sourceName ?? 'clase'} con {targetName ?? 'clase'}
           </label>
           <select
             id="relationship-kind"
@@ -739,17 +834,17 @@ function CanvasFrame(props: UmlCanvasProps) {
           </select>
           <p className="property-hint">
             {connectionKind === 'GENERALIZATION'
-              ? 'Start at the subclass and end at its parent.'
+              ? 'Empieza en la subclase y termina en su clase padre.'
               : connectionKind === 'INTERFACE_REALIZATION'
-                ? 'Start at the implementing class and end at the interface.'
+                ? 'Empieza en la clase que implementa y termina en la interfaz.'
                 : connectionKind === 'AGGREGATION' || connectionKind === 'COMPOSITION'
-                  ? 'Start at the whole; the diamond marks this end.'
+                  ? 'Empieza en el todo; el rombo marca este extremo.'
                   : connectionKind === 'DEPENDENCY'
-                    ? 'The open arrow points toward the target.'
-                    : 'Open arrows appear on navigable ends.'}
+                    ? 'La flecha abierta apunta al destino.'
+                    : 'Las flechas abiertas aparecen en los extremos navegables.'}
           </p>
-          <button className="button button-primary button-compact" type="submit">Create relationship</button>
-          <button className="text-button" onClick={() => setConnectionDraft(null)} type="button">Cancel</button>
+          <button className="button button-primary button-compact" type="submit">Crear relación</button>
+          <button className="text-button" onClick={() => setConnectionDraft(null)} type="button">Cancelar</button>
         </form>
       )}
       <div
@@ -774,6 +869,7 @@ function CanvasFrame(props: UmlCanvasProps) {
           onNodeClick={(_, node) => props.onSelect({ kind: 'classifier', classifierId: node.id })}
           onNodeContextMenu={(event, node) => openContextMenu(event, { kind: 'classifier', classifierId: node.id })}
           onNodeDragStop={(_, node) => settleNodeGeometry(node)}
+          onConnectStart={(_, params) => { connectStartNodeRef.current = params.nodeId; }}
           onConnect={handleConnect}
           onEdgeClick={(_, edge) => props.onSelect({ kind: 'relationship', relationshipId: edge.id })}
           onEdgeContextMenu={(event, edge) => openContextMenu(event, {
@@ -795,7 +891,7 @@ function CanvasFrame(props: UmlCanvasProps) {
           nodesConnectable
           deleteKeyCode={null}
           proOptions={{ hideAttribution: false }}
-          aria-label="UML class diagram canvas"
+          aria-label="Lienzo del diagrama de clases UML"
         >
           <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1.2} color="#cbd8d3" />
           <Controls position="bottom-left" showInteractive={false} />

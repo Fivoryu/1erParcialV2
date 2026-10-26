@@ -184,7 +184,7 @@ export function vcsErrorMessage(error: unknown, fallback: string): string {
     return fallback;
   }
   if (error.code === 'WORKING_COPY_CLEAN') {
-    return 'nothing to commit';
+    return 'No hay cambios para confirmar.';
   }
   return error.message.trim().length > 0 ? error.message : fallback;
 }
@@ -211,7 +211,7 @@ function errorFromResponse(body: unknown, status: number): ApiTransportError {
 
   return new ApiTransportError(
     'HTTP_ERROR',
-    `The server returned HTTP ${status}.`,
+    `El servidor respondió con HTTP ${status}.`,
     [],
     null,
     status,
@@ -237,7 +237,7 @@ export function createVcsApiClient(
     try {
       response = await fetcher(`${base}${path}`, { ...init, headers });
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
+      const message = cause instanceof Error ? cause.message : 'No se pudo conectar con el servidor.';
       throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
     }
 

@@ -108,33 +108,33 @@ describe('ReviewPanel markup', () => {
     const markup = render({ status: 'loading' });
 
     expect(markup).toContain('class="review-loading"');
-    expect(markup).toContain('Loading UML validation and backend readiness');
-    expect(markup).toContain('Run review');
+    expect(markup).toContain('Cargando la validación UML y la disponibilidad del backend…');
+    expect(markup).toContain('Ejecutar revisión');
     expect(markup).toMatch(/review-run-button[^>]*disabled=""/);
   });
 
   it('renders a clean review with the ready profile and no-issues state', () => {
     const markup = render({ status: 'loaded', validation: cleanValidation, readiness: readyReadiness });
 
-    expect(markup).toContain('No issues found');
-    expect(markup).toContain('Errors: 0');
-    expect(markup).toContain('Warnings: 0');
+    expect(markup).toContain('No se encontraron problemas.');
+    expect(markup).toContain('Errores: 0');
+    expect(markup).toContain('Advertencias: 0');
     expect(markup).toContain('Spring Boot PostgreSQL V1');
-    expect(markup).toContain('Ready');
-    expect(markup).toContain('Destination-specific checks');
+    expect(markup).toContain('Listo');
+    expect(markup).toContain('Las comprobaciones específicas del destino');
   });
 
   it('renders not-ready status, grouped errors and warnings, blockers, human names and no UUIDs', () => {
     const markup = render({ status: 'loaded', validation: findingsValidation, readiness: blockedReadiness });
 
-    expect(markup).toContain('Errors (1)');
-    expect(markup).toContain('Warnings (1)');
+    expect(markup).toContain('Errores (1)');
+    expect(markup).toContain('Advertencias (1)');
     expect(markup).toContain('GENERALIZATION_CYCLE');
     expect(markup).toContain('Factura');
-    expect(markup).toContain('Unidentified diagram element');
+    expect(markup).toContain('Elemento del diagrama sin identificar');
     expect(markup).toContain('GENERATION_BLOCKED');
-    expect(markup).toContain('Blocking diagnostics (1)');
-    expect(markup).toContain('Not ready');
+    expect(markup).toContain('Diagnósticos bloqueantes (1)');
+    expect(markup).toContain('No está listo');
     expect(markup).not.toMatch(UUID_PATTERN);
   });
 
@@ -143,7 +143,7 @@ describe('ReviewPanel markup', () => {
 
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('The validation service is unavailable.');
-    expect(markup).toContain('Run review');
+    expect(markup).toContain('Ejecutar revisión');
   });
 
   it('enables AI actions only for editors or owners when findings exist', () => {
@@ -155,22 +155,22 @@ describe('ReviewPanel markup', () => {
     const owner = panelFor('OWNER');
     const viewer = panelFor('VIEWER');
 
-    expect(findButton(editor, 'Explain with AI')?.props.disabled).toBe(false);
-    expect(findButton(editor, 'Propose a fix')?.props.disabled).toBe(false);
-    expect(findButton(owner, 'Explain with AI')?.props.disabled).toBe(false);
-    expect(findButton(owner, 'Propose a fix')?.props.disabled).toBe(false);
-    expect(findButton(viewer, 'Explain with AI')?.props.disabled).toBe(true);
-    expect(findButton(viewer, 'Propose a fix')?.props.disabled).toBe(true);
-    expect(render(state, 'VIEWER')).toContain('AI actions require editing access.');
+    expect(findButton(editor, 'Explicar con IA')?.props.disabled).toBe(false);
+    expect(findButton(editor, 'Proponer una corrección')?.props.disabled).toBe(false);
+    expect(findButton(owner, 'Explicar con IA')?.props.disabled).toBe(false);
+    expect(findButton(owner, 'Proponer una corrección')?.props.disabled).toBe(false);
+    expect(findButton(viewer, 'Explicar con IA')?.props.disabled).toBe(true);
+    expect(findButton(viewer, 'Proponer una corrección')?.props.disabled).toBe(true);
+    expect(render(state, 'VIEWER')).toContain('Las acciones de IA requieren permisos de edición.');
   });
 
   it('disables AI actions for an editor when there are no findings', () => {
     const panel = ReviewPanel(props({ status: 'loaded', validation: cleanValidation, readiness: readyReadiness }, 'EDITOR'));
 
     expect(render({ status: 'loaded', validation: cleanValidation, readiness: readyReadiness }, 'EDITOR'))
-      .toContain('AI actions are available when review finds an issue.');
-    expect(findButton(panel, 'Explain with AI')?.props.disabled).toBe(true);
-    expect(findButton(panel, 'Propose a fix')?.props.disabled).toBe(true);
+      .toContain('Las acciones de IA estarán disponibles si la revisión encuentra un problema.');
+    expect(findButton(panel, 'Explicar con IA')?.props.disabled).toBe(true);
+    expect(findButton(panel, 'Proponer una corrección')?.props.disabled).toBe(true);
   });
 
   it('passes explicit Spanish prompts to the existing assistant callbacks', () => {
@@ -181,8 +181,8 @@ describe('ReviewPanel markup', () => {
       onExplain,
       onProposeFix,
     });
-    const explainButton = findButton(panel, 'Explain with AI');
-    const proposeButton = findButton(panel, 'Propose a fix');
+    const explainButton = findButton(panel, 'Explicar con IA');
+    const proposeButton = findButton(panel, 'Proponer una corrección');
 
     expect(explainButton?.props.disabled).toBe(false);
     expect(proposeButton?.props.disabled).toBe(false);

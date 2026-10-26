@@ -18,7 +18,7 @@ class PlatformService {
           defaultValue: false,
         )) {
       throw ArgumentError(
-        'Platform URL must use HTTPS. Set ALLOW_INSECURE_HTTP only for local development.',
+        'La URL de la plataforma debe usar HTTPS. Usa ALLOW_INSECURE_HTTP solo para desarrollo local.',
       );
     }
   }
@@ -190,7 +190,7 @@ class PlatformService {
     final status = envelope['status'];
     if (status is! int) {
       throw const FormatException(
-        'The gateway returned an invalid operation envelope.',
+        'La puerta de enlace devolvió una respuesta de operación no válida.',
       );
     }
     return GatewayResult(status: status, body: envelope['body']);
@@ -216,7 +216,7 @@ class PlatformService {
         ) {
           if (all.length + chunk.length > _maxBytes) {
             throw const PlatformTransportException(
-              'The platform response exceeded 1 MiB.',
+              'La respuesta de la plataforma supera 1 MiB.',
             );
           }
           all.addAll(chunk);
@@ -224,7 +224,7 @@ class PlatformService {
         });
         if (streamed.isRedirect) {
           throw const PlatformTransportException(
-            'Platform redirects are not allowed.',
+            'No se permiten redirecciones de la plataforma.',
           );
         }
         return http.Response.bytes(
@@ -236,7 +236,7 @@ class PlatformService {
       })().timeout(_timeout);
     } on TimeoutException {
       throw const PlatformTransportException(
-        'The platform request timed out. Inspect before retrying writes.',
+        'La solicitud a la plataforma agotó el tiempo de espera. Revisa los datos antes de volver a intentar una escritura.',
       );
     }
   }
@@ -266,7 +266,7 @@ class PlatformService {
   Map<String, dynamic> _jsonObject(http.Response response) {
     final value = jsonDecode(response.body);
     if (value is! Map) {
-      throw const FormatException('The platform returned an invalid response.');
+      throw const FormatException('La plataforma devolvió una respuesta no válida.');
     }
     return Map<String, dynamic>.from(value);
   }
@@ -280,7 +280,7 @@ class PlatformService {
     if (response.statusCode >= 400) throw PlatformException.from(response);
     final value = jsonDecode(response.body);
     if (value is! List) {
-      throw const FormatException('The platform returned an invalid list.');
+      throw const FormatException('La plataforma devolvió una lista no válida.');
     }
     return value;
   }
@@ -299,7 +299,7 @@ class PlatformException implements Exception {
   final String message;
   factory PlatformException.from(http.Response response) => PlatformException(
     response.statusCode,
-    'Platform request failed (${response.statusCode}).',
+    'La solicitud a la plataforma falló (${response.statusCode}).',
   );
   bool get sessionExpired => status == 401;
 }

@@ -17,10 +17,10 @@ export type VersioningTab = 'branches' | 'history' | 'reviews' | 'permissions';
 export type VersioningTabDirection = 'next' | 'previous';
 
 const VERSIONING_TABS: ReadonlyArray<{ id: VersioningTab; label: string }> = [
-  { id: 'branches', label: 'Branches' },
-  { id: 'history', label: 'History' },
-  { id: 'reviews', label: 'Reviews' },
-  { id: 'permissions', label: 'Permissions' },
+  { id: 'branches', label: 'Ramas' },
+  { id: 'history', label: 'Historial' },
+  { id: 'reviews', label: 'Revisiones' },
+  { id: 'permissions', label: 'Permisos' },
 ];
 
 export function nextVersioningTab(current: VersioningTab, direction: VersioningTabDirection): VersioningTab {
@@ -42,24 +42,24 @@ export function VersioningStatusBar({ status, headBranch, loading, error }: Vers
     return (
       <div className="vcs-status-bar" role={error ? 'alert' : 'status'}>
         <p className="vcs-status-message">
-          {error ?? (loading ? 'Loading versioning status…' : 'Versioning status is unavailable.')}
+          {error ?? (loading ? 'Cargando el estado del versionado…' : 'El estado del versionado no está disponible.')}
         </p>
       </div>
     );
   }
 
   return (
-    <div className="vcs-status-bar" role="status" aria-label="Versioning status">
-      <span className="vcs-current-branch" aria-label={`Current branch: ${status.branch}`}>
-        Current branch <strong>{status.branch}</strong>
+    <div className="vcs-status-bar" role="status" aria-label="Estado del versionado">
+      <span className="vcs-current-branch" aria-label={`Rama actual: ${status.branch}`}>
+        Rama actual <strong>{status.branch}</strong>
       </span>
       <span className={`vcs-dirty-indicator${status.dirty ? ' is-dirty' : ' is-clean'}`}>
-        {status.dirty ? 'uncommitted changes' : 'clean'}
+        {status.dirty ? 'cambios sin confirmar' : 'limpio'}
       </span>
       <p className="vcs-head-summary">
         {headBranch?.headMessage ?? (status.headCommitId === null
-          ? 'No commits yet.'
-          : loading ? 'Loading latest commit…' : 'Commit details are unavailable.')}
+          ? 'Aún no hay confirmaciones.'
+          : loading ? 'Cargando el último cambio…' : 'Los detalles del cambio no están disponibles.')}
         {headBranch?.headAuthorDisplayName && ` · ${headBranch.headAuthorDisplayName}`}
         {headBranch?.headCreatedAt && ` · ${relativeTimeLabel(headBranch.headCreatedAt)}`}
       </p>
@@ -128,7 +128,7 @@ export function VersioningPanelView({
         loading={loading}
         error={error}
       />
-      <div className="vcs-tab-list" role="tablist" aria-label="Versioning sections">
+      <div className="vcs-tab-list" role="tablist" aria-label="Secciones de versionado">
         {VERSIONING_TABS.map((tab) => {
           const selected = activeTab === tab.id;
           const disabled = historyDetailOpen && tab.id !== 'history';
@@ -213,7 +213,7 @@ export default function VersioningPanel({ projectId, onModelCheckout }: Versioni
         if (statusResult.status === 'fulfilled') {
           setStatus(statusResult.value);
         } else {
-          setError('The versioning status could not be loaded.');
+          setError('No se pudo cargar el estado del versionado.');
         }
         if (branchesResult.status === 'fulfilled') {
           setBranches(branchesResult.value);

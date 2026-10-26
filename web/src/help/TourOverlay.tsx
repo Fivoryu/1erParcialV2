@@ -44,9 +44,9 @@ export default function TourOverlay({
   const isFinalStep = currentIndex === TOUR_STEPS.length - 1;
 
   return (
-    <aside aria-label="Editor tour" className="editor-tour-overlay" style={overlayStyle}>
+    <aside aria-label="Recorrido del editor" className="editor-tour-overlay" style={overlayStyle}>
       <section className="editor-tour-card" style={cardStyle}>
-        <p className="eyebrow">Step {currentIndex + 1} of {TOUR_STEPS.length}</p>
+        <p className="eyebrow">Paso {currentIndex + 1} de {TOUR_STEPS.length}</p>
         <h2>{step.title}</h2>
         <p>{step.explanation}</p>
         <div className="diagram-toolbar-actions">
@@ -56,19 +56,19 @@ export default function TourOverlay({
             onClick={onPrevious}
             type="button"
           >
-            Previous
+            Anterior
           </button>
           {isFinalStep ? (
             <button className="button button-secondary button-compact" onClick={onReopenHelp} type="button">
-              Restart tour
+              Reiniciar recorrido
             </button>
           ) : (
             <button className="button button-secondary button-compact" onClick={onNext} type="button">
-              Next
+              Siguiente
             </button>
           )}
           <button className="button button-primary button-compact" onClick={onFinish} type="button">
-            Finish tour
+            Finalizar recorrido
           </button>
         </div>
       </section>

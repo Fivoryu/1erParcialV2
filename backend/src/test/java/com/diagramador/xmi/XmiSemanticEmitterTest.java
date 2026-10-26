@@ -548,6 +548,68 @@ class XmiSemanticEmitterTest {
     }
 
     @Test
+    void aDependencyStereotypeTravelsInTheConnectorPropertiesAndAPlainOneAddsNothing() throws Exception {
+        String document = emitter.emit(stereotypedDependencyModel("INCLUDE")).document();
+        Element connectorProperties = findDirectNoNamespace(find(parse(document), null, "connector"), "properties");
+
+        assertThat(connectorProperties.getAttribute("stereotype")).isEqualTo("include");
+        assertThat(emitter.emit(stereotypedDependencyModel(null)).document()).doesNotContain("stereotype");
+    }
+
+    @Test
+    void aDependencyStereotypeReadsBackAndAnEmittedPlainDependencyReadsBackWithoutOne() {
+        byte[] stereotyped = emitter.emit(stereotypedDependencyModel("EXTEND")).document()
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] plain = emitter.emit(stereotypedDependencyModel(null)).document()
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(new XmiReader().read(stereotyped).model().relationships())
+                .singleElement().satisfies(relationship -> {
+                    assertThat(relationship.kind()).isEqualTo("DEPENDENCY");
+                    assertThat(relationship.stereotype()).isEqualTo("EXTEND");
+                });
+        assertThat(new XmiReader().read(plain).model().relationships())
+                .singleElement().satisfies(relationship -> assertThat(relationship.stereotype()).isNull());
+    }
+
+    @Test
+    void aStereotypeThatIsNotAUmlDependencyStereotypeIsDroppedOnReadInsteadOfCorruptingTheModel() {
+        String document = emitter.emit(stereotypedDependencyModel("USE")).document()
+                .replace("stereotype=\"use\"", "stereotype=\"teleport\"");
+
+        XmiReadingResult read = new XmiReader().read(document.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(read.model().relationships()).singleElement()
+                .satisfies(relationship -> assertThat(relationship.stereotype()).isNull());
+        assertThat(read.losses()).extracting(XmiReadingResult.Loss::name).contains("unsupported_relationship_stereotype");
+    }
+
+    @Test
+    void anAssociationClassTravelsInTheConnectorPropertiesAndAPlainAssociationAddsNothing() throws Exception {
+        String document = emitter.emit(associationClassModel(id(902))).document();
+        Element connectorProperties = findDirectNoNamespace(find(parse(document), null, "connector"), "properties");
+
+        assertThat(connectorProperties.getAttribute("associationClass")).isEqualTo(XmiIdCodec.classifierId(id(902)));
+        assertThat(emitter.emit(associationClassModel(null)).document()).doesNotContain("associationClass");
+    }
+
+    @Test
+    void anAssociationClassReadsBackAndAPlainAssociationReadsBackWithoutOne() {
+        byte[] linked = emitter.emit(associationClassModel(id(902))).document()
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] plain = emitter.emit(associationClassModel(null)).document()
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(new XmiReader().read(linked).model().relationships())
+                .singleElement().satisfies(relationship -> {
+                    assertThat(relationship.kind()).isEqualTo("ASSOCIATION");
+                    assertThat(relationship.associationClassId()).isEqualTo(id(902));
+                });
+        assertThat(new XmiReader().read(plain).model().relationships())
+                .singleElement().satisfies(relationship -> assertThat(relationship.associationClassId()).isNull());
+    }
+
+    @Test
     void emittedCanonicalModelReadsBackWithSemanticsAndDiagramAnchors() {
         ModelResource source = sampleModel();
         List<GeometryResource> geometry = new ArrayList<>();
@@ -815,6 +877,32 @@ class XmiSemanticEmitterTest {
             MultiplicityKind multiplicity, String aggregation, short ordinal) {
         return new RelationshipEndResource(id, classifierId, role, multiplicity, NavigationKind.UNSPECIFIED,
                 aggregation, ordinal);
+    }
+
+    private static ModelResource stereotypedDependencyModel(String stereotype) {
+        ClassifierResource client = new ClassifierResource(id(900), "Client", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        ClassifierResource supplier = new ClassifierResource(id(901), "Supplier", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        RelationshipResource dependency = new RelationshipResource(id(910), "DEPENDENCY", "needs", stereotype,
+                List.of(end(id(911), id(900), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
+                        end(id(912), id(901), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 2)), List.of());
+        return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(client, supplier), List.of(dependency));
+    }
+
+    private static ModelResource associationClassModel(UUID associationClassId) {
+        ClassifierResource student = new ClassifierResource(id(900), "Student", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        ClassifierResource course = new ClassifierResource(id(901), "Course", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        ClassifierResource enrolment = new ClassifierResource(id(902), "Enrolment", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        RelationshipResource studies = new RelationshipResource(id(910), "ASSOCIATION", "studies", null,
+                associationClassId,
+                List.of(end(id(911), id(900), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
+                        end(id(912), id(901), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 2)), List.of());
+        return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(student, course, enrolment),
+                List.of(studies));
     }
 
     private static UUID id(long value) {

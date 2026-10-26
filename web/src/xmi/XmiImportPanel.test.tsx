@@ -91,12 +91,12 @@ describe('XMI import panel', () => {
     expect(file.arrayBuffer).toHaveBeenCalledOnce();
     expect(loaded.fileBase64).toBe('PHhtaT7p');
     expect(previewXmi).toHaveBeenCalledWith(projectId, { fileBase64: 'PHhtaT7p' });
-    expect(markup).toContain('Preview only');
-    expect(markup).toContain('<dt>Classifiers</dt><dd>3</dd>');
-    expect(markup).toContain('<dt>Relationships</dt><dd>2</dd>');
-    expect(markup).toContain('<dt>Views</dt><dd>1</dd>');
+    expect(markup).toContain('Solo vista previa');
+    expect(markup).toContain('<dt>Clasificadores</dt><dd>3</dd>');
+    expect(markup).toContain('<dt>Relaciones</dt><dd>2</dd>');
+    expect(markup).toContain('<dt>Vistas</dt><dd>1</dd>');
     expect(markup).toContain('connector_path_not_imported');
-    expect(markup).toContain('1 affected');
+    expect(markup).toContain('Elementos afectados: 1');
     expect(markup).toContain('Semantic note');
     expect(markup).toContain('EA note');
   });
@@ -125,20 +125,20 @@ describe('XMI import panel', () => {
   it('surfaces the classifier name from an addition-collision diagnostic', () => {
     const markup = render({ fileName: 'model.xmi', preview, mode: 'AGREGAR', importResult: rejectedCollision() });
 
-    expect(markup).toContain('Import outcome: REJECTED');
-    expect(markup).toContain('name collision');
+    expect(markup).toContain('Resultado de importación: REJECTED');
+    expect(markup).toContain('conflicto de nombres');
     // React escapes the apostrophes in the backend diagnostic when rendering static markup, so unescape
     // them before asserting: the intent is that the backend's own message reaches the user, not that the
     // renderer happens to choose a particular HTML entity for an apostrophe.
     const text = markup.replace(/&#x27;/g, "'");
     expect(text).toContain("Classifier 'Customer' already exists in this project.");
-    expect(markup).not.toContain('The XMI import could not be completed');
+    expect(markup).not.toContain('No se pudo completar la solicitud XMI');
   });
 
   it('warns before confirming that REEMPLAZAR deletes the existing model', () => {
     const markup = render({ fileName: 'model.xmi', preview, mode: 'REEMPLAZAR' });
 
-    expect(markup).toContain('REEMPLAZAR will delete all existing model content');
-    expect(markup).toContain('Confirm import and replace existing model');
+    expect(markup).toContain('REEMPLAZAR eliminará todo el contenido existente del modelo.');
+    expect(markup).toContain('Confirmar importación y reemplazar el modelo existente');
   });
 });

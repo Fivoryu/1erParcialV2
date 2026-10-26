@@ -47,8 +47,8 @@ describe('project invitations section', () => {
 
     expect(markup).toContain('Library system');
     expect(markup).toContain('project.owner');
-    expect(markup).toContain('Editor access');
-    expect(markup).toContain('>Accept</button>');
+    expect(markup).toContain('acceso de Editor');
+    expect(markup).toContain('>Aceptar</button>');
     expect(markup).not.toContain('44444444-4444-4444-8444-444444444444');
     expect(markup).not.toMatch(UUID_PATTERN);
   });
@@ -80,8 +80,8 @@ describe('project invitations section', () => {
   });
 
   it('distinguishes an empty list from an error', () => {
-    expect(renderView({ invitations: [] })).toContain('No pending invitations.');
+    expect(renderView({ invitations: [] })).toContain('No tienes invitaciones pendientes.');
     expect(renderView({ invitations: [], error: 'Invitations could not be loaded.' })).toContain('role="alert"');
-    expect(renderView({ invitations: [], error: 'Invitations could not be loaded.' })).not.toContain('No pending invitations.');
+    expect(renderView({ invitations: [], error: 'Invitations could not be loaded.' })).not.toContain('No tienes invitaciones pendientes.');
   });
 });

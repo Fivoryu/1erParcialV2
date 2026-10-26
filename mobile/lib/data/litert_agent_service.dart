@@ -112,13 +112,13 @@ class MethodChannelLiteRtAgentService implements LiteRtSessionAgentService {
           (value['message'] as String).length > 2048 ||
           (value['loaded'] == true &&
               (value['available'] != true || value['modelPresent'] != true))) {
-        throw const FormatException('Invalid local runtime status.');
+        throw const FormatException('El estado del entorno local no es válido.');
       }
       return LiteRtAgentStatus(
         available: value['available'] as bool,
         modelPresent: value['modelPresent'] as bool,
         loaded: value['loaded'] as bool,
-        message: value['message'] as String,
+        message: _localizeLiteRtStatus(value['message'] as String),
         backend: value['backend'] as String?,
       );
     } on MissingPluginException {
@@ -126,7 +126,7 @@ class MethodChannelLiteRtAgentService implements LiteRtSessionAgentService {
         available: false,
         modelPresent: false,
         loaded: false,
-        message: 'Optional Gemma runtime is unavailable in this build.',
+        message: 'El entorno opcional de Gemma no está disponible en esta compilación.',
       );
     }
   }
@@ -145,7 +145,7 @@ class MethodChannelLiteRtAgentService implements LiteRtSessionAgentService {
         prompt.length > 32768 ||
         maxTokens < 1 ||
         maxTokens > 512) {
-      throw ArgumentError('Invalid local model input limit.');
+      throw ArgumentError('El límite de entrada del modelo local no es válido.');
     }
     _onPartial = onPartial;
     _acceptPartials = true;
@@ -158,7 +158,7 @@ class MethodChannelLiteRtAgentService implements LiteRtSessionAgentService {
       _acceptPartials = false;
       if (value is! String) {
         throw const FormatException(
-          'Local runtime returned no strict decision.',
+          'El entorno local no devolvió una decisión válida.',
         );
       }
       AgentAction.parse(value);
@@ -179,7 +179,7 @@ class MethodChannelLiteRtAgentService implements LiteRtSessionAgentService {
         scope.length > 256 ||
         systemInstruction.isEmpty ||
         systemInstruction.length > 24000) {
-      throw ArgumentError('Invalid local session input limit.');
+      throw ArgumentError('El límite de entrada de la sesión local no es válido.');
     }
     if (_nativeSessionOpen &&
         _sessionScope == scope &&
@@ -210,11 +210,11 @@ class MethodChannelLiteRtAgentService implements LiteRtSessionAgentService {
         maxTokens > 512 ||
         timeout.inMilliseconds < 1000 ||
         timeout.inMilliseconds > 120000) {
-      throw ArgumentError('Invalid local session input limit.');
+      throw ArgumentError('El límite de entrada de la sesión local no es válido.');
     }
     final instruction = _sessionInstruction;
     if (_sessionScope != scope || instruction == null) {
-      throw StateError('No local session is open for this scope.');
+      throw StateError('No hay una sesión local abierta para este ámbito.');
     }
     if (!_nativeSessionOpen) {
       // The native side discarded the session after a timeout or error.
@@ -235,19 +235,19 @@ class MethodChannelLiteRtAgentService implements LiteRtSessionAgentService {
           .timeout(
             timeout + const Duration(seconds: 10),
             onTimeout: () => throw const LiteRtTimeoutException(
-              'Local model did not answer in time.',
+              'El modelo local no respondió a tiempo.',
             ),
           );
       _acceptPartials = false;
       if (value is! String || value.trim().isEmpty || value.length > 32768) {
-        throw const FormatException('Local runtime returned no text.');
+        throw const FormatException('El entorno local no devolvió texto.');
       }
       return value;
     } on PlatformException catch (error) {
       _nativeSessionOpen = false;
       if (error.code == 'LITERT_AGENT_TIMEOUT') {
         throw LiteRtTimeoutException(
-          error.message ?? 'Local model did not answer in time.',
+          error.message ?? 'El modelo local no respondió a tiempo.',
         );
       }
       rethrow;
@@ -292,3 +292,11 @@ class MethodChannelLiteRtAgentService implements LiteRtSessionAgentService {
     }
   }
 }
+
+String _localizeLiteRtStatus(String message) => message
+    .replaceAll(
+      'Load the pinned app-private Gemma model. Initialization is not hard-cancellable.',
+      'Carga el modelo Gemma privado de la aplicación. La inicialización no se puede cancelar de inmediato.',
+    )
+    .replaceAll('device-local CPU', 'local en el dispositivo · CPU')
+    .replaceAll('device-local GPU', 'local en el dispositivo · GPU');

@@ -574,6 +574,17 @@ public final class XmiSemanticEmitter {
         Element properties = document.createElement("properties");
         properties.setAttribute("ea_type", extensionRelationshipType(relationship.kind()));
         properties.setAttribute("direction", extensionRelationshipDirection(ends));
+        // A dependency stereotype has no home in the UML core without a profile, so it travels as the vendor
+        // `stereotype` property Enterprise Architect uses, lower case, and only when the dependency has one.
+        if (relationship.stereotype() != null && !relationship.stereotype().isBlank()) {
+            properties.setAttribute("stereotype", relationship.stereotype().toLowerCase(Locale.ROOT));
+        }
+        // The class that is also this association has no place in the extension either, so it travels as a vendor
+        // `associationClass` property holding the XMI id of the class, and only when that class is in the export.
+        if (relationship.associationClassId() != null
+                && context.emittableClassifierIds.contains(relationship.associationClassId())) {
+            properties.setAttribute("associationClass", XmiIdCodec.classifierId(relationship.associationClassId()));
+        }
         connector.appendChild(properties);
 
         Element modifiers = document.createElement("modifiers");

@@ -2,6 +2,7 @@ package com.diagramador.assistant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -15,8 +16,14 @@ class LlamaCppAssistantProviderPromptTest {
 
     @Test
     void promptDeclaresTheV3ContractVersion() {
-        assertThat(PROMPT).contains("ia4-01-prompt-v4");
-        assertThat(PROMPT).doesNotContain("ia4-01-prompt-v3");
+        assertThat(PROMPT).contains("ia4-02-prompt-v6");
+        assertThat(PROMPT).doesNotContain("ia4-01-prompt-v4").doesNotContain("ia4-01-prompt-v3");
+    }
+
+    @Test
+    void promptTeachesTheAssociationClassOfAnAssociation() {
+        assertThat(PROMPT).contains("\"associationClass\": {\"classifierName\"");
+        assertThat(PROMPT).contains("\"associationClass\": null suelta");
     }
 
     @Test
@@ -40,5 +47,22 @@ class LlamaCppAssistantProviderPromptTest {
         assertThat(PROMPT).contains("AGGREGATION");
         // constraint.add is not in the catalog: the prompt must say so explicitly
         assertThat(PROMPT).contains("constraint.add");
+    }
+
+    @Test
+    void promptTeachesDependenciesAndTheirStereotypesWithTheExactVocabulary() {
+        assertThat(PROMPT).contains("DEPENDENCY", "\"stereotype\"");
+        for (String stereotype : List.of("USE", "IMPORT", "ACCESS", "INCLUDE", "EXTEND", "INSTANTIATE", "CALL",
+                "CREATE", "DERIVE", "REFINE", "TRACE")) {
+            assertThat(PROMPT).as("stereotype %s", stereotype).contains("\"" + stereotype + "\"");
+        }
+        // Only a dependency may carry one, and an update may set it on its own.
+        assertThat(PROMPT).contains("solo con DEPENDENCY");
+        assertThat(PROMPT).contains("relationship.update \u2192 args");
+    }
+
+    @Test
+    void theChatPromptKnowsRelationshipsMayCarryAStereotype() {
+        assertThat(LlamaCppAssistantProvider.CHAT_SYSTEM_PROMPT).contains("\"stereotype\"", "DEPENDENCY");
     }
 }

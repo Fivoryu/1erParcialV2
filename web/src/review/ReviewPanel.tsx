@@ -30,11 +30,11 @@ function ReviewHeader({ busy, onRunReview }: { busy: boolean; onRunReview(): voi
   return (
     <header className="review-heading">
       <div>
-        <p className="eyebrow">Diagram checks</p>
-        <h2 id="review-title">Review</h2>
+        <p className="eyebrow">Comprobaciones del diagrama</p>
+        <h2 id="review-title">Revisión</h2>
       </div>
       <button className="button button-secondary button-compact review-run-button" type="button" disabled={busy} onClick={onRunReview}>
-        Run review
+        Ejecutar revisión
       </button>
     </header>
   );
@@ -67,7 +67,7 @@ export function ReviewPanel({ model, role, state, onRunReview, onExplain, onProp
     return (
       <section className="review-panel" aria-labelledby="review-title">
         <ReviewHeader busy onRunReview={onRunReview} />
-        <p className="review-loading" role="status">Loading UML validation and backend readiness…</p>
+        <p className="review-loading" role="status">Cargando la validación UML y la disponibilidad del backend…</p>
       </section>
     );
   }
@@ -93,54 +93,54 @@ export function ReviewPanel({ model, role, state, onRunReview, onExplain, onProp
   return (
     <section className="review-panel" aria-labelledby="review-title">
       <ReviewHeader busy={false} onRunReview={onRunReview} />
-      <div className="review-summary" aria-label="Review summary">
-        <span className="review-count review-count--error">Errors: {findings.errors.length}</span>
-        <span className="review-count review-count--warning">Warnings: {findings.warnings.length}</span>
+      <div className="review-summary" aria-label="Resumen de la revisión">
+        <span className="review-count review-count--error">Errores: {findings.errors.length}</span>
+        <span className="review-count review-count--warning">Advertencias: {findings.warnings.length}</span>
         <span className={`review-readiness-badge${findings.ready ? ' is-ready' : ' is-not-ready'}`}>
-          {findings.ready ? 'Ready' : 'Not ready'}
+          {findings.ready ? 'Listo' : 'No está listo'}
         </span>
       </div>
 
-      <section className="review-validation" aria-label="UML validation findings">
-        <h3>UML validation</h3>
-        {reviewIsClean ? <p className="review-clean">No issues found</p> : null}
+      <section className="review-validation" aria-label="Resultados de la validación UML">
+        <h3>Validación UML</h3>
+        {reviewIsClean ? <p className="review-clean">No se encontraron problemas.</p> : null}
         {!reviewIsClean && validationIsClean ? (
-          <p className="review-clean">No UML validation issues found.</p>
+          <p className="review-clean">No se encontraron problemas en la validación UML.</p>
         ) : null}
-        {findings.errors.length > 0 ? <FindingList findings={findings.errors} kind="error" label={`Errors (${findings.errors.length})`} /> : null}
-        {findings.warnings.length > 0 ? <FindingList findings={findings.warnings} kind="warning" label={`Warnings (${findings.warnings.length})`} /> : null}
+        {findings.errors.length > 0 ? <FindingList findings={findings.errors} kind="error" label={`Errores (${findings.errors.length})`} /> : null}
+        {findings.warnings.length > 0 ? <FindingList findings={findings.warnings} kind="warning" label={`Advertencias (${findings.warnings.length})`} /> : null}
       </section>
 
-      <section className="review-readiness" aria-label="Backend readiness details">
-        <h3>Backend readiness</h3>
-        <p className="review-profile"><span>Profile:</span> {findings.profile}</p>
+      <section className="review-readiness" aria-label="Detalles de disponibilidad del backend">
+        <h3>Disponibilidad del backend</h3>
+        <p className="review-profile"><span>Perfil:</span> {findings.profile}</p>
         <p className={`review-readiness-status${findings.ready ? ' is-ready' : ' is-not-ready'}`}>
-          {findings.ready ? 'Ready' : 'Not ready'}
+          {findings.ready ? 'Listo' : 'No está listo'}
         </p>
         {findings.readinessBlockers.length > 0 ? (
           <FindingList
             findings={findings.readinessBlockers}
             kind="blocker"
-            label={`Blocking diagnostics (${findings.readinessBlockers.length})`}
+            label={`Diagnósticos bloqueantes (${findings.readinessBlockers.length})`}
           />
         ) : findings.ready ? (
-          <p className="review-clean">No blocking issues found for this profile.</p>
+          <p className="review-clean">No se encontraron problemas que bloqueen este perfil.</p>
         ) : (
-          <p className="review-empty-blockers">The backend is not ready, but no blocking diagnostics were provided.</p>
+          <p className="review-empty-blockers">El backend no está listo, pero no se proporcionaron diagnósticos bloqueantes.</p>
         )}
         <p className="review-generation-note">
-          Destination-specific checks, such as the database engine, are handled in Generation.
+          Las comprobaciones específicas del destino, como el motor de base de datos, se realizan en Generación.
         </p>
       </section>
 
-      <section className="review-ai-actions" aria-label="AI review actions">
+      <section className="review-ai-actions" aria-label="Acciones de revisión con IA">
         <button
           className="button button-secondary"
           type="button"
           disabled={!actionsEnabled}
           onClick={() => onExplain(buildReviewPrompt(findings, 'explain'))}
         >
-          Explain with AI
+          Explicar con IA
         </button>
         <button
           className="button button-primary"
@@ -148,10 +148,10 @@ export function ReviewPanel({ model, role, state, onRunReview, onExplain, onProp
           disabled={!actionsEnabled}
           onClick={() => onProposeFix(buildReviewPrompt(findings, 'propose-fix'))}
         >
-          Propose a fix
+          Proponer una corrección
         </button>
-        {!canUseAssistant ? <p className="review-access-note">AI actions require editing access.</p> : null}
-        {canUseAssistant && !hasFindings ? <p className="review-access-note">AI actions are available when review finds an issue.</p> : null}
+        {!canUseAssistant ? <p className="review-access-note">Las acciones de IA requieren permisos de edición.</p> : null}
+        {canUseAssistant && !hasFindings ? <p className="review-access-note">Las acciones de IA estarán disponibles si la revisión encuentra un problema.</p> : null}
       </section>
     </section>
   );
@@ -167,8 +167,8 @@ export interface ReviewPanelLoaderProps {
 }
 
 function messageForReviewError(error: unknown): string {
-  const message = error instanceof Error ? error.message.replace(UUID_PATTERN, 'the diagram element').trim() : '';
-  return message || 'The review could not be loaded. Try again.';
+  const message = error instanceof Error ? error.message.replace(UUID_PATTERN, 'el elemento del diagrama').trim() : '';
+  return message || 'No se pudo cargar la revisión. Inténtalo de nuevo.';
 }
 
 /** Loads both read-only checks together when Review opens and whenever the model version changes. */

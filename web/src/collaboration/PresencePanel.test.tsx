@@ -44,16 +44,16 @@ describe('project presence panel', () => {
     expect(rows.find((row) => row.includes('<h3>Remote Collaborator</h3>')))
       .toContain('style="background-color:#d45d79"');
     expect(markup).toContain('data-current-reader="true"');
-    expect(markup).toContain('>You</p>');
+    expect(markup).toContain('>Tú</p>');
   });
 
   it('shows a distinct quiet empty state when nobody is present', () => {
     const emptyMarkup = render([], readerId);
     const populatedMarkup = render(entries, readerId);
 
-    expect(emptyMarkup).toContain('No one is in the diagram right now.');
+    expect(emptyMarkup).toContain('No hay nadie en el diagrama en este momento.');
     expect(emptyMarkup).toContain('presence-empty');
-    expect(populatedMarkup).not.toContain('No one is in the diagram right now.');
+    expect(populatedMarkup).not.toContain('No hay nadie en el diagrama en este momento.');
     expect(populatedMarkup).toContain('presence-list');
     expect(emptyMarkup).not.toBe(populatedMarkup);
   });

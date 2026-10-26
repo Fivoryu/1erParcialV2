@@ -31,7 +31,7 @@ export function getHelpNavigationSuggestions(
     const section = EDITOR_SECTIONS.find((candidate) => candidate.id === sectionId);
     if (section !== undefined) {
       seenSections.add(sectionId);
-      suggestions.push({ section: section.id, label: `Open ${section.label}` });
+      suggestions.push({ section: section.id, label: `Abrir ${section.label}` });
     }
   }
 

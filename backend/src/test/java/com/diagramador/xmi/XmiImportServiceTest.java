@@ -74,6 +74,7 @@ class XmiImportServiceTest {
     @Autowired private ClassifierRepository classifierRepository;
     @Autowired private UmlAttributeRepository attributeRepository;
     @Autowired private DiagramViewRepository viewRepository;
+    @Autowired private com.diagramador.persistence.UmlRelationshipRepository relationshipRepository;
     @Autowired private ModelCommandRepository commandRepository;
     @Autowired private ModelVersionRepository versionRepository;
     @Autowired private TombstoneRepository tombstoneRepository;
@@ -192,6 +193,128 @@ class XmiImportServiceTest {
             assertThat(item.getMessage()).contains("could not be represented");
         });
         assertThat(result.losses()).isNotEmpty();
+    }
+
+    @Test
+    void anExportedDependencyStereotypeSurvivesImportIntoTheDatabase() throws Exception {
+        Fixture fixture = existingProject("Stereotype import");
+        byte[] bytes = stereotypedDependencyXmi("INCLUDE", "Stereotype view");
+
+        XmiImportService.XmiImportResult result = importBytes(fixture, bytes, XmiImportMode.AGREGAR);
+
+        assertThat(result.command().status()).as("diagnostics: %s", result.command().diagnostics())
+                .isEqualTo(CommandStatus.ACCEPTED);
+        assertThat(relationshipRepository.findAll()).filteredOn(relationship ->
+                relationship.getModel().getId().equals(fixture.model().getId()))
+                .singleElement().satisfies(relationship -> {
+                    assertThat(relationship.getKind()).isEqualTo(com.diagramador.domain.RelationshipKind.DEPENDENCY);
+                    assertThat(relationship.getStereotype()).isEqualTo("INCLUDE");
+                });
+    }
+
+    @Test
+    void theSameFileImportedIntoAnotherProjectKeepsTheStereotypeWhenItsIdentitiesAreRescoped() throws Exception {
+        Fixture first = existingProject("Stereotype import project one");
+        Fixture second = existingProject("Stereotype import project two");
+        byte[] bytes = stereotypedDependencyXmi("ACCESS", "Shared view");
+
+        // Identities are global, so the second project gets the same file under rescoped ids, which rebuilds
+        // every relationship resource on the way in.
+        XmiImportService.XmiImportResult one = importBytes(first, bytes, XmiImportMode.AGREGAR);
+        assertThat(one.command().status()).as("first import: %s", one.command().diagnostics())
+                .isEqualTo(CommandStatus.ACCEPTED);
+        XmiImportService.XmiImportResult two = importBytes(second, bytes, XmiImportMode.AGREGAR);
+        assertThat(two.command().status()).as("second import: %s", two.command().diagnostics())
+                .isEqualTo(CommandStatus.ACCEPTED);
+
+        var inFirst = relationshipRepository.findAll().stream()
+                .filter(relationship -> relationship.getModel().getId().equals(first.model().getId())).toList();
+        var inSecond = relationshipRepository.findAll().stream()
+                .filter(relationship -> relationship.getModel().getId().equals(second.model().getId())).toList();
+        assertThat(inFirst).singleElement().satisfies(relationship ->
+                assertThat(relationship.getStereotype()).isEqualTo("ACCESS"));
+        assertThat(inSecond).singleElement().satisfies(relationship -> {
+            assertThat(relationship.getStereotype()).isEqualTo("ACCESS");
+            assertThat(relationship.getId()).isNotEqualTo(inFirst.get(0).getId());
+        });
+    }
+
+    @Test
+    void anExportedAssociationClassSurvivesImportIntoTheDatabaseAndIntoAnotherProject() throws Exception {
+        Fixture first = existingProject("Association class import project one");
+        Fixture second = existingProject("Association class import project two");
+        byte[] bytes = associationClassXmi("Association class view");
+
+        XmiImportService.XmiImportResult one = importBytes(first, bytes, XmiImportMode.AGREGAR);
+        assertThat(one.command().status()).as("first import: %s", one.command().diagnostics())
+                .isEqualTo(CommandStatus.ACCEPTED);
+        XmiImportService.XmiImportResult two = importBytes(second, bytes, XmiImportMode.AGREGAR);
+        assertThat(two.command().status()).as("second import: %s", two.command().diagnostics())
+                .isEqualTo(CommandStatus.ACCEPTED);
+
+        for (Fixture fixture : List.of(first, second)) {
+            var relationship = relationshipRepository.findAll().stream()
+                    .filter(candidate -> candidate.getModel().getId().equals(fixture.model().getId()))
+                    .findFirst().orElseThrow();
+            assertThat(relationship.getAssociationClassId()).isNotNull();
+            assertThat(classifierRepository.findById(relationship.getAssociationClassId()))
+                    .get().satisfies(linked -> {
+                        assertThat(linked.getName()).isEqualTo("Enrolment Association class view");
+                        assertThat(linked.getModel().getId()).isEqualTo(fixture.model().getId());
+                    });
+        }
+    }
+
+    private byte[] associationClassXmi(String viewName) {
+        java.util.function.LongFunction<UUID> id = value ->
+                UUID.fromString("00000000-0000-0000-0000-%012x".formatted(value));
+        java.util.function.BiFunction<Long, String, com.diagramador.api.ModelResource.ClassifierResource> clazz =
+                (value, name) -> new com.diagramador.api.ModelResource.ClassifierResource(id.apply(value),
+                        name + " " + viewName, ClassifierKind.CLASS, false, null, List.of(), List.of(), List.of());
+        var association = new com.diagramador.api.ModelResource.RelationshipResource(id.apply(910), "ASSOCIATION",
+                "studies", null, id.apply(902),
+                List.of(new com.diagramador.api.ModelResource.RelationshipEndResource(id.apply(911), id.apply(900),
+                                null, MultiplicityKind.EXACTLY_ONE, com.diagramador.domain.NavigationKind.UNSPECIFIED,
+                                "none", (short) 1),
+                        new com.diagramador.api.ModelResource.RelationshipEndResource(id.apply(912), id.apply(901),
+                                null, MultiplicityKind.EXACTLY_ONE, com.diagramador.domain.NavigationKind.UNSPECIFIED,
+                                "none", (short) 2)), List.of());
+        var view = new com.diagramador.api.ModelResource.ViewResource(id.apply(300), viewName, true,
+                List.of(new com.diagramador.api.ModelResource.GeometryResource(id.apply(500), com.diagramador.domain.TargetType.CLASSIFIER,
+                                id.apply(900), 40, 60, 200, 100, 0),
+                        new com.diagramador.api.ModelResource.GeometryResource(id.apply(501), com.diagramador.domain.TargetType.CLASSIFIER,
+                                id.apply(901), 320, 60, 200, 100, 1),
+                        new com.diagramador.api.ModelResource.GeometryResource(id.apply(502), com.diagramador.domain.TargetType.CLASSIFIER,
+                                id.apply(902), 180, 240, 200, 100, 2)), List.of());
+        var model = new com.diagramador.api.ModelResource(id.apply(1), id.apply(2), 3, id.apply(3), List.of(view),
+                List.of(clazz.apply(900L, "Student"), clazz.apply(901L, "Course"), clazz.apply(902L, "Enrolment")),
+                List.of(association));
+        return new XmiSemanticEmitter().emit(model).document().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private byte[] stereotypedDependencyXmi(String stereotype, String viewName) {
+        java.util.function.LongFunction<UUID> id = value ->
+                UUID.fromString("00000000-0000-0000-0000-%012x".formatted(value));
+        var client = new com.diagramador.api.ModelResource.ClassifierResource(id.apply(900), "Client " + viewName,
+                ClassifierKind.CLASS, false, null, List.of(), List.of(), List.of());
+        var supplier = new com.diagramador.api.ModelResource.ClassifierResource(id.apply(901), "Supplier " + viewName,
+                ClassifierKind.CLASS, false, null, List.of(), List.of(), List.of());
+        var dependency = new com.diagramador.api.ModelResource.RelationshipResource(id.apply(910), "DEPENDENCY",
+                "needs", stereotype,
+                List.of(new com.diagramador.api.ModelResource.RelationshipEndResource(id.apply(911), id.apply(900),
+                                null, MultiplicityKind.EXACTLY_ONE, com.diagramador.domain.NavigationKind.UNSPECIFIED,
+                                "none", (short) 1),
+                        new com.diagramador.api.ModelResource.RelationshipEndResource(id.apply(912), id.apply(901),
+                                null, MultiplicityKind.EXACTLY_ONE, com.diagramador.domain.NavigationKind.UNSPECIFIED,
+                                "none", (short) 2)), List.of());
+        var view = new com.diagramador.api.ModelResource.ViewResource(id.apply(300), viewName, true,
+                List.of(new com.diagramador.api.ModelResource.GeometryResource(id.apply(500), com.diagramador.domain.TargetType.CLASSIFIER,
+                                id.apply(900), 40, 60, 200, 100, 0),
+                        new com.diagramador.api.ModelResource.GeometryResource(id.apply(501), com.diagramador.domain.TargetType.CLASSIFIER,
+                                id.apply(901), 320, 60, 200, 100, 1)), List.of());
+        var model = new com.diagramador.api.ModelResource(id.apply(1), id.apply(2), 3, id.apply(3), List.of(view),
+                List.of(client, supplier), List.of(dependency));
+        return new XmiSemanticEmitter().emit(model).document().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private XmiImportService.XmiImportResult importBytes(Fixture fixture, XmiImportMode mode) throws Exception {

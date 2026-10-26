@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createApiClient } from '../api/client';
 import type { ModelResource, OperationEnvelope, ViewStyleResource } from '../api/types';
 import {
+  buildAnchorStyleRequest,
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
   buildStyleSetRequest,
@@ -301,5 +302,29 @@ describe('applyOptimisticCommand style.set upsert', () => {
     expect(applyOptimisticCommand(withRow, styleEnvelope({ viewId: 'view-1' }))).toBe(withRow);
     expect(applyOptimisticCommand(withRow, styleEnvelope({}))).toBe(withRow);
     expect(withRow.view_style).toHaveLength(1);
+  });
+});
+
+describe('buildAnchorStyleRequest', () => {
+  it('stores the chosen sides as an orthogonal route anchored at the centre of each side', () => {
+    const request = buildAnchorStyleRequest('view-1', 'rel-1', { source: 'S', target: 'W' });
+
+    expect(request.type).toBe('style.set');
+    expect(request.payload).toMatchObject({
+      viewId: 'view-1',
+      targetId: 'rel-1',
+      routing: 'ORTHOGONAL',
+      routeAdjustment: {
+        axis: 'V',
+        corridors: [0],
+        levels: [],
+        anchors: { source: { side: 'S', offset: 0 }, target: { side: 'W', offset: 0 } },
+      },
+    });
+  });
+
+  it('follows the axis of the source side', () => {
+    expect((buildAnchorStyleRequest('v', 'r', { source: 'E', target: 'N' }).payload as { routeAdjustment: { axis: string } })
+      .routeAdjustment.axis).toBe('H');
   });
 });

@@ -14,11 +14,11 @@ export default function EditingLeaseNotice({ conflict, onReclaim, busy }: Editin
   return (
     <aside className="notice editing-lease-notice" role="status">
       <div>
-        <p className="editing-lease-notice-title">In this diagram, {conflict.editorDisplayName} is editing.</p>
+        <p className="editing-lease-notice-title">{conflict.editorDisplayName} está editando este diagrama.</p>
         <p>
           {conflict.reclaimable
-            ? 'The editing lease has expired.'
-            : 'Export is blocked until their lease expires.'}
+            ? 'El permiso de edición ha expirado.'
+            : 'La exportación estará bloqueada hasta que expire su permiso.'}
         </p>
       </div>
       <button
@@ -28,7 +28,7 @@ export default function EditingLeaseNotice({ conflict, onReclaim, busy }: Editin
         disabled={!conflict.reclaimable}
         aria-busy={busy || undefined}
       >
-        {busy ? 'Reclaiming…' : 'Reclaim control'}
+        {busy ? 'Recuperando el control…' : 'Recuperar el control'}
       </button>
     </aside>
   );

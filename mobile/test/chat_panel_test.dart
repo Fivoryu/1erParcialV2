@@ -48,14 +48,14 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.byTooltip('New conversation'));
+      await tester.tap(find.byTooltip('Nueva conversación'));
       await tester.pumpAndSettle();
       expect(c.selected, isNotNull);
       await tester.enterText(
         find.byKey(const ValueKey('chat-message')),
         'Remember this locally',
       );
-      await tester.tap(find.text('Save message'));
+      await tester.tap(find.text('Guardar mensaje'));
       await tester.pumpAndSettle();
       expect(c.messages.single.content, 'Remember this locally');
       expect(c.messages.single.role, 'user');

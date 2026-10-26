@@ -138,7 +138,7 @@ class ChatController extends ChangeNotifier {
     } catch (e) {
       if (epoch == _epoch) {
         _clearStreamingMessage();
-        error = 'History sync is unavailable. Local data is retained. $e';
+        error = 'No se pudo sincronizar el historial. Se conservaron los datos locales. $e';
       }
     } finally {
       if (epoch == _epoch) {
@@ -179,7 +179,7 @@ class ChatController extends ChangeNotifier {
   Future<void> open(LocalConversation conversation) =>
       _run((repository, token, epoch) async {
         if (conversation.scope != repository.scope) {
-          throw StateError('Foreign conversation');
+          throw StateError('La conversación no pertenece a este espacio.');
         }
         final local = await store.messages(repository.scope, conversation.id);
         if (epoch != _epoch) return;
@@ -210,7 +210,7 @@ class ChatController extends ChangeNotifier {
     writeSummary = null;
     _runner?.cancel();
     cancelModel?.call().catchError((Object _) {});
-    error = 'Stop requested. No new tool will be sent; an in-flight model or write may still finish.';
+    error = 'Se solicitó detener la operación. No se enviarán más herramientas; el modelo o la escritura en curso podrían terminar.';
     notifyListeners();
   }
 
@@ -239,7 +239,7 @@ class ChatController extends ChangeNotifier {
     final generate = model;
     if (conversation == null || content.trim().isEmpty) return;
     if (selectedContract == null || generate == null) {
-      throw StateError('The local agent is not connected.');
+      throw StateError('El agente local no está conectado.');
     }
     if (content.length > 16000) {
       throw ArgumentError('Message exceeds 16000 characters');
@@ -293,7 +293,7 @@ class ChatController extends ChangeNotifier {
                 ChatMessage(
                   id: messageId,
                   role: 'assistant',
-                  content: 'Gemma is generating (partial):\n\n$partial',
+                  content: 'Gemma está generando (parcial):\n\n$partial',
                   createdAt: DateTime.now().toUtc(),
                   metadata: const {'streaming': true},
                 ),
@@ -336,7 +336,7 @@ class ChatController extends ChangeNotifier {
       if (epoch != _epoch) return;
       if (!allowed()) return;
       if (receipt['state'] != 'awaiting_confirmation') {
-        throw StateError('Deletion preview unavailable.');
+        throw StateError('La vista previa de eliminación no está disponible.');
       }
       final target = await _tool(
         repository.scope,
@@ -366,7 +366,7 @@ class ChatController extends ChangeNotifier {
         );
         if (epoch != _epoch || !allowed()) return;
         if (receipt['state'] != 'awaiting_confirmation') {
-          throw StateError('Deletion preview unavailable.');
+          throw StateError('La vista previa de eliminación no está disponible.');
         }
         previews.add(receipt);
       }
@@ -424,7 +424,7 @@ class ChatController extends ChangeNotifier {
   }) async {
     void check() {
       if (allowed != null && !allowed()) {
-        throw StateError('Request stopped before dispatch.');
+        throw StateError('La solicitud se detuvo antes de enviarse.');
       }
     }
 
@@ -479,11 +479,11 @@ class ChatController extends ChangeNotifier {
     bool Function()? allowed,
   }) async {
     if (_writeScopes.contains(scope.namespace)) {
-      throw StateError('A backend write remains in flight.');
+      throw StateError('Hay una escritura del backend en curso.');
     }
     void check() {
       if (allowed != null && !allowed()) {
-        throw StateError('Request stopped before write dispatch.');
+        throw StateError('La solicitud se detuvo antes de enviar la escritura.');
       }
     }
 
@@ -494,7 +494,7 @@ class ChatController extends ChangeNotifier {
       (c) => c.path.startsWith('/.agent/receipts/') && !c.complete,
     )) {
       throw StateError(
-        'Inspect the previous unresolved operation before another write.',
+        'Revisa la operación anterior sin resolver antes de enviar otra escritura.',
       );
     }
     final id = preview?['operationId'] as String? ?? _uuid();
@@ -544,7 +544,7 @@ class ChatController extends ChangeNotifier {
       );
       if (!completed) {
         throw StateError(
-          'Operation outcome is unresolved; no automatic resend.',
+          'El resultado de la operación no está resuelto; no se volverá a enviar automáticamente.',
         );
       }
       final status = receipt['status'] as int?;
@@ -692,7 +692,7 @@ class ChatController extends ChangeNotifier {
       );
       if (receipt['state'] != 'completed') {
         throw StateError(
-          'An operation is still unresolved; automatic resend remains disabled.',
+          'Hay una operación sin resolver; el reenvío automático sigue desactivado.',
         );
       }
     }

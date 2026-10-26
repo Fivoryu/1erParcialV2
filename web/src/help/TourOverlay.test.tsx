@@ -18,9 +18,9 @@ describe('TourOverlay', () => {
 
     expect(markup).toContain(getTourStep(0).title);
     expect(markup).toContain(getTourStep(0).explanation);
-    expect(markup).toContain('Previous');
-    expect(markup).toContain('Next');
-    expect(markup).toContain('Finish tour');
+    expect(markup).toContain('Anterior');
+    expect(markup).toContain('Siguiente');
+    expect(markup).toContain('Finalizar recorrido');
     expect(markup).toContain('disabled=""');
   });
 
@@ -35,7 +35,7 @@ describe('TourOverlay', () => {
       />,
     );
 
-    expect(markup).toContain('Restart tour');
+    expect(markup).toContain('Reiniciar recorrido');
     expect(markup).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     expect(markup).not.toMatch(/data-(?:project|section|step)/i);
   });

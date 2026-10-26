@@ -32,10 +32,31 @@ function formatBounds(multiplicity: string, prefix: string): string {
   return notation ? `${prefix}${notation}]` : '';
 }
 
+/** A stereotype as UML 2.5 writes it, in guillemets and lower case: `«use»`. Nothing for none. */
+export function formatStereotype(stereotype: string | null | undefined): string {
+  return stereotype ? `«${stereotype.toLowerCase()}»` : '';
+}
+
+/** The label on the line: the stereotype first, then the name, either of them optional. */
+export function formatRelationshipName(name: string | null | undefined, stereotype: string | null | undefined): string {
+  return [formatStereotype(stereotype), name?.trim() ?? ''].filter(Boolean).join(' ');
+}
+
+/**
+ * Only the three association-like kinds carry end labels. UML gives a generalization, a realization
+ * and a dependency no role or multiplicity, so a `1` there would be noise that reads as a constraint.
+ */
+export function endLabelsApplyTo(kind: string): boolean {
+  return kind === 'ASSOCIATION' || kind === 'AGGREGATION' || kind === 'COMPOSITION';
+}
+
+/**
+ * An association end shows its multiplicity bare (`0..*`), always, `1` included: the brackets
+ * are attribute notation, and on a relationship an absent number reads as unspecified, not as one.
+ */
 export function formatRelationshipEndLabel(end: RelationshipEndResource): string {
   const role = end.role?.trim() ?? '';
-  const cardinality = formatBounds(end.multiplicity, '[');
-  return [role, cardinality].filter(Boolean).join(' ');
+  return [role, formatMultiplicity(end.multiplicity)].filter(Boolean).join(' ');
 }
 
 export function formatVisibility(visibility: string): string {

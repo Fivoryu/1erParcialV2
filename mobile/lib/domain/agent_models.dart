@@ -13,11 +13,11 @@ class AgentAction {
   final String tag;
   final Map<String, dynamic> payload;  static AgentAction parse(String raw) {
     if (raw.length > 32768) {
-      throw const FormatException('Model response exceeds limit.');
+      throw const FormatException('La respuesta del modelo supera el límite permitido.');
     }
     final value = jsonDecode(raw);
     if (value is! Map<String, dynamic>) {
-      throw const FormatException('Expected a JSON object.');
+      throw const FormatException('Se esperaba un objeto JSON.');
     }
     const keys = {
       'answer': {'tag', 'text'},
@@ -35,40 +35,40 @@ class AgentAction {
     if (tag is! String ||
         !keys.containsKey(tag) ||
         value.keys.any((k) => !keys[tag]!.contains(k))) {
-      throw const FormatException('Unsupported action or fields.');
+      throw const FormatException('La acción o sus campos no son compatibles.');
     }
     if (tag == 'answer' || tag == 'clarify') {
       if (value['text'] is! String || (value['text'] as String).isEmpty) {
-        throw const FormatException('Missing text.');
+        throw const FormatException('Falta el texto.');
       }
     } else if (tag == 'calculate') {
       if (value['calculation'] is! Map<String, dynamic>) {
-        throw const FormatException('Missing calculation.');
+        throw const FormatException('Falta el cálculo.');
       }
     } else if (tag == 'query' || tag == 'report') {
       if (value['entity'] is! String) {
-        throw const FormatException('Missing entity.');
+        throw const FormatException('Falta la entidad.');
       }
       if (value.containsKey('filter') && value['filter'] is! List) {
-        throw const FormatException('filter must be a list.');
+        throw const FormatException('El campo filter debe ser una lista.');
       }
     } else {
       if (value['entity'] is! String) {
-        throw const FormatException('Missing entity.');
+        throw const FormatException('Falta la entidad.');
       }
       if (value.containsKey('id') && value['id'] is! String) {
-        throw const FormatException('Invalid identifier.');
+        throw const FormatException('El identificador no es válido.');
       }
       if (tag == 'delete_preview' && value.containsKey('match') && value['match'] is! List) {
-        throw const FormatException('match must be a list of filters.');
+        throw const FormatException('El campo match debe ser una lista de filtros.');
       }
       if ((tag == 'update' && !value.containsKey('id') && !value.containsKey('match')) ||
           (tag == 'delete_preview' && !value.containsKey('id') && !value.containsKey('match'))) {
-        throw const FormatException('Missing identifier.');
+        throw const FormatException('Falta el identificador.');
       }
       if ((tag == 'create' || tag == 'update') &&
           value['values'] is! Map<String, dynamic>) {
-        throw const FormatException('Missing values.');
+        throw const FormatException('Faltan los valores.');
       }
     }
     return AgentAction._(tag, Map.unmodifiable(value));

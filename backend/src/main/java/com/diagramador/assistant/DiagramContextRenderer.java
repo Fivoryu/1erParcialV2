@@ -48,6 +48,13 @@ public class DiagramContextRenderer {
             Map<String, Object> classifierJson = new LinkedHashMap<>();
             classifierJson.put("name", classifier.name());
             classifierJson.put("kind", classifier.kind() == null ? null : classifier.kind().name());
+            if (classifier.store() != null) {
+                // Where the generated backend persists the class; a reference across stores is an id, not a join.
+                classifierJson.put("store", classifier.store().name());
+                if (classifier.storeOverride() != null) {
+                    classifierJson.put("storeSetManually", true);
+                }
+            }
             List<Map<String, Object>> attributes = new ArrayList<>();
             for (ModelResource.AttributeResource attribute : classifier.attributes()) {
                 Map<String, Object> attributeJson = new LinkedHashMap<>();
@@ -76,6 +83,13 @@ public class DiagramContextRenderer {
         for (ModelResource.RelationshipResource relationship : model.relationships()) {
             Map<String, Object> relationshipJson = new LinkedHashMap<>();
             relationshipJson.put("kind", relationship.kind());
+            if (relationship.stereotype() != null) {
+                relationshipJson.put("stereotype", relationship.stereotype());
+            }
+            if (relationship.associationClassId() != null
+                    && classifierNames.containsKey(relationship.associationClassId())) {
+                relationshipJson.put("associationClass", classifierNames.get(relationship.associationClassId()));
+            }
             String source = relationship.ends().size() > 0
                     ? classifierNames.get(relationship.ends().get(0).classifierId()) : null;
             String target = relationship.ends().size() > 1

@@ -327,6 +327,12 @@ public class ModelSnapshotService {
         deleteMissing(parameterRepository, existingParameters, index.parameters.keySet());
         flushAndClear();
 
+        // A class serves one relationship at a time, and the rows are restored one by one: free every link of the
+        // model first, so a class the snapshot gives to one relationship is not still held by another.
+        entityManager.createNativeQuery("""
+                UPDATE diagrammer.uml_relationship SET association_class_id = NULL
+                WHERE model_id = :modelId AND association_class_id IS NOT NULL
+                """).setParameter("modelId", modelId).executeUpdate();
         for (RelationshipResource resource : sortedById(index.relationships.values(), RelationshipResource::id)) {
             upsertRelationship(modelId, resource);
         }
@@ -421,7 +427,8 @@ public class ModelSnapshotService {
                 .toList();
         UUID namespaceId = classifier.getNamespace() == null ? null : classifier.getNamespace().getId();
         return new ClassifierResource(classifier.getId(), classifier.getName(), classifier.getKind(),
-                classifier.isAbstract(), namespaceId, attributes, operations, constraintResources);
+                classifier.isAbstract(), namespaceId, attributes, operations, constraintResources,
+                classifier.getStoreOverride(), null, null);
     }
 
     private ModelResource.AttributeResource attributeResource(UmlAttribute attribute) {
@@ -461,7 +468,7 @@ public class ModelSnapshotService {
                         constraint.getSeverity().name()))
                 .toList();
         return new RelationshipResource(relationship.getId(), relationship.getKind().name(), relationship.getName(),
-                ends, constraintResources);
+                relationship.getStereotype(), relationship.getAssociationClassId(), ends, constraintResources);
     }
 
     private String typeName(TypeReference typeReference) {
@@ -528,14 +535,16 @@ public class ModelSnapshotService {
     private void upsertClassifier(UUID modelId, ClassifierResource resource, UUID namespaceId) {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.classifier
-                    (classifier_id, model_id, namespace_id, kind, name, is_abstract)
-                VALUES (:id, :modelId, :namespaceId, CAST(:kind AS diagrammer.classifier_kind), :name, :isAbstract)
+                    (classifier_id, model_id, namespace_id, kind, name, is_abstract, store_override)
+                VALUES (:id, :modelId, :namespaceId, CAST(:kind AS diagrammer.classifier_kind), :name, :isAbstract,
+                    :storeOverride)
                 ON CONFLICT (classifier_id) DO UPDATE SET
                     model_id = EXCLUDED.model_id,
                     namespace_id = EXCLUDED.namespace_id,
                     kind = EXCLUDED.kind,
                     name = EXCLUDED.name,
-                    is_abstract = EXCLUDED.is_abstract
+                    is_abstract = EXCLUDED.is_abstract,
+                    store_override = EXCLUDED.store_override
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("modelId", modelId)
@@ -543,6 +552,7 @@ public class ModelSnapshotService {
                 .setParameter("kind", resource.kind().name())
                 .setParameter("name", resource.name())
                 .setParameter("isAbstract", resource.isAbstract())
+                .setParameter("storeOverride", resource.storeOverride() == null ? null : resource.storeOverride().name())
                 .executeUpdate();
     }
 
@@ -645,17 +655,23 @@ public class ModelSnapshotService {
     private void upsertRelationship(UUID modelId, RelationshipResource resource) {
         RelationshipKind kind = RelationshipKind.valueOf(resource.kind());
         entityManager.createNativeQuery("""
-                INSERT INTO diagrammer.uml_relationship (relationship_id, model_id, kind, name)
-                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name)
+                INSERT INTO diagrammer.uml_relationship
+                    (relationship_id, model_id, kind, name, stereotype, association_class_id)
+                VALUES (:id, :modelId, CAST(:kind AS diagrammer.relationship_kind), :name, :stereotype,
+                        :associationClassId)
                 ON CONFLICT (relationship_id) DO UPDATE SET
                     model_id = EXCLUDED.model_id,
                     kind = EXCLUDED.kind,
-                    name = EXCLUDED.name
+                    name = EXCLUDED.name,
+                    stereotype = EXCLUDED.stereotype,
+                    association_class_id = EXCLUDED.association_class_id
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("modelId", modelId)
                 .setParameter("kind", kind.name())
                 .setParameter("name", resource.name())
+                .setParameter("stereotype", resource.stereotype())
+                .setParameter("associationClassId", resource.associationClassId())
                 .executeUpdate();
     }
 

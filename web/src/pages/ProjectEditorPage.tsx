@@ -45,7 +45,6 @@ import { useEditingLease } from '../collaboration/useEditingLease';
 import UmlCanvas from '../diagram/UmlCanvas';
 import { useUndoRedoShortcuts } from '../diagram/useUndoRedoShortcuts';
 import PropertiesPanel from '../diagram/PropertiesPanel';
-import AssistantPanel from '../assistant/AssistantPanel';
 import { createDiagramNames } from '../assistant/assistantNames';
 import { chatAskErrorMessage } from '../assistant/chatAskFailure';
 import GenerationPanel from '../generation/GenerationPanel';
@@ -86,17 +85,17 @@ function messageFor(error: unknown): string {
   if (error instanceof ApiTransportError) {
     return error.message;
   }
-  return 'This project could not be opened. Check the connection and try again.';
+  return 'No se pudo abrir el proyecto. Revisa la conexión e inténtalo de nuevo.';
 }
 
 function messageForOutcome(outcome: { kind: string; diagnostics?: Array<{ message: string }> }): string {
   if (outcome.kind === 'rejected') {
-    return outcome.diagnostics?.[0]?.message ?? 'The change was rejected by the model.';
+    return outcome.diagnostics?.[0]?.message ?? 'El modelo rechazó el cambio.';
   }
   if (outcome.kind === 'conflict') {
-    return 'The change conflicts with the current model revision.';
+    return 'El cambio entra en conflicto con la revisión actual del modelo.';
   }
-  return 'The change could not be applied.';
+  return 'No se pudo aplicar el cambio.';
 }
 
 function selectedTargetElementId(selection: CanvasSelection | null): string | null {
@@ -196,8 +195,6 @@ export default function ProjectEditorPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [openSection, setOpenSection] = useState<EditorSectionId | null>(null);
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  const [assistantSeed, setAssistantSeed] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStepIndex, setTourStepIndex] = useState(0);
   const modelRef = useRef<ModelResource | null>(null);
@@ -287,7 +284,7 @@ export default function ProjectEditorPage() {
   useEffect(() => {
     let active = true;
     if (!projectId) {
-      setError('A project was not selected.');
+      setError('No se seleccionó ningún proyecto.');
       setLoading(false);
       return () => {
         active = false;
@@ -444,7 +441,7 @@ export default function ProjectEditorPage() {
       setChatSessionsLoading(false);
       setChatLoading(false);
       if (projectId && modelLoaded) {
-        setChatError('This diagram has no default view for chat sessions.');
+        setChatError('Este diagrama no tiene una vista predeterminada para las sesiones de chat.');
       }
       return () => {
         active = false;
@@ -465,7 +462,7 @@ export default function ProjectEditorPage() {
           chatSessionIdRef.current,
         );
         setChatSessionId(session?.id ?? null);
-        setChatError(session ? null : 'No chat session is available for this diagram yet.');
+        setChatError(session ? null : 'Aún no hay ninguna sesión de chat disponible para este diagrama.');
       })
       .catch((cause: unknown) => {
         if (active) {
@@ -781,14 +778,12 @@ export default function ProjectEditorPage() {
   const openTour = useCallback(() => {
     setTourStepIndex(0);
     setOpenSection(null);
-    setAssistantOpen(false);
     setTourOpen(true);
   }, []);
   const changeTourStep = useCallback((requestedIndex: number) => {
     const nextIndex = clampTourStepIndex(requestedIndex);
     setTourStepIndex(nextIndex);
     setOpenSection(getTourStep(nextIndex).section ?? null);
-    setAssistantOpen(false);
   }, []);
   const finishTour = useCallback(() => {
     if (projectId) {
@@ -797,17 +792,14 @@ export default function ProjectEditorPage() {
     setTourOpen(false);
   }, [projectId]);
 
-  // `openSection` and `assistantOpen` are independent, so opening the assistant
-  // from the floating button must close any open section dialog first: two open
-  // dialogs would mean two backdrops, two focus traps and two scroll locks.
+  // The assistant has no panel of its own: it lives in the team chat, so every request, proposal and
+  // decision is visible to all collaborators of the diagram. Opening it opens that chat, with the draft
+  // the caller prepared (a review finding to explain or fix) when there is one.
   const handleOpenAssistant = useCallback((seed?: string) => {
-    setOpenSection(null);
-    setAssistantSeed(seed ?? null);
-    setAssistantOpen(true);
-  }, []);
-  const closeAssistant = useCallback(() => {
-    setAssistantOpen(false);
-    setAssistantSeed(null);
+    if (seed !== undefined) {
+      setChatDraft(seed);
+    }
+    setOpenSection('collaboration');
   }, []);
   const diagramNames = useMemo(() => (model ? createDiagramNames(model) : null), [model]);
   const touchedElements = useMemo(() => groupTouchesByElement(presence), [presence]);
@@ -983,7 +975,7 @@ export default function ProjectEditorPage() {
         return;
       }
       setCompactMessage(outcome.compacted
-        ? 'Context compacted. Original messages remain available.'
+        ? 'Se compactó el contexto. Los mensajes originales siguen disponibles.'
         : outcome.reason);
       await refreshContextMeter(sessionId);
     } catch (cause: unknown) {
@@ -1010,8 +1002,8 @@ export default function ProjectEditorPage() {
         return;
       }
       setMemoryMessage(result.consumed
-        ? `Extraction complete: ${result.memoriesCreated} memories created, ${result.conflictsMarked} conflicts, ${result.replacements} replacements.`
-        : 'No pending material was available to extract.');
+        ? `Extracción completa: se crearon ${result.memoriesCreated} recuerdos, se marcaron ${result.conflictsMarked} conflictos y se hicieron ${result.replacements} reemplazos.`
+        : 'No había contenido pendiente para extraer.');
       await refreshDiagramMemories();
     } catch (cause: unknown) {
       if (currentProjectIdRef.current === projectId) {
@@ -1028,7 +1020,7 @@ export default function ProjectEditorPage() {
     if (!projectId || !defaultViewId || currentUserRole !== 'OWNER') {
       return;
     }
-    if (!window.confirm('Forget this diagram memory? Chat history will remain unchanged.')) {
+    if (!window.confirm('¿Olvidar este recuerdo del diagrama? El historial del chat no cambiará.')) {
       return;
     }
     setMemoryError(null);
@@ -1036,7 +1028,7 @@ export default function ProjectEditorPage() {
     try {
       const result = await api.forgetMemory(projectId, defaultViewId, memoryId);
       if (currentProjectIdRef.current === projectId) {
-        setMemoryMessage(`${result.deletedMemories} diagram memory forgotten. Chat history was not changed.`);
+        setMemoryMessage(`Se olvidaron ${result.deletedMemories} recuerdos del diagrama. El historial del chat no cambió.`);
         await refreshDiagramMemories();
       }
     } catch (cause: unknown) {
@@ -1050,7 +1042,7 @@ export default function ProjectEditorPage() {
     if (!projectId || !defaultViewId || currentUserRole !== 'OWNER') {
       return;
     }
-    if (!window.confirm('Forget all memory for this diagram? Chat history will remain unchanged.')) {
+    if (!window.confirm('¿Olvidar todos los recuerdos de este diagrama? El historial del chat no cambiará.')) {
       return;
     }
     setMemoryError(null);
@@ -1058,7 +1050,7 @@ export default function ProjectEditorPage() {
     try {
       const result = await api.forgetAllMemories(projectId, defaultViewId);
       if (currentProjectIdRef.current === projectId) {
-        setMemoryMessage(`${result.deletedMemories} diagram memories forgotten. Chat history was not changed.`);
+        setMemoryMessage(`Se olvidaron ${result.deletedMemories} recuerdos del diagrama. El historial del chat no cambió.`);
         await refreshDiagramMemories();
       }
     } catch (cause: unknown) {
@@ -1073,7 +1065,7 @@ export default function ProjectEditorPage() {
       return;
     }
     const sessionId = chatSessionId;
-    if (!window.confirm('Delete history for this session? Diagram memory will remain unchanged.')) {
+    if (!window.confirm('¿Eliminar el historial de esta sesión? Los recuerdos del diagrama no cambiarán.')) {
       return;
     }
     setChatError(null);
@@ -1082,7 +1074,7 @@ export default function ProjectEditorPage() {
       const result = await api.deleteSessionHistory(projectId, sessionId);
       if (currentProjectIdRef.current === projectId && chatSessionIdRef.current === sessionId) {
         setChatHistory([]);
-        setChatHistoryMessage(`${result.deletedMessages} messages deleted. Diagram memory was not changed.`);
+        setChatHistoryMessage(`Se eliminaron ${result.deletedMessages} mensajes. Los recuerdos del diagrama no cambiaron.`);
         setChatDraft('');
         void refreshContextMeter(sessionId);
       }
@@ -1103,7 +1095,7 @@ export default function ProjectEditorPage() {
       if (!relationship) {
         return;
       }
-      if (!window.confirm('Delete this relationship and its ends? This cannot be undone.')) {
+      if (!window.confirm('¿Eliminar esta relación y sus extremos? Esta acción no se puede deshacer.')) {
         return;
       }
       dispatchCommand(buildRelationshipDeleteRequest(relationship));
@@ -1116,7 +1108,7 @@ export default function ProjectEditorPage() {
         return;
       }
       if (cascadeCount > 1 && !window.confirm(
-        `Delete this class and its ${cascadeCount - 1} dependent UML elements? This cannot be undone.`,
+        `¿Eliminar esta clase y sus ${cascadeCount - 1} elementos UML dependientes? Esta acción no se puede deshacer.`,
       )) {
         return;
       }
@@ -1139,37 +1131,37 @@ export default function ProjectEditorPage() {
   return (
     <main className="page-shell">
       <header className="topbar">
-        <Link className="brand" to="/" aria-label="Class Diagrammer home">
+        <Link className="brand" to="/" aria-label="Inicio de Class Diagrammer">
           <span className="brand-mark" aria-hidden="true">C</span>
           <span>Class Diagrammer</span>
         </Link>
-        <Link className="topbar-link" to="/">All projects <span aria-hidden="true">↗</span></Link>
+        <Link className="topbar-link" to="/">Todos los proyectos <span aria-hidden="true">↗</span></Link>
       </header>
 
       <div className="content-wrap editor-wrap">
         {loading ? (
-          <p className="quiet-state" role="status">Opening project…</p>
+          <p className="quiet-state" role="status">Abriendo proyecto…</p>
         ) : error && !model ? (
           <div className="notice notice-error" role="alert">
             <span>{error}</span>
-            <Link className="text-button" to="/">Back to projects</Link>
+            <Link className="text-button" to="/">Volver a los proyectos</Link>
           </div>
         ) : project && model ? (
           <>
             <section className="editor-heading" aria-labelledby="project-title">
               <div>
-                <p className="eyebrow">Project workspace</p>
+                <p className="eyebrow">Espacio de trabajo del proyecto</p>
                 <h1 id="project-title">{project.name}</h1>
                 {project.description && <p className="lede">{project.description}</p>}
               </div>
-              <div className="diagram-toolbar-actions" aria-label="Undo and redo">
+              <div className="diagram-toolbar-actions" aria-label="Deshacer y rehacer">
                 <button
                   className="button button-secondary button-compact"
                   type="button"
                   disabled={!undoRedo.canUndo || undoRedo.busy}
                   onClick={() => undoRedo.undo()}
                 >
-                  Undo
+                  Deshacer
                 </button>
                 <button
                   className="button button-secondary button-compact"
@@ -1177,12 +1169,12 @@ export default function ProjectEditorPage() {
                   disabled={!undoRedo.canRedo || undoRedo.busy}
                   onClick={() => undoRedo.redo()}
                 >
-                  Redo
+                  Rehacer
                 </button>
                 <div className="revision-chip" aria-live="polite">
                   <span className="status-dot" />
-                  Revision {model.revision}
-                  <span className="revision-status">{pendingCount > 0 ? 'Saving changes…' : 'Saved'}</span>
+                  Revisión {model.revision}
+                  <span className="revision-status">{pendingCount > 0 ? 'Guardando cambios…' : 'Guardado'}</span>
                 </div>
               </div>
             </section>
@@ -1190,7 +1182,7 @@ export default function ProjectEditorPage() {
             {error && (
               <div className="notice notice-error" role="alert">
                 <span>{error}</span>
-                <button className="text-button" onClick={() => setError(null)} type="button">Dismiss</button>
+                <button className="text-button" onClick={() => setError(null)} type="button">Descartar</button>
               </div>
             )}
 
@@ -1201,7 +1193,7 @@ export default function ProjectEditorPage() {
             />
             {!tourOpen && (
               <button className="text-button" onClick={openTour} type="button">
-                Show editor tour
+                Mostrar recorrido del editor
               </button>
             )}
 
@@ -1354,28 +1346,16 @@ export default function ProjectEditorPage() {
               />
             </Modal>
 
-            <Modal
-              open={assistantOpen}
-              title="Asistente de modelo"
-              size="md"
-              titleVisible={false}
-              onClose={closeAssistant}
-            >
-              <AssistantPanel
-                currentRevision={model.revision}
-                initialUtterance={assistantSeed ?? undefined}
-                model={model}
-                projectId={project.id}
-              />
-            </Modal>
-
-            <FloatingAssistantButton open={assistantOpen} onOpen={handleOpenAssistant} />
+            <FloatingAssistantButton
+              open={activeSection?.id === 'collaboration'}
+              onOpen={() => handleOpenAssistant()}
+            />
             <HelpGuide
               api={api}
               openSection={openSection}
               onNavigateToSection={handleNavigateToSection}
             />
-            {tourOpen && openSection === null && !assistantOpen && project.id === projectId && (
+            {tourOpen && openSection === null && project.id === projectId && (
               <TourOverlay
                 stepIndex={tourStepIndex}
                 onPrevious={() => changeTourStep(previousTourStepIndex(tourStepIndex))}

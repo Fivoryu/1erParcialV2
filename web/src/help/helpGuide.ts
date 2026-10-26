@@ -32,7 +32,7 @@ export function parseHelpGuideResponse(value: unknown, allowedSlugs: readonly st
     || typeof value.answer !== 'string'
     || value.answer.trim().length === 0
     || !Array.isArray(value.suggestedSlugs)) {
-    throw new Error('The help guide returned an invalid response.');
+    throw new Error('La guía de ayuda devolvió una respuesta no válida.');
   }
 
   const allowed = new Set(allowedSlugs);
@@ -50,23 +50,23 @@ export function classifyHelpGuideError(error: unknown): Extract<HelpGuidePanelSt
   if (isRecord(error) && error.code === 'PROVIDER_DISABLED') {
     return {
       kind: 'unsupported',
-      message: 'The help guide is not available on this deployment because local AI support is disabled.',
+      message: 'La guía de ayuda no está disponible en esta implementación porque la IA local está deshabilitada.',
     };
   }
   return {
     kind: 'error',
     message: error instanceof Error && error.message.trim().length > 0
       ? error.message
-      : 'The help guide could not answer just now. Please try again.',
+      : 'La guía de ayuda no pudo responder en este momento. Inténtalo de nuevo.',
   };
 }
 
 export function getHelpGuideStatusText(state: HelpGuidePanelState): string | null {
   switch (state.kind) {
     case 'idle':
-      return 'Ask about features described in the app’s help topics.';
+      return 'Pregunta sobre las funciones descritas en los temas de ayuda de la aplicación.';
     case 'loading':
-      return 'Preparing an answer…';
+      return 'Preparando una respuesta…';
     case 'answered':
       return null;
     case 'error':

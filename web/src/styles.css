@@ -1158,6 +1158,7 @@ h3 {
 .property-form input,
 .property-form select,
 .classifier-package-select,
+.classifier-store-select,
 .property-inline-form input,
 .property-inline-form select,
 .property-constraint-form input,
@@ -1186,6 +1187,71 @@ h3 {
 
 .property-check input {
   accent-color: var(--accent);
+}
+
+.property-store {
+  margin: 12px 0 4px;
+}
+
+.property-store-reason {
+  margin: 8px 0 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.property-store-reason .store-badge {
+  margin-top: 1px;
+  flex: 0 0 auto;
+}
+
+/* Where a class is persisted: cool for relational, warm for document, never the UML class colors. */
+.store-badge {
+  --store-ink: var(--accent-dark);
+  --store-wash: var(--accent-wash);
+  --store-line: #b7d3cc;
+  position: relative;
+  max-width: 100%;
+  padding: 2px 7px 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--store-line);
+  border-radius: 999px;
+  background: var(--store-wash);
+  color: var(--store-ink);
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.store-badge--document {
+  --store-ink: #7a4d00;
+  --store-wash: #fdf2dc;
+  --store-line: #ecd29b;
+}
+
+.store-badge-icon {
+  flex: 0 0 auto;
+}
+
+/* A fixed choice carries a small pin so it reads apart from an automatic one. */
+.store-badge-pin {
+  width: 5px;
+  height: 5px;
+  margin-left: 1px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.uml-class-heading .store-badge {
+  margin-top: 4px;
 }
 
 .property-actions {
@@ -3978,4 +4044,25 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* The hand-made bends of a route are paused when a layout change makes them stop fitting; the chip says so and
+   lets the user discard them. It sits on the edge like the other controls, so it opts back into pointer events. */
+.uml-route-paused {
+  position: absolute;
+  z-index: 7;
+  padding: 2px 8px;
+  border: 1px solid #b7791f;
+  border-radius: 999px;
+  background: #fff8e6;
+  color: #7a4d0a;
+  font-size: 10px;
+  line-height: 1.4;
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.uml-route-paused:hover,
+.uml-route-paused:focus-visible {
+  background: #ffefc2;
 }

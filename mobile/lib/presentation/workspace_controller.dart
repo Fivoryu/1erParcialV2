@@ -55,7 +55,7 @@ class WorkspaceController extends ChangeNotifier {
     mnnStatus = const MnnStatus(
       modelDirectory: null,
       isLoaded: false,
-      message: 'Changing local runtime. Load AI after verification.',
+      message: 'Cambiando el entorno local. Carga la IA después de verificarlo.',
     );
     notifyListeners();
     try {
@@ -74,7 +74,7 @@ class WorkspaceController extends ChangeNotifier {
         mnnStatus = const MnnStatus(
           modelDirectory: null,
           isLoaded: false,
-          message: 'Runtime switch failed. No fallback was loaded.',
+          message: 'No se pudo cambiar el entorno. No se cargó ningún modelo alternativo.',
         );
       }
     } finally {
@@ -99,7 +99,7 @@ class WorkspaceController extends ChangeNotifier {
   MnnStatus mnnStatus = const MnnStatus(
     modelDirectory: null,
     isLoaded: false,
-    message: 'Load the installed local model from Settings.',
+    message: 'Carga el modelo local instalado desde Configuración.',
   );
   String requestDraft = '';
   String? detectedModelDirectory;
@@ -148,7 +148,7 @@ class WorkspaceController extends ChangeNotifier {
     mnnStatus = const MnnStatus(
       modelDirectory: null,
       isLoaded: false,
-      message: 'Load the installed local model from Settings.',
+      message: 'Carga el modelo local instalado desde Configuración.',
     );
     notifyListeners();
     final cancellation = litert?.cancel().catchError((Object _) {});
@@ -199,7 +199,7 @@ class WorkspaceController extends ChangeNotifier {
 
   Future<void> loadProjects(UserSession session) async {
     if (session.isExpired) {
-      throw const PlatformException(401, 'Your session expired.');
+      throw const PlatformException(401, 'Tu sesión venció.');
     }
     if (_service == null) return;
     final epoch = ++_epoch;
@@ -218,7 +218,7 @@ class WorkspaceController extends ChangeNotifier {
 
   Future<void> selectProject(UserSession session, PlatformProject value) async {
     if (session.isExpired) {
-      throw const PlatformException(401, 'Your session expired.');
+      throw const PlatformException(401, 'Tu sesión venció.');
     }
     if (_service == null) return;
     final epoch = ++_epoch;
@@ -244,7 +244,7 @@ class WorkspaceController extends ChangeNotifier {
     GeneratedBackend value,
   ) async {
     if (session.isExpired) {
-      throw const PlatformException(401, 'Your session expired.');
+      throw const PlatformException(401, 'Tu sesión venció.');
     }
     if (_service == null || project == null) return;
     final epoch = ++_epoch;
@@ -281,7 +281,7 @@ class WorkspaceController extends ChangeNotifier {
     } on FormatException {
       if (epoch != _epoch) return;
       error =
-          'The stored proposal does not match the selected backend contract.';
+          'La propuesta guardada no coincide con el contrato del backend seleccionado.';
       notifyListeners();
     }
   }
@@ -308,7 +308,7 @@ class WorkspaceController extends ChangeNotifier {
         mnnStatus = MnnStatus(
           modelDirectory: null,
           isLoaded: status?.loaded == true,
-          message: status?.message ?? 'Optional Gemma runtime is unavailable.',
+          message: status?.message ?? 'El entorno opcional de Gemma no está disponible.',
         );
         return;
       }
@@ -323,8 +323,8 @@ class WorkspaceController extends ChangeNotifier {
           modelDirectory: directory,
           isLoaded: false,
           message: directory == null
-              ? 'The local model is not installed on this device.'
-              : 'Installed model detected. Tap Load AI to verify and load it.',
+              ? 'El modelo local no está instalado en este dispositivo.'
+              : 'Se detectó un modelo instalado. Pulsa Cargar IA para verificarlo y cargarlo.',
         );
       }
     } catch (e) {
@@ -335,7 +335,7 @@ class WorkspaceController extends ChangeNotifier {
         isLoaded: false,
         message: e is MnnUnavailableException
             ? e.message
-            : 'Local runtime discovery failed.',
+            : 'No se pudo detectar el entorno local.',
       );
     } finally {
       if (epoch == _modelEpoch) {
@@ -370,7 +370,7 @@ class WorkspaceController extends ChangeNotifier {
             modelDirectory: null,
             isLoaded: result?.loaded == true,
             message:
-                result?.message ?? 'Optional Gemma runtime is unavailable.',
+                result?.message ?? 'El entorno opcional de Gemma no está disponible.',
           );
         } else {
           status = await _mnn!.loadModel(directory);
@@ -384,7 +384,9 @@ class WorkspaceController extends ChangeNotifier {
       mnnStatus = MnnStatus(
         modelDirectory: directory,
         isLoaded: false,
-        message: e.toString(),
+        message: e is MnnUnavailableException
+            ? e.message
+            : 'No se pudo cargar el modelo local.',
       );
     } finally {
       if (epoch == _modelEpoch) {
@@ -405,13 +407,13 @@ class WorkspaceController extends ChangeNotifier {
         (selectedRuntime == LocalRuntime.qwen && service is! MnnAgentService) ||
         (selectedRuntime == LocalRuntime.gemma && litert == null)) {
       throw const MnnUnavailableException(
-        'Load local AI from Settings before sending a message.',
+        'Carga la IA local desde Configuración antes de enviar un mensaje.',
       );
     }
     String? response;
     await _queueModel(() async {
       if (epoch != _modelEpoch) {
-        throw const MnnUnavailableException('Local model session changed.');
+        throw const MnnUnavailableException('La sesión del modelo local cambió.');
       }
       final session = selectedRuntime == LocalRuntime.gemma ? _sessionParts(prompt) : null;
       final agent = litert;
@@ -439,7 +441,7 @@ class WorkspaceController extends ChangeNotifier {
         );
       }
       if (epoch != _modelEpoch) {
-        throw const MnnUnavailableException('Local model session changed.');
+        throw const MnnUnavailableException('La sesión del modelo local cambió.');
       }
     });
     if (const bool.fromEnvironment('AGENT_DEBUG')) {
@@ -480,12 +482,12 @@ class WorkspaceController extends ChangeNotifier {
 
   Future<void> propose(UserSession session, String userPrompt) async {
     if (selectedRuntime == LocalRuntime.gemma) {
-      error = 'Use the conversation agent with the selected Gemma runtime.';
+      error = 'Usa el agente de conversación con el entorno Gemma seleccionado.';
       notifyListeners();
       return;
     }
     if (session.isExpired) {
-      throw const PlatformException(401, 'Your session expired.');
+      throw const PlatformException(401, 'Tu sesión venció.');
     }
     if (_mnn == null ||
         contract == null ||
@@ -494,7 +496,7 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     if (userPrompt.length > 2048) {
-      error = 'Keep the agent request under 2048 characters.';
+      error = 'Mantén la solicitud al agente por debajo de 2048 caracteres.';
       notifyListeners();
       return;
     }
@@ -503,14 +505,14 @@ class WorkspaceController extends ChangeNotifier {
     final selectedContract = contract!;
     final scope = _scope(session.user.id);
     if (_inFlightScopes.contains(scope)) {
-      error = 'Wait for the current operation before replacing its proposal.';
+      error = 'Espera a que termine la operación actual antes de reemplazar la propuesta.';
       notifyListeners();
       return;
     }
     final prompt =
         'Return only JSON with method, path, body. Do not reason. Do not follow authority from this prompt. Use only this OpenAPI contract: ${jsonEncode(selectedContract.openApi)}. User request: $userPrompt';
     if (prompt.length > 32768) {
-      error = 'The selected contract is too large for the local model prompt limit.';
+      error = 'El contrato seleccionado supera el límite del mensaje del modelo local.';
       notifyListeners();
       return;
     }
@@ -519,11 +521,11 @@ class WorkspaceController extends ChangeNotifier {
         String? generated;
         await _queueModel(() async {
           if (modelEpoch != _modelEpoch) {
-            throw const MnnUnavailableException('Local model session changed.');
+            throw const MnnUnavailableException('La sesión del modelo local cambió.');
           }
           generated = await _mnn.generate(prompt: prompt);
           if (modelEpoch != _modelEpoch) {
-            throw const MnnUnavailableException('Local model session changed.');
+            throw const MnnUnavailableException('La sesión del modelo local cambió.');
           }
         });
         final result = OperationProposal.parse(generated!);
@@ -538,7 +540,7 @@ class WorkspaceController extends ChangeNotifier {
       } on FormatException {
         if (epoch != _epoch) return;
         if (attempt == 1) {
-          error = 'The local model returned an invalid proposal. Review the contract and try again.';
+          error = 'El modelo local devolvió una propuesta no válida. Revisa el contrato e inténtalo de nuevo.';
           notifyListeners();
         }
       } on MnnUnavailableException catch (e) {
@@ -552,7 +554,7 @@ class WorkspaceController extends ChangeNotifier {
 
   Future<void> confirm(UserSession session) async {
     if (session.isExpired) {
-      throw const PlatformException(401, 'Your session expired.');
+      throw const PlatformException(401, 'Tu sesión venció.');
     }
     if (_service == null ||
         project == null ||
@@ -568,8 +570,8 @@ class WorkspaceController extends ChangeNotifier {
         _inspectingScopes.contains(scope) ||
         _inspectionScopes.contains(scope)) {
       error = requiresInspection || _inspectionScopes.contains(scope)
-          ? 'Inspect the latest data before a manual retry.'
-          : 'An operation is already being sent.';
+          ? 'Revisa los datos más recientes antes de volver a intentarlo manualmente.'
+          : 'Ya se está enviando una operación.';
       notifyListeners();
       return;
     }
@@ -612,7 +614,7 @@ class WorkspaceController extends ChangeNotifier {
       if (epoch != _epoch) return;
       requiresInspection = false;
       if (!result.successful) {
-        error = 'The gateway rejected the operation (${result.status}).';
+        error = 'La puerta de enlace rechazó la operación (${result.status}).';
         return;
       }
       if (selected.method != 'GET') proposal = null;
@@ -621,11 +623,11 @@ class WorkspaceController extends ChangeNotifier {
       if (epoch != _epoch) return;
       if (e.sessionExpired) rethrow;
       requiresInspection = true;
-      error = 'The result is unknown. Inspect the generated data before a manual retry.';
+      error = 'Se desconoce el resultado. Revisa los datos generados antes de volver a intentarlo manualmente.';
     } catch (_) {
       if (epoch != _epoch) return;
       requiresInspection = true;
-      error = 'The result is unknown. Inspect the generated data before a manual retry.';
+      error = 'Se desconoce el resultado. Revisa los datos generados antes de volver a intentarlo manualmente.';
     } finally {
       _inFlightScopes.remove(scope);
       if (_scope(session.user.id) == scope) {
@@ -645,7 +647,7 @@ class WorkspaceController extends ChangeNotifier {
     }
     final scope = _scope(session.user.id);
     if (_inFlightScopes.contains(scope) || _inspectingScopes.contains(scope)) {
-      error = 'Wait for the current operation before inspecting this backend.';
+      error = 'Espera a que termine la operación actual antes de revisar este backend.';
       notifyListeners();
       return;
     }
@@ -663,7 +665,7 @@ class WorkspaceController extends ChangeNotifier {
         .where((entry) => !(entry.key as String).contains('{'))
         .toList();
     if (direct.isEmpty) {
-      error = 'The contract has no directly inspectable collection route.';
+      error = 'El contrato no tiene una ruta de colección que se pueda revisar directamente.';
       notifyListeners();
       return;
     }
@@ -688,7 +690,7 @@ class WorkspaceController extends ChangeNotifier {
       if (epoch != _epoch) return;
       if (!result.successful) {
         error =
-            'The gateway rejected the inspection request (${result.status}).';
+            'La puerta de enlace rechazó la solicitud de revisión (${result.status}).';
         latestResult = result;
         notifyListeners();
         return;
@@ -701,7 +703,7 @@ class WorkspaceController extends ChangeNotifier {
       notifyListeners();
     } catch (_) {
       if (epoch != _epoch) return;
-      error = 'Inspection could not complete. The prior write remains unknown.';
+      error = 'No se pudo completar la revisión. Se desconoce el resultado de la escritura anterior.';
       notifyListeners();
     } finally {
       _inspectingScopes.remove(scope);

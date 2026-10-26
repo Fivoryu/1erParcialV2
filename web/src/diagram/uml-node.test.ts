@@ -193,13 +193,13 @@ describe('UML class node presentation', () => {
     const interfaceMarkup = renderClassifier(modelFixture.classifiers[1]!);
 
     expect(markup).toContain('Account');
-    expect(markup).toContain('<i><span aria-label="Edit class name" class="uml-editable-label" title="Double-click to edit">Account</span></i>');
+    expect(markup).toContain('<i><span aria-label="Editar nombre de la clase" class="uml-editable-label" title="Haz doble clic para editar">Account</span></i>');
     expect(markup).toContain('- email: String = &#x27;guest@example.test&#x27;');
     expect(markup).not.toContain('String [1]');
     expect(markup).not.toContain('[1]');
     expect(markup).toContain('+ validate(): boolean');
     expect(markup).toContain('{email is not empty}');
-    expect(interfaceMarkup).toContain('«interface»');
+    expect(interfaceMarkup).toContain('«interfaz»');
     expect(interfaceMarkup).toContain('Readable');
 
     for (const rendered of [markup, interfaceMarkup]) {
@@ -334,11 +334,11 @@ describe('UML class node presentation', () => {
       onSelect: () => undefined,
     }));
 
-    expect(markup).toContain('Constraint expression');
-    expect(markup).toContain('Constraint severity');
-    expect(markup).toContain('Save constraint');
-    expect(markup).toContain('Warning');
-    expect(markup).toContain('Info');
+    expect(markup).toContain('Expresión');
+    expect(markup).toContain('Gravedad');
+    expect(markup).toContain('Guardar restricción');
+    expect(markup).toContain('Advertencia');
+    expect(markup).toContain('Información');
   });
 
   it('does not offer attribute values the backend rejects', () => {
@@ -351,14 +351,14 @@ describe('UML class node presentation', () => {
       onSelect: () => undefined,
     }));
 
-    expect(markup).toContain('Public (+)');
-    expect(markup).toContain('Private (-)');
+    expect(markup).toContain('Público (+)');
+    expect(markup).toContain('Privado (-)');
     expect(markup).toContain('0..1');
-    expect(markup).not.toContain('Protected');
-    expect(markup).not.toContain('Package');
+    expect(markup).not.toContain('Protegido');
+    expect(markup).not.toContain('Paquete');
     expect(markup).not.toContain('RANGE');
-    expect(markup).not.toContain('Static attribute');
-    expect(markup).not.toContain('Abstract attribute');
+    expect(markup).not.toContain('Atributo estático');
+    expect(markup).not.toContain('Atributo abstracto');
   });
 });
 
@@ -391,7 +391,7 @@ describe('UML enumeration', () => {
   it('renders the enumeration stereotype and its literals without type or visibility', () => {
     const markup = renderClassifier(enumeration);
 
-    expect(markup).toContain('«enumeration»');
+    expect(markup).toContain('«enumeración»');
     expect(markup).toContain('MANANA');
     expect(markup).not.toContain('+ MANANA');
   });
@@ -406,10 +406,10 @@ describe('UML enumeration', () => {
       onSelect: () => undefined,
     }));
 
-    expect(markup).toContain('Enumeration');
-    expect(markup).toContain('Add literal');
-    expect(markup).not.toContain('Add attribute');
-    expect(markup).not.toContain('Add operation');
+    expect(markup).toContain('Enumeración');
+    expect(markup).toContain('Agregar literal');
+    expect(markup).not.toContain('Agregar atributo');
+    expect(markup).not.toContain('Agregar operación');
   });
 
   it('edits a literal without a type, visibility or multiplicity', () => {
@@ -421,8 +421,8 @@ describe('UML enumeration', () => {
       onSelect: () => undefined,
     }));
 
-    expect(markup).toContain('Enumeration literal');
+    expect(markup).toContain('Literal de enumeración');
     expect(markup).not.toContain('attribute-type');
-    expect(markup).not.toContain('Visibility');
+    expect(markup).not.toContain('Visibilidad');
   });
 });

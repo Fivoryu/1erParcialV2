@@ -25,7 +25,7 @@ export async function attemptBranchCheckout(
     return {
       kind: 'error',
       currentBranch,
-      message: vcsErrorMessage(cause, 'The branch could not be switched.'),
+      message: vcsErrorMessage(cause, 'No se pudo cambiar de rama.'),
     };
   }
 }
@@ -72,8 +72,8 @@ export function BranchesPanelView({
     <section className="surface vcs-panel branches-panel" aria-labelledby="vcs-branches-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Versioning</p>
-          <h2 id="vcs-branches-title">Branches</h2>
+          <p className="eyebrow">Versionado</p>
+          <h2 id="vcs-branches-title">Ramas</h2>
         </div>
         <span className="count-chip vcs-count-chip">{branches.length}</span>
       </div>
@@ -81,13 +81,13 @@ export function BranchesPanelView({
       {error && (
         <div className="notice notice-error" role="alert">
           <span>{error}</span>
-          <button className="text-button" type="button" onClick={onDismissError}>Dismiss</button>
+          <button className="text-button" type="button" onClick={onDismissError}>Descartar</button>
         </div>
       )}
       {notice && <p className="generation-notice" role="status">{notice}</p>}
       <form className="vcs-branch-form" onSubmit={submitBranch}>
         <label className="field-label">
-          New branch name
+          Nombre de la nueva rama
           <input
             autoComplete="off"
             onChange={(event) => setName(event.target.value)}
@@ -97,25 +97,25 @@ export function BranchesPanelView({
           />
         </label>
         <label className="field-label">
-          Start from
+          Crear desde
           <select
-            aria-label="Starting branch"
+            aria-label="Rama de origen"
             onChange={(event) => setFromBranch(event.target.value)}
             value={fromBranch}
           >
-            <option value="">Current branch{status ? ` (${status.branch})` : ''}</option>
+            <option value="">Rama actual{status ? ` (${status.branch})` : ''}</option>
             {branches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name}</option>)}
           </select>
         </label>
         <button className="button button-primary" disabled={busy || loading} type="submit">
-          {busy && busyBranch === null ? 'Working…' : 'Create branch'}
+          {busy && busyBranch === null ? 'Procesando…' : 'Crear rama'}
         </button>
       </form>
 
       {loading ? (
-        <p className="quiet-state" role="status">Loading branches…</p>
+        <p className="quiet-state" role="status">Cargando las ramas…</p>
       ) : branches.length === 0 ? (
-        <p className="quiet-state">No branches are available; create a branch to start working.</p>
+        <p className="quiet-state">No hay ramas disponibles. Crea una para empezar a trabajar.</p>
       ) : (
         <ul className="vcs-branch-list">
           {branches.map((branch) => {
@@ -125,10 +125,10 @@ export function BranchesPanelView({
                 <div className="vcs-branch-copy">
                   <div className="vcs-branch-heading">
                     <h3>{branch.name}</h3>
-                    {current && <span className="vcs-current-chip">Current</span>}
+                    {current && <span className="vcs-current-chip">Actual</span>}
                   </div>
                   <p className="vcs-branch-meta">
-                    <strong>Head:</strong> {branch.headMessage ?? 'No commits yet.'}
+                    <strong>Último cambio:</strong> {branch.headMessage ?? 'Aún no hay confirmaciones.'}
                     {branch.headAuthorDisplayName && ` · ${branch.headAuthorDisplayName}`}
                     {branch.headCreatedAt && ` · ${relativeTimeLabel(branch.headCreatedAt)}`}
                   </p>
@@ -139,10 +139,10 @@ export function BranchesPanelView({
                       type="checkbox"
                       checked={branch.isProtected}
                       disabled={busy}
-                      aria-label={`Protect ${branch.name}`}
+                      aria-label={`Proteger ${branch.name}`}
                       onChange={() => onToggleProtection(branch)}
                     />
-                    <span>{branch.isProtected ? 'Protected' : 'Not protected'}</span>
+                    <span>{branch.isProtected ? 'Protegida' : 'Sin protección'}</span>
                   </label>
                   <button
                     className="button button-secondary button-compact"
@@ -150,7 +150,7 @@ export function BranchesPanelView({
                     disabled={busy || loading || current}
                     onClick={() => onCheckout(branch.name)}
                   >
-                    {busyBranch === branch.name ? 'Switching…' : current ? 'Current branch' : 'Switch branch'}
+                    {busyBranch === branch.name ? 'Cambiando…' : current ? 'Rama actual' : 'Cambiar de rama'}
                   </button>
                 </div>
               </li>
@@ -192,7 +192,7 @@ export default function BranchesPanel({ projectId, onModelCheckout, onStatusChan
       })
       .catch((cause: unknown) => {
         if (active) {
-          setError(vcsErrorMessage(cause, 'The branches could not be loaded.'));
+          setError(vcsErrorMessage(cause, 'No se pudieron cargar las ramas.'));
         }
       })
       .finally(() => {
@@ -216,9 +216,9 @@ export default function BranchesPanel({ projectId, onModelCheckout, onStatusChan
         ...(fromBranch ? { fromBranch } : {}),
       });
       setBranches((current) => [created, ...current.filter((branch) => branch.name !== created.name)]);
-      setNotice(`Branch ${created.name} was created.`);
+      setNotice(`Se creó la rama ${created.name}.`);
     } catch (cause: unknown) {
-      setError(vcsErrorMessage(cause, 'The branch could not be created.'));
+      setError(vcsErrorMessage(cause, 'No se pudo crear la rama.'));
     } finally {
       setBusy(false);
     }
@@ -248,7 +248,7 @@ export default function BranchesPanel({ projectId, onModelCheckout, onStatusChan
     });
     onModelCheckout(outcome.checkout.model);
     onStatusChanged?.();
-    setNotice(`Switched to ${outcome.checkout.branch}.`);
+    setNotice(`Se cambió a la rama ${outcome.checkout.branch}.`);
     setBusy(false);
     setBusyBranch(null);
   }
@@ -262,7 +262,7 @@ export default function BranchesPanel({ projectId, onModelCheckout, onStatusChan
       const updated = await api.updateBranchProtection(projectId, branch.name, !branch.isProtected);
       setBranches((current) => current.map((item) => item.name === updated.name ? updated : item));
     } catch (cause: unknown) {
-      setError(vcsErrorMessage(cause, 'Branch protection could not be updated.'));
+      setError(vcsErrorMessage(cause, 'No se pudo actualizar la protección de la rama.'));
     } finally {
       setBusy(false);
       setBusyBranch(null);

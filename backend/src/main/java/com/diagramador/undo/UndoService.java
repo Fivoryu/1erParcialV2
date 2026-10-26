@@ -15,6 +15,7 @@ import com.diagramador.domain.UmlOperation;
 import com.diagramador.identity.CurrentUser;
 import com.diagramador.identity.CurrentUserContext;
 import com.diagramador.identity.ProjectAuthorizationService;
+import com.diagramador.persistence.ClassifierRepository;
 import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
@@ -52,13 +53,15 @@ public class UndoService {
     private final UmlConstraintRepository constraintRepository;
     private final RelationshipEndRepository relationshipEndRepository;
     private final ObjectMapper objectMapper;
+    private final ClassifierRepository classifierRepository;
 
     public UndoService(UmlModelRepository modelRepository, UndoLogRepository undoLogRepository,
             ProjectAuthorizationService projectAuthorizationService, CurrentUserContext currentUserContext,
             CommandService commandService, UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, OperationParameterRepository parameterRepository,
             UmlConstraintRepository constraintRepository, RelationshipEndRepository relationshipEndRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper, ClassifierRepository classifierRepository) {
+        this.classifierRepository = classifierRepository;
         this.modelRepository = modelRepository;
         this.undoLogRepository = undoLogRepository;
         this.projectAuthorizationService = projectAuthorizationService;
@@ -144,6 +147,8 @@ public class UndoService {
                     originalTargets, baseRevision, modelId, projectId);
             case "classifier.setAbstract" -> inverseOfSnapshotUpdate(entry, "classifier.setAbstract", "isAbstract",
                     originalTargets, baseRevision, modelId, projectId);
+            case "classifier.setStore" -> inverseOfSnapshotUpdate(entry, "classifier.setStore", "store",
+                    originalTargets, baseRevision, modelId, projectId);
             case "attribute.add" -> Inverse.of(new OperationEnvelope(UUID.randomUUID(), "attribute.remove",
                     author(), projectId, modelId, baseRevision,
                     List.of(new Target("attribute", uuid(payload.path("id")))), List.of(), Map.of(),
@@ -194,7 +199,9 @@ public class UndoService {
                         + ".");
             }
         } else {
-            payload = Map.of(valueField, objectMapper.convertValue(snapshot.path(valueField), Object.class));
+            // A HashMap, not Map.of: restoring "no override" legitimately carries a null value.
+            payload = new java.util.HashMap<>();
+            payload.put(valueField, objectMapper.convertValue(snapshot.path(valueField), Object.class));
         }
         return Inverse.of(new OperationEnvelope(UUID.randomUUID(), inverseType, author(), projectId,
                 modelId, baseRevision, originalTargets, List.of(), payload, CommandOrigin.UNDO,
@@ -245,6 +252,15 @@ public class UndoService {
         payload.put("kind", snapshot.path("kind").asText());
         if (!snapshot.path("name").isNull() && !snapshot.path("name").isMissingNode()) {
             payload.put("name", snapshot.path("name").asText());
+        }
+        if (!snapshot.path("stereotype").isNull() && !snapshot.path("stereotype").isMissingNode()) {
+            payload.put("stereotype", snapshot.path("stereotype").asText());
+        }
+        // The link comes back only if its class is still there: another editor may have deleted it since, and
+        // restoring the relationship matters more than the link.
+        if (!snapshot.path("associationClassId").isNull() && !snapshot.path("associationClassId").isMissingNode()
+                && classifierRepository.existsById(uuid(snapshot.path("associationClassId")))) {
+            payload.put("associationClassId", snapshot.path("associationClassId").asText());
         }
         payload.put("source", Map.of("classifierId", source.path("classifierId").asText()));
         payload.put("target", Map.of("classifierId", target.path("classifierId").asText()));

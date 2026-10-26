@@ -32,7 +32,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<ProjectsPage />} />
           <Route path="/projects/:projectId" element={(
-            <Suspense fallback={<p role="status">Opening project…</p>}>
+            <Suspense fallback={<p role="status">Abriendo proyecto…</p>}>
               <EditorRoute />
             </Suspense>
           )} />

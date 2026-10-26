@@ -40,6 +40,14 @@ public class UmlRelationship {
     @Column(name = "name", length = 255)
     private String name;
 
+    /** The class that is also this association (UML association class); NULL means none. */
+    @Column(name = "association_class_id")
+    private UUID associationClassId;
+
+    /** A DependencyStereotype name; only a DEPENDENCY has one, and NULL means none. */
+    @Column(name = "stereotype", length = 32)
+    private String stereotype;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -83,6 +91,22 @@ public class UmlRelationship {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public UUID getAssociationClassId() {
+        return associationClassId;
+    }
+
+    public void setAssociationClassId(UUID associationClassId) {
+        this.associationClassId = associationClassId;
+    }
+
+    public String getStereotype() {
+        return stereotype;
+    }
+
+    public void setStereotype(String stereotype) {
+        this.stereotype = stereotype;
     }
 
     public OffsetDateTime getCreatedAt() {

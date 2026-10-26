@@ -8,11 +8,11 @@ const api = createApiClient();
 function roleLabel(role: MemberRole): string {
   switch (role) {
     case 'OWNER':
-      return 'Owner';
+      return 'Propietario';
     case 'EDITOR':
       return 'Editor';
     case 'VIEWER':
-      return 'Viewer';
+      return 'Lector';
   }
 }
 
@@ -37,24 +37,24 @@ export function InvitationsSectionView({
     <section className="surface invitations-panel" aria-labelledby="invitations-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">For you</p>
-          <h2 id="invitations-title">Project invitations</h2>
+          <p className="eyebrow">Para ti</p>
+          <h2 id="invitations-title">Invitaciones a proyectos</h2>
         </div>
       </div>
 
       {error && <div className="notice notice-error" role="alert">{error}</div>}
 
       {loading ? (
-        <p className="quiet-state" role="status">Loading invitations…</p>
+        <p className="quiet-state" role="status">Cargando las invitaciones…</p>
       ) : pendingInvitations.length === 0 ? (
-        error ? null : <p className="quiet-state invitations-empty">No pending invitations.</p>
+        error ? null : <p className="quiet-state invitations-empty">No tienes invitaciones pendientes.</p>
       ) : (
         <ul className="invitations-list">
           {pendingInvitations.map((invitation) => (
             <li className="invitation-row" key={invitation.id}>
               <div className="invitation-copy">
                 <h3>{invitation.projectName}</h3>
-                <p>Invited by <strong>{invitation.invitedByUsername}</strong> · {roleLabel(invitation.role)} access</p>
+                <p>Invitación de <strong>{invitation.invitedByUsername}</strong> · acceso de {roleLabel(invitation.role)}</p>
               </div>
               <button
                 className="button button-primary button-compact"
@@ -62,7 +62,7 @@ export function InvitationsSectionView({
                 onClick={() => onAccept(invitation)}
                 type="button"
               >
-                {acceptingInvitationId === invitation.id ? 'Accepting…' : 'Accept'}
+                {acceptingInvitationId === invitation.id ? 'Aceptando…' : 'Aceptar'}
               </button>
             </li>
           ))}

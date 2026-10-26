@@ -15,11 +15,11 @@ const api = createApiClient();
 function roleLabel(role: MemberRole): string {
   switch (role) {
     case 'OWNER':
-      return 'Owner';
+      return 'Propietario';
     case 'EDITOR':
       return 'Editor';
     case 'VIEWER':
-      return 'Viewer';
+      return 'Lector';
   }
 }
 
@@ -81,8 +81,8 @@ export function MembersPanelView({
     <section className="surface members-panel" aria-labelledby="members-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Project access</p>
-          <h2 id="members-title">Members</h2>
+          <p className="eyebrow">Acceso al proyecto</p>
+          <h2 id="members-title">Integrantes</h2>
         </div>
         <span className="count-chip">{members.length}</span>
       </div>
@@ -92,9 +92,9 @@ export function MembersPanelView({
       {membersError ? (
         <div className="notice notice-error" role="alert">{membersError}</div>
       ) : loadingMembers ? (
-        <p className="quiet-state" role="status">Loading members…</p>
+        <p className="quiet-state" role="status">Cargando integrantes…</p>
       ) : members.length === 0 ? (
-        <p className="quiet-state members-empty">No members yet.</p>
+        <p className="quiet-state members-empty">Aún no hay integrantes.</p>
       ) : (
         <ul className="members-list">
           {members.map((member) => {
@@ -104,18 +104,18 @@ export function MembersPanelView({
               <li className="member-row" key={member.userId}>
                 <div className="member-copy">
                   <h3>{member.displayName}</h3>
-                  <p>{roleLabel(member.role)}{member.status === 'REMOVED' ? ' · Removed' : ''}</p>
+                  <p>{roleLabel(member.role)}{member.status === 'REMOVED' ? ' · Eliminado' : ''}</p>
                 </div>
                 {canManage && (
                   <div className="member-controls">
                     <select
-                      aria-label={`Role for ${member.displayName}`}
+                      aria-label={`Rol de ${member.displayName}`}
                       disabled={busyMemberId !== null}
                       onChange={(event) => onChangeRole(member, assignableRoleFromLabel(event.target.value))}
                       value={roleLabel(member.role)}
                     >
                       <option value="Editor">Editor</option>
-                      <option value="Viewer">Viewer</option>
+                      <option value="Lector">Lector</option>
                     </select>
                     <button
                       className="button button-secondary button-compact member-remove-button"
@@ -123,7 +123,7 @@ export function MembersPanelView({
                       onClick={() => onRemoveMember(member)}
                       type="button"
                     >
-                      {busyMemberId === member.userId ? 'Removing…' : 'Remove'}
+                      {busyMemberId === member.userId ? 'Quitando…' : 'Quitar'}
                     </button>
                   </div>
                 )}
@@ -136,9 +136,9 @@ export function MembersPanelView({
       {isOwner && !membersError && !loadingMembers && (
         <div className="member-admin-grid">
           <section className="member-admin-section" aria-labelledby="invite-member-title">
-            <p className="eyebrow">Access</p>
-            <h3 id="invite-member-title">Invite a member</h3>
-            <p className="section-copy">Choose who can view or edit this project.</p>
+            <p className="eyebrow">Acceso</p>
+            <h3 id="invite-member-title">Invitar a una persona</h3>
+            <p className="section-copy">Elige quién puede ver o editar este proyecto.</p>
             {inviteError && <div className="notice notice-error" role="alert">{inviteError}</div>}
             <form
               className="project-form member-invite-form"
@@ -148,7 +148,7 @@ export function MembersPanelView({
               }}
             >
               <label className="field-label">
-                Username
+                Usuario
                 <input
                   autoComplete="off"
                   onChange={(event) => onInviteUsernameChange(event.target.value)}
@@ -157,36 +157,36 @@ export function MembersPanelView({
                 />
               </label>
               <label className="field-label">
-                Role
+                Rol
                 <select
                   onChange={(event) => onInviteRoleChange(assignableRoleFromLabel(event.target.value))}
                   value={roleLabel(inviteRole)}
                 >
-                  <option value="Viewer">Viewer</option>
+                  <option value="Lector">Lector</option>
                   <option value="Editor">Editor</option>
                 </select>
               </label>
               <button className="button button-primary" disabled={inviteBusy} type="submit">
-                {inviteBusy ? 'Sending…' : 'Send invitation'}
+                {inviteBusy ? 'Enviando…' : 'Enviar invitación'}
               </button>
             </form>
           </section>
 
           <section className="member-admin-section" aria-labelledby="pending-project-invitations-title">
-            <p className="eyebrow">Awaiting response</p>
-            <h3 id="pending-project-invitations-title">Pending invitations</h3>
+            <p className="eyebrow">Esperando respuesta</p>
+            <h3 id="pending-project-invitations-title">Invitaciones pendientes</h3>
             {invitationsError && <div className="notice notice-error" role="alert">{invitationsError}</div>}
             {loadingInvitations ? (
-              <p className="quiet-state" role="status">Loading invitations…</p>
+              <p className="quiet-state" role="status">Cargando las invitaciones…</p>
             ) : pendingInvitations.length === 0 ? (
-              invitationsError ? null : <p className="quiet-state invitations-empty">No pending invitations.</p>
+              invitationsError ? null : <p className="quiet-state invitations-empty">No hay invitaciones pendientes.</p>
             ) : (
               <ul className="invitations-list">
                 {pendingInvitations.map((invitation) => (
                   <li className="invitation-row" key={invitation.id}>
                     <div className="invitation-copy">
                       <h3>{invitation.inviteeDisplayName || invitation.inviteeUsername}</h3>
-                      <p>{roleLabel(invitation.role)} access</p>
+                      <p>Acceso de {roleLabel(invitation.role)}</p>
                     </div>
                     <button
                       className="button button-secondary button-compact"
@@ -194,7 +194,7 @@ export function MembersPanelView({
                       onClick={() => onRevokeInvitation(invitation)}
                       type="button"
                     >
-                      {busyInvitationId === invitation.id ? 'Revoking…' : 'Revoke'}
+                      {busyInvitationId === invitation.id ? 'Revocando…' : 'Revocar'}
                     </button>
                   </li>
                 ))}

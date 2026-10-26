@@ -127,7 +127,7 @@ void main() {
       final c = f.switchController(api, store);
       await c.selectBackend(f.switchSession, f.switchA);
       expect(c.proposal, isNull);
-      expect(c.error, contains('does not match'));
+      expect(c.error, contains('no coincide'));
       await c.confirm(f.switchSession);
       expect(store.pending, before);
       expect(api.calls, isEmpty);

@@ -37,23 +37,25 @@ class _ChatPanelState extends State<ChatPanel> {
             children: [
               if (c.selected != null)
                 IconButton(
-                  tooltip: 'Conversation history',
+                  tooltip: 'Historial de conversaciones',
                   onPressed: c.busy ? null : c.showHistory,
                   icon: const Icon(Icons.history),
                 ),
               Expanded(
                 child: Text(
-                  c.selected?.title ?? 'Conversations',
+                  c.selected == null
+                      ? 'Conversaciones'
+                      : _displayConversationTitle(c.selected!.title),
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
               IconButton(
-                tooltip: 'Refresh history',
+                tooltip: 'Actualizar historial',
                 onPressed: c.busy ? null : c.refresh,
                 icon: const Icon(Icons.sync),
               ),
               IconButton(
-                tooltip: 'New conversation',
+                tooltip: 'Nueva conversación',
                 onPressed: c.busy ? null : c.newChat,
                 icon: const Icon(Icons.add),
               ),
@@ -63,12 +65,12 @@ class _ChatPanelState extends State<ChatPanel> {
             const LinearProgressIndicator(),
             TextButton(
               onPressed: c.cancelRequest,
-              child: const Text('Stop request'),
+              child: const Text('Detener solicitud'),
             ),
           ],
           for (final event in c.progress)
             Text(
-              '${event.elapsed.inSeconds}s • ${event.phase}${event.tool == null ? "" : " • ${event.tool}"}',
+              '${event.elapsed.inSeconds}s • ${_displayProgressPhase(event.phase)}${event.tool == null ? "" : " • ${event.tool}"}',
             ),
           if (c.writePreview != null)
             Card(
@@ -77,14 +79,14 @@ class _ChatPanelState extends State<ChatPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(c.writeSummary ?? 'Confirm this change'),
+                    Text(c.writeSummary ?? 'Confirma este cambio'),
                     FilledButton(
                       onPressed: c.busy ? null : c.confirmWrite,
-                      child: const Text('Confirm change'),
+                      child: const Text('Confirmar cambio'),
                     ),
                     TextButton(
                       onPressed: c.dismissWrite,
-                      child: const Text('Cancel'),
+                      child: const Text('Cancelar'),
                     ),
                   ],
                 ),
@@ -98,17 +100,17 @@ class _ChatPanelState extends State<ChatPanel> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(c.deletePreviews.isEmpty
-                        ? 'Confirm deletion of this exact record'
-                        : 'Confirm deletion of these ${c.deletePreviews.length} records'),
+                        ? 'Confirma la eliminación de este registro exacto'
+                        : 'Confirma la eliminación de estos ${c.deletePreviews.length} registros'),
                     // Labels only: the confirmation never shows record identifiers.
                     for (final label in c.deleteLabels) Text('• $label'),
                     FilledButton(
                       onPressed: c.busy ? null : c.confirmDelete,
-                      child: Text(c.deletePreviews.isEmpty ? 'Confirm delete' : 'Delete all ${c.deletePreviews.length}'),
+                      child: Text(c.deletePreviews.isEmpty ? 'Confirmar eliminación' : 'Eliminar los ${c.deletePreviews.length}'),
                     ),
                     TextButton(
                       onPressed: c.dismissDelete,
-                      child: const Text('Keep data'),
+                      child: const Text('Conservar datos'),
                     ),
                   ],
                 ),
@@ -116,7 +118,7 @@ class _ChatPanelState extends State<ChatPanel> {
             ),
           TextButton(
             onPressed: c.busy ? null : c.inspectOperations,
-            child: const Text('Inspect pending operations'),
+            child: const Text('Revisar operaciones pendientes'),
           ),
           if (c.error != null)
             Padding(padding: const EdgeInsets.all(8), child: Text(c.error!)),
@@ -124,16 +126,16 @@ class _ChatPanelState extends State<ChatPanel> {
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Text(
               c.agentConnected
-                  ? 'Device-local AI. Actions and timings appear below. Confirm before deleting. Cached results may be incomplete.'
-                  : 'Local history is available. Agent replies are not connected in this view.',
+                  ? 'IA local en el dispositivo. Las acciones y los tiempos aparecen abajo. Confirma antes de eliminar. Los resultados en caché podrían estar incompletos.'
+                  : 'El historial local está disponible. Las respuestas del agente no están conectadas en esta vista.',
             ),
           ),
           if (c.selected == null) ...[
             if (c.conversations.isEmpty)
-              const Text('No conversations yet. Start a new one.'),
+              const Text('Aún no hay conversaciones. Inicia una nueva.'),
             for (final conversation in c.conversations)
               ListTile(
-                title: Text(conversation.title),
+                title: Text(_displayConversationTitle(conversation.title)),
                 subtitle: Text(conversation.updatedAt.toLocal().toString()),
                 onTap: c.busy ? null : () => c.open(conversation),
               ),
@@ -154,7 +156,7 @@ class _ChatPanelState extends State<ChatPanel> {
               ),
             Semantics(
               identifier: 'chat-message',
-              label: 'Message',
+              label: 'Mensaje',
               child: TextField(
                 key: const ValueKey('chat-message'),
                 controller: _text,
@@ -162,7 +164,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 minLines: 1,
                 maxLines: 5,
                 maxLength: 16000,
-                decoration: const InputDecoration(labelText: 'Message'),
+                decoration: const InputDecoration(labelText: 'Mensaje'),
               ),
             ),
             FilledButton(
@@ -171,7 +173,7 @@ class _ChatPanelState extends State<ChatPanel> {
                   : () => c.agentConnected
                         ? c.sendMessage(_text.text)
                         : c.saveMessage(_text.text),
-              child: Text(c.agentConnected ? 'Send' : 'Save message'),
+              child: Text(c.agentConnected ? 'Enviar' : 'Guardar mensaje'),
             ),
           ],
         ],
@@ -179,3 +181,17 @@ class _ChatPanelState extends State<ChatPanel> {
     },
   );
 }
+
+String _displayConversationTitle(String title) =>
+    title == 'New conversation' ? 'Nueva conversación' : title;
+
+String _displayProgressPhase(String phase) => switch (phase) {
+  'tool_started' => 'Iniciando operación',
+  'tool_finished' => 'Operación finalizada',
+  'model_started' => 'Iniciando modelo',
+  'model_finished' => 'Modelo finalizado',
+  'calculation_finished' => 'Cálculo finalizado',
+  'calculation_repeated' => 'Cálculo repetido',
+  'finished' => 'Finalizado',
+  _ => phase,
+};

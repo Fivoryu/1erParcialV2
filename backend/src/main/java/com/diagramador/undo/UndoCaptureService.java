@@ -161,6 +161,7 @@ public class UndoCaptureService {
         snapshot.put("name", classifier.getName());
         snapshot.put("kind", classifier.getKind() == null ? null : classifier.getKind().name());
         snapshot.put("isAbstract", classifier.isAbstract());
+        snapshot.put("store", classifier.getStoreOverride() == null ? null : classifier.getStoreOverride().name());
         snapshot.put("namespaceId", classifier.getNamespace() == null ? null
                 : classifier.getNamespace().getId().toString());
         return snapshot;
@@ -201,6 +202,9 @@ public class UndoCaptureService {
         snapshot.put("id", relationship.getId().toString());
         snapshot.put("kind", relationship.getKind() == null ? null : relationship.getKind().name());
         snapshot.put("name", relationship.getName());
+        snapshot.put("stereotype", relationship.getStereotype());
+        snapshot.put("associationClassId",
+                relationship.getAssociationClassId() == null ? null : relationship.getAssociationClassId().toString());
         List<Map<String, Object>> ends = new ArrayList<>();
         for (RelationshipEnd end : relationshipEndRepository.findByRelationshipId(relationship.getId())) {
             Map<String, Object> endSnapshot = new LinkedHashMap<>();

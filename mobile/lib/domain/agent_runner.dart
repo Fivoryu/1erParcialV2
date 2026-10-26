@@ -238,7 +238,7 @@ class AgentRunner {
     if (_busy) {
       return const AgentRunResult(
         AgentRunStatus.stopped,
-        'A request is still in flight.',
+        'Ya hay una solicitud en curso.',
       );
     }
     _busy = true;
@@ -319,8 +319,8 @@ class AgentRunner {
       refs: refs,
       now: now,
       gateway: (proposal) async {
-        if (++toolCalls > maxToolCalls) throw StateError('Tool limit reached.');
-        if (!allowed()) throw StateError('Request stopped before tool dispatch.');
+        if (++toolCalls > maxToolCalls) throw StateError('Se alcanzó el límite de herramientas.');
+        if (!allowed()) throw StateError('La solicitud se detuvo antes de ejecutar la herramienta.');
         event('tool_started', tool: proposal.method);
         final toolStart = now();
         final result = await gateway(proposal);
@@ -335,7 +335,7 @@ class AgentRunner {
         if (!allowed()) {
           return const AgentRunResult(
             AgentRunStatus.stopped,
-            'Cancelled, expired, or backend changed. In-flight writes are not rolled back.',
+            'La solicitud se canceló, venció o cambió el backend. Las escrituras en curso no se revierten.',
           );
         }
         final prompt = jsonEncode({
@@ -397,7 +397,7 @@ class AgentRunner {
         if (prompt.length > maxPromptChars || ++modelCalls > maxModelCalls) {
           return const AgentRunResult(
             AgentRunStatus.stopped,
-            'Model or prompt limit reached.',
+            'Se alcanzó el límite del modelo o del mensaje.',
           );
         }
         event('model_started');
@@ -405,14 +405,14 @@ class AgentRunner {
         if (!allowed()) {
           return const AgentRunResult(
             AgentRunStatus.stopped,
-            'Request stopped before model dispatch.',
+            'La solicitud se detuvo antes de enviarse al modelo.',
           );
         }
         final raw = await model(prompt);
         if (!allowed()) {
           return const AgentRunResult(
             AgentRunStatus.stopped,
-            'Late model response discarded.',
+            'Se descartó una respuesta tardía del modelo.',
           );
         }
         event('model_finished', duration: now().difference(modelStart));
@@ -470,9 +470,9 @@ class AgentRunner {
             event('calculation_repeated');
             return AgentRunResult(
               AgentRunStatus.stopped,
-              'Calculated value: ${completedCalculations[calculationKey]}. '
-              'Stopped a repeated calculation; this is a partial result from '
-              'model-proposed inputs, not a verified database total.',
+              'Valor calculado: ${completedCalculations[calculationKey]}. '
+              'Se detuvo un cálculo repetido; este es un resultado parcial basado en '
+              'datos propuestos por el modelo, no un total verificado de la base de datos.',
               data: List.unmodifiable(observations),
             );
           }
@@ -495,7 +495,7 @@ class AgentRunner {
           if (writeDispatched) {
             return const AgentRunResult(
               AgentRunStatus.clarification,
-              'Specify the exact entity, target and field values. This proposed write is not authorized.',
+              'Especifica la entidad, el registro y los valores de campo exactos. Esta escritura propuesta no está autorizada.',
             );
           }
           OperationProposal? direct;
@@ -514,7 +514,7 @@ class AgentRunner {
         if (action.tag == 'delete_preview') {
           return AgentRunResult(
             AgentRunStatus.deletePending,
-            'Deletion requires explicit confirmation of this exact target.',
+            'La eliminación requiere que confirmes explícitamente este registro exacto.',
             deletePreview: proposal,
           );
         }
@@ -524,13 +524,13 @@ class AgentRunner {
                 !trusted.permits(request, contract.scope, proposal))) {
           return const AgentRunResult(
             AgentRunStatus.clarification,
-            'Specify the exact entity, target and field values. This proposed write is not authorized.',
+            'Especifica la entidad, el registro y los valores de campo exactos. Esta escritura propuesta no está autorizada.',
           );
         }
         if (++toolCalls > maxToolCalls) {
           return const AgentRunResult(
             AgentRunStatus.stopped,
-            'Tool limit reached.',
+            'Se alcanzó el límite de herramientas.',
           );
         }
         event('tool_started', tool: proposal.method);
@@ -538,7 +538,7 @@ class AgentRunner {
         if (!allowed()) {
           return const AgentRunResult(
             AgentRunStatus.stopped,
-            'Request stopped before tool dispatch.',
+            'La solicitud se detuvo antes de ejecutar la herramienta.',
           );
         }
         if (proposal.method != 'GET') writeDispatched = true;
@@ -546,7 +546,7 @@ class AgentRunner {
         if (!allowed()) {
           return const AgentRunResult(
             AgentRunStatus.stopped,
-            'Late tool result discarded. Dispatched writes may have completed.',
+            'Se descartó el resultado tardío de la herramienta. Es posible que las escrituras enviadas se hayan completado.',
           );
         }
         final encoded = jsonEncode(result.toJson());
@@ -555,7 +555,7 @@ class AgentRunner {
                 (result.data as List).length > maxRecords)) {
           return const AgentRunResult(
             AgentRunStatus.stopped,
-            'Tool result exceeds limit; completeness is unknown.',
+            'El resultado de la herramienta supera el límite; se desconoce si está completo.',
           );
         }
         observations.add({
@@ -570,7 +570,7 @@ class AgentRunner {
       }
       return const AgentRunResult(
         AgentRunStatus.stopped,
-        'Step limit reached.',
+        'Se alcanzó el límite de pasos.',
       );
     } on BackendRejection catch (rejection) {
       return AgentRunResult(AgentRunStatus.failed, rejection.message);
@@ -582,12 +582,12 @@ class AgentRunner {
     } on FormatException catch (error) {
       return AgentRunResult(
         AgentRunStatus.clarification,
-        'Invalid or unsupported action: ${error.message}',
+        'La acción no es válida o no es compatible: ${error.message}',
       );
     } catch (error, stackTrace) {
       return AgentRunResult(
         AgentRunStatus.failed,
-        'Model or tool failed; no success is assumed. Dispatched writes may be unknown.',
+        'Falló el modelo o la herramienta; no se asume que haya tenido éxito. Se desconoce si se completaron las escrituras enviadas.',
         failure: error,
         failureStackTrace: stackTrace,
       );

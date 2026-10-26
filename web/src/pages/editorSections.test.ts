@@ -12,8 +12,8 @@ describe('editor sections registry', () => {
       'vcs',
     ]);
     expect(findEditorSection('vcs')).toMatchObject({
-      label: 'Versioning',
-      title: 'History, branches and reviews',
+      label: 'Versionado',
+      title: 'Historial, ramas y revisiones',
       size: 'lg',
     });
   });

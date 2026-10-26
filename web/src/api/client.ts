@@ -91,7 +91,7 @@ function transportErrorFromBody(body: unknown, status: number): ApiTransportErro
 
   return new ApiTransportError(
     'HTTP_ERROR',
-    `The server returned HTTP ${status}.`,
+    `El servidor respondió con HTTP ${status}.`,
     [],
     null,
     status,
@@ -228,7 +228,7 @@ export function createApiClient(
     try {
       response = await fetcher(`${base}${path}`, authorizedInit(path, init));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
+      const message = cause instanceof Error ? cause.message : 'No se pudo conectar con el servidor.';
       throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
     }
 
@@ -253,7 +253,7 @@ export function createApiClient(
     try {
       response = await fetcher(`${base}${path}`, authorizedInit(path, init));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
+      const message = cause instanceof Error ? cause.message : 'No se pudo conectar con el servidor.';
       throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
     }
 
@@ -271,7 +271,7 @@ export function createApiClient(
     try {
       response = await fetcher(`${base}${path}`, authorizedInit(path, init));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
+      const message = cause instanceof Error ? cause.message : 'No se pudo conectar con el servidor.';
       throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
     }
 
@@ -297,7 +297,7 @@ export function createApiClient(
     try {
       response = await fetcher(`${base}${path}`, authorizedInit(path, { method: 'GET' }));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'The server could not be reached.';
+      const message = cause instanceof Error ? cause.message : 'No se pudo conectar con el servidor.';
       throw new ApiTransportError('NETWORK_ERROR', message, [], null, null, { cause });
     }
 

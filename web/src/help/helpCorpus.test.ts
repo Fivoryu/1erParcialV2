@@ -75,10 +75,10 @@ describe('help corpus', () => {
     expect(topic).toBeDefined();
     const copy = [topic?.summary, ...(topic?.steps ?? [])].join(' ');
 
-    expect(copy).toContain('extracted automatically');
-    expect(copy).toContain('read, save, or revise a memory');
-    expect(copy).toContain('latest UML');
-    expect(copy).toContain('every active collaborator can access');
+    expect(copy).toContain('se extraen automáticamente conocimientos útiles');
+    expect(copy).toContain('lea, guarde o revise un recuerdo');
+    expect(copy).toContain('versión más reciente del UML');
+    expect(copy).toContain('accesibles para todas las personas colaboradoras activas');
   });
 
   it('explains version history, branches, reviews, and per-person access in user language', () => {
@@ -88,13 +88,13 @@ describe('help corpus', () => {
     expect(topic?.steps).toHaveLength(5);
     const copy = [topic?.summary, ...(topic?.steps ?? [])].join(' ');
 
-    expect(copy).toContain('commit with a clear message');
-    expect(copy).toContain('who made the change, what changed and when');
-    expect(copy).toContain('Create a branch');
-    expect(copy).toContain('switch between branches');
-    expect(copy).toContain('Open a review between two branches');
-    expect(copy).toContain('merge it');
-    expect(copy).toContain('diagram creator can grant each person');
+    expect(copy).toContain('Guarda un cambio con un mensaje claro');
+    expect(copy).toContain('quién lo hizo, qué cambió y cuándo');
+    expect(copy).toContain('Crea una rama');
+    expect(copy).toContain('cambiar entre ramas');
+    expect(copy).toContain('Abre una solicitud de revisión entre dos ramas');
+    expect(copy).toContain('fusiónala');
+    expect(copy).toContain('La persona creadora del diagrama puede otorgar');
     expect(copy).not.toMatch(/\b(?:HTTP|JSON|API|UUID|hash)\b/i);
   });
 
@@ -116,5 +116,21 @@ describe('help corpus', () => {
     ]) {
       expect(slugs, `missing topic "${expected}"`).toContain(expected);
     }
+  });
+
+  it('sends the assistant to the shared team chat and no longer mentions a separate assistant panel', () => {
+    const assistant = HELP_TOPICS.find((topic) => topic.slug === 'assistant-with-natural-language');
+
+    expect(assistant?.section).toBe('collaboration');
+    expect(assistant?.steps.join(' ')).toContain('Sugerir cambio');
+    for (const topic of HELP_TOPICS) {
+      expect(topic.steps.join(' ').toLowerCase(), topic.slug).not.toContain('assistant panel');
+    }
+  });
+
+  it('tells a reviewer that Explain with AI and Propose a fix open the team chat with a draft', () => {
+    const review = HELP_TOPICS.find((topic) => topic.slug === 'review-the-diagram');
+
+    expect(review?.steps.join(' ')).toContain('chat del equipo');
   });
 });

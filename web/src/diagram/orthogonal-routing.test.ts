@@ -11,14 +11,17 @@ import {
   dragAnchorHandle,
   dragOrthoHandle,
   isAdjustmentApplicable,
+  manualRouteDropped,
   orthogonalRoute,
   orthogonalWaypoints,
+  sideLanes,
   projectAnchorOnBorder,
   removeJog,
   roundedOrthogonalPath,
   roundToOrthoGrid,
   slideCorridor,
   slideLevel,
+  withoutManualShape,
   type AnchorSide,
   type OrthoAdjustment,
   type OrthoRectangle,
@@ -835,5 +838,359 @@ describe('orthogonal route generator degenerate inputs (pure, no rendering)', ()
     const path = roundedOrthogonalPath([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 50, y: 0 }], 10);
     expect(path).not.toContain('NaN');
     expect(path).toBe('M 0 0 L 0 0 L 50 0');
+  });
+});
+
+describe('orthogonalRoute across a gap too narrow for the stubs', () => {
+  function crossesInterior(points: { x: number; y: number }[], rectangle: OrthoRectangle): boolean {
+    const right = rectangle.x + rectangle.width;
+    const bottom = rectangle.y + rectangle.height;
+    return points.slice(1).some((next, index) => {
+      const previous = points[index]!;
+      if (previous.y === next.y) {
+        return previous.y > rectangle.y && previous.y < bottom
+          && Math.max(Math.min(previous.x, next.x), rectangle.x) < Math.min(Math.max(previous.x, next.x), right);
+      }
+      return previous.x > rectangle.x && previous.x < right
+        && Math.max(Math.min(previous.y, next.y), rectangle.y) < Math.min(Math.max(previous.y, next.y), bottom);
+    });
+  }
+
+  it('crosses through the vertical gap instead of cutting a class when the sides face away', () => {
+    // Observed in the editor: the source sits up and to the right of the target with a 4px
+    // horizontal gap, so the source leaves west, the target leaves east, and their stubs overlap.
+    const upperRight = { x: 690, y: 0, width: 170, height: 64 };
+    const lowerLeft = { x: 513, y: 160, width: 173, height: 64 };
+
+    const route = orthogonalRoute(upperRight, lowerLeft);
+
+    expect(route.points.slice(1).every((next, index) => next.x === route.points[index]!.x
+      || next.y === route.points[index]!.y)).toBe(true);
+    expect(crossesInterior(route.points, upperRight)).toBe(false);
+    expect(crossesInterior(route.points, lowerLeft)).toBe(false);
+  });
+
+  it('does the same when the classes are stacked the other way round', () => {
+    const lowerRight = { x: 690, y: 160, width: 170, height: 64 };
+    const upperLeft = { x: 513, y: 0, width: 173, height: 64 };
+
+    const route = orthogonalRoute(lowerRight, upperLeft);
+
+    expect(crossesInterior(route.points, lowerRight)).toBe(false);
+    expect(crossesInterior(route.points, upperLeft)).toBe(false);
+  });
+});
+
+describe('lanes', () => {
+  const a = { x: 0, y: 0, width: 100, height: 100 };
+  const above = { x: 300, y: -200, width: 100, height: 100 };
+  const below = { x: 300, y: 100, width: 100, height: 100 };
+
+  it('shifts each end of an auto route by its own lane', () => {
+    const centred = orthogonalRoute(source, alignedRight);
+    const shifted = orthogonalRoute(source, alignedRight, null, 16);
+    const apart = orthogonalRoute(source, alignedRight, null, { source: 8, target: -8 });
+
+    expect(centred.points).toEqual([{ x: 100, y: 50 }, { x: 300, y: 50 }]);
+    expect(shifted.points).toEqual([{ x: 100, y: 66 }, { x: 300, y: 66 }]);
+    expect(apart.sourceAnchor.y).toBe(58);
+    expect(apart.targetAnchor.y).toBe(42);
+  });
+
+  it('lets a stored anchor win over the lane', () => {
+    const route = orthogonalRoute(source, alignedRight, {
+      axis: 'H',
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'E', offset: -10 }, target: { side: 'W', offset: -10 } },
+    }, 16);
+
+    expect(route.points[0]).toEqual({ x: 100, y: 40 });
+  });
+
+  it('spreads relationships between the same pair of classes in the same order at both ends', () => {
+    const lanes = sideLanes(
+      [{ id: 'r1', sourceId: 'a', targetId: 'b' }, { id: 'r2', sourceId: 'b', targetId: 'a' }],
+      new Map([['a', a], ['b', { x: 300, y: 0, width: 100, height: 100 }]]),
+    );
+
+    expect(lanes.get('r1')).toEqual({ source: -8, target: -8 });
+    expect(lanes.get('r2')).toEqual({ source: 8, target: 8 });
+  });
+
+  it('spreads relationships of different pairs that leave through the same side, upper target first', () => {
+    const lanes = sideLanes(
+      [{ id: 'toLower', sourceId: 'a', targetId: 'c' }, { id: 'toUpper', sourceId: 'a', targetId: 'b' }],
+      new Map([['a', a], ['b', above], ['c', below]]),
+    );
+
+    expect(lanes.get('toUpper')!.source).toBe(-8);
+    expect(lanes.get('toLower')!.source).toBe(8);
+    expect(lanes.get('toUpper')!.target).toBe(0);
+    expect(lanes.get('toLower')!.target).toBe(0);
+  });
+
+  it('leaves a relationship that shares nothing on the centre of its sides', () => {
+    const lanes = sideLanes([{ id: 'r', sourceId: 'a', targetId: 'b' }], new Map([['a', a], ['b', above]]));
+
+    expect(lanes.get('r')).toEqual({ source: 0, target: 0 });
+  });
+
+  it('starts self relationships at the corner and grows them outward, never centred', () => {
+    const lanes = sideLanes(
+      [{ id: 's1', sourceId: 'a', targetId: 'a' }, { id: 's2', sourceId: 'a', targetId: 'a' }],
+      new Map([['a', a]]),
+    );
+
+    expect(lanes.get('s1')).toEqual({ source: 0, target: 0 });
+    expect(lanes.get('s2')).toEqual({ source: 16, target: 16 });
+  });
+});
+
+describe('orthogonalRoute around classes in between', () => {
+  function crosses(points: { x: number; y: number }[], rectangle: OrthoRectangle): boolean {
+    const right = rectangle.x + rectangle.width;
+    const bottom = rectangle.y + rectangle.height;
+    return points.slice(1).some((next, index) => {
+      const previous = points[index]!;
+      if (previous.y === next.y) {
+        return previous.y > rectangle.y && previous.y < bottom
+          && Math.max(Math.min(previous.x, next.x), rectangle.x) < Math.min(Math.max(previous.x, next.x), right);
+      }
+      return previous.x > rectangle.x && previous.x < right
+        && Math.max(Math.min(previous.y, next.y), rectangle.y) < Math.min(Math.max(previous.y, next.y), bottom);
+    });
+  }
+  const isOrthogonal = (points: { x: number; y: number }[]) => points.slice(1)
+    .every((next, index) => next.x === points[index]!.x || next.y === points[index]!.y);
+
+  it('leaves a route alone when nothing is in the way', () => {
+    const farAway = { x: 200, y: 600, width: 100, height: 60 };
+
+    expect(orthogonalRoute(source, alignedRight, null, 0, [farAway]).points)
+      .toEqual(orthogonalRoute(source, alignedRight).points);
+  });
+
+  it('goes around a class standing between two aligned classes', () => {
+    const between = { x: 160, y: 20, width: 100, height: 60 };
+
+    const direct = orthogonalRoute(source, alignedRight);
+    const route = orthogonalRoute(source, alignedRight, null, 0, [between]);
+
+    expect(crosses(direct.points, between)).toBe(true);
+    expect(isOrthogonal(route.points)).toBe(true);
+    expect(crosses(route.points, between)).toBe(false);
+    expect(crosses(route.points, source)).toBe(false);
+    expect(crosses(route.points, alignedRight)).toBe(false);
+  });
+
+  it('goes around several classes in a row', () => {
+    const first = { x: 140, y: 10, width: 60, height: 80 };
+    const second = { x: 210, y: -40, width: 50, height: 180 };
+
+    const route = orthogonalRoute(source, alignedRight, null, 0, [first, second]);
+
+    expect(isOrthogonal(route.points)).toBe(true);
+    expect(crosses(route.points, first)).toBe(false);
+    expect(crosses(route.points, second)).toBe(false);
+  });
+
+  it('still returns a route when no way around exists', () => {
+    const wall = { x: -500, y: -500, width: 1500, height: 50 };
+    const floor = { x: -500, y: 450, width: 1500, height: 50 };
+    const between = { x: 160, y: -450, width: 100, height: 900 };
+
+    const route = orthogonalRoute(source, alignedRight, null, 0, [wall, floor, between]);
+
+    expect(route.points.length).toBeGreaterThanOrEqual(2);
+    expect(isOrthogonal(route.points)).toBe(true);
+  });
+
+  it('keeps a hand-placed route as the user left it, even through a class', () => {
+    const between = { x: 160, y: 20, width: 100, height: 60 };
+    const adjustment = { axis: 'H' as const, corridors: [24], levels: [] };
+
+    const route = orthogonalRoute(source, alignedRight, adjustment, 0, [between]);
+
+    expect(route.points).toEqual(orthogonalRoute(source, alignedRight, adjustment).points);
+  });
+});
+
+describe('orthogonalRoute for a class related to itself', () => {
+  const self = { x: 100, y: 100, width: 200, height: 80 };
+  const interior = (points: { x: number; y: number }[]) => points.slice(1).some((next, index) => {
+    const previous = points[index]!;
+    const inside = (x: number, y: number) => x > self.x && x < self.x + self.width && y > self.y && y < self.y + self.height;
+    return inside((previous.x + next.x) / 2, (previous.y + next.y) / 2);
+  });
+
+  it('draws the UML corner loop: out of the east side, round the top-right corner, back into the north side', () => {
+    const route = orthogonalRoute(self, self);
+
+    expect(route.points[0]!.x).toBe(self.x + self.width);
+    expect(route.points.at(-1)!.y).toBe(self.y);
+    expect(route.points.length).toBe(5);
+    expect(route.points.slice(1).every((next, index) => next.x === route.points[index]!.x
+      || next.y === route.points[index]!.y)).toBe(true);
+    expect(interior(route.points)).toBe(false);
+  });
+
+  it('keeps both ends on the border, apart from each other', () => {
+    const route = orthogonalRoute(self, self);
+
+    expect(route.sourceAnchor.side).toBe('E');
+    expect(route.targetAnchor.side).toBe('N');
+    expect(route.sourceAnchor).not.toEqual(route.targetAnchor);
+  });
+
+  it('grows the loop for each further lane so several self relationships do not overlap', () => {
+    const first = orthogonalRoute(self, self, null, 0);
+    const second = orthogonalRoute(self, self, null, 16);
+
+    expect(second.points[1]!.x).toBeGreaterThan(first.points[1]!.x);
+    expect(second.points[2]!.y).toBeLessThan(first.points[2]!.y);
+  });
+});
+
+describe('orthogonalRoute between perpendicular sides with classes in the way', () => {
+  const crossesInterior = (points: { x: number; y: number }[], rectangle: OrthoRectangle) => points.slice(1).some((next, index) => {
+    const previous = points[index]!;
+    const right = rectangle.x + rectangle.width;
+    const bottom = rectangle.y + rectangle.height;
+    if (previous.y === next.y) {
+      return previous.y > rectangle.y && previous.y < bottom
+        && Math.max(Math.min(previous.x, next.x), rectangle.x) < Math.min(Math.max(previous.x, next.x), right);
+    }
+    return previous.x > rectangle.x && previous.x < right
+      && Math.max(Math.min(previous.y, next.y), rectangle.y) < Math.min(Math.max(previous.y, next.y), bottom);
+  });
+  const orthogonal = (points: { x: number; y: number }[]) => points.slice(1)
+    .every((next, index) => next.x === points[index]!.x || next.y === points[index]!.y);
+
+  // The source leaves through its east side and the target is entered through its north side.
+  const from = { x: 0, y: 0, width: 100, height: 100 };
+  const to = { x: 400, y: 300, width: 100, height: 100 };
+  const anchored = {
+    axis: 'H' as const,
+    corridors: [0],
+    levels: [],
+    anchors: { source: { side: 'E' as const, offset: 0 }, target: { side: 'N' as const, offset: 0 } },
+  };
+
+  it('keeps the plain corner route when nothing is in the way', () => {
+    const route = orthogonalRoute(from, to, anchored);
+
+    expect(route.points).toEqual([{ x: 100, y: 50 }, { x: 450, y: 50 }, { x: 450, y: 300 }]);
+  });
+
+  it('finds another way when a class blocks each of the two corners', () => {
+    const blocksHorizontalFirst = { x: 200, y: 20, width: 100, height: 60 };
+    const blocksVerticalFirst = { x: 80, y: 150, width: 100, height: 60 };
+
+    const route = orthogonalRoute(from, to, anchored, 0, [blocksHorizontalFirst, blocksVerticalFirst]);
+
+    expect(orthogonal(route.points)).toBe(true);
+    for (const rectangle of [from, to, blocksHorizontalFirst, blocksVerticalFirst]) {
+      expect(crossesInterior(route.points, rectangle)).toBe(false);
+    }
+    expect(route.points[0]).toEqual({ x: 100, y: 50 });
+    expect(route.points.at(-1)).toEqual({ x: 450, y: 300 });
+    // It still arrives straight down into the north side, against that side's outward normal.
+    expect(route.points.at(-2)!.x).toBe(450);
+    expect(route.points.at(-2)!.y).toBeLessThan(300);
+  });
+
+  it('searches a way through when the usual detours of two aligned classes are blocked too', () => {
+    const left = { x: 0, y: 0, width: 100, height: 100 };
+    const right = { x: 400, y: 0, width: 100, height: 100 };
+    // The straight line is blocked by the middle class, and the two stubs' columns are blocked above and below,
+    // so none of the usual crossings or detours is clear; a way still exists between them.
+    const middle = { x: 180, y: -60, width: 40, height: 160 };
+    const aboveStub = { x: 110, y: -1000, width: 30, height: 960 };
+    const belowStub = { x: 110, y: 60, width: 30, height: 300 };
+
+    const route = orthogonalRoute(left, right, null, 0, [middle, aboveStub, belowStub]);
+
+    expect(orthogonal(route.points)).toBe(true);
+    for (const rectangle of [left, right, middle, aboveStub, belowStub]) {
+      expect(crossesInterior(route.points, rectangle)).toBe(false);
+    }
+    expect(route.points[0]).toEqual({ x: 100, y: 50 });
+    expect(route.points.at(-1)).toEqual({ x: 400, y: 50 });
+  });
+
+  it('stays fast and still returns a route on a crowded diagram where the search is skipped or has to give up', () => {
+    const crowd = Array.from({ length: 120 }, (_, index) => ({
+      x: 160 + (index % 12) * 14,
+      y: -400 + Math.floor(index / 12) * 90,
+      width: 10,
+      height: 80,
+    }));
+    const started = Date.now();
+
+    const route = orthogonalRoute(from, to, anchored, 0, crowd);
+
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(route.points.length).toBeGreaterThanOrEqual(2);
+    expect(orthogonal(route.points)).toBe(true);
+  });
+
+  it('still returns a route when the target is walled in', () => {
+    const walls = [
+      { x: 330, y: 200, width: 250, height: 20 },
+      { x: 330, y: 200, width: 20, height: 250 },
+      { x: 560, y: 200, width: 20, height: 250 },
+    ];
+
+    const route = orthogonalRoute(from, to, anchored, 0, walls);
+
+    expect(route.points.length).toBeGreaterThanOrEqual(2);
+    expect(orthogonal(route.points)).toBe(true);
+  });
+});
+
+describe('a manual route that no longer applies', () => {
+  const left = { x: 0, y: 0, width: 100, height: 100 };
+  const right = { x: 400, y: 0, width: 100, height: 100 };
+  const below = { x: 0, y: 400, width: 100, height: 100 };
+  const manual = { axis: 'H' as const, corridors: [40, 70], levels: [-12] };
+
+  it('is not reported while the stored bends still apply', () => {
+    const route = orthogonalRoute(left, right, manual);
+
+    expect(route.ignoredAdjustment).toBe(false);
+    expect(manualRouteDropped(route, manual)).toBe(false);
+  });
+
+  it('is reported when moving a class flips the dominant axis and the user had bent the route', () => {
+    const route = orthogonalRoute(left, below, manual);
+
+    expect(route.ignoredAdjustment).toBe(true);
+    expect(manualRouteDropped(route, manual)).toBe(true);
+  });
+
+  it('is not reported for an adjustment that only stores the connected sides', () => {
+    const sidesOnly = {
+      axis: 'H' as const,
+      corridors: [0],
+      levels: [],
+      anchors: { source: { side: 'E' as const, offset: 0 }, target: { side: 'N' as const, offset: 0 } },
+    };
+    const route = orthogonalRoute(left, { x: 400, y: 300, width: 100, height: 100 }, sidesOnly);
+
+    expect(route.ignoredAdjustment).toBe(true);
+    expect(manualRouteDropped(route, sidesOnly)).toBe(false);
+  });
+
+  it('is not reported when there is no adjustment at all', () => {
+    expect(manualRouteDropped(orthogonalRoute(left, below), null)).toBe(false);
+  });
+
+  it('discards the bends and keeps the connected sides', () => {
+    const anchors = { source: { side: 'E' as const, offset: 0 }, target: { side: 'W' as const, offset: 0 } };
+
+    expect(withoutManualShape({ ...manual, anchors })).toEqual({ axis: 'H', corridors: [0], levels: [], anchors });
+    expect(withoutManualShape(manual)).toBeNull();
+    expect(withoutManualShape(null)).toBeNull();
   });
 });

@@ -554,7 +554,7 @@ void main() {
     expect(result.status, AgentRunStatus.failed);
     expect(
       result.text,
-      'Model or tool failed; no success is assumed. Dispatched writes may be unknown.',
+      'Falló el modelo o la herramienta; no se asume que haya tenido éxito. Se desconoce si se completaron las escrituras enviadas.',
     );
     expect(result.failure, same(error));
   });

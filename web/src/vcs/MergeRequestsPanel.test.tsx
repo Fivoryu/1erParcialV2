@@ -101,18 +101,18 @@ describe('merge requests panel', () => {
       ],
     });
 
-    expect(markup).toContain('Source branch');
-    expect(markup).toContain('Target branch');
-    expect(markup).toContain('Describe this review');
+    expect(markup).toContain('Rama de origen');
+    expect(markup).toContain('Rama de destino');
+    expect(markup).toContain('Describe esta revisión');
     expect(markup).toContain('Orders review');
     expect(markup).toContain('feature-orders</strong> → <strong>main');
     expect(markup).toContain('vcs-state-chip--open');
     expect(markup).toContain('vcs-state-chip--merged');
     expect(markup).toContain('vcs-state-chip--closed');
-    expect(markup).toContain('OPEN');
-    expect(markup).toContain('MERGED');
-    expect(markup).toContain('CLOSED');
-    expect(markup).toContain('Close request');
+    expect(markup).toContain('Abierta');
+    expect(markup).toContain('Fusionada');
+    expect(markup).toContain('Cerrada');
+    expect(markup).toContain('Cerrar solicitud');
   });
 
   it('shows element, field, and base/source/target values for every conflict kind', () => {
@@ -120,24 +120,24 @@ describe('merge requests panel', () => {
 
     expect(markup).toContain('vcs-conflict-section');
     expect(markup).toContain('vcs-conflict-values');
-    expect(markup).toContain('Field conflict · Order');
+    expect(markup).toContain('Conflicto de campo · Order');
     expect(markup).toContain('name');
     expect(markup).toContain('PurchaseOrder');
     expect(markup).toContain('SalesOrder');
-    expect(markup).toContain('Delete/modify conflict · LegacyInvoice');
+    expect(markup).toContain('Conflicto de eliminación y modificación · LegacyInvoice');
     expect(markup).toContain('{&quot;name&quot;:&quot;LegacyInvoice&quot;}');
     expect(markup).toContain('{&quot;name&quot;:&quot;LegacyInvoice&quot;,&quot;abstract&quot;:true}');
-    expect(markup).toContain('Name collision · Customer');
+    expect(markup).toContain('Conflicto de nombres · Customer');
     expect(markup).toContain('Base</dt><dd>—</dd>');
-    expect(markup).toContain('Source</dt><dd>Customer</dd>');
-    expect(markup).toContain('Target</dt><dd>Customer</dd>');
+    expect(markup).toContain('Origen</dt><dd>Customer</dd>');
+    expect(markup).toContain('Destino</dt><dd>Customer</dd>');
   });
 
   it('disables merge while conflicts exist but leaves the close action available', () => {
     const markup = render();
 
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Merge<\/button>/);
-    expect(markup).toMatch(/<button[^>]*>Close request<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Fusionar<\/button>/);
+    expect(markup).toMatch(/<button[^>]*>Cerrar solicitud<\/button>/);
     expect(markup).toContain('The name changed on both branches.');
   });
 
@@ -146,8 +146,8 @@ describe('merge requests panel', () => {
       mergeRequests: [{ ...openRequest, hasConflicts: false, conflicts: [] }],
     });
 
-    expect(markup).toMatch(/<button[^>]*>Merge<\/button>/);
-    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Merge<\/button>/);
+    expect(markup).toMatch(/<button[^>]*>Fusionar<\/button>/);
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Fusionar<\/button>/);
   });
 
   it('says a server-reported conflict did not merge and shows the refreshed request conflicts', () => {
@@ -163,10 +163,10 @@ describe('merge requests panel', () => {
       mergeRequests: [openRequest],
     });
 
-    expect(markup).toContain('The merge was not completed');
-    expect(markup).toContain('The merge request was refreshed');
+    expect(markup).toContain('No se completó la fusión');
+    expect(markup).toContain('Se actualizó la solicitud de fusión');
     expect(markup).toContain('role="alert"');
-    expect(markup).not.toContain('was merged');
+    expect(markup).not.toContain('La solicitud de fusión se completó.');
   });
 
   it('preserves the server message for other merge-request errors', () => {
@@ -180,7 +180,7 @@ describe('merge requests panel', () => {
   });
 
   it('distinguishes loading from an empty request list', () => {
-    expect(render({ loading: true, mergeRequests: [] })).toContain('Loading merge requests…');
-    expect(render({ loading: false, mergeRequests: [] })).toContain('No merge requests yet; open one to request a review of a branch.');
+    expect(render({ loading: true, mergeRequests: [] })).toContain('Cargando las solicitudes de fusión…');
+    expect(render({ loading: false, mergeRequests: [] })).toContain('Aún no hay solicitudes de fusión. Abre una para pedir la revisión de una rama.');
   });
 });

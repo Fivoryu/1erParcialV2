@@ -34,7 +34,7 @@ class MethodChannelChatStore implements ChatStore {
   final MethodChannel _channel;
   bool _closed = false;
   Future<dynamic> _invoke(String method, Map<String, dynamic> args) async {
-    if (_closed) throw StateError('Chat store is closed');
+    if (_closed) throw StateError('El almacén del chat está cerrado.');
     validateRecord(args);
     return _channel.invokeMethod<dynamic>(method, args);
   }
@@ -101,7 +101,7 @@ class MethodChannelChatStore implements ChatStore {
     ChatMessage? message,
   }) async {
     if (operation.state != OutboxState.queued) {
-      throw ArgumentError('New operations must be queued');
+      throw ArgumentError('Las operaciones nuevas deben ponerse en cola.');
     }
     await _invoke('enqueue', {
       'operation': operation.toJson(),
@@ -146,12 +146,12 @@ class MemoryChatStore implements ChatStore {
   String _key(ChatScope scope, String id) =>
       jsonEncode([scope.namespace, identity(id, 'id')]);
   void _check() {
-    if (_closed) throw StateError('Chat store is closed');
+    if (_closed) throw StateError('El almacén del chat está cerrado.');
   }
 
   void _conversation(ChatScope scope, String id) {
     if (!_conversations.containsKey(_key(scope, id))) {
-      throw StateError('Conversation not found in scope');
+      throw StateError('No se encontró la conversación en este ámbito.');
     }
   }
 
@@ -176,7 +176,7 @@ class MemoryChatStore implements ChatStore {
     if (old != null &&
         (old['conversationId'] != conversationId ||
             _canonical(old['message']) != _canonical(message.toJson()))) {
-      throw StateError('Message ID conflict');
+      throw StateError('Conflicto con el identificador del mensaje.');
     }
   }
 
@@ -188,7 +188,7 @@ class MemoryChatStore implements ChatStore {
         old = _conversations[_key(conversation.scope, conversation.id)];
     if (old != null &&
         old.createdAt.toUtc() != conversation.createdAt.toUtc()) {
-      throw StateError('Conversation ID conflict');
+      throw StateError('Conflicto con el identificador de la conversación.');
     }
     _conversations[key] = LocalConversation.fromJson(conversation.toJson());
   }
@@ -275,7 +275,7 @@ class MemoryChatStore implements ChatStore {
     _conversation(operation.scope, operation.conversationId);
     validateRecord(operation.toJson());
     if (operation.state != OutboxState.queued) {
-      throw ArgumentError('New operations must be queued');
+      throw ArgumentError('Las operaciones nuevas deben ponerse en cola.');
     }
     if (message != null) {
       _validateMessage(operation.scope, operation.conversationId, message);
@@ -285,11 +285,11 @@ class MemoryChatStore implements ChatStore {
     if (old != null &&
         _canonical(_operationIdentity(old)) !=
             _canonical(_operationIdentity(operation))) {
-      throw StateError('Operation ID conflict');
+      throw StateError('Conflicto con el identificador de la operación.');
     }
     final fingerprint = message == null ? null : _canonical(message.toJson());
     if (old != null && _enqueueMessages[key] != fingerprint) {
-      throw StateError('Operation message conflict');
+      throw StateError('Conflicto con el mensaje de la operación.');
     }
     if (message != null) {
       _messages[_key(operation.scope, message.id)] = {
@@ -323,7 +323,7 @@ class MemoryChatStore implements ChatStore {
     _check();
     final key = _key(scope, id), old = _outbox[_key(scope, id)];
     if (old == null || !canTransition(old.state, state)) {
-      throw StateError('Invalid outbox transition');
+      throw StateError('La transición de la bandeja de salida no es válida.');
     }
     final json = old.toJson()
       ..['state'] = state.name

@@ -22,7 +22,7 @@ describe('EditorOptionsBar', () => {
     const markup = render(null);
 
     expect(markup).toContain('role="toolbar"');
-    expect(markup).toContain('aria-label="Editor options"');
+    expect(markup).toContain('aria-label="Opciones del editor"');
     expect(markup.match(/aria-haspopup="dialog"/g)).toHaveLength(6);
     const order = markup.match(/data-section="[a-z]+"/g) ?? [];
     expect(order).toEqual([
@@ -67,11 +67,11 @@ describe('EditorOptionsBar', () => {
   it('labels each button with its section label', () => {
     const markup = render(null);
 
-    expect(markup).toContain('XMI interchange');
-    expect(markup).toContain('Collaboration');
-    expect(markup).toContain('Members');
-    expect(markup).toContain('Review');
-    expect(markup).toContain('Generation');
-    expect(markup).toContain('Versioning');
+    expect(markup).toContain('Intercambio XMI');
+    expect(markup).toContain('Colaboración');
+    expect(markup).toContain('Integrantes');
+    expect(markup).toContain('Revisión');
+    expect(markup).toContain('Generación');
+    expect(markup).toContain('Versionado');
   });
 });

@@ -3,7 +3,7 @@ import 'dart:convert';
 String identity(String value, String name) {
   if (value.trim().isEmpty || value.length > 2048 || value.contains('\u0000')) {
     {
-      throw ArgumentError.value(value, name, 'Invalid identity');
+      throw ArgumentError.value(value, name, 'Identidad no válida');
     }
   }
   return value;
@@ -95,7 +95,7 @@ class ChatMessage {
        metadata = metadata == null ? null : Map.unmodifiable(metadata) {
     if (!['user', 'assistant', 'tool', 'system'].contains(role) ||
         (sequence != null && sequence! < 0)) {
-      throw ArgumentError('Invalid message role or sequence');
+      throw ArgumentError('El rol o la secuencia del mensaje no son válidos');
     }
   }
   final String id, role, content;
@@ -160,7 +160,7 @@ String validPath(String value) {
       uri.hasAuthority ||
       uri.hasFragment ||
       value.contains('\\')) {
-    throw ArgumentError('Only relative backend paths are supported');
+    throw ArgumentError('Solo se admiten rutas relativas del backend');
   }
   return value;
 }
@@ -198,7 +198,7 @@ class QueuedOperation {
        conversationId = identity(conversationId, 'conversationId'),
        path = validPath(path) {
     if (method != 'POST') {
-      throw ArgumentError('Only offline additions may be queued');
+      throw ArgumentError('Solo se pueden poner en cola las incorporaciones sin conexión');
     }
   }
   final String id, conversationId, method, path;

@@ -104,20 +104,20 @@ describe('chat suggestions', () => {
   it('shows the future change to every member, before anything is applied', () => {
     const markup = render();
     expect(markup).toContain('Suggested change');
-    expect(markup).toContain('Waiting for an editor');
-    expect(markup).toContain('If accepted, the diagram will change like this');
+    expect(markup).toContain('En espera de una persona editora');
+    expect(markup).toContain('Si se acepta, el diagrama cambiará así:');
     expect(markup).toContain('Crear clase');
     expect(markup).toContain('Patient');
   });
 
   it('offers accept and reject to an editor, and only an explanation to a viewer', () => {
     const asEditor = render({ canDecideProposals: true });
-    expect(asEditor).toContain('Accept and apply');
-    expect(asEditor).toContain('Reject');
+    expect(asEditor).toContain('Aceptar y aplicar');
+    expect(asEditor).toContain('Rechazar');
 
     const asViewer = render({ canDecideProposals: false });
-    expect(asViewer).not.toContain('Accept and apply');
-    expect(asViewer).toContain('Only an editor or owner can accept this suggestion.');
+    expect(asViewer).not.toContain('Aceptar y aplicar');
+    expect(asViewer).toContain('Solo una persona editora o propietaria puede aceptar esta sugerencia.');
   });
 
   it('records the outcome and removes the actions once decided', () => {
@@ -130,19 +130,19 @@ describe('chat suggestions', () => {
         resultSummary: '1 of 1 change applied.',
       }],
     });
-    expect(markup).toContain('Applied');
-    expect(markup).toContain('The suggested change:');
+    expect(markup).toContain('Aplicado');
+    expect(markup).toContain('El cambio sugerido:');
     expect(markup).not.toContain('If accepted');
     expect(markup).toContain('Morgan Reader: 1 of 1 change applied.');
-    expect(markup).not.toContain('Accept and apply');
+    expect(markup).not.toContain('Aceptar y aplicar');
   });
 
   it('offers Suggest change only to editors, and only with text to send', () => {
     expect(render({ canDecideProposals: true, onSuggest: () => true, draft: 'Add Patient' }))
-      .toContain('Suggest change');
+      .toContain('Sugerir cambio');
     expect(render({ canDecideProposals: false, onSuggest: () => true, draft: 'Add Patient' }))
-      .not.toContain('Suggest change');
-    expect(render({ canDecideProposals: true, draft: 'Add Patient' })).not.toContain('Suggest change');
+      .not.toContain('Sugerir cambio');
+    expect(render({ canDecideProposals: true, draft: 'Add Patient' })).not.toContain('Sugerir cambio');
   });
 
   it('surfaces why a suggestion could not be made', () => {

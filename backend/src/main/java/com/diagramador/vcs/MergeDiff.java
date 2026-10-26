@@ -10,6 +10,7 @@ import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.TargetType;
 import com.diagramador.domain.VcsCommit;
 import java.util.ArrayDeque;
@@ -72,6 +73,7 @@ public final class MergeDiff {
             }
         }
         addNameCollisions(baseElements, sourceElements, targetElements, conflicts);
+        addAssociationClassCollisions(baseElements, sourceElements, targetElements, merged, conflicts);
         conflicts.sort(CONFLICT_ORDER);
         return new Result(rebuild(merged), conflicts);
     }
@@ -250,6 +252,52 @@ public final class MergeDiff {
         }
     }
 
+    private static void addAssociationClassCollisions(Map<ElementKey, Element> base,
+            Map<ElementKey, Element> source, Map<ElementKey, Element> target,
+            Map<ElementKey, Element> merged, List<Conflict> conflicts) {
+        Map<UUID, List<Element>> ownersByAssociationClass = new LinkedHashMap<>();
+        merged.values().stream()
+                .filter(element -> element.key().targetType().equals("RELATIONSHIP"))
+                .filter(element -> element.fields().get("associationClassId") instanceof UUID)
+                .sorted(Comparator.comparing(element -> element.targetId().toString()))
+                .forEach(element -> {
+                    UUID associationClassId = (UUID) element.fields().get("associationClassId");
+                    ownersByAssociationClass.computeIfAbsent(associationClassId, ignored -> new ArrayList<>())
+                            .add(element);
+                });
+
+        List<UUID> duplicateAssociationClassIds = ownersByAssociationClass.entrySet().stream()
+                .filter(entry -> entry.getValue().size() > 1)
+                .map(Map.Entry::getKey)
+                .sorted(Comparator.comparing(UUID::toString))
+                .toList();
+        for (UUID associationClassId : duplicateAssociationClassIds) {
+            List<Element> owners = ownersByAssociationClass.get(associationClassId).stream()
+                    .sorted(Comparator.comparing(Element::targetName,
+                            Comparator.nullsFirst(Comparator.naturalOrder()))
+                            .thenComparing(element -> element.targetId().toString()))
+                    .toList();
+            List<String> ownerNames = owners.stream()
+                    .map(owner -> "'" + (owner.targetName() == null ? owner.targetId() : owner.targetName())
+                            + "' (" + owner.targetId() + ")")
+                    .toList();
+            String message = "Association class '" + associationClassId
+                    + "' is assigned to multiple relationships in the merged snapshot: "
+                    + String.join(", ", ownerNames) + ".";
+            for (Element owner : owners) {
+                conflicts.add(conflict("FIELD_CONFLICT", owner,
+                        fieldValue(base.get(owner.key()), "associationClassId"),
+                        fieldValue(source.get(owner.key()), "associationClassId"),
+                        fieldValue(target.get(owner.key()), "associationClassId"),
+                        "associationClassId", message));
+            }
+        }
+    }
+
+    private static Object fieldValue(Element element, String field) {
+        return element == null ? null : element.fields().get(field);
+    }
+
     private static Conflict conflict(String kind, Element element, Object baseValue, Object sourceValue,
             Object targetValue, String field, String message) {
         return new Conflict(kind, element.key().targetType(), element.targetId(), element.targetName(), field,
@@ -261,7 +309,7 @@ public final class MergeDiff {
         for (ClassifierResource classifier : snapshot.classifiers()) {
             Map<String, Object> fields = fields(
                     "name", classifier.name(), "kind", classifier.kind(), "isAbstract", classifier.isAbstract(),
-                    "namespaceId", classifier.namespaceId());
+                    "namespaceId", classifier.namespaceId(), "storeOverride", classifier.storeOverride());
             add(elements, element("CLASSIFIER", classifier.id(), classifier.name(), null, fields));
             for (AttributeResource attribute : classifier.attributes()) {
                 Map<String, Object> childFields = fields(
@@ -296,7 +344,8 @@ public final class MergeDiff {
             }
         }
         for (RelationshipResource relationship : snapshot.relationships()) {
-            Map<String, Object> fields = fields("kind", relationship.kind(), "name", relationship.name());
+            Map<String, Object> fields = fields("kind", relationship.kind(), "name", relationship.name(),
+                    "stereotype", relationship.stereotype(), "associationClassId", relationship.associationClassId());
             add(elements, element("RELATIONSHIP", relationship.id(), relationship.name(), null, fields));
             for (RelationshipEndResource end : relationship.ends()) {
                 Map<String, Object> endFields = fields(
@@ -394,7 +443,8 @@ public final class MergeDiff {
                     .map(MergeDiff::constraintResource).toList();
             return new ClassifierResource(classifierId, string(classifier.fields(), "name"),
                     (ClassifierKind) classifier.fields().get("kind"), bool(classifier.fields(), "isAbstract"),
-                    uuid(classifier.fields(), "namespaceId"), attributes, operations, constraints);
+                    uuid(classifier.fields(), "namespaceId"), attributes, operations, constraints,
+                    (PersistenceStore) classifier.fields().get("storeOverride"), null, null);
         }).toList();
 
         List<RelationshipResource> mergedRelationships = relationships.stream().map(relationship -> {
@@ -407,7 +457,8 @@ public final class MergeDiff {
                             && relationshipId.equals(constraint.fields().get("ownerId")))
                     .map(MergeDiff::constraintResource).toList();
             return new RelationshipResource(relationshipId, string(relationship.fields(), "kind"),
-                    string(relationship.fields(), "name"), ends, constraints);
+                    string(relationship.fields(), "name"), string(relationship.fields(), "stereotype"),
+                    uuid(relationship.fields(), "associationClassId"), ends, constraints);
         }).toList();
 
         List<SnapshotModel.SnapshotView> mergedViews = views.stream().map(view -> {

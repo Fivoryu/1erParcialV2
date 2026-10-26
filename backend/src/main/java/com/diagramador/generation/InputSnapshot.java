@@ -6,6 +6,7 @@ import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.SeverityKind;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.TargetType;
 import java.util.List;
 import java.util.Objects;
@@ -63,7 +64,12 @@ public record InputSnapshot(
             UUID namespaceId,
             ClassifierKind kind,
             String name,
-            boolean isAbstract) {
+            boolean isAbstract,
+            PersistenceStore storeOverride) {
+
+        public ClassifierElement(UUID id, UUID namespaceId, ClassifierKind kind, String name, boolean isAbstract) {
+            this(id, namespaceId, kind, name, isAbstract, null);
+        }
     }
 
     public record AttributeElement(

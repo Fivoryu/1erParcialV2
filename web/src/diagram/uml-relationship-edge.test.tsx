@@ -53,7 +53,7 @@ describe('RelationshipEndLabelAnchor', () => {
     const markup = renderAnchor('target');
     expect(markup).toContain('uml-edge-label-position--end');
     expect(markup).toContain('data-end-ordinal="2"');
-    expect(markup).toContain('[0..*]');
+    expect(markup).toContain('0..*');
   });
 
   it('positions the hit area at the label placement', () => {

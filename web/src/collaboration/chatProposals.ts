@@ -40,11 +40,11 @@ export function upsertProposal(
 
 export function proposalStatusLabel(status: ChatProposalStatus): string {
   switch (status) {
-    case 'PENDING': return 'Waiting for an editor';
-    case 'APPLYING': return 'Being applied';
-    case 'ACCEPTED': return 'Applied';
-    case 'REJECTED': return 'Rejected';
-    case 'FAILED': return 'Could not be applied';
+    case 'PENDING': return 'En espera de una persona editora';
+    case 'APPLYING': return 'Aplicando';
+    case 'ACCEPTED': return 'Aplicado';
+    case 'REJECTED': return 'Rechazado';
+    case 'FAILED': return 'No se pudo aplicar';
   }
 }
 
@@ -58,7 +58,7 @@ export function proposalErrorMessage(error: unknown, fallback: (cause: unknown) 
       return error.message;
     }
     if (error.code === 'PROPOSAL_DECIDED') {
-      return 'Another editor already decided this suggestion.';
+      return 'Otra persona editora ya decidió sobre esta sugerencia.';
     }
   }
   return fallback(error);

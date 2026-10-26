@@ -55,6 +55,7 @@ import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import com.diagramador.persistence.UserAccountRepository;
 import com.diagramador.persistence.ViewStyleRepository;
+import com.diagramador.storage.PersistenceStoreClassifier;
 import com.diagramador.undo.UndoLogEntry;
 import com.diagramador.undo.UndoLogRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -288,8 +289,21 @@ public class ProjectApiService {
                                 style.getCornerRadius(), style.getStrokeWidth(), style.isDashed(),
                                 routeAdjustment(style))))
                 .toList();
-        return new ModelResource(model.getId(), projectId, model.getCurrentRevision(), versionId, views,
-                classifiers, relationships, viewStyles);
+        return withEffectiveStores(new ModelResource(model.getId(), projectId, model.getCurrentRevision(), versionId,
+                views, classifiers, relationships, viewStyles));
+    }
+
+    /** Fills each class with the store the generator will use and why, so every consumer reads one decision. */
+    private static ModelResource withEffectiveStores(ModelResource model) {
+        Map<UUID, PersistenceStoreClassifier.Decision> decisions = PersistenceStoreClassifier.classify(model);
+        List<ClassifierResource> classifiers = model.classifiers().stream()
+                .map(classifier -> decisions.containsKey(classifier.id())
+                        ? classifier.withStore(decisions.get(classifier.id()).store(),
+                                decisions.get(classifier.id()).reason())
+                        : classifier)
+                .toList();
+        return new ModelResource(model.id(), model.projectId(), model.revision(), model.versionId(), model.views(),
+                classifiers, model.relationships(), model.viewStyle());
     }
 
     /** ROR-02: null-safe read of the persisted frame-relative orthogonal adjustment. */
@@ -365,7 +379,8 @@ public class ProjectApiService {
                 .toList();
         UUID namespaceId = classifier.getNamespace() == null ? null : classifier.getNamespace().getId();
         return new ClassifierResource(classifier.getId(), classifier.getName(), classifier.getKind(),
-                classifier.isAbstract(), namespaceId, attributes, operations, constraintResources);
+                classifier.isAbstract(), namespaceId, attributes, operations, constraintResources,
+                classifier.getStoreOverride(), null, null);
     }
 
     private AttributeResource attributeResource(UmlAttribute attribute) {
@@ -405,7 +420,7 @@ public class ProjectApiService {
                         constraint.getSeverity().name()))
                 .toList();
         return new RelationshipResource(relationship.getId(), relationship.getKind().name(), relationship.getName(),
-                ends, constraintResources);
+                relationship.getStereotype(), relationship.getAssociationClassId(), ends, constraintResources);
     }
 
     private String typeName(TypeReference typeReference) {

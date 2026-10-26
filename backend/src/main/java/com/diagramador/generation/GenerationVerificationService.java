@@ -3,6 +3,7 @@ package com.diagramador.generation;
 import com.diagramador.domain.GeneratedArtifact;
 import com.diagramador.domain.GenerationRun;
 import com.diagramador.domain.GenerationState;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.VerificationResult;
 import com.diagramador.domain.VerificationState;
 import com.diagramador.generation.GenerationArtifactBundleBuilder.ArtifactDescriptor;
@@ -141,7 +142,7 @@ public class GenerationVerificationService {
                 evaluations.add(safely(runId, ARTIFACT_SET_STRUCTURE, STRUCTURE_TOOL,
                         () -> inspectStructure(runId, context.bundle(), persistedArtifacts)));
                 evaluations.add(safely(runId, FLYWAY_MIGRATION_FILE, MIGRATION_TOOL,
-                        () -> inspectMigration(runId, context.bundle())));
+                        () -> inspectMigration(runId, context.bundle(), context.ir())));
                 evaluations.add(safely(runId, ARTIFACT_HASHES, HASH_TOOL,
                         () -> inspectHashes(run, runId, context.bundle())));
                 evaluations.add(safely(runId, FROZEN_INPUT_DETERMINISM, DETERMINISM_TOOL,
@@ -267,9 +268,19 @@ public class GenerationVerificationService {
                 STRUCTURE_TOOL);
     }
 
-    private CheckEvaluation inspectMigration(UUID runId, GeneratedArtifactBundle bundle) {
+    private CheckEvaluation inspectMigration(UUID runId, GeneratedArtifactBundle bundle, DomainModelIR ir) {
         String path = "src/main/resources/db/migration/V1__init.sql";
         String migration = bundle.files().get(path);
+        if (ir.types().stream().noneMatch(type -> type.store() == PersistenceStore.SQL)) {
+            // A purely document model has no relational class: a migration would be wrong, its absence is correct.
+            return migration == null
+                    ? evaluation(runId, FLYWAY_MIGRATION_FILE, VerificationState.PASSED,
+                            "Migration inspection executed; the model has no relational class, so no Flyway migration is expected and none was emitted.",
+                            MIGRATION_TOOL)
+                    : evaluation(runId, FLYWAY_MIGRATION_FILE, VerificationState.FAILED,
+                            "Migration inspection executed; the model has no relational class but a Flyway migration was emitted.",
+                            MIGRATION_TOOL);
+        }
         MigrationInspection inspection = inspectMigrationSql(migration);
         if (!inspection.valid()) {
             return evaluation(runId, FLYWAY_MIGRATION_FILE, VerificationState.FAILED,

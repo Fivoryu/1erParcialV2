@@ -139,6 +139,32 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
         SnapshotModel targetSnapshot = snapshotService.capture(target);
         assertThat(snapshotService.toJson(targetSnapshot)).isEqualTo(sourceJson);
         assertThat(elementIds(targetSnapshot)).containsExactlyInAnyOrderElementsOf(elementIds(captured));
+        assertThat(targetSnapshot.relationships()).anySatisfy(relationship -> {
+            assertThat(relationship.kind()).isEqualTo("DEPENDENCY");
+            assertThat(relationship.stereotype()).isEqualTo("USE");
+        });
+        assertThat(targetSnapshot.relationships().stream().filter(relationship -> "AGGREGATION".equals(relationship.kind()))
+                .allMatch(relationship -> relationship.stereotype() == null)).isTrue();
+        UUID membershipId = targetSnapshot.classifiers().stream()
+                .filter(classifier -> "Membership".equals(classifier.name())).findFirst().orElseThrow().id();
+        assertThat(targetSnapshot.relationships()).anySatisfy(relationship -> {
+            assertThat(relationship.kind()).isEqualTo("AGGREGATION");
+            assertThat(relationship.associationClassId()).isEqualTo(membershipId);
+        });
+        assertThat(targetSnapshot.relationships().stream().filter(relationship -> "DEPENDENCY".equals(relationship.kind()))
+                .allMatch(relationship -> relationship.associationClassId() == null)).isTrue();
+    }
+
+    @Test
+    void anAssociationClassIsPartOfTheStateHash() {
+        Fixture fixture = createRichModel();
+        String linked = snapshotService.stateHash(fixture.model());
+
+        setAggregationAssociationClass(fixture, null);
+        String unlinked = snapshotService.stateHash(fixture.model());
+
+        assertThat(unlinked).isNotEqualTo(linked);
+        assertThat(stateHasher.hash(snapshotService.capture(fixture.model()))).isEqualTo(unlinked);
     }
 
     @Test
@@ -149,6 +175,24 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
         assertThat(snapshot.viewStyle()).anySatisfy(style -> assertThat(style.routeAdjustment()).isNotNull());
         assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(stateHasher.hash(fixture.model()));
         assertThat(stateHasher.hash(snapshot)).isEqualTo(stateHasher.hash(fixture.model()));
+    }
+
+    @Test
+    void aStereotypeIsPartOfTheStateHashAndNothingElseChangesWithoutIt() {
+        Fixture fixture = createRichModel();
+        String withUse = snapshotService.stateHash(fixture.model());
+        SnapshotModel snapshot = snapshotService.capture(fixture.model());
+        assertThat(stateHasher.hash(snapshot)).isEqualTo(withUse);
+
+        setDependencyStereotype(fixture, "IMPORT");
+        String withImport = snapshotService.stateHash(fixture.model());
+        setDependencyStereotype(fixture, null);
+        String withNone = snapshotService.stateHash(fixture.model());
+        setDependencyStereotype(fixture, "USE");
+
+        assertThat(withImport).isNotEqualTo(withUse);
+        assertThat(withNone).isNotEqualTo(withUse).isNotEqualTo(withImport);
+        assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(withUse);
     }
 
     @Test
@@ -165,6 +209,35 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
 
         snapshotService.materialize(fixture.model(), earlier);
         assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(originalHash);
+        assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
+                .isEqualTo(snapshotService.toJson(earlier));
+    }
+
+    @Test
+    void restoringGivesAnAssociationClassBackEvenWhenARelationshipThatIsNotInTheSnapshotHoldsItNow() {
+        Fixture fixture = createRichModel();
+        SnapshotModel earlier = snapshotService.capture(fixture.model());
+        UUID membershipId = classifierRepository.findAll().stream()
+                .filter(classifier -> classifier.getModel().getId().equals(fixture.model().getId()))
+                .filter(classifier -> "Membership".equals(classifier.getName()))
+                .findFirst().orElseThrow().getId();
+        // The class moves to a relationship created after the snapshot. One class serves one relationship, so
+        // restoring has to free it before the earlier relationship can take it back.
+        transactionTemplate.executeWithoutResult(status -> {
+            relationshipRepository.findAll().stream()
+                    .filter(relationship -> relationship.getModel().getId().equals(fixture.model().getId()))
+                    .filter(relationship -> relationship.getKind() == RelationshipKind.AGGREGATION)
+                    .forEach(relationship -> relationship.setAssociationClassId(null));
+            relationshipRepository.flush();
+            UmlRelationship later = relationshipRepository.save(UmlRelationship.create(
+                    classifierRepository.findById(membershipId).orElseThrow().getModel(),
+                    RelationshipKind.ASSOCIATION, "later"));
+            relationshipRepository.flush();
+            later.setAssociationClassId(membershipId);
+        });
+
+        snapshotService.materialize(fixture.model(), earlier);
+
         assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
                 .isEqualTo(snapshotService.toJson(earlier));
     }
@@ -232,6 +305,19 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
             relationshipEndRepository.save(RelationshipEnd.create(relationship, abstractClassifier, (short) 2, "record",
                     MultiplicityKind.ZERO_OR_MANY, NavigationKind.NOT_NAVIGABLE, "NONE"));
 
+            // Flushed before the link is set: the relationship row is already inserted by then, and an insert
+            // that carried the link would reach the database before the class it points at.
+            Classifier membership = classifierRepository.saveAndFlush(
+                    Classifier.create(managedModel, null, ClassifierKind.CLASS, "Membership", false));
+            relationship.setAssociationClassId(membership.getId());
+            UmlRelationship dependency = relationshipRepository.save(
+                    UmlRelationship.create(managedModel, RelationshipKind.DEPENDENCY, "needs"));
+            dependency.setStereotype("USE");
+            relationshipEndRepository.save(RelationshipEnd.create(dependency, concreteClassifier, (short) 1, null,
+                    MultiplicityKind.EXACTLY_ONE, NavigationKind.UNSPECIFIED, "NONE"));
+            relationshipEndRepository.save(RelationshipEnd.create(dependency, abstractClassifier, (short) 2, null,
+                    MultiplicityKind.EXACTLY_ONE, NavigationKind.NAVIGABLE, "NONE"));
+
             constraintRepository.save(UmlConstraint.create(managedModel, TargetType.CLASSIFIER,
                     concreteClassifier.getId(), "self.name <> null", SeverityKind.ERROR));
             constraintRepository.save(UmlConstraint.create(managedModel, TargetType.RELATIONSHIP,
@@ -261,6 +347,20 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
             return concreteClassifier.getId();
         });
         return new Fixture(model, mutableClassifierId);
+    }
+
+    private void setAggregationAssociationClass(Fixture fixture, UUID associationClassId) {
+        transactionTemplate.executeWithoutResult(status -> relationshipRepository.findAll().stream()
+                .filter(relationship -> relationship.getModel().getId().equals(fixture.model().getId()))
+                .filter(relationship -> relationship.getKind() == RelationshipKind.AGGREGATION)
+                .forEach(relationship -> relationship.setAssociationClassId(associationClassId)));
+    }
+
+    private void setDependencyStereotype(Fixture fixture, String stereotype) {
+        transactionTemplate.executeWithoutResult(status -> relationshipRepository.findAll().stream()
+                .filter(relationship -> relationship.getModel().getId().equals(fixture.model().getId()))
+                .filter(relationship -> relationship.getKind() == RelationshipKind.DEPENDENCY)
+                .forEach(relationship -> relationship.setStereotype(stereotype)));
     }
 
     private UmlModel createEmptyModel() {

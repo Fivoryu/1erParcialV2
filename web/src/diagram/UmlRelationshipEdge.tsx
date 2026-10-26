@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
   useInternalNode,
+  useNodes,
   useReactFlow,
   type Edge,
   type EdgeProps,
@@ -20,9 +21,14 @@ import {
   roundToOrthoGrid,
   type OrthoAdjustment,
   type OrthoHandle,
+  manualRouteDropped,
+  withoutManualShape,
+  pointAtHalfArcLength,
 } from './orthogonal-routing';
+import { associationClassLink } from './associationClass';
+import { DEFAULT_ROUTING } from './commands';
 import { endOrdinalForLabelSide } from './contextMenuBehavior';
-import { formatRelationshipEndLabel } from './uml-format';
+import { endLabelsApplyTo, formatRelationshipEndLabel, formatRelationshipName } from './uml-format';
 
 export type RelationshipMarker =
   | 'open-arrow'
@@ -31,6 +37,7 @@ export type RelationshipMarker =
   | 'hollow-diamond-open-arrow'
   | 'filled-diamond-open-arrow'
   | 'hollow-triangle'
+  | 'cross'
   | null;
 
 export interface EdgePoint {
@@ -290,14 +297,16 @@ export function placeRelationshipLabels(
   sourceRectangle: EdgeRectangle,
   targetRectangle: EdgeRectangle,
   texts: RelationshipLabelTexts,
+  clearance: { source: number; target: number } = { source: 0, target: 0 },
 ): RelationshipLabelPlacements {
-  const nodeObstacles = [
-    expandRectangle(sourceRectangle, LABEL_NODE_PADDING_PX),
-    expandRectangle(targetRectangle, LABEL_NODE_PADDING_PX),
+  // An end label keeps off its own marker as well as its class; the other labels only keep off the classes.
+  const nodeObstaclesFor = (sourcePadding: number, targetPadding: number) => [
+    expandRectangle(sourceRectangle, LABEL_NODE_PADDING_PX + sourcePadding),
+    expandRectangle(targetRectangle, LABEL_NODE_PADDING_PX + targetPadding),
   ];
   const placedBoxes: EdgeRectangle[] = [];
   const pathLength = pathSegments(points).reduce((length, segment) => length + segment.length, 0);
-  const place = (labelTexts: string[], preferredDistance: number) => {
+  const place = (labelTexts: string[], preferredDistance: number, nodeObstacles: EdgeRectangle[]) => {
     const visibleTexts = labelTexts.filter(Boolean);
     if (!visibleTexts.length) {
       return null;
@@ -314,9 +323,9 @@ export function placeRelationshipLabels(
     return placement;
   };
 
-  const source = place([texts.source], 0);
-  const target = place([texts.target, texts.targetStereotype ?? ''], pathLength);
-  const name = place([texts.name], pathLength / 2);
+  const source = place([texts.source], 0, nodeObstaclesFor(clearance.source, 0));
+  const target = place([texts.target, texts.targetStereotype ?? ''], pathLength, nodeObstaclesFor(0, clearance.target));
+  const name = place([texts.name], pathLength / 2, nodeObstaclesFor(0, 0));
   return { source, target, name };
 }
 
@@ -343,6 +352,35 @@ export const HOLLOW_TRIANGLE_MARKER = {
   markerUnits: 'strokeWidth',
   path: `M ${HOLLOW_TRIANGLE_TIP.x} ${HOLLOW_TRIANGLE_TIP.y} L ${HOLLOW_TRIANGLE_BASE_LEFT.x} ${HOLLOW_TRIANGLE_BASE_LEFT.y} L ${HOLLOW_TRIANGLE_BASE_RIGHT.x} ${HOLLOW_TRIANGLE_BASE_RIGHT.y} Z`,
 } as const;
+
+/**
+ * Every marker is drawn at non-positive local x. SVG orients an end marker along the direction of
+ * travel and a start marker against it, so in both cases negative x is the side of the border that
+ * lies outside the class; positive x is inside the box, where the class card hides it. The tip (or
+ * the vertex nearest the class) sits at x = 0, on the border.
+ */
+export const OPEN_ARROW_PATH = 'M -9 -5 L 0 0 L -9 5';
+/** UML 2.5 marks an end that cannot be navigated with a small x, drawn clear of the class border. */
+export const CROSS_PATH = 'M -12 -5 L -2 5 M -12 5 L -2 -5';
+export const DIAMOND_PATH = 'M 0 0 L -7 -6 L -14 0 L -7 6 Z';
+/** The diamond of a navigable whole end sits behind the arrowhead, still outside the class. */
+export const DIAMOND_BEHIND_ARROW_PATH = 'M -10 0 L -17 -6 L -24 0 L -17 6 Z';
+
+/** How far each marker reaches along the line from the class border, in stroke-width units. */
+const MARKER_LENGTH: Record<Exclude<RelationshipMarker, null>, number> = {
+  'open-arrow': 9,
+  'hollow-diamond': 14,
+  'filled-diamond': 14,
+  'hollow-diamond-open-arrow': 24,
+  'filled-diamond-open-arrow': 24,
+  'hollow-triangle': 13,
+  cross: 12,
+};
+
+/** Markers scale with the stroke, so the label has to stay clear of that scaled length. */
+export function markerClearance(marker: RelationshipMarker, strokeWidth: number): number {
+  return marker ? MARKER_LENGTH[marker] * strokeWidth + 6 : 0;
+}
 
 export interface HollowTriangleGeometry {
   pathEnd: EdgePoint;
@@ -411,19 +449,22 @@ export function relationshipMarkerPresentation(
   const targetNavigable = targetEnd?.navigability === 'NAVIGABLE';
 
   // UML generalization and interface-realization triangles point at the parent; navigability does not add an arrowhead.
+  // An end that is explicitly not navigable carries an x, except where a diamond already marks it.
+  const arrowOrCross = (navigable: boolean, end: RelationshipEndResource | undefined): RelationshipMarker =>
+    navigable ? 'open-arrow' : end?.navigability === 'NOT_NAVIGABLE' ? 'cross' : null;
   switch (kind) {
     case 'AGGREGATION':
       return {
         lineStyle: 'solid',
         sourceMarker: sourceNavigable ? 'hollow-diamond-open-arrow' : 'hollow-diamond',
-        targetMarker: targetNavigable ? 'open-arrow' : null,
+        targetMarker: arrowOrCross(targetNavigable, targetEnd),
         realizationLabelAtTarget: false,
       };
     case 'COMPOSITION':
       return {
         lineStyle: 'solid',
         sourceMarker: sourceNavigable ? 'filled-diamond-open-arrow' : 'filled-diamond',
-        targetMarker: targetNavigable ? 'open-arrow' : null,
+        targetMarker: arrowOrCross(targetNavigable, targetEnd),
         realizationLabelAtTarget: false,
       };
     case 'GENERALIZATION':
@@ -431,18 +472,19 @@ export function relationshipMarkerPresentation(
     case 'INTERFACE_REALIZATION':
       return { lineStyle: 'dashed', sourceMarker: null, targetMarker: 'hollow-triangle', realizationLabelAtTarget: true };
     case 'DEPENDENCY':
+      // A UML dependency always points at its supplier, whatever the navigability says.
       return {
         lineStyle: 'dashed',
         sourceMarker: sourceNavigable ? 'open-arrow' : null,
-        targetMarker: targetNavigable ? 'open-arrow' : null,
+        targetMarker: 'open-arrow',
         realizationLabelAtTarget: false,
       };
     case 'ASSOCIATION':
     default:
       return {
         lineStyle: 'solid',
-        sourceMarker: sourceNavigable ? 'open-arrow' : null,
-        targetMarker: targetNavigable ? 'open-arrow' : null,
+        sourceMarker: arrowOrCross(sourceNavigable, sourceEnd),
+        targetMarker: arrowOrCross(targetNavigable, targetEnd),
         realizationLabelAtTarget: false,
       };
   }
@@ -458,7 +500,7 @@ export interface RelationshipEdgeStyle {
 }
 
 export const DEFAULT_EDGE_STYLE: RelationshipEdgeStyle = {
-  routing: 'STRAIGHT',
+  routing: DEFAULT_ROUTING,
   cornerRadius: 0,
   strokeWidth: 2,
   dashed: false,
@@ -472,6 +514,10 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
   waypoints: Array<{ x: number; y: number }>;
   /** IA4-07: per-view appearance; absent in older payloads. */
   style?: RelationshipEdgeStyle;
+  /** Offset along the side that keeps this edge apart from the others joining the same classes. */
+  lane?: { source: number; target: number };
+  /** The class that is also this association: a dashed line joins it to the middle of the relationship. */
+  associationClassId?: string;
   onWaypointsChange?: (
     relationshipId: string,
     waypoints: Array<{ x: number; y: number }>,
@@ -531,12 +577,15 @@ export function RelationshipEndLabelAnchor({
   end,
   position,
   labelGroup = false,
+  showEndLabel = true,
   onContextMenu,
   children,
 }: {
   side: 'source' | 'target';
   end: RelationshipEndResource;
   position: RelationshipLabelPlacement;
+  /** False for kinds without end notation, where only the stereotype group remains. */
+  showEndLabel?: boolean;
   /** Flex layout for label groups sharing one position (target end + stereotype). */
   labelGroup?: boolean;
   onContextMenu?: ((event: MouseEvent<HTMLDivElement>, endOrdinal: number) => void) | undefined;
@@ -556,7 +605,7 @@ export function RelationshipEndLabelAnchor({
       }}
       style={{ transform: `translate(-50%, -50%) translate(${position.x}px, ${position.y}px)` }}
     >
-      <RelationshipEndLabel end={end} side={side} />
+      {showEndLabel && <RelationshipEndLabel end={end} side={side} />}
       {children}
     </div>
   );
@@ -569,6 +618,7 @@ const MARKER_SUFFIXES: Record<Exclude<RelationshipMarker, null>, string> = {
   'hollow-diamond-open-arrow': 'hollow-diamond-open-arrow',
   'filled-diamond-open-arrow': 'filled-diamond-open-arrow',
   'hollow-triangle': 'hollow-triangle',
+  cross: 'cross',
 };
 
 function markerUrl(marker: RelationshipMarker, markerIds: Record<Exclude<RelationshipMarker, null>, string>): string | undefined {
@@ -597,10 +647,42 @@ function rectangleForInternalNode(node: {
   return { x: position.x, y: position.y, width, height };
 }
 
+/** Minimal view of a React Flow node, enough to decide whether a route has to go around it. */
+interface RoutingNode {
+  id: string;
+  position: EdgePoint;
+  width?: number | undefined;
+  height?: number | undefined;
+  measured?: { width?: number | undefined; height?: number | undefined } | undefined;
+  data?: unknown;
+}
+
+/**
+ * The rectangles an orthogonal route has to keep out of besides its own two ends. A package is
+ * left out: it surrounds its classes, so treating it as a wall would shut every edge inside it.
+ */
+export function routingObstacles(nodes: readonly RoutingNode[], excludedIds: readonly string[]): EdgeRectangle[] {
+  return nodes.flatMap((node) => {
+    const classifier = (node.data as { classifier?: { kind?: string } } | undefined)?.classifier;
+    const width = node.measured?.width ?? node.width;
+    const height = node.measured?.height ?? node.height;
+    if (excludedIds.includes(node.id) || classifier?.kind === 'PACKAGE'
+      || width === undefined || height === undefined || width <= 0 || height <= 0) {
+      return [];
+    }
+    return [{ x: node.position.x, y: node.position.y, width, height }];
+  });
+}
+
 export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdge>) {
   const { screenToFlowPosition } = useReactFlow();
   const sourceNode = useInternalNode(props.source);
   const targetNode = useInternalNode(props.target);
+  const allNodes = useNodes();
+  const obstacles = useMemo(
+    () => routingObstacles(allNodes as RoutingNode[], [props.source, props.target]),
+    [allNodes, props.source, props.target],
+  );
   const markerPrefix = useId().replaceAll(':', '');
   const markerIds = Object.fromEntries(Object.entries(MARKER_SUFFIXES)
     .map(([marker, suffix]) => [marker, `${markerPrefix}-${suffix}`])) as Record<Exclude<RelationshipMarker, null>, string>;
@@ -664,21 +746,37 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
   // the current hand adjustment; STRAIGHT and FREE render the persisted waypoint polyline
   // (existing behavior).
   const route = style.routing === 'ORTHOGONAL' && sourceRectangle && targetRectangle
-    ? orthogonalRoute(sourceRectangle, targetRectangle, adjustment)
+    ? orthogonalRoute(sourceRectangle, targetRectangle, adjustment, data.lane ?? 0, obstacles)
     : null;
   const orthogonalPoints = route?.points ?? null;
   const path = orthogonalPoints
     ? roundedOrthogonalPath(orthogonalPoints, style.cornerRadius)
     : buildRelationshipEdgePath(points);
   const labelPoints: EdgePoint[] = orthogonalPoints ?? points;
-  const sourceLabel = formatRelationshipEndLabel(orderedEnds[0]!);
-  const targetLabel = formatRelationshipEndLabel(orderedEnds[1]!);
+  // UML draws an association class as a dashed line from the middle of its association to the class.
+  const associationClassNode = data.associationClassId
+    ? (allNodes as RoutingNode[]).find((node) => node.id === data.associationClassId)
+    : undefined;
+  const associationClassRectangle = associationClassNode
+    ? routingObstacles([associationClassNode], [])[0]
+    : undefined;
+  const associationClassSegment = associationClassRectangle && labelPoints.length > 0
+    ? associationClassLink(pointAtHalfArcLength(labelPoints), associationClassRectangle)
+    : null;
+  const showEndLabels = endLabelsApplyTo(relationship.kind);
+  const nameLabel = formatRelationshipName(relationship.name, relationship.stereotype);
+  const sourceLabel = showEndLabels ? formatRelationshipEndLabel(orderedEnds[0]!) : '';
+  const targetLabel = showEndLabels ? formatRelationshipEndLabel(orderedEnds[1]!) : '';
+  const strokeForMarkers = style.strokeWidth > 0 ? style.strokeWidth : EDGE_STROKE_WIDTH_PX;
   const labelPlacements = sourceRectangle && targetRectangle
     ? placeRelationshipLabels(labelPoints, sourceRectangle, targetRectangle, {
       source: sourceLabel,
       target: targetLabel,
       ...(markers.realizationLabelAtTarget ? { targetStereotype: '«realize»' } : {}),
-      name: relationship.name ?? '',
+      name: nameLabel,
+    }, {
+      source: markerClearance(markers.sourceMarker, strokeForMarkers),
+      target: markerClearance(markers.targetMarker, strokeForMarkers),
     })
     : { source: null, target: null, name: null };
   const middle = pointAlongSegment(points[0]!, points[points.length - 1]!, 0.5);
@@ -754,6 +852,13 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     data.onRouteAdjustmentChange?.(relationship.id, next, true);
   }
 
+  function discardPausedManualRoute(): void {
+    const next = withoutManualShape(adjustmentRef.current);
+    adjustmentRef.current = next;
+    setAdjustment(next);
+    data.onRouteAdjustmentChange?.(relationship.id, next, true);
+  }
+
   function removeRouteBend(): void {
     const current = adjustmentRef.current;
     if (!current || current.corridors.length <= 1) {
@@ -768,22 +873,25 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
   return (
     <>
       <defs>
-        <marker id={markerIds['open-arrow']} viewBox="0 -6 10 12" refX="0" refY="0" markerWidth="10" markerHeight="12" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 0 -5 L 9 0 L 0 5" fill="none" stroke="#526b62" strokeWidth="1.4" />
+        <marker id={markerIds['open-arrow']} viewBox="-10 -6 11 12" refX="0" refY="0" markerWidth="11" markerHeight="12" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
         </marker>
-        <marker id={markerIds['hollow-diamond']} viewBox="0 -7 14 14" refX="0" refY="0" markerWidth="14" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 0 0 L 7 -6 L 14 0 L 7 6 Z" fill="white" stroke="#526b62" strokeWidth="1.4" />
+        <marker id={markerIds['hollow-diamond']} viewBox="-15 -7 16 14" refX="0" refY="0" markerWidth="16" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d={DIAMOND_PATH} fill="white" stroke="#526b62" strokeWidth="1.4" />
         </marker>
-        <marker id={markerIds['filled-diamond']} viewBox="0 -7 14 14" refX="0" refY="0" markerWidth="14" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 0 0 L 7 -6 L 14 0 L 7 6 Z" fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
+        <marker id={markerIds['filled-diamond']} viewBox="-15 -7 16 14" refX="0" refY="0" markerWidth="16" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d={DIAMOND_PATH} fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
         </marker>
         <marker id={markerIds['hollow-diamond-open-arrow']} viewBox="-26 -8 28 16" refX="0" refY="0" markerWidth="28" markerHeight="16" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 9 -5 L 0 0 L 9 5" fill="none" stroke="#526b62" strokeWidth="1.4" />
-          <path d="M -24 0 L -18 -6 L -12 0 L -18 6 Z" fill="white" stroke="#526b62" strokeWidth="1.4" />
+          <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
+          <path d={DIAMOND_BEHIND_ARROW_PATH} fill="white" stroke="#526b62" strokeWidth="1.4" />
         </marker>
         <marker id={markerIds['filled-diamond-open-arrow']} viewBox="-26 -8 28 16" refX="0" refY="0" markerWidth="28" markerHeight="16" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d="M 9 -5 L 0 0 L 9 5" fill="none" stroke="#526b62" strokeWidth="1.4" />
-          <path d="M -24 0 L -18 -6 L -12 0 L -18 6 Z" fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
+          <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
+          <path d={DIAMOND_BEHIND_ARROW_PATH} fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
+        </marker>
+        <marker id={markerIds.cross} viewBox="-13 -6 14 12" refX="0" refY="0" markerWidth="14" markerHeight="12" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d={CROSS_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
         </marker>
         <marker
           id={markerIds['hollow-triangle']}
@@ -810,6 +918,16 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
           ...((markers.lineStyle === 'dashed' || style.dashed) ? { strokeDasharray: '6 4' } : {}),
         }}
       />
+      {associationClassSegment && (
+        <path
+          className="uml-association-class-link"
+          d={`M ${associationClassSegment.from.x} ${associationClassSegment.from.y} L ${associationClassSegment.to.x} ${associationClassSegment.to.y}`}
+          fill="none"
+          stroke="#526b62"
+          strokeDasharray="6 4"
+          strokeWidth={1.4}
+        />
+      )}
       <EdgeLabelRenderer>
         {sourceLabel && labelPlacements.source && (
           <RelationshipEndLabelAnchor
@@ -825,21 +943,34 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             labelGroup
             onContextMenu={(event, endOrdinal) => data.onRelationshipContextMenu?.(event, relationship.id, endOrdinal)}
             position={labelPlacements.target}
+            showEndLabel={showEndLabels}
             side="target"
           >
             {markers.realizationLabelAtTarget && <span className="uml-edge-stereotype">«realize»</span>}
           </RelationshipEndLabelAnchor>
         )}
-        {relationship.name && labelPlacements.name && (
+        {nameLabel && labelPlacements.name && (
           <div
             className="uml-edge-name uml-edge-label-position"
             style={{ transform: `translate(-50%, -50%) translate(${labelPlacements.name.x}px, ${labelPlacements.name.y}px)` }}
-          >{relationship.name}</div>
+          >{nameLabel}</div>
+        )}
+        {route && manualRouteDropped(route, adjustment) && (
+          <button
+            aria-label="El trazado manual de esta relación ya no encaja en el diseño, por lo que se muestra el trazado automático. Descartar los quiebres manuales."
+            className="uml-route-paused nodrag nopan"
+            onClick={discardPausedManualRoute}
+            style={{ transform: `translate(-50%, -50%) translate(${middle.x}px, ${middle.y - 22}px)` }}
+            title="Los quiebres manuales están en pausa porque ya no encajan en este diseño. Haz clic para descartarlos."
+            type="button"
+          >
+            Trazado manual en pausa
+          </button>
         )}
         {props.selected && style.routing !== 'ORTHOGONAL' && (
           <>
             <button
-              aria-label="Add connector bend"
+              aria-label="Agregar quiebre al conector"
               className="uml-waypoint-add nodrag nopan"
               onClick={addWaypoint}
               style={{ transform: `translate(-50%, -50%) translate(${middle.x}px, ${middle.y}px)` }}
@@ -847,7 +978,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             >+</button>
             {waypoints.map((waypoint, index) => (
               <button
-                aria-label="Move connector bend"
+                aria-label="Mover quiebre del conector"
                 className="uml-waypoint-handle nodrag nopan"
                 key={index}
                 onPointerCancel={settleWaypoints}
@@ -868,7 +999,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
         {props.selected && style.routing === 'ORTHOGONAL' && sourceRectangle && targetRectangle && route && (
           <>
             <button
-              aria-label="Add connector bend"
+              aria-label="Agregar quiebre al conector"
               className="uml-waypoint-add nodrag nopan"
               onClick={addRouteBend}
               style={{ transform: `translate(-50%, -50%) translate(${route.addBendAnchor.x}px, ${route.addBendAnchor.y}px)` }}
@@ -876,7 +1007,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             >+</button>
             {route.corridors.length > 1 && (
               <button
-                aria-label="Remove connector bend"
+                aria-label="Quitar quiebre del conector"
                 className="uml-waypoint-add nodrag nopan"
                 onClick={removeRouteBend}
                 style={{
@@ -895,7 +1026,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             )}
             {[...route.corridorHandles, ...route.levelHandles].map((handle) => (
               <button
-                aria-label={handle.kind === 'corridor' ? 'Move orthogonal corridor' : 'Move orthogonal level'}
+                aria-label={handle.kind === 'corridor' ? 'Mover corredor ortogonal' : 'Mover nivel ortogonal'}
                 className="uml-waypoint-handle nodrag nopan"
                 key={`${handle.kind}-${handle.index}`}
                 onPointerCancel={settleRouteAdjustment}
@@ -916,7 +1047,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
               const rectangle = end === 'source' ? sourceRectangle : targetRectangle;
               return (
                 <button
-                  aria-label={end === 'source' ? 'Move source end anchor' : 'Move target end anchor'}
+                  aria-label={end === 'source' ? 'Mover ancla del extremo de origen' : 'Mover ancla del extremo de destino'}
                   className="uml-waypoint-handle uml-anchor-handle nodrag nopan"
                   key={`anchor-${end}`}
                   onPointerCancel={settleRouteAdjustment}

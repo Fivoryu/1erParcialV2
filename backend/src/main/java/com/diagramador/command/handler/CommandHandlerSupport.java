@@ -7,6 +7,7 @@ import com.diagramador.command.CommandValidationException;
 import com.diagramador.command.ErrorCode;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.DependencyStereotype;
 import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.OperationParameter;
@@ -232,6 +233,55 @@ public class CommandHandlerSupport {
         }
     }
 
+    /**
+     * The stereotype of a relationship from an optional payload field: absent or null means none.
+     * Only a dependency may carry one, and it has to be one of the UML dependency stereotypes.
+     */
+    public String dependencyStereotype(JsonNode payload, String field, RelationshipKind kind) {
+        if (!payload.has(field) || payload.get(field).isNull()) {
+            return null;
+        }
+        String value = text(payload, field).toUpperCase(Locale.ROOT);
+        try {
+            DependencyStereotype.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            invalid("Unsupported stereotype '" + value + "'");
+        }
+        if (kind != RelationshipKind.DEPENDENCY) {
+            invalid("Payload field '" + field + "' applies only to dependencies, not to " + kind.name());
+        }
+        return value;
+    }
+
+    /**
+     * The association class of a relationship from an optional payload field: absent or null means none. Only an
+     * association (plain, aggregation or composition) has one; it has to be a class of the same model, not one of
+     * the association's own ends, and not already the association class of another relationship.
+     */
+    public UUID associationClassId(JsonNode payload, String field, UmlModel model, RelationshipKind kind,
+            UUID sourceClassifierId, UUID targetClassifierId, UUID relationshipId) {
+        if (!payload.has(field) || payload.get(field).isNull()) {
+            return null;
+        }
+        if (kind != RelationshipKind.ASSOCIATION && kind != RelationshipKind.AGGREGATION
+                && kind != RelationshipKind.COMPOSITION) {
+            invalid("Payload field '" + field + "' applies only to an association, not to " + kind.name());
+        }
+        UUID id = uuid(payload, field);
+        Classifier candidate = classifier(model, id);
+        if (candidate.getKind() != ClassifierKind.CLASS && candidate.getKind() != ClassifierKind.ABSTRACT_CLASS) {
+            invalid("Payload field '" + field + "' must name a class, not " + candidate.getKind().name());
+        }
+        if (id.equals(sourceClassifierId) || id.equals(targetClassifierId)) {
+            invalid("Payload field '" + field + "' cannot be one of the ends of its own association");
+        }
+        relationshipRepository.findByAssociationClassId(id)
+                .filter(other -> !other.getId().equals(relationshipId))
+                .ifPresent(other -> precondition("Class " + id + " is already the association class of relationship "
+                        + other.getId()));
+        return id;
+    }
+
     public AggregationKinds aggregationKinds(RelationshipKind kind) {
         return switch (kind) {
             case AGGREGATION -> new AggregationKinds("SHARED", "NONE");
@@ -422,17 +472,19 @@ public class CommandHandlerSupport {
         }
     }
 
-    public void insertRelationship(CommandHandler.Context context, UUID id, RelationshipKind kind, String name) {
+    public void insertRelationship(CommandHandler.Context context, UUID id, RelationshipKind kind, String name,
+            String stereotype) {
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.uml_relationship
-                    (relationship_id, model_id, kind, name, created_at)
+                    (relationship_id, model_id, kind, name, stereotype, created_at)
                 VALUES (CAST(:id AS uuid), CAST(:modelId AS uuid),
-                    CAST(:kind AS diagrammer.relationship_kind), :name, now())
+                    CAST(:kind AS diagrammer.relationship_kind), :name, :stereotype, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("modelId", context.model().getId())
                 .setParameter("kind", kind.name())
                 .setParameter("name", name)
+                .setParameter("stereotype", stereotype)
                 .executeUpdate();
     }
 

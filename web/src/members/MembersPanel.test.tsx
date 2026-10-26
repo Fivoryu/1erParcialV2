@@ -72,24 +72,25 @@ describe('project members panel', () => {
 
     expect(markup).toContain('Project Owner');
     expect(markup).toContain('Diagram User');
-    expect(markup).toContain('Owner');
+    expect(markup).toContain('Propietario');
     expect(markup).toContain('Editor');
-    expect(markup).not.toContain('Invite a member');
+    expect(markup).not.toContain('Invitar a una persona');
     expect(markup).not.toContain('member-invite-form');
-    expect(markup).not.toContain('>Remove</button>');
-    expect(markup).not.toContain('>Revoke</button>');
+    expect(markup).not.toContain('>Quitar</button>');
+    expect(markup).not.toContain('>Revocar</button>');
     expect(markup).not.toMatch(UUID_PATTERN);
   });
 
   it('shows the invite form, pending invitations, and member controls to an owner', () => {
     const markup = render({ userId: owner.userId });
 
-    expect(markup).toContain('Invite a member');
+    expect(markup).toContain('Invitar a una persona');
     expect(markup).toContain('member-invite-form');
-    expect(markup).toContain('Send invitation');
+    expect(markup).toContain('Enviar invitación');
     expect(markup).toContain('New Member');
-    expect(markup).toContain('>Revoke</button>');
-    expect(markup).toContain('>Remove</button>');
+    expect(markup).toContain('Acceso de Lector');
+    expect(markup).toContain('>Revocar</button>');
+    expect(markup).toContain('>Quitar</button>');
     expect(markup).not.toMatch(UUID_PATTERN);
     expect(markup).not.toContain('OWNER');
     expect(markup).not.toContain('EDITOR');
@@ -100,15 +101,15 @@ describe('project members panel', () => {
     const markup = render({ userId: owner.userId });
 
     expect(markup).not.toMatch(/<option value="Owner">/);
-    expect(markup).toMatch(/<select aria-label="Role for Diagram User"[^>]*>.*?<option value="Editor"[^>]*>Editor<\/option>.*?<option value="Viewer"[^>]*>Viewer<\/option>.*?<\/select>/);
+    expect(markup).toMatch(/<select aria-label="Rol de Diagram User"[^>]*>.*?<option value="Editor"[^>]*>Editor<\/option>.*?<option value="Lector"[^>]*>Lector<\/option>.*?<\/select>/);
   });
 
   it('does not offer role changes or removal for the signed-in owner row', () => {
     const markup = render({ userId: owner.userId, members: [owner], pendingInvitations: [] });
 
-    expect(markup).toContain('Invite a member');
-    expect(markup).not.toContain('aria-label="Role for Project Owner"');
-    expect(markup).not.toContain('>Remove</button>');
+    expect(markup).toContain('Invitar a una persona');
+    expect(markup).not.toContain('aria-label="Rol de Project Owner"');
+    expect(markup).not.toContain('>Quitar</button>');
   });
 
   it('shows a readable backend message after a failed invitation without exposing its code or UUID', () => {
@@ -127,8 +128,8 @@ describe('project members panel', () => {
   });
 
   it('distinguishes an empty member list from a loading error', () => {
-    expect(render({ members: [] })).toContain('No members yet.');
+    expect(render({ members: [] })).toContain('Aún no hay integrantes.');
     expect(render({ members: [], membersError: 'Members could not be loaded.' })).toContain('role="alert"');
-    expect(render({ members: [], membersError: 'Members could not be loaded.' })).not.toContain('No members yet.');
+    expect(render({ members: [], membersError: 'Members could not be loaded.' })).not.toContain('Aún no hay integrantes.');
   });
 });

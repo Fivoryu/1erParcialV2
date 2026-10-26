@@ -2,6 +2,7 @@ package com.diagramador.generation;
 
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
+import com.diagramador.domain.PersistenceStore;
 import com.diagramador.domain.RelationshipKind;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -91,10 +92,21 @@ public record DomainModelIR(
             String tableName,
             boolean isAbstract,
             List<FieldDeclaration> fields,
-            List<OperationSignature> operations) {
+            List<OperationSignature> operations,
+            PersistenceStore store,
+            String storeReason) {
+
+        /** A type persisted relationally, which is what every type was before the store existed. */
+        public TypeDeclaration(UUID sourceId, UUID packageSourceId, ClassifierKind classifierKind, String sourceName,
+                String javaName, String javaPackageName, String tableName, boolean isAbstract,
+                List<FieldDeclaration> fields, List<OperationSignature> operations) {
+            this(sourceId, packageSourceId, classifierKind, sourceName, javaName, javaPackageName, tableName,
+                    isAbstract, fields, operations, PersistenceStore.SQL, null);
+        }
 
         public TypeDeclaration {
             Objects.requireNonNull(sourceId, "sourceId");
+            Objects.requireNonNull(store, "store");
             Objects.requireNonNull(classifierKind, "classifierKind");
             Objects.requireNonNull(sourceName, "sourceName");
             Objects.requireNonNull(javaName, "javaName");

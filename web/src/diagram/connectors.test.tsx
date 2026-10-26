@@ -20,12 +20,19 @@ import {
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildFlowEdges, buildFlowNodes } from './UmlCanvas';
+import { endLabelsApplyTo } from './uml-format';
 import { UmlClassNode } from './UmlClassNode';
 import {
   buildRelationshipEdgePath,
   estimateLabelWidth,
+  DIAMOND_BEHIND_ARROW_PATH,
+  CROSS_PATH,
+  DIAMOND_PATH,
   HOLLOW_TRIANGLE_MARKER,
+  OPEN_ARROW_PATH,
   hollowTriangleGeometry,
+  markerClearance,
+  routingObstacles,
   placeRelationshipLabels,
   RelationshipEndLabels,
   relationshipMarkerPresentation,
@@ -96,21 +103,21 @@ const markerEnds = [
 ].reverse();
 
 const markerCases = [
-  ['ASSOCIATION', 'solid', 'open-arrow', null, false],
-  ['AGGREGATION', 'solid', 'hollow-diamond-open-arrow', null, false],
-  ['COMPOSITION', 'solid', 'filled-diamond-open-arrow', null, false],
+  ['ASSOCIATION', 'solid', 'open-arrow', 'cross', false],
+  ['AGGREGATION', 'solid', 'hollow-diamond-open-arrow', 'cross', false],
+  ['COMPOSITION', 'solid', 'filled-diamond-open-arrow', 'cross', false],
   ['GENERALIZATION', 'solid', null, 'hollow-triangle', false],
   ['INTERFACE_REALIZATION', 'dashed', null, 'hollow-triangle', true],
-  ['DEPENDENCY', 'dashed', 'open-arrow', null, false],
+  ['DEPENDENCY', 'dashed', 'open-arrow', 'open-arrow', false],
 ] as const;
 
 const navigationMarkerCases = [
-  ['ASSOCIATION', 'open-arrow', 'open-arrow', null, null, false],
-  ['AGGREGATION', 'hollow-diamond-open-arrow', 'open-arrow', 'hollow-diamond', null, false],
-  ['COMPOSITION', 'filled-diamond-open-arrow', 'open-arrow', 'filled-diamond', null, false],
+  ['ASSOCIATION', 'open-arrow', 'open-arrow', 'cross', 'cross', false],
+  ['AGGREGATION', 'hollow-diamond-open-arrow', 'open-arrow', 'hollow-diamond', 'cross', false],
+  ['COMPOSITION', 'filled-diamond-open-arrow', 'open-arrow', 'filled-diamond', 'cross', false],
   ['GENERALIZATION', null, 'hollow-triangle', null, 'hollow-triangle', true],
   ['INTERFACE_REALIZATION', null, 'hollow-triangle', null, 'hollow-triangle', true],
-  ['DEPENDENCY', 'open-arrow', 'open-arrow', null, null, false],
+  ['DEPENDENCY', 'open-arrow', 'open-arrow', null, 'open-arrow', false],
 ] as const;
 
 const labelPlacementCases = [
@@ -161,6 +168,10 @@ describe('UML relationship markers and labels', () => {
       if (fixedByKind) {
         expect(fromSource).toEqual(fromTarget);
         expect(fromSource).toEqual(neither);
+      } else if (kind === 'DEPENDENCY') {
+        // The arrow at the supplier is always there, so only the source end can change the drawing.
+        expect(fromSource).not.toEqual(neither);
+        expect(fromTarget).toEqual(neither);
       } else {
         expect(fromSource).not.toEqual(neither);
         expect(fromTarget).not.toEqual(neither);
@@ -214,8 +225,8 @@ describe('UML relationship markers and labels', () => {
       realizationLabelAtTarget: true,
     }));
 
-    expect(markup).toContain('customer [0..*]');
-    expect(markup).toContain('subscriptions [1..*]');
+    expect(markup).toContain('customer 0..*');
+    expect(markup).toContain('subscriptions 1..*');
     expect(markup).toContain('«realize»');
     expect(markup).not.toContain(sourceId);
     expect(markup).not.toContain(targetId);
@@ -233,17 +244,17 @@ describe('UML relationship markers and labels', () => {
       onSelect: () => undefined,
     }));
 
-    expect(panel).toContain('Relationship');
-    expect(panel).toContain('Source end · Customer');
-    expect(panel).toContain('Target end · Subscription');
+    expect(panel).toContain('Relación');
+    expect(panel).toContain('Extremo de origen · Customer');
+    expect(panel).toContain('Extremo de destino · Subscription');
     expect(panel).toContain('orders-&gt;notEmpty()');
-    expect(panel).toContain('Save constraint');
-    expect(panel).toContain('Severity');
-    expect(panel).toContain('Warning');
-    expect(panel).toContain('Role');
-    expect(panel).toContain('Multiplicity');
-    expect(panel).toContain('Navigability');
-    expect(panel).toContain('Interface realization');
+    expect(panel).toContain('Guardar restricción');
+    expect(panel).toContain('Gravedad');
+    expect(panel).toContain('Advertencia');
+    expect(panel).toContain('Rol');
+    expect(panel).toContain('Multiplicidad');
+    expect(panel).toContain('Navegabilidad');
+    expect(panel).toContain('Realización de interfaz');
     expect(panel).toContain('1');
     expect(panel).toContain('0..1');
     expect(panel).toContain('1..*');
@@ -303,8 +314,8 @@ describe('relationship label geometry', () => {
       targetBorder,
     ];
     const placements = placeRelationshipLabels(points, sourceRectangle, targetRectangle, {
-      source: 'customer [0..*]',
-      target: 'subscriptions [1..*]',
+      source: 'customer 0..*',
+      target: 'subscriptions 1..*',
       name: 'owns',
     });
     const intersects = (
@@ -348,6 +359,90 @@ describe('relationship label geometry', () => {
         expect(intersects(visibleBounds[left]!, visibleBounds[right]!)).toBe(false);
       }
     }
+  });
+});
+
+describe('routing obstacles', () => {
+  const node = (id: string, x: number, kind = 'CLASS', size: { width?: number; height?: number } = { width: 100, height: 60 }) => ({
+    id,
+    position: { x, y: 10 },
+    ...size,
+    data: { classifier: { kind } },
+  });
+
+  it('takes every class except the two ends of the relationship', () => {
+    const obstacles = routingObstacles([node('a', 0), node('b', 200), node('c', 400)], ['a', 'c']);
+
+    expect(obstacles).toEqual([{ x: 200, y: 10, width: 100, height: 60 }]);
+  });
+
+  it('leaves packages out, because the classes they contain are not blocked by them', () => {
+    expect(routingObstacles([node('p', 0, 'PACKAGE'), node('b', 200)], [])).toEqual([{ x: 200, y: 10, width: 100, height: 60 }]);
+  });
+
+  it('prefers the measured size and skips a node that has none yet', () => {
+    const measured = { ...node('m', 0), measured: { width: 120, height: 90 } };
+
+    expect(routingObstacles([measured, node('unsized', 300, 'CLASS', {})], [])).toEqual([{ x: 0, y: 10, width: 120, height: 90 }]);
+  });
+});
+
+describe('end labels clear the marker', () => {
+  const sourceRectangle = { x: 0, y: 0, width: 100, height: 120 };
+  const targetRectangle = { x: 400, y: 0, width: 100, height: 120 };
+  const points = [{ x: 100, y: 60 }, { x: 400, y: 60 }];
+
+  it('keeps the source label past the marker drawn at that end of the line', () => {
+    const plain = placeRelationshipLabels(points, sourceRectangle, targetRectangle, { source: '1', target: '', name: '' });
+    const cleared = placeRelationshipLabels(points, sourceRectangle, targetRectangle, { source: '1', target: '', name: '' }, { source: 30, target: 0 });
+
+    expect(cleared.source!.estimatedBounds.x).toBeGreaterThanOrEqual(plain.source!.estimatedBounds.x + 30);
+  });
+
+  it('sizes the clearance from the marker and the stroke width it scales with', () => {
+    expect(markerClearance(null, 2)).toBe(0);
+    expect(markerClearance('hollow-triangle', 2)).toBeGreaterThan(markerClearance('open-arrow', 2));
+    expect(markerClearance('cross', 2)).toBeGreaterThan(0);
+    expect(markerClearance('filled-diamond', 4)).toBe(markerClearance('filled-diamond', 2) * 2 - 6);
+  });
+
+  it('shows no end labels on generalization, realization or dependency', () => {
+    expect(endLabelsApplyTo('ASSOCIATION')).toBe(true);
+    expect(endLabelsApplyTo('AGGREGATION')).toBe(true);
+    expect(endLabelsApplyTo('COMPOSITION')).toBe(true);
+    expect(endLabelsApplyTo('GENERALIZATION')).toBe(false);
+    expect(endLabelsApplyTo('INTERFACE_REALIZATION')).toBe(false);
+    expect(endLabelsApplyTo('DEPENDENCY')).toBe(false);
+  });
+});
+
+describe('relationship markers stay outside the class', () => {
+  const xs = (path: string) => [...path.matchAll(/-?\d+(?:\.\d+)?/g)]
+    .map((match) => Number(match[0]))
+    .filter((_, index) => index % 2 === 0);
+
+  it.each([
+    ['open arrow', OPEN_ARROW_PATH],
+    ['cross', CROSS_PATH],
+    ['diamond', DIAMOND_PATH],
+    ['diamond behind the arrow', DIAMOND_BEHIND_ARROW_PATH],
+  ])('draws the %s at non-positive x, never into the class box', (_name, path) => {
+    expect(Math.max(...xs(path))).toBeLessThanOrEqual(0);
+  });
+
+  it('puts the tip of the open arrow and the vertex of the diamond on the border', () => {
+    expect(xs(OPEN_ARROW_PATH)).toContain(0);
+    expect(xs(DIAMOND_PATH)).toContain(0);
+  });
+});
+
+describe('node height follows the card', () => {
+  it('uses the stored height only as a minimum, so a class that grew past it is never clipped', () => {
+    const node = buildFlowNodes(model, [], () => undefined, () => undefined).find((candidate) => candidate.id === sourceId);
+
+    expect(node?.width).toBe(240);
+    expect(node?.height).toBeUndefined();
+    expect(node?.style).toEqual({ minHeight: 160 });
   });
 });
 
@@ -460,7 +555,7 @@ describe('coalesced persisted geometry', () => {
 
     expect(customer?.position).toEqual({ x: 96, y: 72 });
     expect(customer?.width).toBe(240);
-    expect(customer?.height).toBe(160);
+    expect(customer?.style?.minHeight).toBe(160);
     expect(subscription?.position).toEqual({ x: 456, y: 72 });
     expect(connector?.data?.waypoints).toEqual([{ x: 360, y: 144 }, { x: 420, y: 144 }]);
 
@@ -495,6 +590,142 @@ describe('coalesced persisted geometry', () => {
   });
 });
 
+describe('association class', () => {
+  const values = {
+    name: null,
+    kind: 'ASSOCIATION' as const,
+    source: { role: null, multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED' },
+    target: { role: null, multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED' },
+  };
+  const updateWith = (base: ModelResource, payload: Record<string, unknown>) => applyOptimisticCommand(
+    base,
+    buildModelCommandEnvelope(base, { type: 'relationship.update', targets: [{ scope: 'relationship', id: relationshipId }], payload }),
+  ).relationships[0];
+  const linked = { ...model, relationships: [{ ...relationship, kind: 'ASSOCIATION', associationClassId: 'class-1' }] };
+
+  it('sends the association class only when the caller has one to say', () => {
+    expect(buildRelationshipUpdateRequest(relationship, { ...values, associationClassId: 'class-1' }).payload)
+      .toMatchObject({ associationClassId: 'class-1' });
+    expect(buildRelationshipUpdateRequest(relationship, { ...values, associationClassId: null }).payload)
+      .toMatchObject({ associationClassId: null });
+    expect(Object.hasOwn(buildRelationshipUpdateRequest(relationship, values).payload!, 'associationClassId')).toBe(false);
+  });
+
+  it('applies, clears and keeps it, and drops it when the relationship stops being an association', () => {
+    expect(updateWith(linked, { associationClassId: 'class-2' })?.associationClassId).toBe('class-2');
+    expect(updateWith(linked, { associationClassId: null })?.associationClassId).toBeNull();
+    expect(updateWith(linked, { name: 'enrols' })?.associationClassId).toBe('class-1');
+    expect(updateWith(linked, { kind: 'AGGREGATION' })?.associationClassId).toBe('class-1');
+    expect(updateWith(linked, { kind: 'DEPENDENCY' })?.associationClassId).toBeNull();
+  });
+
+  it('releases the link when the class is deleted, as the server does', () => {
+    const doomed = { ...model, relationships: [{ ...relationship, kind: 'ASSOCIATION', associationClassId: 'class-1' }] };
+    const after = applyOptimisticCommand(
+      doomed,
+      buildModelCommandEnvelope(doomed, { type: 'classifier.delete', targets: [{ scope: 'classifier', id: 'class-1' }], payload: {} }),
+    );
+
+    expect(after.relationships[0]?.associationClassId ?? null).toBeNull();
+  });
+
+  it('puts the association class on the edge data', () => {
+    const edge = buildFlowEdges(linked).find((candidate) => candidate.id === relationshipId);
+
+    expect(edge?.data?.associationClassId).toBe('class-1');
+    expect(buildFlowEdges(model).find((candidate) => candidate.id === relationshipId)?.data?.associationClassId)
+      .toBeUndefined();
+  });
+
+  it('offers the select only for an association, with the current class selected', () => {
+    const extra = { ...model.classifiers[0]!, id: 'class-1', name: 'Enrolment' };
+    const render = (kind: string, associationClassId: string | null) => renderToStaticMarkup(createElement(PropertiesPanel, {
+      model: { ...model, classifiers: [...model.classifiers, extra], relationships: [{ ...relationship, kind, associationClassId }] },
+      selection: { kind: 'relationship', relationshipId },
+      onCommand: () => null,
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    const association = render('ASSOCIATION', 'class-1');
+    expect(association).toContain('id="relationship-association-class"');
+    expect(association).toMatch(/value="class-1"[^>]*selected/);
+    expect(association).toContain('Enrolment');
+    expect(render('DEPENDENCY', null)).not.toContain('relationship-association-class');
+  });
+});
+
+describe('dependency stereotypes', () => {
+  const values = {
+    name: null,
+    kind: 'DEPENDENCY' as const,
+    source: { role: null, multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED' },
+    target: { role: null, multiplicity: 'EXACTLY_ONE', navigability: 'UNSPECIFIED' },
+  };
+
+  it('sends the stereotype only when the caller has one to say, so other updates leave it alone', () => {
+    expect(buildRelationshipUpdateRequest(relationship, { ...values, stereotype: 'USE' }).payload)
+      .toMatchObject({ stereotype: 'USE' });
+    expect(buildRelationshipUpdateRequest(relationship, { ...values, stereotype: null }).payload)
+      .toMatchObject({ stereotype: null });
+    expect(Object.hasOwn(buildRelationshipUpdateRequest(relationship, values).payload!, 'stereotype')).toBe(false);
+  });
+
+  it('applies a stereotype, clears it, and drops it when the relationship stops being a dependency', () => {
+    const dependency = { ...model, relationships: [{ ...relationship, kind: 'DEPENDENCY', stereotype: 'USE' }] };
+    const apply = (base: ModelResource, payload: Record<string, unknown>) => applyOptimisticCommand(
+      base,
+      buildModelCommandEnvelope(base, { type: 'relationship.update', targets: [{ scope: 'relationship', id: relationshipId }], payload }),
+    ).relationships[0];
+
+    expect(apply(dependency, { stereotype: 'IMPORT' })?.stereotype).toBe('IMPORT');
+    expect(apply(dependency, { stereotype: null })?.stereotype).toBeNull();
+    expect(apply(dependency, { name: 'needs' })?.stereotype).toBe('USE');
+    expect(apply(dependency, { kind: 'ASSOCIATION' })?.stereotype).toBeNull();
+  });
+
+  it('offers the stereotype select only for a dependency, with the current one selected', () => {
+    const render = (kind: string, stereotype: string | null) => renderToStaticMarkup(createElement(PropertiesPanel, {
+      model: { ...model, relationships: [{ ...relationship, kind, stereotype }] },
+      selection: { kind: 'relationship', relationshipId },
+      onCommand: () => null,
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    const dependency = render('DEPENDENCY', 'IMPORT');
+    expect(dependency).toContain('id="relationship-stereotype"');
+    expect(dependency).toMatch(/value="IMPORT"[^>]*selected/);
+    expect(dependency).toContain('«import»');
+    expect(render('ASSOCIATION', null)).not.toContain('relationship-stereotype');
+  });
+});
+
+describe('edge selection across a model sync', () => {
+  it('keeps the edge that was selected when the edges are rebuilt', () => {
+    const first = model.relationships[0]!;
+    const twin = { ...first, id: 'twin-relationship' };
+    const synced = { ...model, relationships: [first, twin] };
+    const before = buildFlowEdges(synced).map((edge) => (edge.id === first.id ? { ...edge, selected: true } : edge));
+
+    const after = buildFlowEdges(synced, undefined, undefined, before);
+
+    expect(after.map((edge) => [edge.id, edge.selected ?? false])).toEqual([[first.id, true], [twin.id, false]]);
+  });
+});
+
+describe('parallel relationship lanes', () => {
+  it('gives each relationship between the same two classes its own lane on the edge data', () => {
+    const first = model.relationships[0]!;
+    const twin = { ...first, id: 'twin-relationship' };
+    const lonely = buildFlowEdges(model).find((edge) => edge.id === first.id);
+    const paired = buildFlowEdges({ ...model, relationships: [first, twin] });
+
+    expect(lonely?.data?.lane).toEqual({ source: 0, target: 0 });
+    expect(paired.map((edge) => edge.data?.lane)).toEqual([{ source: -8, target: -8 }, { source: 8, target: 8 }]);
+  });
+});
+
 describe('relationship route & style (IA4-07)', () => {
   const styledModel: ModelResource = {
     ...model,
@@ -521,7 +752,7 @@ describe('relationship route & style (IA4-07)', () => {
 
     const plain = buildFlowEdges(model).find((edge) => edge.id === relationshipId);
     expect(plain?.data?.style).toEqual({
-      routing: 'STRAIGHT',
+      routing: 'ORTHOGONAL',
       cornerRadius: 0,
       strokeWidth: 2,
       dashed: false,
@@ -564,15 +795,15 @@ describe('relationship route & style (IA4-07)', () => {
       onSelect: () => undefined,
     }));
 
-    expect(panel).toContain('Route &amp; style');
-    expect(panel).toContain('Reset route');
+    expect(panel).toContain('Ruta y estilo');
+    expect(panel).toContain('Restablecer ruta');
     expect(panel).toMatch(/value="ORTHOGONAL"[^>]*selected/);
     expect(panel).toMatch(/id="relationship-corner-radius"[^>]*value="8"/);
     expect(panel).toMatch(/id="relationship-stroke-width"[^>]*value="3"/);
     expect(panel).toMatch(/id="relationship-dashed"[^>]*checked/);
   });
 
-  it('falls back to straight, solid defaults when no style row exists', () => {
+  it('falls back to orthogonal, solid defaults when no style row exists', () => {
     const panel = renderToStaticMarkup(createElement(PropertiesPanel, {
       model,
       selection: { kind: 'relationship', relationshipId },
@@ -581,7 +812,7 @@ describe('relationship route & style (IA4-07)', () => {
       onSelect: () => undefined,
     }));
 
-    expect(panel).toMatch(/value="STRAIGHT"[^>]*selected/);
+    expect(panel).toMatch(/value="ORTHOGONAL"[^>]*selected/);
     expect(panel).toMatch(/id="relationship-corner-radius"[^>]*value="0"/);
     expect(panel).toMatch(/id="relationship-stroke-width"[^>]*value="2"/);
     expect(panel).not.toMatch(/id="relationship-dashed"[^>]*checked/);

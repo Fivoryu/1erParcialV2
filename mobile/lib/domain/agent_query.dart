@@ -78,15 +78,15 @@ class QuerySpec {
     final report = payload['tag'] == 'report';
     final filters = <FilterSpec>[];
     final rawFilters = payload['filter'] ?? payload['filters'] ?? const [];
-    if (rawFilters is! List) throw const FormatException('filter must be a list.');
+    if (rawFilters is! List) throw const FormatException('El campo filter debe ser una lista.');
     for (final raw in rawFilters) {
-      if (raw is! Map || raw['field'] is! String) throw const FormatException('Invalid filter.');
+      if (raw is! Map || raw['field'] is! String) throw const FormatException('El filtro no es válido.');
       final op = (raw['op'] ?? 'eq').toString();
-      if (!operators.contains(op)) throw FormatException('Unknown operator $op.');
+      if (!operators.contains(op)) throw FormatException('Operador desconocido: $op.');
       filters.add(FilterSpec(resolveField(entity, schema, raw['field'] as String), op, raw['value']));
     }
     final metric = (payload['metric'] ?? 'count').toString();
-    if (report && !metrics.contains(metric)) throw FormatException('Unknown metric $metric.');
+    if (report && !metrics.contains(metric)) throw FormatException('Métrica desconocida: $metric.');
     final metricField = metric != 'count' && payload['field'] is String
         ? resolveField(entity, schema, payload['field'] as String)
         : null;

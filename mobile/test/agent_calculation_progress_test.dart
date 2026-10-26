@@ -39,8 +39,8 @@ void main() {
       expect(gatewayCalls, 0);
       expect(result.status, AgentRunStatus.stopped);
       expect(result.text, contains('5'));
-      expect(result.text, contains('partial result'));
-      expect(result.text, contains('model-proposed'));
+      expect(result.text, contains('resultado parcial'));
+      expect(result.text, contains('propuestos por el modelo'));
       final observations = result.data as List;
       expect(observations, hasLength(1));
       expect(observations.single['calculation'], 5);

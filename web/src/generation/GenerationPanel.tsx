@@ -38,7 +38,7 @@ function messageFor(error: unknown): string {
   if (error instanceof ApiTransportError) {
     return error.message;
   }
-  return 'The generation request could not be completed. Check the connection and try again.';
+  return 'No se pudo completar la solicitud de generación. Revisa la conexión e inténtalo de nuevo.';
 }
 
 /**
@@ -124,8 +124,8 @@ export function GenerationPanelView({
     <section className="generation-panel" aria-labelledby="generation-title">
       <div className="generation-heading">
         <div>
-          <p className="eyebrow">Generation</p>
-          <h2 id="generation-title">Generate a backend</h2>
+          <p className="eyebrow">Generación</p>
+          <h2 id="generation-title">Generar un backend</h2>
         </div>
         <button
           className="text-button"
@@ -133,7 +133,7 @@ export function GenerationPanelView({
           onClick={() => setFormOpen((open) => !open)}
           aria-expanded={formOpen}
         >
-          {formOpen ? 'Cancel new destination' : 'New destination'}
+          {formOpen ? 'Cancelar nuevo destino' : 'Nuevo destino'}
         </button>
       </div>
 
@@ -152,21 +152,21 @@ export function GenerationPanelView({
       {error && (
         <div className="notice notice-error" role="alert">
           <span>{error}</span>
-          <button className="text-button" type="button" onClick={onDismiss}>Dismiss</button>
+          <button className="text-button" type="button" onClick={onDismiss}>Descartar</button>
         </div>
       )}
 
       {formOpen && (
         <form className="generation-target-form" onSubmit={submitTarget}>
-          <label htmlFor={nameFieldId}>Destination name</label>
+          <label htmlFor={nameFieldId}>Nombre del destino</label>
           <input
             id={nameFieldId}
             value={targetName}
             onChange={(event) => setTargetName(event.target.value)}
-            placeholder="Reporting service"
+            placeholder="Servicio de informes"
             autoComplete="off"
           />
-          <label htmlFor={databaseFieldId}>Database name</label>
+          <label htmlFor={databaseFieldId}>Nombre de la base de datos</label>
           <input
             id={databaseFieldId}
             value={databaseName}
@@ -175,17 +175,17 @@ export function GenerationPanelView({
             autoComplete="off"
           />
           <p className="property-hint">
-            Each destination produces its own backend with its own database. No credentials are stored here.
+            Cada destino genera su propio backend con su propia base de datos. Aquí no se guardan credenciales.
           </p>
-          <button className="button button-secondary" type="submit" disabled={busy}>Create destination</button>
+          <button className="button button-secondary" type="submit" disabled={busy}>Crear destino</button>
         </form>
       )}
 
       <div className="generation-section">
-        <h3>Destination</h3>
+        <h3>Destino</h3>
         {targets.length === 0 ? (
           <p className="property-hint">
-            This model has no destination yet. Create one to choose where the generated backend belongs.
+            Este modelo aún no tiene un destino. Crea uno para elegir dónde se ubicará el backend generado.
           </p>
         ) : (
           <ul className="generation-target-list">
@@ -206,9 +206,9 @@ export function GenerationPanelView({
       </div>
 
       <div className="generation-section">
-        <h3>Profile</h3>
+        <h3>Perfil</h3>
         {profiles.length === 0 ? (
-          <p className="property-hint">The generation profile is not available yet.</p>
+          <p className="property-hint">El perfil de generación aún no está disponible.</p>
         ) : (
           <ul className="generation-target-list">
             {profiles.map((profile, index) => (
@@ -234,11 +234,11 @@ export function GenerationPanelView({
           onClick={onGenerate}
           disabled={busy || !selectedTarget || !selectedProfile}
         >
-          {busy ? 'Generating…' : 'Generate backend'}
+          {busy ? 'Generando…' : 'Generar backend'}
         </button>
         {ready && (
           <button className="button button-secondary" type="button" onClick={onDownload} disabled={busy}>
-            Download ZIP
+            Descargar ZIP
           </button>
         )}
       </div>
@@ -259,14 +259,14 @@ export function GenerationPanelView({
             </ul>
           )}
           {!isTerminalState(run.state) && (
-            <p className="property-hint">The run is still working. This panel updates on its own.</p>
+            <p className="property-hint">La ejecución sigue en curso. Este panel se actualiza automáticamente.</p>
           )}
         </div>
       )}
 
       {(run !== null || deployment !== null) && (
         <div className="generation-deployment" aria-live="polite">
-          <h3>Deployment</h3>
+          <h3>Implementación</h3>
           {deployment !== null && (
             <>
               <p className="generation-run-state" data-state={deployment.state}>
@@ -274,13 +274,13 @@ export function GenerationPanelView({
               </p>
               {deployment.state === 'UP' && phoneUrl && (
                 <div className="generation-address">
-                  <p className="property-hint">From another device on the same network:</p>
+                  <p className="property-hint">Desde otro dispositivo de la misma red:</p>
                   <code>{phoneUrl}</code>
                   {editorOnLocalhost && (
                     <p className="property-hint">
-                      This editor was opened through localhost, so that address only works here. Open the
-                      editor from this machine's address on the network and the same address will work from a
-                      phone.
+                      Este editor se abrió mediante localhost, así que esa dirección solo funciona aquí. Abre el
+                      editor desde la dirección de red de este equipo para que también funcione desde un
+                      teléfono.
                     </p>
                   )}
                 </div>
@@ -296,12 +296,12 @@ export function GenerationPanelView({
                 </ul>
               )}
               {isDeploymentActive(deployment.state) && deployment.state !== 'UP' && (
-                <p className="property-hint">The operator on this machine picks this up on its own.</p>
+                <p className="property-hint">El operador de este equipo se encargará de esto automáticamente.</p>
               )}
               {canStopDeployment(deployment.state) && (
                 <button className="button button-secondary" type="button" onClick={onStopDeployment}
                   disabled={busy}>
-                  Stop backend
+                  Detener backend
                 </button>
               )}
             </>
@@ -309,8 +309,8 @@ export function GenerationPanelView({
           {run !== null && (deployment === null || !isDeploymentActive(deployment.state)) && (
             <>
               <p className="property-hint">
-                Deploying runs this backend on this machine with its own database, so another device on the
-                same network can call it.
+                Al implementar, este backend se ejecuta en este equipo con su propia base de datos, para que otro dispositivo de la
+                misma red pueda conectarse.
               </p>
               <button
                 className="button button-primary"
@@ -318,7 +318,7 @@ export function GenerationPanelView({
                 onClick={onDeploy}
                 disabled={busy || !ready}
               >
-                Deploy backend
+                Implementar backend
               </button>
             </>
           )}
@@ -450,7 +450,7 @@ export default function GenerationPanel({
       if (outcome.result) {
         await loadDestinations();
         setSelectedTargetId(outcome.result.targetId);
-        setNotice(`${outcome.result.name} is ready as a destination.`);
+        setNotice(`${outcome.result.name} está listo como destino.`);
       } else {
         setError(outcome.message);
       }
@@ -485,7 +485,7 @@ export default function GenerationPanel({
       if (!outcome.result) {
         setError(outcome.message);
       } else if (outcome.result.state === 'FAILED') {
-        setError('The model cannot be generated yet. See what blocks it below.');
+        setError('Aún no se puede generar el modelo. Consulta abajo qué lo impide.');
       }
     } catch (cause: unknown) {
       if (!captureLeaseConflict(cause)) {
@@ -536,7 +536,7 @@ export default function GenerationPanel({
       const ordered = await api.requestDeployment(projectId, run.runId);
       setDeployments((current) => [ordered, ...current.filter(
         (item) => item.deploymentId !== ordered.deploymentId)]);
-      setNotice('The deployment was ordered. The operator on this machine picks it up on its own.');
+      setNotice('Se solicitó la implementación. El operador de este equipo se encargará automáticamente.');
     } catch (cause: unknown) {
       setError(messageFor(cause));
     } finally {
@@ -582,7 +582,7 @@ export default function GenerationPanel({
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
-      setNotice('The generated backend was downloaded as a ZIP archive.');
+      setNotice('Se descargó el backend generado en un archivo ZIP.');
     } catch (cause: unknown) {
       if (!captureLeaseConflict(cause)) {
         setError(messageFor(cause));

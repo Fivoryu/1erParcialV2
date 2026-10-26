@@ -9,13 +9,9 @@ import {
   type VcsPermissionAction,
   type VcsProjectPermission,
 } from './api';
+import { permissionActionLabel } from './presentation';
 
 const api = createVcsApiClient();
-
-function permissionActionLabel(action: VcsPermissionAction): string {
-  const words = action.toLowerCase().split('_');
-  return words.map((word) => word[0]?.toUpperCase() + word.slice(1)).join(' ');
-}
 
 export interface PermissionsPanelViewProps {
   permissions: VcsProjectPermission[];
@@ -40,30 +36,30 @@ export function PermissionsPanelView({
     <section className="surface vcs-panel permissions-panel" aria-labelledby="vcs-permissions-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Versioning</p>
-          <h2 id="vcs-permissions-title">Permissions</h2>
+          <p className="eyebrow">Versionado</p>
+          <h2 id="vcs-permissions-title">Permisos</h2>
         </div>
         <span className="count-chip vcs-count-chip">{permissions.length}</span>
       </div>
-      <p className="property-hint vcs-permissions-hint">Saving a change pins the effective permission set for that member.</p>
+      <p className="property-hint vcs-permissions-hint">Al guardar un cambio, se fija el conjunto de permisos efectivo para esa persona.</p>
 
       {error && (
         <div className="notice notice-error" role="alert">
           <span>{error}</span>
-          <button className="text-button" type="button" onClick={onDismissError}>Dismiss</button>
+          <button className="text-button" type="button" onClick={onDismissError}>Descartar</button>
         </div>
       )}
 
       {loading ? (
-        <p className="quiet-state" role="status">Loading permissions…</p>
+        <p className="quiet-state" role="status">Cargando los permisos…</p>
       ) : permissions.length === 0 ? (
-        <p className="quiet-state">No project permissions are available; add a project member before changing actions.</p>
+        <p className="quiet-state">No hay permisos de proyecto disponibles. Agrega a una persona al proyecto antes de cambiar sus acciones.</p>
       ) : (
         <div className="vcs-permission-table-wrap">
           <table className="vcs-permission-table">
             <thead>
               <tr>
-                <th className="vcs-permission-member-heading" scope="col">Member</th>
+                <th className="vcs-permission-member-heading" scope="col">Integrante</th>
                 {VCS_PERMISSION_ACTIONS.map((action) => (
                   <th key={action} scope="col">{permissionActionLabel(action)}</th>
                 ))}
@@ -79,7 +75,7 @@ export function PermissionsPanelView({
                       <small>{permission.username}</small>
                       {isCurrentUser && (
                         <small className="property-hint">
-                          You cannot change your own permissions — ask another owner.
+                          No puedes cambiar tus propios permisos; pídele a otra persona propietaria que lo haga.
                         </small>
                       )}
                     </th>
@@ -87,7 +83,7 @@ export function PermissionsPanelView({
                       <td key={action}>
                         <label className="vcs-permission-action">
                           <input
-                            aria-label={`${permissionActionLabel(action)} for ${permission.displayName}`}
+                            aria-label={`${permissionActionLabel(action)} para ${permission.displayName}`}
                             checked={permission.actions.includes(action)}
                             disabled={busyUserId !== null || isCurrentUser}
                             onChange={(event) => onToggleAction(permission, action, event.target.checked)}
@@ -132,7 +128,7 @@ export default function PermissionsPanel({ projectId }: PermissionsPanelProps) {
       })
       .catch((cause: unknown) => {
         if (active) {
-          setError(vcsErrorMessage(cause, 'The project permissions could not be loaded.'));
+          setError(vcsErrorMessage(cause, 'No se pudieron cargar los permisos del proyecto.'));
         }
       })
       .finally(() => {
@@ -163,7 +159,7 @@ export default function PermissionsPanel({ projectId }: PermissionsPanelProps) {
       );
       setPermissions((current) => current.map((item) => item.userId === updated.userId ? updated : item));
     } catch (cause: unknown) {
-      setError(vcsErrorMessage(cause, 'The project permissions could not be updated.'));
+      setError(vcsErrorMessage(cause, 'No se pudieron actualizar los permisos del proyecto.'));
     } finally {
       setBusyUserId(null);
     }

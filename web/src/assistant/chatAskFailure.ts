@@ -1,7 +1,7 @@
 import { ApiTransportError } from '../api/client';
 
 export const PROVIDER_DISABLED_MESSAGE =
-  'The local AI is not enabled on this deployment. Please contact the operator.';
+  'La IA local no está habilitada en esta implementación. Comunícate con quien la administra.';
 
 export function chatAskErrorMessage(error: unknown, fallback: (cause: unknown) => string): string {
   if (error instanceof ApiTransportError

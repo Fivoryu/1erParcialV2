@@ -73,24 +73,24 @@ describe('version history panel', () => {
   it('shows the selected branch, author, commit message, and clean working-copy chip', () => {
     const markup = render();
 
-    expect(markup).toContain('History branch');
+    expect(markup).toContain('Rama del historial');
     expect(markup).toContain('main');
     expect(markup).toContain('Avery Rivera');
     expect(markup).toContain('Add account diagram');
-    expect(markup).toContain('Clean working copy');
+    expect(markup).toContain('Copia de trabajo limpia');
     expect(markup).toContain('vcs-commit-list');
     expect(markup).toContain('vcs-kind-chip');
     expect(markup).toContain('vcs-origin-chip');
-    expect(markup).toContain('Commit changes');
+    expect(markup).toContain('Confirmar cambios');
   });
 
   it('renders changed elements in the selected commit details', () => {
     const markup = render({ commitDetail });
 
-    expect(markup).toContain('Commit details');
-    expect(markup).toContain('Changed elements');
+    expect(markup).toContain('Detalles de la confirmación');
+    expect(markup).toContain('Elementos modificados');
     expect(markup).toContain('Account');
-    expect(markup).toContain('ADDED');
+    expect(markup).toContain('Agregado');
   });
 
   it('shows an observable error alert without hiding the history controls', () => {
@@ -98,12 +98,12 @@ describe('version history panel', () => {
 
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('The branch is protected.');
-    expect(markup).toContain('Dismiss');
-    expect(markup).toContain('Commit changes');
+    expect(markup).toContain('Descartar');
+    expect(markup).toContain('Confirmar cambios');
   });
 
   it('distinguishes loading and empty histories', () => {
-    expect(render({ loading: true, commits: [] })).toContain('Loading history…');
-    expect(render({ loading: false, commits: [] })).toContain('No commits yet; make a change and commit it to start a history.');
+    expect(render({ loading: true, commits: [] })).toContain('Cargando el historial…');
+    expect(render({ loading: false, commits: [] })).toContain('Aún no hay confirmaciones. Haz un cambio y guárdalo para iniciar el historial.');
   });
 });

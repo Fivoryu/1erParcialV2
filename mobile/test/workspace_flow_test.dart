@@ -129,7 +129,7 @@ void main() {
       await controller.confirm(session);
       expect(api.writes, 1);
       expect(controller.proposal, isNotNull);
-      expect(controller.error, contains('unknown'));
+      expect(controller.error, contains('desconoce'));
       expect(store.pending['u.p.d.hash'], contains('/tasks'));
       expect(store.pending['u.p.d.hash.inspection'], 'required');
     },

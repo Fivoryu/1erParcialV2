@@ -67,13 +67,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: Text(switch (widget.page) {
-        WorkspacePage.backends => 'Backends',
-        WorkspacePage.agent => 'Agent',
-        WorkspacePage.settings => 'Settings',
+        WorkspacePage.backends => 'Proyectos',
+        WorkspacePage.agent => 'Agente',
+        WorkspacePage.settings => 'Configuración',
       }),
       leading: widget.page == WorkspacePage.backends
           ? null
-          : BackButton(
+          : IconButton(
+              tooltip: 'Volver',
+              icon: const BackButtonIcon(),
               onPressed: () {
                 if (context.canPop()) {
                   context.pop();
@@ -85,7 +87,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       actions: [
         if (widget.page != WorkspacePage.settings)
           IconButton(
-            tooltip: 'Settings',
+            tooltip: 'Configuración',
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => context.push('/settings'),
           ),
@@ -120,17 +122,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Local AI', style: Theme.of(context).textTheme.headlineSmall),
+          Text('IA local', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
           const Text(
-            'Choose an installed on-device model. No download or cloud fallback.',
+            'Elige un modelo instalado en el dispositivo. No se descargará ni se usará un servicio en la nube como alternativa.',
           ),
           const SizedBox(height: 20),
           DropdownButtonFormField<LocalRuntime>(
             key: const ValueKey('local-runtime-selector'),
             initialValue: c.selectedRuntime,
             isExpanded: true,
-            decoration: const InputDecoration(labelText: 'On-device model'),
+            decoration: const InputDecoration(labelText: 'Modelo instalado'),
             items: const [
               DropdownMenuItem(
                 value: LocalRuntime.qwen,
@@ -163,26 +165,26 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             icon: const Icon(Icons.memory_outlined),
             label: Text(
               c.isModelLoading
-                  ? 'Loading AI…'
+                  ? 'Cargando IA…'
                   : c.mnnStatus.isLoaded
-                  ? 'AI ready'
-                  : 'Load AI',
+                  ? 'IA lista'
+                  : 'Cargar IA',
             ),
           ),
           if (c.detectedModelDirectory == null && !c.isModelDiscovering)
             TextButton(
               onPressed: c.discoverModel,
-              child: const Text('Check again'),
+              child: const Text('Volver a comprobar'),
             ),
           const SizedBox(height: 32),
-          Text('Account', style: Theme.of(context).textTheme.titleLarge),
+          Text('Cuenta', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(widget.session.session?.user.displayName ?? ''),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: widget.session.logout,
             icon: const Icon(Icons.logout),
-            label: const Text('Sign out'),
+            label: const Text('Cerrar sesión'),
           ),
         ],
       );
@@ -200,13 +202,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Connection', style: Theme.of(context).textTheme.titleLarge),
+              Text('Conexión', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 12),
               DropdownButtonFormField<PlatformProject>(
                 key: ValueKey('project:${c.project?.id}'),
                 initialValue: c.project,
                 decoration: const InputDecoration(
-                  labelText: 'Platform project',
+                  labelText: 'Proyecto de la plataforma',
                 ),
                 items: c.projects
                     .map((p) => DropdownMenuItem(value: p, child: Text(p.name)))
@@ -230,7 +232,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 ),
                 initialValue: c.backend,
                 decoration: const InputDecoration(
-                  labelText: 'Generated backend',
+                  labelText: 'Backend generado',
                 ),
                 items: c.backends
                     .map(
@@ -261,12 +263,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                         _prompt.clear();
                       },
                 icon: const Icon(Icons.link_off),
-                label: const Text('Leave backend'),
+                label: const Text('Desconectar backend'),
               ),
               if (c.contract != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: Text('Contract ${c.contract!.contractHash}'),
+                  child: Text('Contrato ${c.contract!.contractHash}'),
                 ),
               const SizedBox(height: 24),
               FilledButton.icon(
@@ -274,7 +276,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     ? null
                     : () => context.push('/agent'),
                 icon: const Icon(Icons.chat_bubble_outline),
-                label: const Text('Open agent'),
+                label: const Text('Abrir agente'),
               ),
               if (c.error != null)
                 Padding(
@@ -303,21 +305,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(c.backend?.name ?? 'No backend selected'),
+              Text(c.backend?.name ?? 'No hay ningún backend seleccionado'),
               const SizedBox(height: 8),
               Text(
-                'Propose an operation',
+                'Proponer una operación',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
               const Text(
-                'The local model only proposes. Nothing is sent until you confirm.',
+                'El modelo local solo propone operaciones. No se enviará nada hasta que lo confirmes.',
               ),
               const SizedBox(height: 12),
               Semantics(
                 key: const ValueKey('operation-request'),
                 identifier: 'operation-request',
-                label: 'Describe the data operation',
+                label: 'Describe la operación con los datos',
                 child: TextField(
                   controller: _prompt,
                   onChanged: (value) => c.requestDraft = value,
@@ -325,7 +327,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   minLines: 3,
                   maxLines: 6,
                   decoration: const InputDecoration(
-                    labelText: 'Describe the data operation',
+                    labelText: 'Describe la operación con los datos',
                   ),
                 ),
               ),
@@ -333,7 +335,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: () => context.push('/settings'),
-                  child: const Text('Set up local AI'),
+                  child: const Text('Configurar IA local'),
                 ),
               ],
               if (c.error != null)
@@ -353,12 +355,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
                 ),
-                child: const Text('Generate proposal'),
+                child: const Text('Generar propuesta'),
               ),
               if (c.proposal != null) ...[
                 const SizedBox(height: 20),
                 Text(
-                  'Review proposal',
+                  'Revisar propuesta',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 SelectableText(
@@ -376,7 +378,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size.fromHeight(48),
                         ),
-                        child: const Text('Discard'),
+                        child: const Text('Descartar'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -395,7 +397,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                           minimumSize: const Size.fromHeight(48),
                         ),
                         child: Text(
-                          c.isConfirming ? 'Sending…' : 'Confirm and send',
+                          c.isConfirming ? 'Enviando…' : 'Confirmar y enviar',
                         ),
                       ),
                     ),
@@ -412,13 +414,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
                     ),
-                    child: const Text('Inspect current data before retrying'),
+                    child: const Text('Revisar los datos actuales antes de reintentar'),
                   ),
                 ),
               if (c.latestResult != null) ...[
                 const SizedBox(height: 16),
                 Text(
-                  'Gateway result',
+                  'Resultado de la puerta de enlace',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 SelectableText(

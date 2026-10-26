@@ -131,7 +131,7 @@ function renderedTime(row: string): string | undefined {
 }
 
 function askButtonMarkup(markup: string): string {
-  return markup.match(/<button\b[^>]*>Ask AI<\/button>/)?.[0] ?? '';
+  return markup.match(/<button\b[^>]*>Preguntar a la IA<\/button>/)?.[0] ?? '';
 }
 
 function findAskButton(node: ReactNode): ReactElement<{
@@ -152,7 +152,7 @@ function findAskButton(node: ReactNode): ReactElement<{
     onClick?: (event: never) => void;
     disabled?: boolean;
   }>;
-  if (element.type === 'button' && element.props.children === 'Ask AI') return element;
+  if (element.type === 'button' && element.props.children === 'Preguntar a la IA') return element;
   return findAskButton(element.props.children);
 }
 
@@ -183,7 +183,7 @@ describe('ChatPanel', () => {
     expect(markup).toContain('class="chat-layout"');
     expect(markup).toContain('class="chat-main"');
     expect(markup).toContain('class="chat-side"');
-    expect(markup).toContain('<p class="eyebrow">Conversation</p>');
+    expect(markup).toContain('<p class="eyebrow">Conversación</p>');
     expect(markup).not.toContain('Live collaboration');
   });
 
@@ -206,7 +206,7 @@ describe('ChatPanel', () => {
 
     expect(rows[0]).toContain('chat-message--own');
     expect(rows[0]).toContain('data-current-reader="true"');
-    expect(rows[0]).toContain('You');
+    expect(rows[0]).toContain('Tú');
   });
 
   it('renders AI markdown while keeping HUMAN message bodies as plain text', () => {
@@ -230,9 +230,9 @@ describe('ChatPanel', () => {
     const otherRow = rows.find((row) => row.includes(otherHumanMessage.body)) ?? '';
     const aiRow = rows.find((row) => row.includes(assistantMessage.body)) ?? '';
 
-    expect(ownRow).toContain('>Ask AI</button>');
-    expect(otherRow).not.toContain('Ask AI');
-    expect(aiRow).not.toContain('Ask AI');
+    expect(ownRow).toContain('>Preguntar a la IA</button>');
+    expect(otherRow).not.toContain('Preguntar a la IA');
+    expect(aiRow).not.toContain('Preguntar a la IA');
 
     const onAskAi = vi.fn();
     const button = findAskButton(ChatPanel(panelProps({ history: [ownHumanMessage], onAskAi })));
@@ -269,7 +269,7 @@ describe('ChatPanel', () => {
         history: [ownHumanMessage],
         aiStatus: state ? { sessionId: session.id, state } : null,
       }));
-      expect(button).toContain('>Ask AI</button>');
+      expect(button).toContain('>Preguntar a la IA</button>');
       expect(button).not.toContain('disabled=""');
     }
   });
@@ -277,8 +277,8 @@ describe('ChatPanel', () => {
   it('shows a quiet empty state without any message rows', () => {
     const markup = render({ history: [] });
 
-    expect(markup).toContain('No messages yet.');
-    expect(markup).toContain('Start the conversation or ask the AI about the diagram.');
+    expect(markup).toContain('Aún no hay mensajes.');
+    expect(markup).toContain('Inicia la conversación o pregúntale a la IA sobre el diagrama.');
     expect(markup).toContain('class="chat-conversation-area"');
     expect(markup).toContain('class="chat-empty"');
     expect(messageRows(markup)).toHaveLength(0);
@@ -288,7 +288,7 @@ describe('ChatPanel', () => {
     const markup = render({ loading: true });
 
     expect(markup).toContain('role="status"');
-    expect(markup).toContain('Loading messages…');
+    expect(markup).toContain('Cargando mensajes…');
     expect(messageRows(markup)).toHaveLength(0);
   });
 
@@ -307,7 +307,7 @@ describe('ChatPanel', () => {
 
   it('disables sending when the draft contains only whitespace', () => {
     const markup = render({ draft: '   ' });
-    const sendButton = markup.match(/<button\b[^>]*>Send<\/button>/)?.[0] ?? '';
+    const sendButton = markup.match(/<button\b[^>]*>Enviar<\/button>/)?.[0] ?? '';
 
     expect(sendButton).toContain('disabled=""');
   });
@@ -316,61 +316,61 @@ describe('ChatPanel', () => {
     const review = { ...session, id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', title: 'Review' };
     const markup = render({ sessions: [session, review] });
 
-    expect(markup).toContain('for="chat-session-selector">Chat session</label>');
+    expect(markup).toContain('for="chat-session-selector">Sesión de chat</label>');
     expect(markup).toContain('<option value="77777777-7777-4777-8777-777777777777" selected="">General</option>');
     expect(markup).toContain('<option value="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">Review</option>');
-    expect(markup).toContain('New session');
+    expect(markup).toContain('Nueva sesión');
   });
 
   it('shows the actual AI request state and reason', () => {
     const markup = render({ aiStatus: { sessionId: session.id, state: 'FAILED', reason: 'Provider unavailable' } });
 
-    expect(markup).toContain('AI request failed: Provider unavailable');
+    expect(markup).toContain('Solicitud de IA fallida: Provider unavailable');
     expect(markup).toContain('chat-ai-status--failed');
   });
 
   it('renders context budget components, threshold state, and the explicit compact action', () => {
     const markup = render({ contextMeter: meter });
 
-    expect(markup).toContain('109% of the input budget (3920 / 3584 tokens)');
-    expect(markup).toContain('<details class="context-meter-details"><summary>Details</summary>');
-    expect(markup).toContain('<dt>Images</dt><dd>600</dd>');
-    expect(markup).toContain('<dt>Compaction threshold</dt><dd>2868</dd>');
+    expect(markup).toContain('109% del presupuesto de entrada (3920 / 3584 tokens)');
+    expect(markup).toContain('<details class="context-meter-details"><summary>Detalles</summary>');
+    expect(markup).toContain('<dt>Imágenes</dt><dd>600</dd>');
+    expect(markup).toContain('<dt>Umbral de compactación</dt><dd>2868</dd>');
     expect(markup).toContain('data-threshold-reached="true"');
     expect(markup).toContain('accent-color:#b42318');
-    expect(markup).toContain('Compact this session context');
+    expect(markup).toContain('Compactar el contexto de esta sesión');
   });
 
   it('lists memory kind, status, and evidence with distinct owner-only forget controls', () => {
     const markup = render({ memories: [memory], canManageMemory: true, canDeleteHistory: true });
 
-    expect(markup).toContain('DECISION');
-    expect(markup).toContain('ACTIVE');
-    expect(markup).toContain(`session ${session.id}`);
-    expect(markup).toContain('Sources:');
-    expect(markup).toContain('Extract memories');
-    expect(markup).toContain('Forget this memory');
-    expect(markup).toContain('Forget all diagram memories');
-    expect(markup).toContain('Delete history for this session');
+    expect(markup).toContain('Decisión');
+    expect(markup).toContain('Activa');
+    expect(markup).toContain(`sesión ${session.id}`);
+    expect(markup).toContain('Fuentes:');
+    expect(markup).toContain('Extraer recuerdos');
+    expect(markup).toContain('Olvidar este recuerdo');
+    expect(markup).toContain('Olvidar todos los recuerdos del diagrama');
+    expect(markup).toContain('Eliminar el historial de esta sesión');
   });
 
   it('does not expose forget controls to non-owners and keeps history deletion separate', () => {
     const markup = render({ memories: [memory], canManageMemory: false, canDeleteHistory: false });
 
-    expect(markup).toContain('Only the project OWNER can forget diagram memories.');
-    expect(markup).not.toContain('Forget this memory');
-    expect(markup).not.toContain('Forget all diagram memories');
-    expect(markup).not.toContain('Delete history for this session');
-    expect(markup).toContain('Deleting chat history does not forget memory.');
+    expect(markup).toContain('Solo la persona propietaria del proyecto puede olvidar los recuerdos del diagrama.');
+    expect(markup).not.toContain('Olvidar este recuerdo');
+    expect(markup).not.toContain('Olvidar todos los recuerdos del diagrama');
+    expect(markup).not.toContain('Eliminar el historial de esta sesión');
+    expect(markup).toContain('Eliminar el historial del chat no los borra.');
   });
 
   it('explains automatic memory, natural-language operations, current UML, and shared search scope', () => {
     const markup = render();
 
-    expect(markup).toContain('Useful design knowledge is extracted automatically after AI requests');
-    expect(markup).toContain('Ask naturally in chat to read, save, or revise memories');
-    expect(markup).toContain('Each AI request uses the latest UML for this diagram');
-    expect(markup).toContain('Shared results come only from projects every active collaborator can access');
+    expect(markup).toContain('Después de las solicitudes a la IA se extraen automáticamente conocimientos útiles sobre el diseño.');
+    expect(markup).toContain('Pregunta en el chat, con tus propias palabras, para leer, guardar o revisar recuerdos.');
+    expect(markup).toContain('Cada solicitud a la IA usa la versión más reciente del diagrama UML.');
+    expect(markup).toContain('Los resultados compartidos solo incluyen proyectos a los que todas las personas colaboradoras activas pueden acceder.');
   });
 
   it('renders authorized image bytes as a thumbnail on the associated message', () => {
@@ -384,8 +384,8 @@ describe('ChatPanel', () => {
     });
 
     expect(markup).toContain('src="blob:chat-image"');
-    expect(markup).toContain('alt="Image attached by Casey Collaborator"');
-    expect(markup).toContain('Attach images');
+    expect(markup).toContain('alt="Imagen adjuntada por Casey Collaborator"');
+    expect(markup).toContain('Adjuntar imágenes');
     expect(markup).toContain('accept="image/jpeg,image/png,image/webp"');
   });
 });

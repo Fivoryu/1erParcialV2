@@ -67,7 +67,7 @@ void main() {
     expect(chat.messages.last.role, 'assistant');
     expect(
       chat.messages.last.content,
-      'Gemma is generating (partial):\n\n{"tag":"answer","text":"draft',
+      'Gemma está generando (parcial):\n\n{"tag":"answer","text":"draft',
     );
     expect(chat.messages.last.metadata?['streaming'], isTrue);
     expect(

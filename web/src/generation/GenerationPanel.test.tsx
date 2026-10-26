@@ -173,7 +173,7 @@ describe('generation panel, presentational surface', () => {
     const withConflict = render({ editingLeaseConflict: conflict });
 
     expect(withConflict).toContain('Alex Rivera');
-    expect(withConflict).toContain('Reclaim control');
+    expect(withConflict).toContain('Recuperar el control');
 
     const withoutConflict = render({ editingLeaseConflict: null });
     expect(withoutConflict).not.toContain('editing-lease-notice');
@@ -194,15 +194,15 @@ describe('generation panel, presentational surface', () => {
   });
 
   it('says which destination is missing when the model has none', () => {
-    expect(render()).toContain('This model has no destination yet');
+    expect(render()).toContain('Este modelo aún no tiene un destino.');
   });
 
   it('shows a blocking diagnostic with its named feature, never as a generic error', () => {
     const markup = render({ targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: blockedRun });
 
-    expect(markup).toContain('Blocked by the model');
-    expect(markup).toContain('Generalization (inheritance)');
-    expect(markup).toContain('Remove or replace it, then generate again.');
+    expect(markup).toContain('Bloqueado por el modelo');
+    expect(markup).toContain('Generalización (herencia)');
+    expect(markup).toContain('Elimínalo o reemplázalo y vuelve a generar.');
     expect(markup).not.toContain('Something went wrong');
   });
 
@@ -234,31 +234,31 @@ describe('generation panel, presentational surface', () => {
         diagnostics: [],
       },
     });
-    expect(ready).toContain('Ready to download');
-    expect(ready).toContain('Download ZIP');
+    expect(ready).toContain('Listo para descargar');
+    expect(ready).toContain('Descargar ZIP');
 
     const blocked = render({ targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: blockedRun });
-    expect(blocked).not.toContain('Download ZIP');
+    expect(blocked).not.toContain('Descargar ZIP');
   });
 
   it('disables generation until a destination and a profile are both chosen', () => {
     expect(render({ profiles: [profile], selectedTargetId: null })).toContain('disabled');
     const enabled = render({ profiles: [profile], targets: [firstTarget], selectedTargetId: firstTarget.targetId });
-    expect(enabled).toContain('Generate backend');
+    expect(enabled).toContain('Generar backend');
   });
 
   it('offers to deploy a finished run and warns that the backend has no authentication', () => {
     const markup = render({ targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: readyRun });
 
-    expect(markup).toContain('Deploy backend');
+    expect(markup).toContain('Implementar backend');
     expect(markup).not.toContain('disabled');
-    expect(markup).toContain('no authentication');
+    expect(markup).toContain('no tiene autenticación');
   });
 
   it('does not offer to deploy a run that has not finished', () => {
     const markup = render({ targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: blockedRun });
 
-    expect(markup).toContain('Deploy backend');
+    expect(markup).toContain('Implementar backend');
     expect(markup).toContain('disabled');
   });
 
@@ -271,10 +271,10 @@ describe('generation panel, presentational surface', () => {
       phoneUrl: 'http://192.168.0.11:19001',
     });
 
-    expect(markup).toContain('Running');
+    expect(markup).toContain('En ejecución');
     expect(markup).toContain('http://192.168.0.11:19001');
-    expect(markup).toContain('From another device on the same network');
-    expect(markup).not.toContain('only works here');
+    expect(markup).toContain('Desde otro dispositivo de la misma red:');
+    expect(markup).not.toContain('solo funciona aquí');
   });
 
   it('says the shown address only works here when the editor was opened through loopback', () => {
@@ -288,7 +288,7 @@ describe('generation panel, presentational surface', () => {
     });
 
     expect(markup).toContain('http://localhost:19001');
-    expect(markup).toContain('only works here');
+    expect(markup).toContain('solo funciona aquí');
   });
 
   it('states a failed deployment in product language and never shows the operator path', () => {
@@ -300,8 +300,8 @@ describe('generation panel, presentational surface', () => {
       phoneUrl: 'http://192.168.0.11:19001',
     });
 
-    expect(markup).toContain('Could not start');
-    expect(markup).toContain('Docker Compose could not start the stack');
+    expect(markup).toContain('No se pudo iniciar');
+    expect(markup).toContain('Docker Compose no pudo iniciar los servicios.');
     expect(markup).not.toContain(String.raw`C:\Users`);
     expect(markup).not.toContain('exit 1');
   });
@@ -311,14 +311,14 @@ describe('generation panel, presentational surface', () => {
       targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: readyRun,
       deployment: upDeployment, phoneUrl: 'http://192.168.0.11:19001',
     });
-    expect(running).toContain('Stop backend');
+    expect(running).toContain('Detener backend');
 
     const stopped = render({
       targets: [firstTarget], selectedTargetId: firstTarget.targetId, run: readyRun,
       deployment: { ...upDeployment, state: 'STOPPED' },
     });
-    expect(stopped).toContain('Stopped');
-    expect(stopped).not.toContain('Stop backend');
+    expect(stopped).toContain('Detenido');
+    expect(stopped).not.toContain('Detener backend');
   });
 
   it('waits for the operator while a deployment is on its way', () => {
@@ -327,8 +327,8 @@ describe('generation panel, presentational surface', () => {
       deployment: { ...upDeployment, state: 'PENDING', composeProject: null },
     });
 
-    expect(markup).toContain('Waiting for the operator');
-    expect(markup).toContain('picks this up on its own');
+    expect(markup).toContain('En espera del operador');
+    expect(markup).toContain('El operador de este equipo se encargará de esto automáticamente.');
   });
 
   it('never puts a deployment identifier, project name or host path on the screen', () => {
@@ -361,9 +361,9 @@ describe('generation panel, presentational surface', () => {
 
     // The run that was generated lives in memory and a reload loses it, but the backend keeps running and the
     // user has to be able to see it and stop it.
-    expect(markup).toContain('Running');
+    expect(markup).toContain('En ejecución');
     expect(markup).toContain('http://192.168.0.11:19001');
-    expect(markup).toContain('Stop backend');
-    expect(markup).not.toContain('Deploy backend');
+    expect(markup).toContain('Detener backend');
+    expect(markup).not.toContain('Implementar backend');
   });
 });

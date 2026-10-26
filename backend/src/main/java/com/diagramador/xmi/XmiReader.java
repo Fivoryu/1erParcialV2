@@ -12,6 +12,7 @@ import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.api.ModelResource.ViewResource;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.DependencyStereotype;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.RelationshipKind;
@@ -341,7 +342,7 @@ public final class XmiReader {
                                 ? RelationshipKind.AGGREGATION.name() : RelationshipKind.ASSOCIATION.name();
                 result.add(new RelationshipResource(relationshipId, kind,
                         nonempty(association.getAttribute("name"), extensionConnector == null ? null : extensionConnector.name()),
-                        ends, readConstraints(association)));
+                        null, associationClass(extensionConnector), ends, readConstraints(association)));
             }
             for (Element generalization : descendants(model, "generalization")) {
                 String rawId = xmi(generalization, "id");
@@ -372,7 +373,9 @@ public final class XmiReader {
                         type + ":" + result.size()), relationship.getAttribute("client"),
                         relationship.getAttribute("supplier"), List.of(), connector, rawId);
                 result.add(new RelationshipResource(id(relationship, type + ":" + result.size()),
-                        kind.name(), relationship.getAttribute("name"), ends, readConstraints(relationship)));
+                        kind.name(), relationship.getAttribute("name"),
+                        kind == RelationshipKind.DEPENDENCY ? dependencyStereotype(connector) : null, ends,
+                        readConstraints(relationship)));
             }
             return result;
         }
@@ -697,8 +700,32 @@ public final class XmiReader {
             return new TypeReference(uuid(id), name);
         }
 
+        /** The stereotype of a dependency, when the connector names one of the UML dependency stereotypes. */
+        private String dependencyStereotype(ExtensionConnector connector) {
+            String written = connector == null || connector.stereotype() == null ? "" : connector.stereotype().trim();
+            if (written.isEmpty()) {
+                return null;
+            }
+            try {
+                return DependencyStereotype.valueOf(written.toUpperCase(java.util.Locale.ROOT)).name();
+            } catch (IllegalArgumentException exception) {
+                loss("unsupported_relationship_stereotype", 1);
+                return null;
+            }
+        }
+
+        /** The class an association names as its own, when the connector carries one. */
+        private UUID associationClass(ExtensionConnector connector) {
+            String written = connector == null || connector.associationClass() == null
+                    ? "" : connector.associationClass().trim();
+            return written.isEmpty() ? null : uuid(written);
+        }
+
         private ExtensionConnector readExtensionConnector(Element connector) {
+            Element properties = child(connector, "properties");
             return new ExtensionConnector(xmi(connector, "idref"), connector.getAttribute("name"),
+                    properties == null ? "" : properties.getAttribute("stereotype"),
+                    properties == null ? "" : properties.getAttribute("associationClass"),
                     readExtensionEnd(child(connector, "source")), readExtensionEnd(child(connector, "target")));
         }
 
@@ -965,7 +992,8 @@ public final class XmiReader {
             String multiplicity, String aggregation, NavigationKind navigability) {
     }
 
-    private record ExtensionConnector(String id, String name, ExtensionEnd source, ExtensionEnd target) {
+    private record ExtensionConnector(String id, String name, String stereotype, String associationClass,
+            ExtensionEnd source, ExtensionEnd target) {
     }
 
     private record ParsedDiagram(UUID id, String name, List<XmiReadingResult.FigurePlacement> figures,
