@@ -73,6 +73,7 @@ public final class MergeDiff {
             }
         }
         addNameCollisions(baseElements, sourceElements, targetElements, conflicts);
+        addAssociationClassCollisions(baseElements, sourceElements, targetElements, merged, conflicts);
         conflicts.sort(CONFLICT_ORDER);
         return new Result(rebuild(merged), conflicts);
     }
@@ -249,6 +250,52 @@ public final class MergeDiff {
                                 + fromSource.targetName() + "'."));
             }
         }
+    }
+
+    private static void addAssociationClassCollisions(Map<ElementKey, Element> base,
+            Map<ElementKey, Element> source, Map<ElementKey, Element> target,
+            Map<ElementKey, Element> merged, List<Conflict> conflicts) {
+        Map<UUID, List<Element>> ownersByAssociationClass = new LinkedHashMap<>();
+        merged.values().stream()
+                .filter(element -> element.key().targetType().equals("RELATIONSHIP"))
+                .filter(element -> element.fields().get("associationClassId") instanceof UUID)
+                .sorted(Comparator.comparing(element -> element.targetId().toString()))
+                .forEach(element -> {
+                    UUID associationClassId = (UUID) element.fields().get("associationClassId");
+                    ownersByAssociationClass.computeIfAbsent(associationClassId, ignored -> new ArrayList<>())
+                            .add(element);
+                });
+
+        List<UUID> duplicateAssociationClassIds = ownersByAssociationClass.entrySet().stream()
+                .filter(entry -> entry.getValue().size() > 1)
+                .map(Map.Entry::getKey)
+                .sorted(Comparator.comparing(UUID::toString))
+                .toList();
+        for (UUID associationClassId : duplicateAssociationClassIds) {
+            List<Element> owners = ownersByAssociationClass.get(associationClassId).stream()
+                    .sorted(Comparator.comparing(Element::targetName,
+                            Comparator.nullsFirst(Comparator.naturalOrder()))
+                            .thenComparing(element -> element.targetId().toString()))
+                    .toList();
+            List<String> ownerNames = owners.stream()
+                    .map(owner -> "'" + (owner.targetName() == null ? owner.targetId() : owner.targetName())
+                            + "' (" + owner.targetId() + ")")
+                    .toList();
+            String message = "Association class '" + associationClassId
+                    + "' is assigned to multiple relationships in the merged snapshot: "
+                    + String.join(", ", ownerNames) + ".";
+            for (Element owner : owners) {
+                conflicts.add(conflict("FIELD_CONFLICT", owner,
+                        fieldValue(base.get(owner.key()), "associationClassId"),
+                        fieldValue(source.get(owner.key()), "associationClassId"),
+                        fieldValue(target.get(owner.key()), "associationClassId"),
+                        "associationClassId", message));
+            }
+        }
+    }
+
+    private static Object fieldValue(Element element, String field) {
+        return element == null ? null : element.fields().get(field);
     }
 
     private static Conflict conflict(String kind, Element element, Object baseValue, Object sourceValue,

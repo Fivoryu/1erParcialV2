@@ -663,6 +663,79 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void crossBranchAssociationClassCollisionIsReportedAndRejectedWithoutMaterialization() throws Exception {
+        String owner = username("ac-merge");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        UUID sourceEndId = UUID.randomUUID();
+        UUID targetEndId = UUID.randomUUID();
+        UUID associationClassId = UUID.randomUUID();
+        applyClassifier(owner, projectId, sourceEndId, "Association source");
+        applyClassifier(owner, projectId, targetEndId, "Association target");
+        applyClassifier(owner, projectId, associationClassId, "Association class");
+
+        UUID sourceRelationshipId = UUID.randomUUID();
+        UUID targetRelationshipId = UUID.randomUUID();
+        createAssociation(owner, projectId, sourceRelationshipId, "Enrollment", sourceEndId, targetEndId);
+        createAssociation(owner, projectId, targetRelationshipId, "Registration", sourceEndId, targetEndId);
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Create association merge base"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "feature");
+        setAssociationClass(owner, projectId, sourceRelationshipId, associationClassId);
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Assign class on feature"), 201);
+        JsonNode sourceModel = getJson(owner, "/projects/{projectId}/model", projectId);
+        assertThat(associationClassFor(sourceModel, sourceRelationshipId)).isEqualTo(associationClassId.toString());
+        assertThat(associationClassFor(sourceModel, targetRelationshipId)).isEmpty();
+
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "main");
+        setAssociationClass(owner, projectId, targetRelationshipId, associationClassId);
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Assign class on main"), 201);
+        JsonNode targetModel = getJson(owner, "/projects/{projectId}/model", projectId);
+        assertThat(associationClassFor(targetModel, sourceRelationshipId)).isEmpty();
+        assertThat(associationClassFor(targetModel, targetRelationshipId)).isEqualTo(associationClassId.toString());
+
+        JsonNode request = openMergeRequest(owner, projectId, "feature", "main", "Duplicate association class", 201);
+        assertThat(request.path("hasConflicts").asBoolean()).isTrue();
+        assertThat(request.path("conflicts")).hasSize(2);
+        assertThat(request.path("conflicts")).anySatisfy(conflict -> {
+            assertThat(conflict.path("kind").asText()).isEqualTo("FIELD_CONFLICT");
+            assertThat(conflict.path("targetType").asText()).isEqualTo("RELATIONSHIP");
+            assertThat(conflict.path("targetId").asText()).isEqualTo(sourceRelationshipId.toString());
+            assertThat(conflict.path("targetName").asText()).isEqualTo("Enrollment");
+            assertThat(conflict.path("field").asText()).isEqualTo("associationClassId");
+        });
+        assertThat(request.path("conflicts")).anySatisfy(conflict -> {
+            assertThat(conflict.path("kind").asText()).isEqualTo("FIELD_CONFLICT");
+            assertThat(conflict.path("targetType").asText()).isEqualTo("RELATIONSHIP");
+            assertThat(conflict.path("targetId").asText()).isEqualTo(targetRelationshipId.toString());
+            assertThat(conflict.path("targetName").asText()).isEqualTo("Registration");
+            assertThat(conflict.path("field").asText()).isEqualTo("associationClassId");
+        });
+
+        JsonNode modelBeforeMerge = getJson(owner, "/projects/{projectId}/model", projectId);
+        JsonNode branchesBeforeMerge = getJson(owner, "/projects/{projectId}/vcs/branches", projectId);
+        JsonNode commitsBeforeMerge = getJson(owner, "/projects/{projectId}/vcs/commits", projectId);
+        JsonNode error = postActionJson(owner,
+                "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 409,
+                projectId, request.path("mergeRequestId").asText());
+
+        assertThat(error.path("code").asText()).isEqualTo("MERGE_CONFLICTS");
+        JsonNode modelAfterMerge = getJson(owner, "/projects/{projectId}/model", projectId);
+        assertThat(modelAfterMerge.path("revision").asLong()).isEqualTo(modelBeforeMerge.path("revision").asLong());
+        assertThat(modelAfterMerge).isEqualTo(modelBeforeMerge);
+        assertThat(getJson(owner, "/projects/{projectId}/vcs/branches", projectId)).isEqualTo(branchesBeforeMerge);
+        assertThat(getJson(owner, "/projects/{projectId}/vcs/commits", projectId)).isEqualTo(commitsBeforeMerge);
+        assertThat(getJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}", projectId,
+                request.path("mergeRequestId").asText()).path("state").asText()).isEqualTo("OPEN");
+    }
+
+    @Test
     void editorCannotMergeButOwnerCanAndActiveTargetIsMaterialized() throws Exception {
         String owner = username("merge-owner");
         UUID projectId = createProject(owner);
@@ -1244,6 +1317,24 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
                 .path("id").asText());
     }
 
+    private void createAssociation(String owner, UUID projectId, UUID relationshipId, String name,
+            UUID sourceId, UUID targetId) throws Exception {
+        commandJson(owner, projectId, "relationship.create", List.of(
+                Map.of("scope", "classifier", "id", sourceId),
+                Map.of("scope", "classifier", "id", targetId)),
+                Map.of("id", relationshipId, "kind", "ASSOCIATION", "name", name,
+                        "source", Map.of("classifierId", sourceId),
+                        "target", Map.of("classifierId", targetId),
+                        "waypoints", List.of()), 200);
+    }
+
+    private void setAssociationClass(String owner, UUID projectId, UUID relationshipId, UUID associationClassId)
+            throws Exception {
+        commandJson(owner, projectId, "relationship.update",
+                List.of(Map.of("scope", "relationship", "id", relationshipId)),
+                Map.of("associationClassId", associationClassId), 200);
+    }
+
     private void applyClassifier(String owner, UUID projectId, UUID classifierId, String name) throws Exception {
         JsonNode model = getJson(owner, "/projects/{projectId}/model", projectId);
         Map<String, Object> envelope = new HashMap<>();
@@ -1500,6 +1591,12 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
         return jdbcTemplate.queryForObject("SELECT count(*) FROM diagrammer.chat_attachment ca "
                 + "JOIN diagrammer.chat_session cs ON cs.session_id = ca.session_id "
                 + "WHERE cs.view_id = ?::uuid", Long.class, viewId.toString());
+    }
+
+    private static String associationClassFor(JsonNode model, UUID relationshipId) {
+        JsonNode relationship = findById(model.path("relationships"), relationshipId.toString());
+        assertThat(relationship).isNotNull();
+        return relationship.path("associationClassId").asText();
     }
 
     private static JsonNode findById(JsonNode array, String id) {
