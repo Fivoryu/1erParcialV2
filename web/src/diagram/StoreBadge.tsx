@@ -2,8 +2,25 @@ import type { PersistenceStore } from '../api/types';
 
 export const STORE_LABELS: Record<PersistenceStore, string> = {
   SQL: 'SQL',
-  DOCUMENT: 'Document',
+  DOCUMENT: 'Documento',
 };
+
+export function describeStoreReason(reason: string): string {
+  switch (reason) {
+    case 'Set manually.':
+      return 'Configurado manualmente.';
+    case 'Has list attributes, which a document stores natively.':
+      return 'Tiene atributos de lista, que un documento almacena de forma nativa.';
+    case 'No document signal, so it stays relational.':
+      return 'No hay señales de documentos, por lo que se mantiene relacional.';
+    default: {
+      const compositionReason = /^Part of a composition owned by (.+)\.$/.exec(reason);
+      return compositionReason
+        ? `Forma parte de una composición propiedad de ${compositionReason[1]}.`
+        : reason;
+    }
+  }
+}
 
 function StoreIcon({ store }: { store: PersistenceStore }) {
   return (
@@ -39,10 +56,10 @@ function StoreIcon({ store }: { store: PersistenceStore }) {
 /** Where a class is persisted. A fixed choice is marked so it reads differently from an automatic one. */
 export function StoreBadge({ store, manual, reason }: { store: PersistenceStore; manual: boolean; reason?: string }) {
   const label = STORE_LABELS[store];
-  const title = reason ? `${label}: ${reason}` : label;
+  const title = reason ? `${label}: ${describeStoreReason(reason)}` : label;
   return (
     <span
-      aria-label={`Persistence store: ${label}${manual ? ', set manually' : ', automatic'}`}
+      aria-label={`Almacenamiento persistente: ${label}${manual ? ', configurado manualmente' : ', automático'}`}
       className={`store-badge store-badge--${store === 'SQL' ? 'sql' : 'document'}${manual ? ' store-badge--manual' : ''}`}
       data-manual={manual ? 'true' : 'false'}
       data-store={store}

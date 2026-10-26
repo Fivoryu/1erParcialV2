@@ -10,14 +10,14 @@ export default function PresencePanel({ entries, userId }: PresencePanelProps) {
     <section className="surface presence-panel" aria-labelledby="presence-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Live collaboration</p>
-          <h2 id="presence-title">In this diagram</h2>
+          <p className="eyebrow">Colaboración en tiempo real</p>
+          <h2 id="presence-title">En este diagrama</h2>
         </div>
         <span className="count-chip">{entries.length}</span>
       </div>
 
       {entries.length === 0 ? (
-        <p className="quiet-state presence-empty">No one is in the diagram right now.</p>
+        <p className="quiet-state presence-empty">No hay nadie en el diagrama en este momento.</p>
       ) : (
         <ul className="presence-list">
           {entries.map((person) => {
@@ -29,14 +29,14 @@ export default function PresencePanel({ entries, userId }: PresencePanelProps) {
                 key={person.userId}
               >
                 <span
-                  aria-label={`${person.displayName}'s color`}
+                  aria-label={`Color de ${person.displayName}`}
                   className="presence-swatch"
                   role="img"
                   style={{ backgroundColor: person.color }}
                 />
                 <div className="presence-copy">
                   <h3>{person.displayName}</h3>
-                  <p>{isReader ? 'You' : 'In the diagram'}</p>
+                  <p>{isReader ? 'Tú' : 'En el diagrama'}</p>
                 </div>
               </li>
             );

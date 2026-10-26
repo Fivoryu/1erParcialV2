@@ -34,8 +34,8 @@ describe('help guide navigation suggestions', () => {
       'deploy-the-generated-backend',
       'export-and-import-xmi',
     ], null)).toEqual([
-      { section: 'generation', label: 'Open Generation' },
-      { section: 'xmi', label: 'Open XMI interchange' },
+      { section: 'generation', label: 'Abrir Generación' },
+      { section: 'xmi', label: 'Abrir Intercambio XMI' },
     ]);
   });
 
@@ -44,7 +44,7 @@ describe('help guide navigation suggestions', () => {
       'generate-a-backend',
       'export-and-import-xmi',
     ], 'generation')).toEqual([
-      { section: 'xmi', label: 'Open XMI interchange' },
+      { section: 'xmi', label: 'Abrir Intercambio XMI' },
     ]);
   });
 });

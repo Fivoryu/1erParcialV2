@@ -55,20 +55,20 @@ describe('version branches panel', () => {
     const markup = render();
 
     expect(markup).toContain('vcs-branch-row--current');
-    expect(markup).toContain('Current');
-    expect(markup).toContain('Protected');
+    expect(markup).toContain('Actual');
+    expect(markup).toContain('Protegida');
     expect(markup).toContain('feature-orders');
     expect(markup).toContain('Add orders');
     expect(markup).toContain('Avery Rivera');
-    expect(markup).toContain('Protect main');
-    expect(markup).toContain('Switch branch');
-    expect(markup).toContain('Create branch');
+    expect(markup).toContain('Proteger main');
+    expect(markup).toContain('Cambiar de rama');
+    expect(markup).toContain('Crear rama');
   });
 
   it('does not allow checkout of the current branch', () => {
     const markup = render();
 
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Current branch<\/button>/);
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Rama actual<\/button>/);
   });
 
   it('keeps a dirty-working-copy checkout failure on an honest readable error path', async () => {
@@ -94,7 +94,7 @@ describe('version branches panel', () => {
   });
 
   it('distinguishes an empty branch list from a loading error', () => {
-    expect(render({ loading: true, branches: [] })).toContain('Loading branches…');
-    expect(render({ loading: false, branches: [] })).toContain('No branches are available; create a branch to start working.');
+    expect(render({ loading: true, branches: [] })).toContain('Cargando las ramas…');
+    expect(render({ loading: false, branches: [] })).toContain('No hay ramas disponibles. Crea una para empezar a trabajar.');
   });
 });

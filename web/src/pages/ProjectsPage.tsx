@@ -12,7 +12,7 @@ function messageFor(error: unknown): string {
   if (error instanceof ApiTransportError) {
     return loginErrorMessage(error);
   }
-  return 'Projects could not be loaded. Check the connection and try again.';
+  return 'No se pudieron cargar los proyectos. Revisa la conexión e inténtalo de nuevo.';
 }
 
 export default function ProjectsPage() {
@@ -112,23 +112,23 @@ export default function ProjectsPage() {
   return (
     <main className="page-shell">
       <header className="topbar">
-        <Link className="brand" to="/" aria-label="Class Diagrammer home">
+        <Link className="brand" to="/" aria-label="Inicio de Class Diagrammer">
           <span className="brand-mark" aria-hidden="true">C</span>
           <span>Class Diagrammer</span>
         </Link>
         <div className="topbar-account">
-          <span className="topbar-note">Signed in as <strong>{session.displayName}</strong></span>
+          <span className="topbar-note">Sesión iniciada como <strong>{session.displayName}</strong></span>
           <button className="text-button" disabled={loggingOut} onClick={() => void handleLogout()} type="button">
-            {loggingOut ? 'Signing out…' : 'Log out'}
+            {loggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
           </button>
         </div>
       </header>
 
       <div className="content-wrap">
         <section className="page-heading" aria-labelledby="projects-title">
-          <p className="eyebrow">Workspace</p>
-          <h1 id="projects-title">Your projects</h1>
-          <p className="lede">Create a model or pick up where you left off.</p>
+          <p className="eyebrow">Espacio de trabajo</p>
+          <h1 id="projects-title">Tus proyectos</h1>
+          <p className="lede">Crea un modelo o continúa donde lo dejaste.</p>
         </section>
 
         <InvitationsSection onProjectAccepted={refreshProjects} />
@@ -137,7 +137,7 @@ export default function ProjectsPage() {
           <section className="surface project-list-panel" aria-labelledby="project-list-title">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">Library</p>
+                <p className="eyebrow">Biblioteca</p>
                 <h2 id="project-list-title">All projects</h2>
               </div>
               <span className="count-chip">{projects.length}</span>
@@ -147,17 +147,17 @@ export default function ProjectsPage() {
               <div className="notice notice-error" role="alert">
                 <span>{error}</span>
                 <button className="text-button" type="button" onClick={() => window.location.reload()}>
-                  Retry
+                  Reintentar
                 </button>
               </div>
             )}
 
             {loading ? (
-              <p className="quiet-state" role="status">Loading projects…</p>
+              <p className="quiet-state" role="status">Cargando proyectos…</p>
             ) : projects.length === 0 ? (
               <div className="quiet-state empty-list">
                 <span className="empty-mark" aria-hidden="true">—</span>
-                <p>No projects yet. Create one to start a class diagram.</p>
+                <p>Aún no hay proyectos. Crea uno para empezar un diagrama de clases.</p>
               </div>
             ) : (
               <ul className="project-list">
@@ -168,7 +168,7 @@ export default function ProjectsPage() {
                       <p>{project.description || 'No description'}</p>
                     </div>
                     <Link className="button button-secondary button-compact" to={`/projects/${encodeURIComponent(project.id)}`}>
-                      Open
+                      Abrir
                       <span aria-hidden="true">↗</span>
                     </Link>
                   </li>
@@ -178,33 +178,33 @@ export default function ProjectsPage() {
           </section>
 
           <section className="surface create-panel" aria-labelledby="create-project-title">
-            <p className="eyebrow">New model</p>
-            <h2 id="create-project-title">Create a project</h2>
-            <p className="section-copy">Start with a name. You can add detail as the model takes shape.</p>
+            <p className="eyebrow">Nuevo modelo</p>
+            <h2 id="create-project-title">Crear un proyecto</h2>
+            <p className="section-copy">Empieza con un nombre. Puedes agregar detalles a medida que el modelo tome forma.</p>
 
             <form className="project-form" onSubmit={(event) => void handleCreate(event)}>
-              <label className="field-label" htmlFor="project-name">Project name</label>
+              <label className="field-label" htmlFor="project-name">Nombre del proyecto</label>
               <input
                 autoComplete="off"
                 id="project-name"
                 maxLength={200}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. Library system"
+                placeholder="p. ej., sistema de biblioteca"
                 required
                 value={name}
               />
 
-              <label className="field-label" htmlFor="project-description">Description <span>Optional</span></label>
+              <label className="field-label" htmlFor="project-description">Descripción <span>Opcional</span></label>
               <textarea
                 id="project-description"
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="What are you modelling?"
+                placeholder="¿Qué vas a modelar?"
                 rows={3}
                 value={description}
               />
 
               <button className="button button-primary" disabled={saving} type="submit">
-                {saving ? 'Creating…' : 'Create project'}
+                {saving ? 'Creando…' : 'Crear proyecto'}
                 {!saving && <span aria-hidden="true">→</span>}
               </button>
             </form>
@@ -212,8 +212,8 @@ export default function ProjectsPage() {
         </div>
 
         <footer className="page-footer">
-          <span>Models are saved to your workspace.</span>
-          <span>Built for clear thinking.</span>
+          <span>Los modelos se guardan en tu espacio de trabajo.</span>
+          <span>Hecho para pensar con claridad.</span>
         </footer>
       </div>
     </main>

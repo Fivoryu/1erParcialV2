@@ -112,7 +112,7 @@ describe('version-control API contract', () => {
       const message = `Readable response for ${code}.`;
       const error = new ApiTransportError(code, message, [], null, 409);
       expect(vcsErrorMessage(error, 'Fallback message')).toBe(
-        code === 'WORKING_COPY_CLEAN' ? 'nothing to commit' : message,
+        code === 'WORKING_COPY_CLEAN' ? 'No hay cambios para confirmar.' : message,
       );
     }
   });

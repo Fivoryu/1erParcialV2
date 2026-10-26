@@ -211,16 +211,16 @@ describe('operation parameters', () => {
       onSelect: () => undefined,
     }));
 
-    expect(markup).toContain('Parameters');
-    expect(markup).toContain('Add parameter');
-    expect(markup).toContain('Move up');
-    expect(markup).toContain('Move down');
-    expect(markup).toContain('Remove parameter');
-    expect(markup).toContain('Save parameter');
-    expect(markup).toContain('Direction');
-    expect(markup).toContain('>In</option>');
-    expect(markup).toContain('>Out</option>');
-    expect(markup).toContain('>Inout</option>');
+    expect(markup).toContain('Parámetros');
+    expect(markup).toContain('Agregar parámetro');
+    expect(markup).toContain('Subir');
+    expect(markup).toContain('Bajar');
+    expect(markup).toContain('Quitar parámetro');
+    expect(markup).toContain('Guardar parámetro');
+    expect(markup).toContain('Dirección');
+    expect(markup).toContain('>Entrada</option>');
+    expect(markup).toContain('>Salida</option>');
+    expect(markup).toContain('>Entrada y salida</option>');
     expect(markup).not.toContain('INOUT</option>');
     expect(markup).not.toContain('kind="parameter"');
   });

@@ -244,17 +244,17 @@ describe('UML relationship markers and labels', () => {
       onSelect: () => undefined,
     }));
 
-    expect(panel).toContain('Relationship');
-    expect(panel).toContain('Source end · Customer');
-    expect(panel).toContain('Target end · Subscription');
+    expect(panel).toContain('Relación');
+    expect(panel).toContain('Extremo de origen · Customer');
+    expect(panel).toContain('Extremo de destino · Subscription');
     expect(panel).toContain('orders-&gt;notEmpty()');
-    expect(panel).toContain('Save constraint');
-    expect(panel).toContain('Severity');
-    expect(panel).toContain('Warning');
-    expect(panel).toContain('Role');
-    expect(panel).toContain('Multiplicity');
-    expect(panel).toContain('Navigability');
-    expect(panel).toContain('Interface realization');
+    expect(panel).toContain('Guardar restricción');
+    expect(panel).toContain('Gravedad');
+    expect(panel).toContain('Advertencia');
+    expect(panel).toContain('Rol');
+    expect(panel).toContain('Multiplicidad');
+    expect(panel).toContain('Navegabilidad');
+    expect(panel).toContain('Realización de interfaz');
     expect(panel).toContain('1');
     expect(panel).toContain('0..1');
     expect(panel).toContain('1..*');
@@ -795,8 +795,8 @@ describe('relationship route & style (IA4-07)', () => {
       onSelect: () => undefined,
     }));
 
-    expect(panel).toContain('Route &amp; style');
-    expect(panel).toContain('Reset route');
+    expect(panel).toContain('Ruta y estilo');
+    expect(panel).toContain('Restablecer ruta');
     expect(panel).toMatch(/value="ORTHOGONAL"[^>]*selected/);
     expect(panel).toMatch(/id="relationship-corner-radius"[^>]*value="8"/);
     expect(panel).toMatch(/id="relationship-stroke-width"[^>]*value="3"/);

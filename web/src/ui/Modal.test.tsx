@@ -69,7 +69,7 @@ describe('Modal', () => {
   it('renders an enabled close button by default and a disabled one when not dismissible', () => {
     const defaultButton = render().match(/<button type="button" class="modal-close"[^>]*>/)?.[0] ?? '';
     expect(defaultButton).not.toContain('disabled');
-    expect(defaultButton).toContain('aria-label="Close dialog"');
+    expect(defaultButton).toContain('aria-label="Cerrar diálogo"');
 
     const lockedButton = render({ dismissible: false })
       .match(/<button type="button" class="modal-close"[^>]*>/)?.[0] ?? '';

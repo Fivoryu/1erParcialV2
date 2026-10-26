@@ -62,6 +62,14 @@ function renderLoginError(error: unknown): string {
 }
 
 describe('login page', () => {
+  it('renders the sign-in form and its validation in Spanish', () => {
+    const markup = renderLoginError(new ApiTransportError('INVALID_CREDENTIALS', 'INVALID_CREDENTIALS', [], null, 401));
+    expect(markup).toContain('Iniciar sesión');
+    expect(markup).toContain('Usuario');
+    expect(markup).toContain('Contraseña');
+    expect(markup).toContain('El usuario o la contraseña son incorrectos.');
+    expect(markup).not.toContain('Sign in');
+  });
   it('shows a human-readable failed-login message without rendering an operation UUID', () => {
     const error = new ApiTransportError(
       'INVALID_CREDENTIALS',
@@ -72,7 +80,7 @@ describe('login page', () => {
     );
     const markup = renderLoginError(error);
 
-    expect(markup).toContain('The username or password is incorrect.');
+    expect(markup).toContain('El usuario o la contraseña son incorrectos.');
     expect(markup).not.toContain('INVALID_CREDENTIALS');
     expect(markup).not.toContain('11111111-1111-4111-8111-111111111111');
     expect(markup).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
@@ -86,11 +94,11 @@ describe('login page', () => {
       'USERNAME_TAKEN', 'USERNAME_TAKEN', [], null, 409,
     ));
 
-    expect(weakPassword).toContain('Passwords must be 8–200 characters.');
-    expect(takenUsername).toBe('That username is already in use. Choose another.');
+    expect(weakPassword).toContain('La contraseña debe tener entre 8 y 200 caracteres.');
+    expect(takenUsername).toBe('Ese nombre de usuario ya está en uso. Elige otro.');
     expect(loginErrorMessage(new ApiTransportError(
-      'INVALID_PAYLOAD', 'Passwords must be 8–200 characters.', [], null, 400,
-    ))).toBe('Passwords must be 8–200 characters.');
+      'INVALID_PAYLOAD', 'La contraseña debe tener entre 8 y 200 caracteres.', [], null, 400,
+    ))).toBe('La contraseña debe tener entre 8 y 200 caracteres.');
   });
 
   it('saves the session from a successful login response', () => {

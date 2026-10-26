@@ -32,15 +32,15 @@ describe('XMI export panel', () => {
     const markup = render();
 
     expect(markup).toContain('class="generation-panel"');
-    expect(markup).toContain('XMI interchange');
-    expect(markup).toContain('Export the model as XMI');
-    expect(markup).toContain('Export XMI');
+    expect(markup).toContain('Intercambio XMI');
+    expect(markup).toContain('Exportar el modelo como XMI');
+    expect(markup).toContain('Exportar XMI');
   });
 
   it('states that exporting does not modify the model', () => {
     const markup = render();
 
-    expect(markup).toContain('does not modify');
+    expect(markup).toContain('no modifica el proyecto');
   });
 
   it('wires the accessible name from the rendered heading id', () => {
@@ -53,18 +53,18 @@ describe('XMI export panel', () => {
   it('renders no losses list and no checksum before an export has run', () => {
     const markup = render();
 
-    expect(markup).not.toContain('Reported losses');
-    expect(markup).not.toContain('Checksum');
+    expect(markup).not.toContain('Pérdidas detectadas');
+    expect(markup).not.toContain('Suma de verificación');
   });
 
   it('reports the download, the checksum, and the losses after a successful export', () => {
     const markup = render({ result: exportResult });
 
-    expect(markup).toContain('was downloaded');
+    expect(markup).toContain('Se descargó el archivo XMI.');
     expect(markup).toContain(exportResult.checksum);
-    expect(markup).toContain('Reported losses');
+    expect(markup).toContain('Pérdidas detectadas');
     expect(markup).toContain('connector_path_not_exported');
-    expect(markup).toContain('2 affected');
+    expect(markup).toContain('Elementos afectados: 2');
   });
 
   it('shows an error notice with a dismiss action when the export fails', () => {
@@ -72,14 +72,14 @@ describe('XMI export panel', () => {
 
     expect(markup).toContain('notice notice-error');
     expect(markup).toContain('Another editor holds the editing lease for this project.');
-    expect(markup).toContain('Dismiss');
+    expect(markup).toContain('Descartar');
   });
 
   it('shows a busy status while the export request runs', () => {
-    const markup = render({ busy: true, busyMessage: 'Exporting…' });
+    const markup = render({ busy: true, busyMessage: 'Exportando…' });
 
     expect(markup).toContain('role="status"');
-    expect(markup).toContain('Exporting…');
+    expect(markup).toContain('Exportando…');
     // The primary button must not be clickable while busy.
     expect(markup).toContain('disabled');
   });

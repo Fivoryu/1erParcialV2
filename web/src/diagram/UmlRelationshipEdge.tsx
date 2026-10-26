@@ -957,20 +957,20 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
         )}
         {route && manualRouteDropped(route, adjustment) && (
           <button
-            aria-label="The manual route of this relationship no longer fits the layout, so the automatic route is drawn. Discard the manual bends."
+            aria-label="El trazado manual de esta relación ya no encaja en el diseño, por lo que se muestra el trazado automático. Descartar los quiebres manuales."
             className="uml-route-paused nodrag nopan"
             onClick={discardPausedManualRoute}
             style={{ transform: `translate(-50%, -50%) translate(${middle.x}px, ${middle.y - 22}px)` }}
-            title="Your manual bends are paused: they no longer fit this layout. Click to discard them."
+            title="Los quiebres manuales están en pausa porque ya no encajan en este diseño. Haz clic para descartarlos."
             type="button"
           >
-            Manual route paused
+            Trazado manual en pausa
           </button>
         )}
         {props.selected && style.routing !== 'ORTHOGONAL' && (
           <>
             <button
-              aria-label="Add connector bend"
+              aria-label="Agregar quiebre al conector"
               className="uml-waypoint-add nodrag nopan"
               onClick={addWaypoint}
               style={{ transform: `translate(-50%, -50%) translate(${middle.x}px, ${middle.y}px)` }}
@@ -978,7 +978,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             >+</button>
             {waypoints.map((waypoint, index) => (
               <button
-                aria-label="Move connector bend"
+                aria-label="Mover quiebre del conector"
                 className="uml-waypoint-handle nodrag nopan"
                 key={index}
                 onPointerCancel={settleWaypoints}
@@ -999,7 +999,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
         {props.selected && style.routing === 'ORTHOGONAL' && sourceRectangle && targetRectangle && route && (
           <>
             <button
-              aria-label="Add connector bend"
+              aria-label="Agregar quiebre al conector"
               className="uml-waypoint-add nodrag nopan"
               onClick={addRouteBend}
               style={{ transform: `translate(-50%, -50%) translate(${route.addBendAnchor.x}px, ${route.addBendAnchor.y}px)` }}
@@ -1007,7 +1007,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             >+</button>
             {route.corridors.length > 1 && (
               <button
-                aria-label="Remove connector bend"
+                aria-label="Quitar quiebre del conector"
                 className="uml-waypoint-add nodrag nopan"
                 onClick={removeRouteBend}
                 style={{
@@ -1026,7 +1026,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
             )}
             {[...route.corridorHandles, ...route.levelHandles].map((handle) => (
               <button
-                aria-label={handle.kind === 'corridor' ? 'Move orthogonal corridor' : 'Move orthogonal level'}
+                aria-label={handle.kind === 'corridor' ? 'Mover corredor ortogonal' : 'Mover nivel ortogonal'}
                 className="uml-waypoint-handle nodrag nopan"
                 key={`${handle.kind}-${handle.index}`}
                 onPointerCancel={settleRouteAdjustment}
@@ -1047,7 +1047,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
               const rectangle = end === 'source' ? sourceRectangle : targetRectangle;
               return (
                 <button
-                  aria-label={end === 'source' ? 'Move source end anchor' : 'Move target end anchor'}
+                  aria-label={end === 'source' ? 'Mover ancla del extremo de origen' : 'Mover ancla del extremo de destino'}
                   className="uml-waypoint-handle uml-anchor-handle nodrag nopan"
                   key={`anchor-${end}`}
                   onPointerCancel={settleRouteAdjustment}

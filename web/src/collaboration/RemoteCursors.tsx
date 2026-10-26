@@ -11,7 +11,7 @@ export default function RemoteCursors({ markers }: RemoteCursorsProps) {
   }
 
   return (
-    <div className="remote-cursors" aria-label="Remote collaborators' cursors">
+    <div className="remote-cursors" aria-label="Cursores de otras personas colaboradoras">
       {markers.map((marker) => (
         <div
           className="remote-cursor"

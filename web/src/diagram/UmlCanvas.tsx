@@ -59,12 +59,12 @@ const nodeTypes: NodeTypes = { umlClass: UmlClassNode };
 const edgeTypes: EdgeTypes = { umlRelationship: UmlRelationshipEdge };
 
 const RELATIONSHIP_KIND_LABELS: Record<RelationshipKind, string> = {
-  ASSOCIATION: 'Association',
-  AGGREGATION: 'Aggregation',
-  COMPOSITION: 'Composition',
-  GENERALIZATION: 'Generalization',
-  INTERFACE_REALIZATION: 'Interface realization',
-  DEPENDENCY: 'Dependency',
+  ASSOCIATION: 'Asociación',
+  AGGREGATION: 'Agregación',
+  COMPOSITION: 'Composición',
+  GENERALIZATION: 'Generalización',
+  INTERFACE_REALIZATION: 'Realización de interfaz',
+  DEPENDENCY: 'Dependencia',
 };
 
 interface UmlCanvasProps {
@@ -790,38 +790,38 @@ function CanvasFrame(props: UmlCanvasProps) {
     : null;
 
   return (
-    <section className="surface diagram-panel" aria-label="Class diagram editor">
+    <section className="surface diagram-panel" aria-label="Editor de diagramas de clases">
       <div className="diagram-toolbar">
         <div className="diagram-toolbar-title">
-          <p className="eyebrow">Class diagram</p>
+          <p className="eyebrow">Diagrama de clases</p>
           <span className="mode-chip">UML 2.5</span>
         </div>
-        <div className="diagram-toolbar-actions" aria-label="Diagram tools">
-          <p className="diagram-connection-hint">Drag from one class dot to another to connect them.</p>
+        <div className="diagram-toolbar-actions" aria-label="Herramientas del diagrama">
+          <p className="diagram-connection-hint">Arrastra desde el punto de una clase hasta otra para conectarlas.</p>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('CLASS')} type="button">
-            + Class
+            + Clase
           </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('ABSTRACT_CLASS')} type="button">
-            + Abstract class
+            + Clase abstracta
           </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('INTERFACE')} type="button">
-            + Interface
+            + Interfaz
           </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('ENUMERATION')} type="button">
-            + Enumeration
+            + Enumeración
           </button>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('PACKAGE')} type="button">
-            + Package
+            + Paquete
           </button>
           <button className="button button-secondary button-compact" onClick={() => void fitView({ padding: 0.2 })} type="button">
-            Fit to view
+            Ajustar a la vista
           </button>
         </div>
       </div>
       {connectionDraft && (
-        <form className="connection-kind-picker" aria-label="Choose relationship kind" onSubmit={createRelationship}>
+        <form className="connection-kind-picker" aria-label="Elegir tipo de relación" onSubmit={createRelationship}>
           <label className="field-label" htmlFor="relationship-kind">
-            Connect {sourceName ?? 'class'} to {targetName ?? 'class'}
+            Conectar {sourceName ?? 'clase'} con {targetName ?? 'clase'}
           </label>
           <select
             id="relationship-kind"
@@ -834,17 +834,17 @@ function CanvasFrame(props: UmlCanvasProps) {
           </select>
           <p className="property-hint">
             {connectionKind === 'GENERALIZATION'
-              ? 'Start at the subclass and end at its parent.'
+              ? 'Empieza en la subclase y termina en su clase padre.'
               : connectionKind === 'INTERFACE_REALIZATION'
-                ? 'Start at the implementing class and end at the interface.'
+                ? 'Empieza en la clase que implementa y termina en la interfaz.'
                 : connectionKind === 'AGGREGATION' || connectionKind === 'COMPOSITION'
-                  ? 'Start at the whole; the diamond marks this end.'
+                  ? 'Empieza en el todo; el rombo marca este extremo.'
                   : connectionKind === 'DEPENDENCY'
-                    ? 'The open arrow points toward the target.'
-                    : 'Open arrows appear on navigable ends.'}
+                    ? 'La flecha abierta apunta al destino.'
+                    : 'Las flechas abiertas aparecen en los extremos navegables.'}
           </p>
-          <button className="button button-primary button-compact" type="submit">Create relationship</button>
-          <button className="text-button" onClick={() => setConnectionDraft(null)} type="button">Cancel</button>
+          <button className="button button-primary button-compact" type="submit">Crear relación</button>
+          <button className="text-button" onClick={() => setConnectionDraft(null)} type="button">Cancelar</button>
         </form>
       )}
       <div
@@ -891,7 +891,7 @@ function CanvasFrame(props: UmlCanvasProps) {
           nodesConnectable
           deleteKeyCode={null}
           proOptions={{ hideAttribution: false }}
-          aria-label="UML class diagram canvas"
+          aria-label="Lienzo del diagrama de clases UML"
         >
           <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1.2} color="#cbd8d3" />
           <Controls position="bottom-left" showInteractive={false} />

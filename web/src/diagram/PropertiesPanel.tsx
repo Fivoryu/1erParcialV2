@@ -36,7 +36,7 @@ import {
 import type { CanvasSelection } from './selection';
 import { associationClassCandidates, isAssociationKind } from './associationClass';
 import { formatStereotype } from './uml-format';
-import { STORE_LABELS, StoreBadge } from './StoreBadge';
+import { describeStoreReason, STORE_LABELS, StoreBadge } from './StoreBadge';
 
 interface PropertiesPanelProps {
   model: ModelResource;
@@ -54,24 +54,24 @@ const MULTIPLICITIES = [
 ] as const;
 
 const RELATIONSHIP_KIND_LABELS: Record<RelationshipKind, string> = {
-  ASSOCIATION: 'Association',
-  AGGREGATION: 'Aggregation',
-  COMPOSITION: 'Composition',
-  GENERALIZATION: 'Generalization',
-  INTERFACE_REALIZATION: 'Interface realization',
-  DEPENDENCY: 'Dependency',
+  ASSOCIATION: 'Asociación',
+  AGGREGATION: 'Agregación',
+  COMPOSITION: 'Composición',
+  GENERALIZATION: 'Generalización',
+  INTERFACE_REALIZATION: 'Realización de interfaz',
+  DEPENDENCY: 'Dependencia',
 };
 
 const NAVIGABILITY_OPTIONS = [
-  { value: 'UNSPECIFIED', label: 'Unspecified' },
-  { value: 'NAVIGABLE', label: 'Navigable' },
-  { value: 'NOT_NAVIGABLE', label: 'Not navigable' },
+  { value: 'UNSPECIFIED', label: 'Sin especificar' },
+  { value: 'NAVIGABLE', label: 'Navegable' },
+  { value: 'NOT_NAVIGABLE', label: 'No navegable' },
 ] as const;
 
 const CONSTRAINT_SEVERITIES: Array<{ value: ConstraintSeverity; label: string }> = [
   { value: 'ERROR', label: 'Error' },
-  { value: 'WARNING', label: 'Warning' },
-  { value: 'INFO', label: 'Info' },
+  { value: 'WARNING', label: 'Advertencia' },
+  { value: 'INFO', label: 'Información' },
 ];
 
 function hasAncestor(model: ModelResource, classifierId: string, ancestorId: string): boolean {
@@ -125,11 +125,11 @@ function StoreField({
   onCommand: PropertiesPanelProps['onCommand'];
 }) {
   const automaticLabel = classifier.storeOverride || !classifier.store
-    ? 'Automatic'
-    : `Automatic (${STORE_LABELS[classifier.store]})`;
+    ? 'Automático'
+    : `Automático (${STORE_LABELS[classifier.store]})`;
   return (
     <div className="property-store" data-testid="classifier-store-field">
-      <label className="field-label" htmlFor="classifier-store">Storage</label>
+      <label className="field-label" htmlFor="classifier-store">Almacenamiento</label>
       <select
         className="classifier-store-select"
         id="classifier-store"
@@ -137,13 +137,13 @@ function StoreField({
         value={classifier.storeOverride ?? ''}
       >
         <option value="">{automaticLabel}</option>
-        <option value="SQL">SQL (relational)</option>
-        <option value="DOCUMENT">Document (MongoDB)</option>
+        <option value="SQL">SQL (relacional)</option>
+        <option value="DOCUMENT">Documento (MongoDB)</option>
       </select>
       {classifier.store && (
         <p className="property-store-reason" data-testid="classifier-store-reason">
           <StoreBadge manual={classifier.storeOverride !== undefined} reason={classifier.storeReason ?? ''} store={classifier.store} />
-          <span>{classifier.storeReason}</span>
+          <span>{classifier.storeReason ? describeStoreReason(classifier.storeReason) : ''}</span>
         </p>
       )}
     </div>
@@ -186,13 +186,13 @@ function ConstraintEditor({
   return (
     <form className="property-constraint-form" onSubmit={save}>
       <label className="field-label">
-        Expression
-        <input aria-label="Constraint expression" onChange={(event) => setExpression(event.target.value)}
+        Expresión
+        <input aria-label="Expresión de la restricción" onChange={(event) => setExpression(event.target.value)}
           required value={expression} />
       </label>
       <label className="field-label">
-        Severity
-        <select aria-label="Constraint severity" onChange={(event) => setSeverity(event.target.value as ConstraintSeverity)}
+        Gravedad
+        <select aria-label="Gravedad de la restricción" onChange={(event) => setSeverity(event.target.value as ConstraintSeverity)}
           value={severity}>
           {CONSTRAINT_SEVERITIES.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
@@ -202,11 +202,11 @@ function ConstraintEditor({
       <div className="property-constraint-actions">
         <button className="button button-secondary button-compact"
           disabled={expression.trim() === constraint.expression && severity === constraint.severity} type="submit">
-          Save constraint
+          Guardar restricción
         </button>
-        <button aria-label="Delete constraint" className="text-button danger-button"
+        <button aria-label="Eliminar restricción" className="text-button danger-button"
           onClick={() => onCommand(buildConstraintRemoveRequest(constraint.id))} type="button">
-          Delete
+          Eliminar
         </button>
       </div>
     </form>
@@ -246,7 +246,7 @@ function ConstraintSection({
 
   return (
     <section className="property-section" aria-labelledby="constraints-title">
-      <h3 id="constraints-title">Constraints</h3>
+      <h3 id="constraints-title">Restricciones</h3>
       {constraints.length > 0 ? (
         <ul className="property-constraint-list">
           {constraints.map((constraint) => (
@@ -255,16 +255,16 @@ function ConstraintSection({
             </li>
           ))}
         </ul>
-      ) : <p className="property-hint">No constraints yet.</p>}
+      ) : <p className="property-hint">Aún no hay restricciones.</p>}
       <form className="property-inline-form" onSubmit={addConstraint}>
-        <label className="field-label" htmlFor="new-constraint-expression">Expression</label>
+        <label className="field-label" htmlFor="new-constraint-expression">Expresión</label>
         <input
           id="new-constraint-expression"
           onChange={(event) => setExpression(event.target.value)}
-          placeholder="e.g. balance >= 0"
+          placeholder="p. ej., balance >= 0"
           value={expression}
         />
-        <label className="field-label" htmlFor="new-constraint-severity">Severity</label>
+        <label className="field-label" htmlFor="new-constraint-severity">Gravedad</label>
         <select id="new-constraint-severity" onChange={(event) => setSeverity(event.target.value as ConstraintSeverity)}
           value={severity}>
           {CONSTRAINT_SEVERITIES.map((option) => (
@@ -272,7 +272,7 @@ function ConstraintSection({
           ))}
         </select>
         <button className="button button-secondary button-compact" disabled={!expression.trim()} type="submit">
-          Add constraint
+          Agregar restricción
         </button>
       </form>
     </section>
@@ -359,22 +359,22 @@ function ClassifierProperties({
     <>
       <section className="property-section" aria-labelledby="classifier-properties-title">
         <div className="property-section-heading">
-          <h3 id="classifier-properties-title">{isPackage ? 'Package' : isEnumeration ? 'Enumeration' : 'Class'}</h3>
+          <h3 id="classifier-properties-title">{isPackage ? 'Paquete' : isEnumeration ? 'Enumeración' : 'Clase'}</h3>
           <button className="text-button danger-button" onClick={onDelete} type="button">
-            Delete {isPackage ? 'package' : isEnumeration ? 'enumeration' : 'class'}
+            Eliminar {isPackage ? 'paquete' : isEnumeration ? 'enumeración' : 'clase'}
           </button>
         </div>
         <p className="property-summary">
-          {isPackage ? 'Package' : isEnumeration ? 'Enumeration' : classifier.kind === 'INTERFACE' ? 'Interface' : classifier.isAbstract ? 'Abstract class' : 'Class'}
+          {isPackage ? 'Paquete' : isEnumeration ? 'Enumeración' : classifier.kind === 'INTERFACE' ? 'Interfaz' : classifier.isAbstract ? 'Clase abstracta' : 'Clase'}
         </p>
-        <label className="field-label" htmlFor="classifier-package">Package</label>
+        <label className="field-label" htmlFor="classifier-package">Paquete</label>
         <select
           className="classifier-package-select"
           id="classifier-package"
           onChange={(event) => dispatchPackageSelection(onCommand, classifier.id, event.target.value)}
           value={namespaceValue}
         >
-          <option value="">None</option>
+          <option value="">Ninguno</option>
           {namespacePackages.map((candidate) => (
             <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
           ))}
@@ -390,19 +390,19 @@ function ClassifierProperties({
               })}
               type="checkbox"
             />
-            <span>Abstract class</span>
+            <span>Clase abstracta</span>
           </label>
         )}
         {canBeAbstract && <StoreField classifier={classifier} onCommand={onCommand} />}
         {isEnumeration && (
           <div className="property-actions">
-            <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Add literal</button>
+            <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Agregar literal</button>
           </div>
         )}
         {!isPackage && !isEnumeration && (
           <div className="property-actions">
-            <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Add attribute</button>
-            <button className="button button-secondary button-compact" onClick={addOperation} type="button">Add operation</button>
+            <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Agregar atributo</button>
+            <button className="button button-secondary button-compact" onClick={addOperation} type="button">Agregar operación</button>
           </div>
         )}
       </section>
@@ -539,18 +539,18 @@ function RelationshipProperties({
     navigability: string,
     setNavigability: (value: string) => void,
   ) {
-    const title = side === 'source' ? 'Source end' : 'Target end';
+    const title = side === 'source' ? 'Extremo de origen' : 'Extremo de destino';
     const prefix = `relationship-${side}`;
     return (
       <fieldset className="relationship-end-fields">
         <legend>{title}{classifierName ? ` · ${classifierName}` : ''}</legend>
-        <label className="field-label" htmlFor={`${prefix}-role`}>Role</label>
+        <label className="field-label" htmlFor={`${prefix}-role`}>Rol</label>
         <input id={`${prefix}-role`} onChange={(event) => setRole(event.target.value)} value={role} />
-        <label className="field-label" htmlFor={`${prefix}-multiplicity`}>Multiplicity</label>
+        <label className="field-label" htmlFor={`${prefix}-multiplicity`}>Multiplicidad</label>
         <select id={`${prefix}-multiplicity`} onChange={(event) => setMultiplicity(event.target.value)} value={multiplicity}>
           {MULTIPLICITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
-        <label className="field-label" htmlFor={`${prefix}-navigability`}>Navigability</label>
+        <label className="field-label" htmlFor={`${prefix}-navigability`}>Navegabilidad</label>
         <select id={`${prefix}-navigability`} onChange={(event) => setNavigability(event.target.value)} value={navigability}>
           {NAVIGABILITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
@@ -563,15 +563,15 @@ function RelationshipProperties({
       <section className="property-section" aria-labelledby="relationship-properties-title">
       <div className="property-section-heading">
         <div>
-          <h3 id="relationship-properties-title">Relationship</h3>
-          <p className="property-summary">{sourceClassifier?.name ?? 'Class'} to {targetClassifier?.name ?? 'Class'}</p>
+          <h3 id="relationship-properties-title">Relación</h3>
+          <p className="property-summary">{sourceClassifier?.name ?? 'Clase'} a {targetClassifier?.name ?? 'Clase'}</p>
         </div>
-        <button className="text-button danger-button" onClick={onDelete} type="button">Delete relationship</button>
+        <button className="text-button danger-button" onClick={onDelete} type="button">Eliminar relación</button>
       </div>
       <form className="property-form" onSubmit={save}>
-        <label className="field-label" htmlFor="relationship-name">Name <span>Optional</span></label>
+        <label className="field-label" htmlFor="relationship-name">Nombre <span>Opcional</span></label>
         <input id="relationship-name" onChange={(event) => setName(event.target.value)} value={name} />
-        <label className="field-label" htmlFor="relationship-kind-property">Kind</label>
+        <label className="field-label" htmlFor="relationship-kind-property">Tipo</label>
         <select
           id="relationship-kind-property"
           onChange={(event) => setKind(event.target.value as RelationshipKind)}
@@ -583,13 +583,13 @@ function RelationshipProperties({
         </select>
         {kind === 'DEPENDENCY' && (
           <>
-            <label className="field-label" htmlFor="relationship-stereotype">Stereotype <span>Optional</span></label>
+            <label className="field-label" htmlFor="relationship-stereotype">Estereotipo <span>Opcional</span></label>
             <select
               id="relationship-stereotype"
               onChange={(event) => setStereotype(event.target.value)}
               value={stereotype}
             >
-              <option value="">None</option>
+              <option value="">Ninguno</option>
               {DEPENDENCY_STEREOTYPES.map((value) => (
                 <option key={value} value={value}>{formatStereotype(value)}</option>
               ))}
@@ -598,13 +598,13 @@ function RelationshipProperties({
         )}
         {isAssociationKind(kind) && (
           <>
-            <label className="field-label" htmlFor="relationship-association-class">Association class <span>Optional</span></label>
+            <label className="field-label" htmlFor="relationship-association-class">Clase de asociación <span>Opcional</span></label>
             <select
               id="relationship-association-class"
               onChange={(event) => setAssociationClassId(event.target.value)}
               value={associationClassId}
             >
-              <option value="">None</option>
+              <option value="">Ninguna</option>
               {associationClassCandidates(model, relationship).map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
               ))}
@@ -615,29 +615,29 @@ function RelationshipProperties({
           setSourceMultiplicity, sourceNavigability, setSourceNavigability)}
         {endFields('target', targetClassifier?.name, targetRole, setTargetRole, targetMultiplicity,
           setTargetMultiplicity, targetNavigability, setTargetNavigability)}
-        <button className="button button-primary button-compact" type="submit">Save relationship</button>
+        <button className="button button-primary button-compact" type="submit">Guardar relación</button>
       </form>
     </section>
       <section className="property-section" aria-labelledby="relationship-style-title">
         <div className="property-section-heading">
           <div>
-            <h3 id="relationship-style-title">Route &amp; style</h3>
-            <p className="property-summary">Per-view appearance, saved with style.set</p>
+            <h3 id="relationship-style-title">Ruta y estilo</h3>
+            <p className="property-summary">Apariencia por vista, guardada con style.set</p>
           </div>
-          <button className="text-button" onClick={resetRoute} type="button">Reset route</button>
+          <button className="text-button" onClick={resetRoute} type="button">Restablecer ruta</button>
         </div>
         <div className="property-form">
-          <label className="field-label" htmlFor="relationship-routing">Routing</label>
+          <label className="field-label" htmlFor="relationship-routing">Trazado</label>
           <select
             id="relationship-routing"
             onChange={(event) => setStyle({ routing: event.target.value as RoutingMode })}
             value={currentStyle.routing}
           >
-            <option value="STRAIGHT">Straight</option>
-            <option value="FREE">Free (waypoints)</option>
-            <option value="ORTHOGONAL">Orthogonal</option>
+            <option value="STRAIGHT">Recto</option>
+            <option value="FREE">Libre (puntos intermedios)</option>
+            <option value="ORTHOGONAL">Ortogonal</option>
           </select>
-          <label className="field-label" htmlFor="relationship-corner-radius">Corner radius</label>
+          <label className="field-label" htmlFor="relationship-corner-radius">Radio de esquina</label>
           <input
             id="relationship-corner-radius"
             min={0}
@@ -650,7 +650,7 @@ function RelationshipProperties({
             type="number"
             value={currentStyle.cornerRadius}
           />
-          <label className="field-label" htmlFor="relationship-stroke-width">Stroke width</label>
+          <label className="field-label" htmlFor="relationship-stroke-width">Grosor de línea</label>
           <input
             id="relationship-stroke-width"
             min={1}
@@ -670,7 +670,7 @@ function RelationshipProperties({
               onChange={(event) => setStyle({ dashed: event.target.checked })}
               type="checkbox"
             />
-            {' '}Dashed line
+            {' '}Línea discontinua
           </label>
         </div>
       </section>
@@ -733,10 +733,10 @@ function AttributeProperties({
     return (
       <div className="property-section-heading">
         <div>
-          <h3>Enumeration literal</h3>
-          <p className="property-summary">{attribute.name} in {classifier.name}</p>
+          <h3>Literal de enumeración</h3>
+          <p className="property-summary">{attribute.name} en {classifier.name}</p>
         </div>
-        <button className="text-button danger-button" onClick={onDelete} type="button">Delete</button>
+        <button className="text-button danger-button" onClick={onDelete} type="button">Eliminar</button>
       </div>
     );
   }
@@ -745,29 +745,29 @@ function AttributeProperties({
     <>
       <div className="property-section-heading">
         <div>
-          <h3>Attribute</h3>
-          <p className="property-summary">In {classifier.name}</p>
+          <h3>Atributo</h3>
+          <p className="property-summary">En {classifier.name}</p>
         </div>
-        <button className="text-button danger-button" onClick={onDelete} type="button">Delete</button>
+        <button className="text-button danger-button" onClick={onDelete} type="button">Eliminar</button>
       </div>
       <form className="property-form" onSubmit={save}>
-        <label className="field-label" htmlFor="attribute-type">Type</label>
+        <label className="field-label" htmlFor="attribute-type">Tipo</label>
         <input id="attribute-type" onChange={(event) => setType(event.target.value)} required value={type} />
 
-        <label className="field-label" htmlFor="attribute-visibility">Visibility</label>
+        <label className="field-label" htmlFor="attribute-visibility">Visibilidad</label>
         <select id="attribute-visibility" onChange={(event) => setVisibility(event.target.value)} value={visibility}>
-          <option value="PUBLIC">Public (+)</option>
-          <option value="PRIVATE">Private (-)</option>
+          <option value="PUBLIC">Público (+)</option>
+          <option value="PRIVATE">Privado (-)</option>
         </select>
 
-        <label className="field-label" htmlFor="attribute-multiplicity">Multiplicity</label>
+        <label className="field-label" htmlFor="attribute-multiplicity">Multiplicidad</label>
         <select id="attribute-multiplicity" onChange={(event) => setMultiplicity(event.target.value)} value={multiplicity}>
           {MULTIPLICITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
 
-        <label className="field-label" htmlFor="attribute-default">Default value</label>
+        <label className="field-label" htmlFor="attribute-default">Valor predeterminado</label>
         <input id="attribute-default" onChange={(event) => setDefaultValue(event.target.value)} value={defaultValue} />
-        <button className="button button-primary button-compact" type="submit">Save attribute</button>
+        <button className="button button-primary button-compact" type="submit">Guardar atributo</button>
       </form>
     </>
   );
@@ -815,48 +815,48 @@ function ParameterProperties({
   return (
     <li className="parameter-property">
       <div className="parameter-property-heading">
-        <strong>{`Parameter ${index + 1}`}</strong>
+        <strong>{`Parámetro ${index + 1}`}</strong>
         <div className="parameter-order-actions">
           <button
-            aria-label={`Move parameter ${index + 1} up`}
+            aria-label={`Subir parámetro ${index + 1}`}
             className="text-button"
             disabled={index === 0}
             onClick={() => onCommand(buildParameterUpdateRequest(parameter.id, { ordinal: index - 1 }))}
             type="button"
-          >Move up</button>
+          >Subir</button>
           <button
-            aria-label={`Move parameter ${index + 1} down`}
+            aria-label={`Bajar parámetro ${index + 1}`}
             className="text-button"
             disabled={index === total - 1}
             onClick={() => onCommand(buildParameterUpdateRequest(parameter.id, { ordinal: index + 1 }))}
             type="button"
-          >Move down</button>
+          >Bajar</button>
           <button
-            aria-label={`Remove parameter ${index + 1}`}
+            aria-label={`Quitar parámetro ${index + 1}`}
             className="text-button danger-button"
             onClick={() => onCommand(buildParameterRemoveRequest(parameter.id))}
             type="button"
-          >Remove parameter</button>
+          >Quitar parámetro</button>
         </div>
       </div>
       <form className="parameter-property-form" onSubmit={save}>
         <label className="field-label">
-          Name
+          Nombre
           <input onChange={(event) => setName(event.target.value)} required value={name} />
         </label>
         <label className="field-label">
-          Type
+          Tipo
           <input onChange={(event) => setType(event.target.value)} required value={type} />
         </label>
         <label className="field-label">
-          Direction
+          Dirección
           <select onChange={(event) => setDirection(event.target.value as ParameterDirection)} value={direction}>
-            <option value="IN">In</option>
-            <option value="OUT">Out</option>
-            <option value="INOUT">Inout</option>
+            <option value="IN">Entrada</option>
+            <option value="OUT">Salida</option>
+            <option value="INOUT">Entrada y salida</option>
           </select>
         </label>
-        <button className="button button-secondary button-compact" type="submit">Save parameter</button>
+        <button className="button button-secondary button-compact" type="submit">Guardar parámetro</button>
       </form>
     </li>
   );
@@ -914,36 +914,36 @@ function OperationProperties({
     <>
       <div className="property-section-heading">
         <div>
-          <h3>Operation</h3>
-          <p className="property-summary">In {classifier.name}</p>
+          <h3>Operación</h3>
+          <p className="property-summary">En {classifier.name}</p>
         </div>
-        <button className="text-button danger-button" onClick={onDelete} type="button">Delete</button>
+        <button className="text-button danger-button" onClick={onDelete} type="button">Eliminar</button>
       </div>
       <form className="property-form" onSubmit={save}>
-        <label className="field-label" htmlFor="operation-return-type">Return type <span>Optional</span></label>
+        <label className="field-label" htmlFor="operation-return-type">Tipo de retorno <span>Opcional</span></label>
         <input id="operation-return-type" onChange={(event) => setReturnType(event.target.value)} value={returnType} />
 
-        <label className="field-label" htmlFor="operation-visibility">Visibility</label>
+        <label className="field-label" htmlFor="operation-visibility">Visibilidad</label>
         <select id="operation-visibility" onChange={(event) => setVisibility(event.target.value)} value={visibility}>
-          <option value="PUBLIC">Public (+)</option>
-          <option value="PRIVATE">Private (-)</option>
+          <option value="PUBLIC">Público (+)</option>
+          <option value="PRIVATE">Privado (-)</option>
         </select>
 
         <label className="property-check">
           <input checked={isAbstract} onChange={(event) => setIsAbstract(event.target.checked)} type="checkbox" />
-          <span>Abstract operation</span>
+          <span>Operación abstracta</span>
         </label>
         <label className="property-check">
           <input checked={isStatic} onChange={(event) => setIsStatic(event.target.checked)} type="checkbox" />
-          <span>Static operation</span>
+          <span>Operación estática</span>
         </label>
-        <button className="button button-primary button-compact" type="submit">Save operation</button>
+        <button className="button button-primary button-compact" type="submit">Guardar operación</button>
       </form>
       <section className="parameter-properties" aria-labelledby="operation-parameters-title">
         <div className="parameter-properties-heading">
-          <h4 id="operation-parameters-title">Parameters</h4>
+          <h4 id="operation-parameters-title">Parámetros</h4>
           <button className="button button-secondary button-compact" onClick={addParameter} type="button">
-            Add parameter
+            Agregar parámetro
           </button>
         </div>
         {operation.parameters.length > 0 ? (
@@ -961,7 +961,7 @@ function OperationProperties({
                 />
               ))}
           </ol>
-        ) : <p className="property-hint">No parameters yet.</p>}
+        ) : <p className="property-hint">Aún no hay parámetros.</p>}
       </section>
     </>
   );
@@ -971,9 +971,9 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
   if (!selection) {
     return (
       <aside className="surface properties-panel" aria-labelledby="properties-title">
-        <p className="eyebrow">Details</p>
-        <h2 id="properties-title">Properties</h2>
-        <p className="property-hint">Select a class or one of its members to inspect and edit it.</p>
+        <p className="eyebrow">Detalles</p>
+        <h2 id="properties-title">Propiedades</h2>
+        <p className="property-hint">Selecciona una clase o uno de sus elementos para verlo y editarlo.</p>
       </aside>
     );
   }
@@ -982,8 +982,8 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
     const relationship = model.relationships.find((candidate) => candidate.id === selection.relationshipId);
     return (
       <aside className="surface properties-panel" aria-labelledby="properties-title">
-        <p className="eyebrow">Details</p>
-        <h2 id="properties-title">Properties</h2>
+        <p className="eyebrow">Detalles</p>
+        <h2 id="properties-title">Propiedades</h2>
         {relationship ? (
           <RelationshipProperties
             relationship={relationship}
@@ -991,7 +991,7 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
             onCommand={onCommand}
             onDelete={() => onDelete(selection)}
           />
-        ) : <p className="property-hint">This relationship is no longer in the model.</p>}
+        ) : <p className="property-hint">Esta relación ya no está en el modelo.</p>}
       </aside>
     );
   }
@@ -1000,9 +1000,9 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
   if (!classifier) {
     return (
       <aside className="surface properties-panel" aria-labelledby="properties-title">
-        <p className="eyebrow">Details</p>
-        <h2 id="properties-title">Properties</h2>
-        <p className="property-hint">This element is no longer in the model.</p>
+        <p className="eyebrow">Detalles</p>
+        <h2 id="properties-title">Propiedades</h2>
+        <p className="property-hint">Este elemento ya no está en el modelo.</p>
       </aside>
     );
   }
@@ -1010,8 +1010,8 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
   if (selection.kind === 'classifier') {
     return (
       <aside className="surface properties-panel" aria-labelledby="properties-title">
-        <p className="eyebrow">Details</p>
-        <h2 id="properties-title">Properties</h2>
+        <p className="eyebrow">Detalles</p>
+        <h2 id="properties-title">Propiedades</h2>
         <ClassifierProperties
           classifier={classifier}
           model={model}
@@ -1027,8 +1027,8 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
     const attribute = classifier.attributes.find((candidate) => candidate.id === selection.elementId);
     return (
       <aside className="surface properties-panel" aria-labelledby="properties-title">
-        <p className="eyebrow">Details</p>
-        <h2 id="properties-title">Properties</h2>
+        <p className="eyebrow">Detalles</p>
+        <h2 id="properties-title">Propiedades</h2>
         {attribute ? (
           <AttributeProperties
             attribute={attribute}
@@ -1037,7 +1037,7 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
             onCommand={onCommand}
             onDelete={() => onDelete(selection)}
           />
-        ) : <p className="property-hint">This element is no longer in the model.</p>}
+        ) : <p className="property-hint">Este elemento ya no está en el modelo.</p>}
       </aside>
     );
   }
@@ -1046,8 +1046,8 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
     const operation = classifier.operations.find((candidate) => candidate.id === selection.elementId);
     return (
       <aside className="surface properties-panel" aria-labelledby="properties-title">
-        <p className="eyebrow">Details</p>
-        <h2 id="properties-title">Properties</h2>
+        <p className="eyebrow">Detalles</p>
+        <h2 id="properties-title">Propiedades</h2>
         {operation ? (
           <OperationProperties
             operation={operation}
@@ -1056,7 +1056,7 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
             onCommand={onCommand}
             onDelete={() => onDelete(selection)}
           />
-        ) : <p className="property-hint">This element is no longer in the model.</p>}
+        ) : <p className="property-hint">Este elemento ya no está en el modelo.</p>}
       </aside>
     );
   }
@@ -1064,11 +1064,11 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
   const constraint = classifier.constraints.find((candidate) => candidate.id === selection.elementId);
   return (
     <aside className="surface properties-panel" aria-labelledby="properties-title">
-      <p className="eyebrow">Details</p>
-      <h2 id="properties-title">Properties</h2>
+      <p className="eyebrow">Detalles</p>
+      <h2 id="properties-title">Propiedades</h2>
       <div className="property-section">
         <div className="property-section-heading">
-          <h3>Constraint</h3>
+          <h3>Restricción</h3>
         </div>
         {constraint
           ? <ConstraintEditor constraint={constraint} onCommand={onCommand} />

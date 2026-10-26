@@ -95,11 +95,11 @@ function ProposalCard({ proposal, diagramNames, canDecide, busy, onAccept, onRej
   return (
     <section
       className={`chat-proposal chat-proposal--${proposal.status.toLowerCase()}`}
-      aria-label={`Suggested change from ${proposal.requestedByDisplayName}`}
+      aria-label={`Cambio sugerido por ${proposal.requestedByDisplayName}`}
     >
-      <p className="eyebrow">Suggested change · {proposalStatusLabel(proposal.status)}</p>
+      <p className="eyebrow">Cambio sugerido · {proposalStatusLabel(proposal.status)}</p>
       <p className="chat-proposal-preview-title">
-        {pending ? 'If accepted, the diagram will change like this:' : 'The suggested change:'}
+        {pending ? 'Si se acepta, el diagrama cambiará así:' : 'El cambio sugerido:'}
       </p>
       <ul className="chat-proposal-operations">
         {proposal.operations.map((operation, index) => (
@@ -114,15 +114,15 @@ function ProposalCard({ proposal, diagramNames, canDecide, busy, onAccept, onRej
       {pending && canDecide && (
         <div className="chat-proposal-actions">
           <button className="button button-primary" type="button" disabled={busy} onClick={() => onAccept(proposal.id)}>
-            {busy ? 'Working…' : 'Accept and apply'}
+            {busy ? 'Procesando…' : 'Aceptar y aplicar'}
           </button>
           <button className="button button-secondary" type="button" disabled={busy} onClick={() => onReject(proposal.id)}>
-            Reject
+            Rechazar
           </button>
         </div>
       )}
       {pending && !canDecide && (
-        <p className="quiet-state">Only an editor or owner can accept this suggestion.</p>
+        <p className="quiet-state">Solo una persona editora o propietaria puede aceptar esta sugerencia.</p>
       )}
     </section>
   );
@@ -130,11 +130,23 @@ function ProposalCard({ proposal, diagramNames, canDecide, busy, onAccept, onRej
 
 function aiStateLabel(status: SessionAiStatus): string {
   switch (status.state) {
-    case 'QUEUED': return 'queued';
-    case 'RUNNING': return 'running';
-    case 'COMPLETED': return 'completed';
-    case 'FAILED': return 'failed';
-    case 'CANCELLED': return 'cancelled';
+    case 'QUEUED': return 'en cola';
+    case 'RUNNING': return 'en curso';
+    case 'COMPLETED': return 'completada';
+    case 'FAILED': return 'fallida';
+    case 'CANCELLED': return 'cancelada';
+  }
+}
+
+function memoryKindLabel(kind: DiagramMemoryResource['kind']): string {
+  return kind === 'DECISION' ? 'Decisión' : 'Hipótesis';
+}
+
+function memoryStatusLabel(status: DiagramMemoryResource['status']): string {
+  switch (status) {
+    case 'ACTIVE': return 'Activa';
+    case 'CONFLICTED': return 'En conflicto';
+    case 'REPLACED': return 'Reemplazada';
   }
 }
 
@@ -150,9 +162,9 @@ function meterColor(meter: ContextMeterResource): string {
 
 function sourceLabels(memory: DiagramMemoryResource): string[] {
   const labels: string[] = [];
-  if (memory.sourceSessionId) labels.push(`session ${memory.sourceSessionId}`);
-  if (memory.sourceMessageId) labels.push(`message ${memory.sourceMessageId}`);
-  if (memory.replacedBy) labels.push(`replaced by ${memory.replacedBy}`);
+  if (memory.sourceSessionId) labels.push(`sesión ${memory.sourceSessionId}`);
+  if (memory.sourceMessageId) labels.push(`mensaje ${memory.sourceMessageId}`);
+  if (memory.replacedBy) labels.push(`reemplazado por ${memory.replacedBy}`);
   return labels;
 }
 
@@ -202,7 +214,7 @@ export default function ChatPanel({
   onAcceptProposal,
   onRejectProposal,
 }: ChatPanelProps) {
-  const { locale, timeZone } = new Intl.DateTimeFormat().resolvedOptions();
+  const { timeZone } = new Intl.DateTimeFormat().resolvedOptions();
   const speech = useSpeechRecognition();
   const draftRef = useRef(draft);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -272,7 +284,7 @@ export default function ChatPanel({
   function handleFileChange(files: FileList | null): void {
     const selection = limitChatAttachments(Array.from(files ?? []));
     setSelectedImages(selection.selected);
-    setImageNotice(selection.rejectedCount > 0 ? 'Only three images can be attached to one message.' : null);
+    setImageNotice(selection.rejectedCount > 0 ? 'Solo se pueden adjuntar tres imágenes a un mensaje.' : null);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
@@ -299,22 +311,22 @@ export default function ChatPanel({
         <div className="chat-main">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Conversation</p>
-              <h2 id="chat-title">Project chat</h2>
+              <p className="eyebrow">Conversación</p>
+              <h2 id="chat-title">Chat del proyecto</h2>
             </div>
           </div>
 
           {error && <div className="notice notice-error" role="alert">{error}</div>}
 
           <div className="chat-session-controls">
-            <label htmlFor="chat-session-selector">Chat session</label>
+            <label htmlFor="chat-session-selector">Sesión de chat</label>
             <select
               id="chat-session-selector"
               value={activeSessionId ?? ''}
               disabled={sessionsLoading || sessions.length === 0 || sessionActionBusy}
               onChange={(event) => onSessionChange(event.target.value)}
             >
-              <option value="" disabled>{sessionsLoading ? 'Loading sessions…' : 'No chat session available'}</option>
+              <option value="" disabled>{sessionsLoading ? 'Cargando sesiones…' : 'No hay sesiones de chat disponibles'}</option>
               {sessions.map((session) => (
                 <option key={session.id} value={session.id}>{session.title}</option>
               ))}
@@ -325,25 +337,25 @@ export default function ChatPanel({
               disabled={sessionsLoading || sessionActionBusy}
               onClick={onCreateSession}
             >
-              {sessionActionBusy ? 'Creating…' : 'New session'}
+              {sessionActionBusy ? 'Creando…' : 'Nueva sesión'}
             </button>
-            {selectedSession && <span className="quiet-state">Active: {selectedSession.title}</span>}
+            {selectedSession && <span className="quiet-state">Activa: {selectedSession.title}</span>}
           </div>
 
           {aiStatus && (
             <p className={`chat-ai-status chat-ai-status--${aiStatus.state.toLowerCase()}`} role="status">
-              AI request {aiStateLabel(aiStatus)}
+              Solicitud de IA {aiStateLabel(aiStatus)}
               {aiStatus.reason ? `: ${aiStatus.reason}` : ''}
             </p>
           )}
 
           <div className="chat-conversation-area">
             {loading ? (
-              <p className="quiet-state chat-loading" role="status">Loading messages…</p>
+              <p className="quiet-state chat-loading" role="status">Cargando mensajes…</p>
             ) : orderedHistory.length === 0 ? (
               <div className="chat-empty">
-                <p>No messages yet.</p>
-                <p className="chat-empty-suggestion">Start the conversation or ask the AI about the diagram.</p>
+                <p>Aún no hay mensajes.</p>
+                <p className="chat-empty-suggestion">Inicia la conversación o pregúntale a la IA sobre el diagrama.</p>
               </div>
             ) : (
               <ol className="chat-list">
@@ -363,11 +375,11 @@ export default function ChatPanel({
                       <div className="chat-message-heading">
                         <h3>
                           {message.authorDisplayName}
-                          {isReader && <span className="chat-author-you">You</span>}
+                          {isReader && <span className="chat-author-you">Tú</span>}
                           {isAssistant && <span className="chat-author-assistant">AI</span>}
                         </h3>
                         <time className="chat-message-time" dateTime={message.createdAt}>
-                          {formatMessageTime(message.createdAt, locale, timeZone)}
+                          {formatMessageTime(message.createdAt, 'es', timeZone)}
                         </time>
                       </div>
                       {/* Model output is untrusted: MarkdownText creates allowlisted React elements, not HTML. */}
@@ -379,16 +391,16 @@ export default function ChatPanel({
                         <p className="chat-message-body">{message.body}</p>
                       )}
                       {message.attachments && message.attachments.length > 0 && (
-                        <div className="chat-message-attachments" aria-label="Message images">
+                        <div className="chat-message-attachments" aria-label="Imágenes del mensaje">
                           {message.attachments.map((attachmentId) => attachmentUrls[attachmentId] ? (
                             <img
                               className="chat-attachment-thumbnail"
                               key={attachmentId}
                               src={attachmentUrls[attachmentId]}
-                              alt={`Image attached by ${message.authorDisplayName}`}
+                              alt={`Imagen adjuntada por ${message.authorDisplayName}`}
                             />
                           ) : (
-                            <span className="chat-attachment-pending" key={attachmentId} role="status">Loading image…</span>
+                            <span className="chat-attachment-pending" key={attachmentId} role="status">Cargando imagen…</span>
                           ))}
                         </div>
                       )}
@@ -409,7 +421,7 @@ export default function ChatPanel({
                           disabled={busy || !activeSessionId || aiRequestInProgress}
                           onClick={() => handleAskAi(message)}
                         >
-                          Ask AI
+                          Preguntar a la IA
                         </button>
                       )}
                     </li>
@@ -420,7 +432,7 @@ export default function ChatPanel({
           </div>
 
           <form className="chat-compose-form" onSubmit={handleSubmit}>
-            <label className="sr-only" htmlFor="chat-message-draft">Message</label>
+            <label className="sr-only" htmlFor="chat-message-draft">Mensaje</label>
             <input
               autoComplete="off"
               id="chat-message-draft"
@@ -429,7 +441,7 @@ export default function ChatPanel({
                 draftRef.current = event.target.value;
                 onDraftChange(event.target.value);
               }}
-              placeholder="Write a message…"
+              placeholder="Escribe un mensaje…"
               type="text"
               value={draft}
             />
@@ -445,7 +457,7 @@ export default function ChatPanel({
                 {speech.listening ? 'Escuchando…' : 'Dictar'}
               </button>
             )}
-            <label className="sr-only" htmlFor="chat-image-attachments">Image attachments</label>
+            <label className="sr-only" htmlFor="chat-image-attachments">Imágenes adjuntas</label>
             <input
               ref={fileInputRef}
               className="sr-only"
@@ -462,20 +474,20 @@ export default function ChatPanel({
               className="button button-secondary chat-attach-image"
               type="button"
               disabled={busy || !activeSessionId}
-              aria-label="Attach images"
+              aria-label="Adjuntar imágenes"
               onClick={() => fileInputRef.current?.click()}
             >
-              Attach images
+              Adjuntar imágenes
             </button>
             {onSuggest && canDecideProposals && (
               <button
                 className="button button-secondary chat-suggest-change"
                 type="button"
                 disabled={busy || suggestBusy || !draft.trim() || !activeSessionId}
-                title="Ask the assistant to suggest a diagram change from this text. Nothing changes until an editor accepts it."
+                title="Pide a la IA que sugiera un cambio en el diagrama a partir de este texto. Nada cambiará hasta que una persona editora lo acepte."
                 onClick={() => void handleSuggest()}
               >
-                {suggestBusy ? 'Suggesting…' : 'Suggest change'}
+                {suggestBusy ? 'Preparando sugerencia…' : 'Sugerir cambio'}
               </button>
             )}
             <button
@@ -483,102 +495,102 @@ export default function ChatPanel({
               disabled={busy || !draft.trim() || !activeSessionId}
               type="submit"
             >
-              {busy ? 'Sending…' : 'Send'}
+              {busy ? 'Enviando…' : 'Enviar'}
             </button>
           </form>
 
           {proposalNotice && <p className="notice notice-error" role="alert">{proposalNotice}</p>}
 
           {selectedImages.length > 0 && (
-            <ul className="chat-selected-attachments" aria-label="Images to send">
+            <ul className="chat-selected-attachments" aria-label="Imágenes por enviar">
               {selectedImages.map((image, index) => <li key={`${image.name}-${index}`}>{image.name}</li>)}
             </ul>
           )}
           {imageNotice && <p className="notice notice-error" role="alert">{imageNotice}</p>}
 
           <div className="chat-history-actions">
-            <p>Chat history is scoped to the selected session; forgetting diagram memory does not delete it.</p>
+            <p>El historial de chat pertenece a la sesión seleccionada; olvidar los recuerdos del diagrama no lo elimina.</p>
             {canDeleteHistory && (
               <button className="button button-secondary" type="button" onClick={onDeleteHistory} disabled={!activeSessionId || loading}>
-                Delete history for this session
+                Eliminar el historial de esta sesión
               </button>
             )}
             {historyMessage && <p className="quiet-state" role="status">{historyMessage}</p>}
           </div>
         </div>
-        <aside className="chat-side" aria-label="Context and diagram memory">
+        <aside className="chat-side" aria-label="Contexto y recuerdos del diagrama">
           <section className="context-meter-panel" aria-labelledby="context-meter-title">
-            <h3 id="context-meter-title">AI context budget</h3>
+            <h3 id="context-meter-title">Presupuesto de contexto de IA</h3>
             {contextMeterLoading ? (
-              <p className="quiet-state" role="status">Loading context meter…</p>
+              <p className="quiet-state" role="status">Cargando el medidor de contexto…</p>
             ) : contextMeter ? (
               <>
-                <label htmlFor="chat-context-progress">{contextMeter.percent}% of the input budget ({contextMeter.totalUsed} / {contextMeter.promptBudget} tokens)</label>
+                <label htmlFor="chat-context-progress">{contextMeter.percent}% del presupuesto de entrada ({contextMeter.totalUsed} / {contextMeter.promptBudget} tokens)</label>
                 <progress
                   id="chat-context-progress"
                   value={clampedPercent}
                   max={100}
-                  aria-valuetext={`${contextMeter.percent}% of the ${contextMeter.promptBudget}-token input budget`}
+                  aria-valuetext={`${contextMeter.percent}% del presupuesto de entrada de ${contextMeter.promptBudget} tokens`}
                   data-threshold-reached={contextMeter.compactionPending || contextMeter.totalUsed >= contextMeter.promptThreshold}
                   style={{ accentColor: meterColor(contextMeter) }}
                 />
                 <details className="context-meter-details">
-                  <summary>Details</summary>
+                  <summary>Detalles</summary>
                   <dl className="context-meter-breakdown">
-                    <div><dt>Context window</dt><dd>{contextMeter.contextWindow}</dd></div>
-                    <div><dt>Response reserved</dt><dd>{contextMeter.reservedForResponse}</dd></div>
-                    <div><dt>Input budget</dt><dd>{contextMeter.promptBudget}</dd></div>
-                    <div><dt>Instructions</dt><dd>{contextMeter.instructions}</dd></div>
-                    <div><dt>Diagram</dt><dd>{contextMeter.diagramData}</dd></div>
-                    <div><dt>Memories</dt><dd>{contextMeter.memories}</dd></div>
-                    <div><dt>Session history</dt><dd>{contextMeter.history}</dd></div>
-                    <div><dt>Images</dt><dd>{contextMeter.images}</dd></div>
-                    <div><dt>Compaction threshold</dt><dd>{contextMeter.promptThreshold}</dd></div>
+                    <div><dt>Ventana de contexto</dt><dd>{contextMeter.contextWindow}</dd></div>
+                    <div><dt>Reservado para la respuesta</dt><dd>{contextMeter.reservedForResponse}</dd></div>
+                    <div><dt>Presupuesto de entrada</dt><dd>{contextMeter.promptBudget}</dd></div>
+                    <div><dt>Instrucciones</dt><dd>{contextMeter.instructions}</dd></div>
+                    <div><dt>Diagrama</dt><dd>{contextMeter.diagramData}</dd></div>
+                    <div><dt>Recuerdos</dt><dd>{contextMeter.memories}</dd></div>
+                    <div><dt>Historial de la sesión</dt><dd>{contextMeter.history}</dd></div>
+                    <div><dt>Imágenes</dt><dd>{contextMeter.images}</dd></div>
+                    <div><dt>Umbral de compactación</dt><dd>{contextMeter.promptThreshold}</dd></div>
                   </dl>
                 </details>
-                <p>{contextMeter.compactionPending ? 'Compaction threshold reached.' : 'Context is below the compaction threshold.'}</p>
+                <p>{contextMeter.compactionPending ? 'Se alcanzó el umbral de compactación.' : 'El contexto está por debajo del umbral de compactación.'}</p>
                 <button className="button button-secondary" type="button" onClick={onCompact} disabled={compactBusy || !activeSessionId}>
-                  {compactBusy ? 'Compacting…' : 'Compact this session context'}
+                  {compactBusy ? 'Compactando…' : 'Compactar el contexto de esta sesión'}
                 </button>
               </>
             ) : (
-              <p className="quiet-state">{activeSessionId ? 'Context meter unavailable.' : 'Choose a session to view its context.'}</p>
+              <p className="quiet-state">{activeSessionId ? 'El medidor de contexto no está disponible.' : 'Elige una sesión para ver su contexto.'}</p>
             )}
             {contextError && <p className="notice notice-error" role="alert">{contextError}</p>}
             {compactMessage && <p className="quiet-state" role="status">{compactMessage}</p>}
           </section>
 
           <section className="diagram-memory-panel" aria-labelledby="diagram-memory-title">
-            <h3 id="diagram-memory-title">Diagram memory</h3>
-            <p>Memory belongs to this diagram, not to one chat session. Deleting chat history does not forget memory.</p>
-            <p>Useful design knowledge is extracted automatically after AI requests. Use Extract memories to run it manually.</p>
-            <p>Ask naturally in chat to read, save, or revise memories. Each AI request uses the latest UML for this diagram.</p>
-            <p>Ask explicitly to search other diagrams. Shared results come only from projects every active collaborator can access.</p>
+            <h3 id="diagram-memory-title">Recuerdos del diagrama</h3>
+            <p>Los recuerdos pertenecen a este diagrama, no a una sesión de chat. Eliminar el historial del chat no los borra.</p>
+            <p>Después de las solicitudes a la IA se extraen automáticamente conocimientos útiles sobre el diseño. Usa «Extraer recuerdos» para hacerlo manualmente.</p>
+            <p>Pregunta en el chat, con tus propias palabras, para leer, guardar o revisar recuerdos. Cada solicitud a la IA usa la versión más reciente del diagrama UML.</p>
+            <p>Pregunta explícitamente si quieres buscar en otros diagramas. Los resultados compartidos solo incluyen proyectos a los que todas las personas colaboradoras activas pueden acceder.</p>
             {memoryError && <p className="notice notice-error" role="alert">{memoryError}</p>}
             {memoryMessage && <p className="quiet-state" role="status">{memoryMessage}</p>}
             {memoriesLoading ? (
-              <p className="quiet-state" role="status">Loading diagram memories…</p>
+              <p className="quiet-state" role="status">Cargando los recuerdos del diagrama…</p>
             ) : memories.length === 0 ? (
-              <p className="quiet-state">No diagram memories yet.</p>
+              <p className="quiet-state">Aún no hay recuerdos del diagrama.</p>
             ) : (
               <ul className="diagram-memory-list">
                 {memories.map((memory) => {
                   const sources = sourceLabels(memory);
                   return (
                     <li key={memory.memoryId}>
-                      <p><strong>{memory.kind}</strong> · <span>{memory.status}</span></p>
+                      <p><strong>{memoryKindLabel(memory.kind)}</strong> · <span>{memoryStatusLabel(memory.status)}</span></p>
                       <p>{memory.content}</p>
                       <p className="diagram-memory-sources">
-                        Sources: {sources.length > 0 ? sources.join(' · ') : 'No linked source'}
+                        Fuentes: {sources.length > 0 ? sources.join(' · ') : 'Sin fuente vinculada'}
                       </p>
                       {canManageMemory && (
                         <button
                           className="button button-secondary"
                           type="button"
-                          aria-label={`Forget memory: ${memory.content}`}
+                          aria-label={`Olvidar recuerdo: ${memory.content}`}
                           onClick={() => onForgetMemory(memory.memoryId)}
                         >
-                          Forget this memory
+                          Olvidar este recuerdo
                         </button>
                       )}
                     </li>
@@ -588,7 +600,7 @@ export default function ChatPanel({
             )}
             <div className="diagram-memory-actions">
               <button className="button button-secondary" type="button" onClick={onExtractMemories} disabled={extractBusy}>
-                {extractBusy ? 'Extracting…' : 'Extract memories'}
+                {extractBusy ? 'Extrayendo…' : 'Extraer recuerdos'}
               </button>
               {canManageMemory && (
                 <button
@@ -597,11 +609,11 @@ export default function ChatPanel({
                   disabled={memoriesLoading || memories.length === 0}
                   onClick={onForgetAllMemories}
                 >
-                  Forget all diagram memories
+                  Olvidar todos los recuerdos del diagrama
                 </button>
               )}
             </div>
-            {!canManageMemory && <p className="quiet-state">Only the project OWNER can forget diagram memories.</p>}
+            {!canManageMemory && <p className="quiet-state">Solo la persona propietaria del proyecto puede olvidar los recuerdos del diagrama.</p>}
           </section>
         </aside>
       </div>

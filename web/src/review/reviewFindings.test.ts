@@ -93,15 +93,15 @@ describe('review findings', () => {
 
     expect(findings.errors.map(({ code, elementName }) => [code, elementName])).toEqual([
       ['GENERALIZATION_CYCLE', 'Pedido'],
-      ['OPERATION_INVALID', 'calcularTotal() (operation of Pedido)'],
-      ['UNKNOWN_ELEMENT', 'Unidentified diagram element'],
+      ['OPERATION_INVALID', 'calcularTotal() (operación de Pedido)'],
+      ['UNKNOWN_ELEMENT', 'Elemento del diagrama sin identificar'],
     ]);
     expect(findings.warnings.map(({ code, elementName }) => [code, elementName])).toEqual([
-      ['MEMBER_DUPLICATE', 'total (attribute of Pedido)'],
-      ['ROLE_DUPLICATE', 'association relationship between Pedido and Cliente'],
+      ['MEMBER_DUPLICATE', 'total (atributo de Pedido)'],
+      ['ROLE_DUPLICATE', 'Relación de tipo asociación entre Pedido y Cliente'],
     ]);
     expect(findings.readinessBlockers.map(({ code, elementName }) => [code, elementName])).toEqual([
-      ['UNSUPPORTED_TYPE', 'total (attribute of Pedido)'],
+      ['UNSUPPORTED_TYPE', 'total (atributo de Pedido)'],
     ]);
     expect(findings.profile).toBe('Spring Boot PostgreSQL V1');
     expect(findings.ready).toBe(false);
@@ -115,10 +115,10 @@ describe('review findings', () => {
       ],
     }, readiness, model);
 
-    expect(findings.errors[0]?.elementName).toBe('Whole diagram');
-    expect(findings.warnings[0]?.elementName).toBe('Unidentified diagram element');
+    expect(findings.errors[0]?.elementName).toBe('Diagrama completo');
+    expect(findings.warnings[0]?.elementName).toBe('Elemento del diagrama sin identificar');
     expect(resolveReviewElementName(UNKNOWN_ID, { classifiers: new Map(), attributes: new Map(), operations: new Map(), relationships: new Map() }))
-      .toBe('Unidentified diagram element');
+      .toBe('Elemento del diagrama sin identificar');
     expect(JSON.stringify(findings)).not.toMatch(UUID_PATTERN);
   });
 
@@ -129,7 +129,7 @@ describe('review findings', () => {
 
     expect(explanation).toContain('Explicá en español');
     expect(explanation).toContain('GENERALIZATION_CYCLE — Elemento: Pedido');
-    expect(explanation).toContain('total (attribute of Pedido)');
+    expect(explanation).toContain('total (atributo de Pedido)');
     expect(explanation).toContain('Spring Boot PostgreSQL V1');
     expect(proposedFix).toContain('proponé un plan mínimo');
     expect(proposedFix).toContain('No apliques cambios');

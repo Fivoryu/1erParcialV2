@@ -71,10 +71,10 @@ describe('versioning workspace', () => {
     const dirtyMarkup = renderStatus({ dirty: true });
 
     expect(cleanMarkup).toContain('class="vcs-dirty-indicator is-clean"');
-    expect(cleanMarkup).toContain('>clean</span>');
+    expect(cleanMarkup).toContain('>limpio</span>');
     expect(dirtyMarkup).toContain('class="vcs-dirty-indicator is-dirty"');
-    expect(dirtyMarkup).toContain('uncommitted changes');
-    expect(cleanMarkup).toContain('Current branch');
+    expect(dirtyMarkup).toContain('cambios sin confirmar');
+    expect(cleanMarkup).toContain('Rama actual');
     expect(cleanMarkup).toContain('Add account diagram');
     expect(cleanMarkup).toContain('Avery Rivera');
     expect(cleanMarkup).not.toContain(status.headCommitId);

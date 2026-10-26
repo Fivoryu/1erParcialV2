@@ -58,8 +58,8 @@ describe('generation product language', () => {
     });
 
     expect(diagnostic.blocking).toBe(true);
-    expect(diagnostic.feature).toBe('Generalization (inheritance)');
-    expect(diagnostic.detail).toContain('Generalization (inheritance)');
+    expect(diagnostic.feature).toBe('Generalización (herencia)');
+    expect(diagnostic.detail).toContain('Generalización (herencia)');
     expect(diagnostic.detail).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
   });
 
@@ -75,13 +75,13 @@ describe('generation product language', () => {
       message: raw,
       blocking: true,
     });
-    expect(unknownCode.feature).toBe('Primitive type mapping');
+    expect(unknownCode.feature).toBe('Asignación de tipos primitivos');
     expect(unknownCode.detail).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
   });
 
   it('humanizes an unmapped feature code rather than hiding it', () => {
     expect(featureLabel('someNewKind')).toBe('Some New Kind');
-    expect(featureLabel('')).toBe('Unsupported model feature');
+    expect(featureLabel('')).toBe('Característica del modelo no compatible');
   });
 
   it('offers the archive only for a complete run with no blocking diagnostic', () => {
@@ -123,15 +123,15 @@ describe('generation product language', () => {
     ];
     const withBoth: GenerationRunResource = { ...runBase, diagnostics };
     expect(blockingDiagnostics(withBoth)).toHaveLength(1);
-    expect(blockingDiagnostics(withBoth)[0]?.feature).toBe('Dependency');
+    expect(blockingDiagnostics(withBoth)[0]?.feature).toBe('Dependencia');
     expect(blockingDiagnostics(null)).toEqual([]);
   });
 
   it('describes every run state and knows which ones are terminal', () => {
-    expect(describeRunState('PENDING')).toBe('Queued');
-    expect(describeRunState('RUNNING')).toBe('Generating…');
-    expect(describeRunState('SUCCEEDED')).toBe('Ready to download');
-    expect(describeRunState('FAILED')).toBe('Blocked by the model');
+    expect(describeRunState('PENDING')).toBe('En cola');
+    expect(describeRunState('RUNNING')).toBe('Generando…');
+    expect(describeRunState('SUCCEEDED')).toBe('Listo para descargar');
+    expect(describeRunState('FAILED')).toBe('Bloqueado por el modelo');
     expect(isTerminalState('SUCCEEDED')).toBe(true);
     expect(isTerminalState('FAILED')).toBe(true);
     expect(isTerminalState('RUNNING')).toBe(false);
@@ -164,12 +164,12 @@ describe('generation product language', () => {
 
 describe('deployment product language', () => {
   it('names every deployment state in terms of what happened to the backend', () => {
-    expect(describeDeploymentState('PENDING')).toBe('Waiting for the operator');
-    expect(describeDeploymentState('RUNNING')).toBe('Deploying…');
-    expect(describeDeploymentState('UP')).toBe('Running');
-    expect(describeDeploymentState('FAILED')).toBe('Could not start');
-    expect(describeDeploymentState('STOPPING')).toBe('Stopping…');
-    expect(describeDeploymentState('STOPPED')).toBe('Stopped');
+    expect(describeDeploymentState('PENDING')).toBe('En espera del operador');
+    expect(describeDeploymentState('RUNNING')).toBe('Implementando…');
+    expect(describeDeploymentState('UP')).toBe('En ejecución');
+    expect(describeDeploymentState('FAILED')).toBe('No se pudo iniciar');
+    expect(describeDeploymentState('STOPPING')).toBe('Deteniendo…');
+    expect(describeDeploymentState('STOPPED')).toBe('Detenido');
   });
 
   it('knows which states hold the destination and which are outcomes', () => {
@@ -196,15 +196,15 @@ describe('deployment product language', () => {
 
   it('states a failure as a consequence for the user, not as an operator code', () => {
     const missing = describeDeploymentFailure('MISSING_LOCAL_IMAGE');
-    expect(missing).toContain('is not on this machine');
-    expect(missing).toContain('Pull it once');
+    expect(missing).toContain('no está en este equipo');
+    expect(missing).toContain('Descárgala una vez');
     expect(missing).not.toContain('MISSING_LOCAL_IMAGE');
 
-    expect(describeDeploymentFailure('OPERATOR_INTERRUPTED')).toContain('interrupted');
-    expect(describeDeploymentFailure('HEALTH_NEVER_UP')).toContain('health check');
+    expect(describeDeploymentFailure('OPERATOR_INTERRUPTED')).toContain('se interrumpió');
+    expect(describeDeploymentFailure('HEALTH_NEVER_UP')).toContain('comprobación de estado');
     // An unknown code still says something true and points at where the detail is.
-    expect(describeDeploymentFailure('SOMETHING_NEW')).toContain('operator log');
-    expect(describeDeploymentFailure(null)).toContain('operator log');
+    expect(describeDeploymentFailure('SOMETHING_NEW')).toContain('registro del operador');
+    expect(describeDeploymentFailure(null)).toContain('registro del operador');
   });
 
   it('never lets the operator message carry a path or an identifier to the screen', () => {
@@ -235,7 +235,7 @@ describe('deployment product language', () => {
   });
 
   it('warns that the generated backend has no authentication', () => {
-    expect(NO_AUTHENTICATION_WARNING).toContain('no authentication');
-    expect(NO_AUTHENTICATION_WARNING).toContain('read and write');
+    expect(NO_AUTHENTICATION_WARNING).toContain('no tiene autenticación');
+    expect(NO_AUTHENTICATION_WARNING).toContain('leer y modificar');
   });
 });

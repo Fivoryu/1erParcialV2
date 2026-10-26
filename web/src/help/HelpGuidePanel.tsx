@@ -76,27 +76,27 @@ export default function HelpGuidePanel({
       <button
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        aria-label={isOpen ? 'Close help guide' : 'Open help guide'}
+        aria-label={isOpen ? 'Cerrar la guía de ayuda' : 'Abrir la guía de ayuda'}
         className="help-guide-trigger"
         onClick={onToggle}
         style={triggerStyle}
         type="button"
       >
-        Help
+        Ayuda
       </button>
       {isOpen && (
-        <aside aria-label="App help guide" aria-modal="false" className="help-guide-panel" role="dialog" style={panelStyle}>
+        <aside aria-label="Guía de ayuda de la aplicación" aria-modal="false" className="help-guide-panel" role="dialog" style={panelStyle}>
           <header className="section-heading">
             <div>
-              <p className="eyebrow">App help</p>
-              <h2>Ask about this editor</h2>
+              <p className="eyebrow">Ayuda de la aplicación</p>
+              <h2>Pregunta sobre este editor</h2>
             </div>
             <button className="button button-secondary button-compact" onClick={onClose} type="button">
-              Close
+              Cerrar
             </button>
           </header>
           <p className="quiet-state">
-            Answers are limited to the app’s documented help topics and do not use diagram chat history or memory.
+            Las respuestas se limitan a los temas de ayuda documentados de la aplicación y no usan el historial del chat ni los recuerdos del diagrama.
           </p>
 
           {statusText !== null && (
@@ -109,13 +109,13 @@ export default function HelpGuidePanel({
             <>
               <p className="help-guide-answer">{state.response.answer}</p>
               {navigationSuggestions.length > 0 && (
-                <section aria-label="Suggested navigation" className="help-guide-suggestions">
-                  <h3>Suggested navigation</h3>
+                <section aria-label="Navegación sugerida" className="help-guide-suggestions">
+                  <h3>Navegación sugerida</h3>
                   <ul>
                     {navigationSuggestions.map((suggestion) => (
                       <li key={suggestion.section}>
                         <button
-                          aria-label={`${suggestion.label} section`}
+                          aria-label={`Sección: ${suggestion.label}`}
                           className="button button-secondary button-compact"
                           onClick={() => onNavigateToSection(suggestion.section)}
                           type="button"
@@ -132,17 +132,17 @@ export default function HelpGuidePanel({
 
           <form className="help-guide-compose" onSubmit={submit}>
             <label className="sr-only">
-              Question
+              Pregunta
               <textarea
                 autoComplete="off"
                 maxLength={1000}
                 onChange={(event) => onDraftChange(event.target.value)}
-                placeholder="How do I export my diagram?"
+                placeholder="¿Cómo exporto mi diagrama?"
                 value={draft}
               />
             </label>
             <button className="button button-primary" disabled={state.kind === 'loading' || !draft.trim()} type="submit">
-              {state.kind === 'loading' ? 'Preparing…' : 'Ask guide'}
+              {state.kind === 'loading' ? 'Preparando…' : 'Preguntar a la guía'}
             </button>
           </form>
         </aside>

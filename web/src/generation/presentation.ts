@@ -16,38 +16,38 @@ import type {
  */
 
 const FEATURE_LABELS: Record<string, string> = {
-  GENERALIZATION: 'Generalization (inheritance)',
-  REALIZATION: 'Realization (interface implementation)',
-  DEPENDENCY: 'Dependency',
-  ASSOCIATION: 'Association',
-  AGGREGATION: 'Aggregation',
-  COMPOSITION: 'Composition',
-  multiplicity: 'Multiplicity',
-  relationshipKind: 'Relationship kind',
-  relationshipEnds: 'Relationship ends',
-  classifierKind: 'Classifier kind',
-  namespace: 'Package placement',
-  visibility: 'Visibility',
-  primitiveTypeMappings: 'Primitive type mapping',
+  GENERALIZATION: 'Generalización (herencia)',
+  REALIZATION: 'Realización (implementación de interfaz)',
+  DEPENDENCY: 'Dependencia',
+  ASSOCIATION: 'Asociación',
+  AGGREGATION: 'Agregación',
+  COMPOSITION: 'Composición',
+  multiplicity: 'Multiplicidad',
+  relationshipKind: 'Tipo de relación',
+  relationshipEnds: 'Extremos de la relación',
+  classifierKind: 'Tipo de clasificador',
+  namespace: 'Ubicación del paquete',
+  visibility: 'Visibilidad',
+  primitiveTypeMappings: 'Asignación de tipos primitivos',
 };
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
 const DIAGNOSTIC_DETAILS: Record<string, (feature: string) => string> = {
   UNSUPPORTED_UML_FEATURE:
-    (feature) => `The generator does not support ${feature} yet. Remove or replace it, then generate again.`,
+    (feature) => `El generador aún no admite ${feature}. Elimínalo o reemplázalo y vuelve a generar.`,
   UNSUPPORTED_MULTIPLICITY:
-    (feature) => `The generator does not support this ${feature} on an attribute yet.`,
+    (feature) => `El generador aún no admite esta ${feature} en un atributo.`,
   UNSUPPORTED_MULTIPLICITY_COMBINATION:
-    (feature) => `The generator does not support this combination of ${feature} across the two relationship ends.`,
+    (feature) => `El generador no admite esta combinación de ${feature} entre los dos extremos de la relación.`,
   UNSUPPORTED_NAMESPACE:
-    (feature) => `The generator does not support this ${feature} yet.`,
+    (feature) => `El generador aún no admite esta ${feature}.`,
   INVALID_RELATIONSHIP_ENDS:
-    (feature) => `A relationship must have exactly two ends; this ${feature} does not meet that rule.`,
+    (feature) => `Una relación debe tener exactamente dos extremos; esta ${feature} no cumple esa regla.`,
   UNRESOLVABLE_TYPE:
-    (feature) => `A ${feature} could not be resolved to a class or to a supported primitive type.`,
+    (feature) => `No se pudo resolver ${feature} como una clase o un tipo primitivo compatible.`,
   PROFILE_INCOMPATIBLE:
-    (feature) => `The selected profile is not compatible with this ${feature}.`,
+    (feature) => `El perfil seleccionado no es compatible con esta ${feature}.`,
 };
 
 /** A diagnostic restated for the product, with no internal identifier anywhere in it. */
@@ -69,14 +69,14 @@ export function featureLabel(feature: string): string {
     .replace(/\s+/g, ' ')
     .trim();
   if (spaced.length === 0) {
-    return 'Unsupported model feature';
+    return 'Característica del modelo no compatible';
   }
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+  return spaced[0]!.toUpperCase() + spaced.slice(1);
 }
 
 /** Drops anything that looks like an internal identifier from a fallback sentence. */
 export function withoutIdentifiers(message: string): string {
-  return message.replace(UUID_PATTERN, 'this element').replace(/\s+/g, ' ').trim();
+  return message.replace(UUID_PATTERN, 'este elemento').replace(/\s+/g, ' ').trim();
 }
 
 export function describeDiagnostic(diagnostic: GenerationDiagnosticResource): ProductDiagnostic {
@@ -86,7 +86,7 @@ export function describeDiagnostic(diagnostic: GenerationDiagnosticResource): Pr
     feature,
     detail: detail
       ? detail(feature)
-      : withoutIdentifiers(diagnostic.message) || 'The generator cannot map this part of the model yet.',
+      : withoutIdentifiers(diagnostic.message) || 'El generador aún no puede asignar esta parte del modelo.',
     blocking: diagnostic.blocking,
   };
 }
@@ -94,13 +94,13 @@ export function describeDiagnostic(diagnostic: GenerationDiagnosticResource): Pr
 export function describeRunState(state: GenerationState): string {
   switch (state) {
     case 'PENDING':
-      return 'Queued';
+      return 'En cola';
     case 'RUNNING':
-      return 'Generating…';
+      return 'Generando…';
     case 'SUCCEEDED':
-      return 'Ready to download';
+      return 'Listo para descargar';
     case 'FAILED':
-      return 'Blocked by the model';
+      return 'Bloqueado por el modelo';
   }
 }
 
@@ -162,32 +162,32 @@ export function uniqueTargetKey(base: string, existingKeys: readonly string[]): 
  */
 
 const DEPLOYMENT_STATE_LABELS: Record<DeploymentState, string> = {
-  PENDING: 'Waiting for the operator',
-  RUNNING: 'Deploying…',
-  UP: 'Running',
-  FAILED: 'Could not start',
-  STOPPING: 'Stopping…',
-  STOPPED: 'Stopped',
+  PENDING: 'En espera del operador',
+  RUNNING: 'Implementando…',
+  UP: 'En ejecución',
+  FAILED: 'No se pudo iniciar',
+  STOPPING: 'Deteniendo…',
+  STOPPED: 'Detenido',
 };
 
 const DEPLOYMENT_FAILURE_REASONS: Record<string, string> = {
   COMPOSE_UP_FAILED:
-    'Docker Compose could not start the stack. Check that the ports are free and that Docker is running.',
+    'Docker Compose no pudo iniciar los servicios. Comprueba que los puertos estén libres y que Docker esté en ejecución.',
   GENERATED_BUILD_FAILED:
-    'The generated project did not compile. The local Maven cache may be missing something it needs.',
+    'El proyecto generado no se pudo compilar. Es posible que falte algo en la caché local de Maven.',
   MISSING_LOCAL_IMAGE:
-    'An image this deployment needs is not on this machine, and the operator never downloads one. Pull it once and deploy again.',
-  HEALTH_NEVER_UP: 'The stack started but the backend never answered its health check.',
-  OPERATOR_INTERRUPTED: 'The deployment was interrupted, so its stack was taken down.',
+    'La imagen necesaria para esta implementación no está en este equipo y el operador no la descarga. Descárgala una vez y vuelve a implementar.',
+  HEALTH_NEVER_UP: 'Los servicios se iniciaron, pero el backend nunca respondió a la comprobación de estado.',
+  OPERATOR_INTERRUPTED: 'La implementación se interrumpió y sus servicios se detuvieron.',
   UNKNOWN_DEPLOYMENT_DIRECTORY:
-    'The operator that started this deployment no longer has its working directory, so it cannot take it down.',
-  STOP_INCOMPLETE: 'The stack could not be removed completely; something may still be running.',
-  DOCKER_UNAVAILABLE: 'The operator could not use Docker on this machine.',
-  MAVEN_UNAVAILABLE: 'The operator could not use Maven on this machine.',
-  ARCHIVE_INCOMPLETE: 'The generated archive is missing a file the deployment needs.',
-  ARCHIVE_UNAVAILABLE: 'The generated archive could not be downloaded, so there was nothing to deploy.',
-  API_UNREACHABLE: 'The operator could not reach the diagrammer.',
-  TARGET_NOT_FOUND: 'The destination of this run no longer exists.',
+    'El operador que inició esta implementación ya no tiene su directorio de trabajo, por lo que no puede detenerla.',
+  STOP_INCOMPLETE: 'No se pudieron quitar todos los servicios; es posible que alguno siga en ejecución.',
+  DOCKER_UNAVAILABLE: 'El operador no pudo usar Docker en este equipo.',
+  MAVEN_UNAVAILABLE: 'El operador no pudo usar Maven en este equipo.',
+  ARCHIVE_INCOMPLETE: 'Falta un archivo necesario para la implementación en el paquete generado.',
+  ARCHIVE_UNAVAILABLE: 'No se pudo descargar el paquete generado, así que no hubo nada para implementar.',
+  API_UNREACHABLE: 'El operador no pudo conectarse con Class Diagrammer.',
+  TARGET_NOT_FOUND: 'El destino de esta ejecución ya no existe.',
 };
 
 /** A host path or a scheme-like location, which must not reach the screen either. */
@@ -215,7 +215,7 @@ export function describeDeploymentFailure(code: string | null): string {
   if (code && DEPLOYMENT_FAILURE_REASONS[code]) {
     return DEPLOYMENT_FAILURE_REASONS[code];
   }
-  return 'The deployment did not finish. The operator log on this machine has the details.';
+  return 'La implementación no terminó. Consulta los detalles en el registro del operador de este equipo.';
 }
 
 /**
@@ -252,5 +252,5 @@ export function editorIsLocal(hostname: string): boolean {
 }
 
 export const NO_AUTHENTICATION_WARNING =
-  'The generated backend has no authentication, so anyone on this network who knows the address can read and '
-  + 'write its data. Keep it on a network you trust.';
+  'El backend generado no tiene autenticación, por lo que cualquiera en esta red que conozca la dirección puede leer y '
+  + 'modificar sus datos. Úsalo solo en una red de confianza.';

@@ -33,14 +33,14 @@ describe('version permissions panel', () => {
     const markup = render({ permissions: [permission, { ...permission, userId: '22222222-2222-4222-8222-222222222222', displayName: 'Morgan Lee' }] });
 
     expect(markup).toContain('<table class="vcs-permission-table">');
-    expect(markup).toContain('scope="col">Manage Permissions</th>');
+    expect(markup).toContain('scope="col">Administrar permisos</th>');
     expect(markup).toContain('Avery Rivera');
     expect(markup).toContain('Morgan Lee');
     expect(markup.match(/type="checkbox"/g)).toHaveLength(VCS_PERMISSION_ACTIONS.length * 2);
     expect(markup.match(/checked=""/g)).toHaveLength(permission.actions.length * 2);
-    expect(markup).toContain('View for Avery Rivera');
-    expect(markup).toContain('Manage Permissions for Avery Rivera');
-    expect(markup).toContain('Saving a change pins the effective permission set for that member.');
+    expect(markup).toContain('Ver para Avery Rivera');
+    expect(markup).toContain('Administrar permisos para Avery Rivera');
+    expect(markup).toContain('Al guardar un cambio, se fija el conjunto de permisos efectivo para esa persona.');
     expect(markup).not.toContain(permission.userId);
   });
 
@@ -63,7 +63,7 @@ describe('version permissions panel', () => {
 
     expect(markup).toContain('Avery Rivera');
     expect(markup).toContain('Morgan Lee');
-    expect(markup).toContain('You cannot change your own permissions — ask another owner.');
+    expect(markup).toContain('No puedes cambiar tus propios permisos; pídele a otra persona propietaria que lo haga.');
     expect(markup.match(/disabled=""/g)).toHaveLength(VCS_PERMISSION_ACTIONS.length);
     expect(markup.match(/type="checkbox"/g)).toHaveLength(VCS_PERMISSION_ACTIONS.length * 2);
     expect(markup.match(/checked=""/g)).toHaveLength(permission.actions.length * 2);
@@ -74,11 +74,11 @@ describe('version permissions panel', () => {
 
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('You do not have permission to manage project permissions.');
-    expect(markup).toContain('Dismiss');
+    expect(markup).toContain('Descartar');
   });
 
   it('distinguishes loading and an empty permissions list', () => {
-    expect(render({ loading: true, permissions: [] })).toContain('Loading permissions…');
-    expect(render({ loading: false, permissions: [] })).toContain('No project permissions are available; add a project member before changing actions.');
+    expect(render({ loading: true, permissions: [] })).toContain('Cargando los permisos…');
+    expect(render({ loading: false, permissions: [] })).toContain('No hay permisos de proyecto disponibles. Agrega a una persona al proyecto antes de cambiar sus acciones.');
   });
 });

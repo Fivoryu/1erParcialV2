@@ -18,12 +18,12 @@ export type EditorSection = {
  * their documented order, with versioning appended last.
  */
 export const EDITOR_SECTIONS: readonly EditorSection[] = [
-  { id: 'xmi', label: 'XMI interchange', title: 'Import an XMI file', size: 'md' },
-  { id: 'collaboration', label: 'Collaboration', title: 'Live collaboration', size: 'lg' },
-  { id: 'members', label: 'Members', title: 'Members', size: 'lg' },
-  { id: 'review', label: 'Review', title: 'Review diagram', size: 'md' },
-  { id: 'generation', label: 'Generation', title: 'Generate a backend', size: 'md' },
-  { id: 'vcs', label: 'Versioning', title: 'History, branches and reviews', size: 'lg' },
+  { id: 'xmi', label: 'Intercambio XMI', title: 'Importar un archivo XMI', size: 'md' },
+  { id: 'collaboration', label: 'Colaboración', title: 'Colaboración en tiempo real', size: 'lg' },
+  { id: 'members', label: 'Integrantes', title: 'Integrantes', size: 'lg' },
+  { id: 'review', label: 'Revisión', title: 'Revisar el diagrama', size: 'md' },
+  { id: 'generation', label: 'Generación', title: 'Generar un backend', size: 'md' },
+  { id: 'vcs', label: 'Versionado', title: 'Historial, ramas y revisiones', size: 'lg' },
 ];
 
 /** Returns the matching section, or throws naming the unknown id. */

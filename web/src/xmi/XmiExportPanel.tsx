@@ -36,15 +36,15 @@ function downloadExportedFile(fileBase64: string, projectName: string): void {
 function LossReport({ losses }: { losses: XmiLossResource[] }) {
   return (
     <div className="generation-section">
-      <h3>Reported losses</h3>
+      <h3>Pérdidas detectadas</h3>
       {losses.length === 0 ? (
-        <p className="property-hint">No losses were reported.</p>
+        <p className="property-hint">No se detectaron pérdidas.</p>
       ) : (
         <ul className="generation-diagnostics">
           {losses.map((loss, index) => (
             <li key={`${loss.name}-${index}`}>
               <strong>{loss.name}</strong>
-              <span>{loss.count} affected</span>
+              <span>Elementos afectados: {loss.count}</span>
             </li>
           ))}
         </ul>
@@ -74,26 +74,26 @@ export function XmiExportPanelView({
     <section className="generation-panel" aria-labelledby="xmi-export-title">
       <div className="generation-heading">
         <div>
-          <p className="eyebrow">XMI interchange</p>
-          <h2 id="xmi-export-title">Export the model as XMI</h2>
+          <p className="eyebrow">Intercambio XMI</p>
+          <h2 id="xmi-export-title">Exportar el modelo como XMI</h2>
         </div>
       </div>
 
       <p className="property-hint">
-        Download only: exporting this file does not modify the project. The model changes only through the editor or an import.
+        Solo descarga: exportar este archivo no modifica el proyecto. El modelo solo cambia desde el editor o al importar.
       </p>
 
       {error && (
         <div className="notice notice-error" role="alert">
           <span>{error}</span>
-          <button className="text-button" type="button" onClick={onDismissError}>Dismiss</button>
+          <button className="text-button" type="button" onClick={onDismissError}>Descartar</button>
         </div>
       )}
 
-      {busy && <p className="generation-notice" role="status">{busyMessage ?? 'Working…'}</p>}
+      {busy && <p className="generation-notice" role="status">{busyMessage ?? 'Procesando…'}</p>}
 
       <div className="generation-section">
-        <h3>Download the file</h3>
+        <h3>Descargar el archivo</h3>
         <div className="generation-actions">
           <button
             className="button button-primary"
@@ -101,16 +101,16 @@ export function XmiExportPanelView({
             onClick={onExport}
             disabled={busy}
           >
-            {busy && busyMessage?.startsWith('Exporting') ? 'Exporting…' : 'Export XMI'}
+            {busy && busyMessage?.startsWith('Exportando') ? 'Exportando…' : 'Exportar XMI'}
           </button>
         </div>
       </div>
 
       {result && (
         <div className="generation-run" aria-live="polite">
-          <p className="generation-run-state">The XMI file was downloaded.</p>
+          <p className="generation-run-state">Se descargó el archivo XMI.</p>
           <div className="generation-section">
-            <h3>Checksum</h3>
+            <h3>Suma de verificación</h3>
             <dl>
               <div>
                 <dt>SHA-256</dt>
@@ -132,7 +132,7 @@ function messageFor(error: unknown): string {
     // duplicating the server-side rule on the client.
     return error.message;
   }
-  return 'The XMI export could not be completed. Try again in a moment.';
+  return 'No se pudo completar la exportación XMI. Inténtalo de nuevo en un momento.';
 }
 
 export default function XmiExportPanel({ projectId, projectName }: XmiExportPanelProps): ReactElement {
@@ -148,7 +148,7 @@ export default function XmiExportPanel({ projectId, projectName }: XmiExportPane
     }
     busyRef.current = true;
     setBusy(true);
-    setBusyMessage('Exporting…');
+    setBusyMessage('Exportando…');
     setError(null);
     try {
       const resource = await api.exportXmi(projectId);

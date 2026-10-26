@@ -20,7 +20,7 @@ export default function EditorOptionsBar({
 }: EditorOptionsBarProps): ReactElement {
   return createElement(
     'div',
-    { className: 'editor-options-bar', role: 'toolbar', 'aria-label': 'Editor options' },
+    { className: 'editor-options-bar', role: 'toolbar', 'aria-label': 'Opciones del editor' },
     EDITOR_SECTIONS.map((section) =>
       createElement(
         'button',

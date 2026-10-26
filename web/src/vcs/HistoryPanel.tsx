@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { relativeTimeLabel } from './presentation';
+import { commitChangeLabel, commitKindLabel, commitOriginLabel, relativeTimeLabel } from './presentation';
 import Modal from '../ui/Modal';
 import type { Uuid } from '../api/types';
 import {
@@ -64,8 +64,8 @@ export function HistoryPanelView({
     <section className="surface vcs-panel history-panel" aria-labelledby="vcs-history-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Versioning</p>
-          <h2 id="vcs-history-title">History</h2>
+          <p className="eyebrow">Versionado</p>
+          <h2 id="vcs-history-title">Historial</h2>
         </div>
         <span className="count-chip vcs-count-chip">{commits.length}</span>
       </div>
@@ -73,16 +73,16 @@ export function HistoryPanelView({
       {error && (
         <div className="notice notice-error" role="alert">
           <span>{error}</span>
-          <button className="text-button" type="button" onClick={onDismissError}>Dismiss</button>
+          <button className="text-button" type="button" onClick={onDismissError}>Descartar</button>
         </div>
       )}
       {notice && <p className="generation-notice" role="status">{notice}</p>}
 
       <div className="vcs-history-controls">
         <label className="field-label">
-          Branch history
+          Historial de ramas
           <select
-            aria-label="History branch"
+            aria-label="Rama del historial"
             disabled={loading || branches.length === 0}
             onChange={(event) => onSelectBranch(event.target.value)}
             value={selectedBranch}
@@ -90,31 +90,31 @@ export function HistoryPanelView({
             {branches.map((branch) => <option key={branch.name} value={branch.name}>{branch.name}</option>)}
           </select>
         </label>
-        {status?.dirty === false && <span className="vcs-clean-chip" role="status">Clean working copy</span>}
+        {status?.dirty === false && <span className="vcs-clean-chip" role="status">Copia de trabajo limpia</span>}
       </div>
 
       <form className="vcs-commit-form" onSubmit={submitCommit}>
         <label className="field-label">
-          Commit message
+          Mensaje de confirmación
           <input
             autoComplete="off"
             onChange={(event) => setMessage(event.target.value)}
-            placeholder="Describe this change"
+            placeholder="Describe este cambio"
             required
             value={message}
           />
         </label>
         <button className="button button-primary" disabled={busy || loading} type="submit">
-          {busy ? 'Saving…' : 'Commit changes'}
+          {busy ? 'Guardando…' : 'Confirmar cambios'}
         </button>
       </form>
 
       <div className="vcs-section">
-        <p className="vcs-subsection-label">Changes on {selectedBranch || 'the current branch'}</p>
+        <p className="vcs-subsection-label">Cambios en {selectedBranch || 'la rama actual'}</p>
         {loading ? (
-          <p className="quiet-state" role="status">Loading history…</p>
+          <p className="quiet-state" role="status">Cargando el historial…</p>
         ) : commits.length === 0 ? (
-          <p className="quiet-state">No commits yet; make a change and commit it to start a history.</p>
+          <p className="quiet-state">Aún no hay confirmaciones. Haz un cambio y guárdalo para iniciar el historial.</p>
         ) : (
           <ul className="vcs-commit-list">
             {commits.map((commit) => (
@@ -123,14 +123,14 @@ export function HistoryPanelView({
                   className="vcs-commit-open"
                   type="button"
                   onClick={() => onOpenCommit(commit.commitId)}
-                  aria-label={`View commit by ${commit.authorDisplayName}: ${commit.message}`}
+                  aria-label={`Ver cambio de ${commit.authorDisplayName}: ${commit.message}`}
                 >
                   <strong>{commit.message}</strong>
                   <span>{commit.authorDisplayName} · {relativeTimeLabel(commit.createdAt)}</span>
                 </button>
                 <div className="vcs-commit-chips">
-                <span className="vcs-kind-chip">{commit.kind}</span>
-                <span className="vcs-origin-chip">{commit.origin}</span>
+                <span className="vcs-kind-chip">{commitKindLabel(commit.kind)}</span>
+                <span className="vcs-origin-chip">{commitOriginLabel(commit.origin)}</span>
               </div>
               </li>
             ))}
@@ -138,22 +138,22 @@ export function HistoryPanelView({
         )}
       </div>
 
-      <Modal open={detailLoading || commitDetail !== null} title="Commit details" size="md" onClose={onCloseDetail}>
+      <Modal open={detailLoading || commitDetail !== null} title="Detalles de la confirmación" size="md" onClose={onCloseDetail}>
         {detailLoading ? (
-          <p className="quiet-state" role="status">Loading changed elements…</p>
+          <p className="quiet-state" role="status">Cargando los elementos modificados…</p>
         ) : commitDetail && (
           <div className="vcs-commit-detail">
             <p className="eyebrow">{commitDetail.authorDisplayName} · {relativeTimeLabel(commitDetail.createdAt)}</p>
             <h3>{commitDetail.message}</h3>
-            <h4>Changed elements</h4>
+            <h4>Elementos modificados</h4>
             {commitDetail.changes.length === 0 ? (
-              <p className="quiet-state">No element changes are listed; select another commit to inspect its changes.</p>
+              <p className="quiet-state">No se enumeran cambios en los elementos. Selecciona otra confirmación para revisar sus cambios.</p>
             ) : (
               <ul className="vcs-change-list">
                 {commitDetail.changes.map((change, index) => (
                   <li key={`${change.targetType}-${change.targetId}-${index}`}>
                     <strong>{change.targetName}</strong>
-                    <span>{change.changeKind.replaceAll('_', ' ')}</span>
+                    <span>{commitChangeLabel(change.changeKind)}</span>
                   </li>
                 ))}
               </ul>
@@ -204,7 +204,7 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
       })
       .catch((cause: unknown) => {
         if (active) {
-          setError(vcsErrorMessage(cause, 'The version history could not be loaded.'));
+          setError(vcsErrorMessage(cause, 'No se pudo cargar el historial de versiones.'));
         }
       })
       .finally(() => {
@@ -232,7 +232,7 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
       })
       .catch((cause: unknown) => {
         if (active) {
-          setError(vcsErrorMessage(cause, 'The version history could not be loaded.'));
+          setError(vcsErrorMessage(cause, 'No se pudo cargar el historial de versiones.'));
         }
       })
       .finally(() => {
@@ -259,9 +259,9 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
       setStatus(nextStatus);
       setBranches(nextBranches);
       setSelectedBranch(nextStatus.branch);
-      setNotice('The change was added to history.');
+      setNotice('El cambio se agregó al historial.');
     } catch (cause: unknown) {
-      setError(vcsErrorMessage(cause, 'The change could not be committed.'));
+      setError(vcsErrorMessage(cause, 'No se pudo confirmar el cambio.'));
     } finally {
       setBusy(false);
     }
@@ -275,7 +275,7 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
     try {
       setCommitDetail(await api.getCommit(projectId, commitId));
     } catch (cause: unknown) {
-      setError(vcsErrorMessage(cause, 'The commit details could not be loaded.'));
+      setError(vcsErrorMessage(cause, 'No se pudieron cargar los detalles de la confirmación.'));
       setDetailLoading(false);
       onDetailOpenChange?.(false);
     } finally {

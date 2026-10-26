@@ -110,7 +110,7 @@ function EditableText({ displayValue, editValue, ariaLabel, className, onCommit,
         }
       }}
       onDoubleClick={startEditing}
-      title="Double-click to edit"
+      title="Haz doble clic para editar"
     >
       {displayValue}
     </span>
@@ -131,7 +131,7 @@ function TouchHighlights({ touchedBy }: { touchedBy?: TouchedBy[] | undefined })
   }
 
   return (
-    <div className="uml-touch-highlights" aria-label="People touching this element">
+    <div className="uml-touch-highlights" aria-label="Personas que están editando este elemento">
       {touchedBy.map((toucher) => (
         <span className="uml-touch-chip" key={toucher.userId}>
           <span
@@ -158,7 +158,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
         <div className="uml-package-name">
           <TouchHighlights touchedBy={touchedBy} />
           <EditableText
-            ariaLabel="Edit package name"
+            ariaLabel="Editar nombre del paquete"
             className="uml-editable-label"
             displayValue={classifier.name}
             editValue={classifier.name}
@@ -172,13 +172,13 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
   return (
     <div className="uml-class-card" data-testid="uml-class-card">
       <div className="uml-class-heading">
-        {classifier.kind === 'INTERFACE' && <div className="uml-stereotype">«interface»</div>}
-        {classifier.kind === 'ENUMERATION' && <div className="uml-stereotype">«enumeration»</div>}
+        {classifier.kind === 'INTERFACE' && <div className="uml-stereotype">«interfaz»</div>}
+        {classifier.kind === 'ENUMERATION' && <div className="uml-stereotype">«enumeración»</div>}
         <div className={`uml-class-name ${classifier.isAbstract ? 'uml-class-name--abstract' : ''}`}>
           {classifier.isAbstract ? (
             <i>
               <EditableText
-                ariaLabel="Edit class name"
+                ariaLabel="Editar nombre de la clase"
                 className="uml-editable-label"
                 displayValue={classifier.name}
                 editValue={classifier.name}
@@ -187,7 +187,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
             </i>
           ) : (
             <EditableText
-              ariaLabel="Edit class name"
+              ariaLabel="Editar nombre de la clase"
               className="uml-editable-label"
               displayValue={classifier.name}
               editValue={classifier.name}
@@ -206,7 +206,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
       </div>
 
       {attributes.length > 0 && (
-        <div className="uml-compartment uml-compartment--attributes" aria-label="Attributes">
+        <div className="uml-compartment uml-compartment--attributes" aria-label="Atributos">
           {attributes.map((attribute) => {
             const selection: CanvasSelection = {
               kind: 'attribute',
@@ -216,7 +216,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
             return (
               <div className="uml-member-row" key={attribute.id}>
                 <EditableText
-                  ariaLabel={`Edit attribute ${attribute.name}`}
+                  ariaLabel={`Editar atributo ${attribute.name}`}
                   className="uml-member-text"
                   displayValue={classifier.kind === 'ENUMERATION' ? attribute.name : formatAttribute(attribute)}
                   editValue={attribute.name}
@@ -230,7 +230,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
       )}
 
       {operations.length > 0 && (
-        <div className="uml-compartment uml-compartment--operations" aria-label="Operations">
+        <div className="uml-compartment uml-compartment--operations" aria-label="Operaciones">
           {operations.map((operation) => {
             const selection: CanvasSelection = {
               kind: 'operation',
@@ -244,7 +244,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
             return (
               <div className={`uml-member-row ${modifiers}`} key={operation.id} data-element-kind="operation">
                 <EditableText
-                  ariaLabel={`Edit operation ${operation.name}`}
+                  ariaLabel={`Editar operación ${operation.name}`}
                   className="uml-member-text"
                   displayValue={formatOperation(operation)}
                   editValue={operation.name}
@@ -258,7 +258,7 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
       )}
 
       {classifier.constraints.length > 0 && (
-        <div className="uml-compartment uml-compartment--constraints" aria-label="Constraints">
+        <div className="uml-compartment uml-compartment--constraints" aria-label="Restricciones">
           {classifier.constraints.map((constraint) => (
             <div
               className="uml-constraint-row"
@@ -271,9 +271,9 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
               {`{${constraint.expression}}`}
               {constraint.severity !== 'ERROR' && (
                 <span
-                  aria-label={constraint.severity === 'WARNING' ? 'Warning constraint' : 'Informational constraint'}
+                  aria-label={constraint.severity === 'WARNING' ? 'Restricción con advertencia' : 'Restricción informativa'}
                   className="uml-constraint-severity"
-                  title={constraint.severity === 'WARNING' ? 'Warning severity' : 'Informational severity'}
+                  title={constraint.severity === 'WARNING' ? 'Gravedad: advertencia' : 'Gravedad: información'}
                 >{constraint.severity === 'WARNING' ? '⚠' : 'ⓘ'}</span>
               )}
             </div>

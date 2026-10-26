@@ -49,8 +49,21 @@ function findingFromDiagnostic(
     code,
     severity: diagnostic.severity,
     elementName: resolveReviewElementName(diagnostic.elementId, names),
-    message: humanText(diagnostic.message, 'No additional details were provided.'),
+    message: humanText(diagnostic.message, 'No se proporcionaron detalles adicionales.'),
   };
+}
+
+const RELATIONSHIP_KIND_LABELS: Record<string, string> = {
+  ASSOCIATION: 'asociación',
+  AGGREGATION: 'agregación',
+  COMPOSITION: 'composición',
+  DEPENDENCY: 'dependencia',
+  GENERALIZATION: 'generalización',
+  INTERFACE_REALIZATION: 'realización de interfaz',
+};
+
+function relationshipKindLabel(kind: string): string {
+  return RELATIONSHIP_KIND_LABELS[kind] ?? 'relación';
 }
 
 function displayName(value: string | null | undefined): string | null {
@@ -64,7 +77,7 @@ function displayName(value: string | null | undefined): string | null {
 /** Resolve only through names in the current model; missing ids are never echoed. */
 export function resolveReviewElementName(elementId: string | null, names: DiagramNames): string {
   if (elementId === null) {
-    return 'Whole diagram';
+    return 'Diagrama completo';
   }
 
   const classifierName = displayName(names.classifiers.get(elementId));
@@ -77,10 +90,10 @@ export function resolveReviewElementName(elementId: string | null, names: Diagra
     const name = displayName(attribute.name);
     const ownerName = displayName(attribute.ownerName);
     if (name && ownerName) {
-      return `${name} (attribute of ${ownerName})`;
+      return `${name} (atributo de ${ownerName})`;
     }
     if (name) {
-      return `${name} (attribute)`;
+      return `${name} (atributo)`;
     }
   }
 
@@ -89,10 +102,10 @@ export function resolveReviewElementName(elementId: string | null, names: Diagra
     const name = displayName(operation.name);
     const ownerName = displayName(operation.ownerName);
     if (name && ownerName) {
-      return `${name}() (operation of ${ownerName})`;
+      return `${name}() (operación de ${ownerName})`;
     }
     if (name) {
-      return `${name}() (operation)`;
+      return `${name}() (operación)`;
     }
   }
 
@@ -100,14 +113,14 @@ export function resolveReviewElementName(elementId: string | null, names: Diagra
   if (relationship) {
     const sourceName = displayName(relationship.sourceName);
     const targetName = displayName(relationship.targetName);
-    const kind = humanText(relationship.kind.replaceAll('_', ' ').toLowerCase(), 'relationship');
+    const kind = relationshipKindLabel(relationship.kind);
     if (sourceName && targetName) {
-      return `${kind} relationship between ${sourceName} and ${targetName}`;
+      return `Relación de tipo ${kind} entre ${sourceName} y ${targetName}`;
     }
-    return `${kind} relationship in diagram`;
+    return `Relación de tipo ${kind} en el diagrama`;
   }
 
-  return 'Unidentified diagram element';
+  return 'Elemento del diagrama sin identificar';
 }
 
 function groupValidationFindings(
@@ -148,7 +161,7 @@ export function buildReviewFindings(
   return {
     ...groupValidationFindings(validation.diagnostics, names),
     readinessBlockers: readinessFindings(readiness.diagnostics, names),
-    profile: humanText(readiness.profile, 'Generation profile'),
+    profile: humanText(readiness.profile, 'Perfil de generación'),
     ready: readiness.ready,
   };
 }
@@ -178,11 +191,11 @@ export function buildReviewPrompt(findings: ReviewFindings, intent: ReviewPrompt
     'Validación UML:',
     noValidationFindings,
     '',
-    `Preparación del backend — perfil ${humanText(findings.profile, 'Generation profile')}: ${findings.ready ? 'listo' : 'no listo'}.`,
+    `Disponibilidad del backend — perfil ${humanText(findings.profile, 'Perfil de generación')}: ${findings.ready ? 'listo' : 'no listo'}.`,
     noBlockers,
   ].join('\n'));
 }
 
 function formatFinding(finding: ReviewFinding, label: string): string {
-  return `- ${label} — ${humanText(finding.code, 'REVIEW_DIAGNOSTIC')} — Elemento: ${humanText(finding.elementName, 'Unidentified diagram element')} — ${humanText(finding.message, 'No additional details were provided.')}`;
+  return `- ${label} — ${humanText(finding.code, 'REVIEW_DIAGNOSTIC')} — Elemento: ${humanText(finding.elementName, 'Elemento del diagrama sin identificar')} — ${humanText(finding.message, 'No se proporcionaron detalles adicionales.')}`;
 }

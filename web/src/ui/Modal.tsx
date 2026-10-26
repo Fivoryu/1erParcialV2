@@ -157,7 +157,7 @@ export default function Modal({
           <button
             type="button"
             className="modal-close"
-            aria-label="Close dialog"
+            aria-label="Cerrar diálogo"
             disabled={!dismissible}
             onClick={dismissible ? onClose : undefined}
           >

@@ -70,17 +70,17 @@ describe('proposalErrorMessage', () => {
     const decided = new ApiTransportError('PROPOSAL_DECIDED', 'decided', [], null, 409);
     expect(proposalErrorMessage(disabled, fallback)).toBe(PROVIDER_DISABLED_MESSAGE);
     expect(proposalErrorMessage(none, fallback)).toBe('Which class do you mean?');
-    expect(proposalErrorMessage(decided, fallback)).toBe('Another editor already decided this suggestion.');
+    expect(proposalErrorMessage(decided, fallback)).toBe('Otra persona editora ya decidió sobre esta sugerencia.');
     expect(proposalErrorMessage(new Error('boom'), fallback)).toBe('fallback');
   });
 });
 
 describe('proposalStatusLabel', () => {
   it('has a label for every status', () => {
-    expect(proposalStatusLabel('PENDING')).toBe('Waiting for an editor');
-    expect(proposalStatusLabel('ACCEPTED')).toBe('Applied');
-    expect(proposalStatusLabel('REJECTED')).toBe('Rejected');
-    expect(proposalStatusLabel('FAILED')).toBe('Could not be applied');
-    expect(proposalStatusLabel('APPLYING')).toBe('Being applied');
+    expect(proposalStatusLabel('PENDING')).toBe('En espera de una persona editora');
+    expect(proposalStatusLabel('ACCEPTED')).toBe('Aplicado');
+    expect(proposalStatusLabel('REJECTED')).toBe('Rechazado');
+    expect(proposalStatusLabel('FAILED')).toBe('No se pudo aplicar');
+    expect(proposalStatusLabel('APPLYING')).toBe('Aplicando');
   });
 });

@@ -28,7 +28,7 @@ describe('help guide request and response logic', () => {
     expect(request.topics).toEqual(expect.arrayContaining([
       expect.objectContaining({
         slug: 'generate-a-backend',
-        title: 'Generate a backend',
+        title: 'Generar un backend',
         summary: expect.stringContaining('Spring Boot'),
       }),
     ]));
@@ -65,8 +65,8 @@ describe('help guide request and response logic', () => {
 
 describe('help guide panel states', () => {
   it('describes idle, loading, error, unsupported, and answered states honestly', () => {
-    expect(getHelpGuideStatusText({ kind: 'idle' })).toContain('help topics');
-    expect(getHelpGuideStatusText({ kind: 'loading' })).toContain('Preparing');
+    expect(getHelpGuideStatusText({ kind: 'idle' })).toContain('temas de ayuda');
+    expect(getHelpGuideStatusText({ kind: 'loading' })).toContain('Preparando');
     expect(getHelpGuideStatusText({ kind: 'error', message: 'Try again later.' })).toBe('Try again later.');
     expect(getHelpGuideStatusText({ kind: 'unsupported', message: 'Local AI is disabled.' }))
       .toBe('Local AI is disabled.');
@@ -76,7 +76,7 @@ describe('help guide panel states', () => {
   it('distinguishes unavailable local AI support from other request errors', () => {
     expect(classifyHelpGuideError({ code: 'PROVIDER_DISABLED' })).toEqual({
       kind: 'unsupported',
-      message: expect.stringContaining('not available'),
+      message: expect.stringContaining('no está disponible'),
     });
     expect(classifyHelpGuideError(new Error('The server could not be reached.'))).toEqual({
       kind: 'error',

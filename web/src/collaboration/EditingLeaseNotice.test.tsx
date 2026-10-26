@@ -41,9 +41,9 @@ describe('editing lease notice', () => {
     const markup = render(conflictForLease(lease, userId));
 
     expect(markup).toContain('Alex Rivera');
-    expect(markup).toContain('In this diagram');
-    expect(markup).toContain('Export is blocked until their lease expires.');
-    expect(markup).toMatch(/<button\b[^>]*disabled(?:="")?[^>]*>Reclaim control<\/button>/);
+    expect(markup).toContain('está editando este diagrama.');
+    expect(markup).toContain('La exportación estará bloqueada hasta que expire su permiso.');
+    expect(markup).toMatch(/<button\b[^>]*disabled(?:="")?[^>]*>Recuperar el control<\/button>/);
   });
 
   it('enables reclaim when the foreign lease has expired', () => {
@@ -51,8 +51,8 @@ describe('editing lease notice', () => {
     const markup = render(conflictForLease(expired, userId));
 
     expect(markup).toContain('Alex Rivera');
-    expect(markup).toContain('The editing lease has expired.');
-    expect(markup).toMatch(/<button\b[^>]*>Reclaim control<\/button>/);
+    expect(markup).toContain('El permiso de edición ha expirado.');
+    expect(markup).toMatch(/<button\b[^>]*>Recuperar el control<\/button>/);
     expect(markup).not.toMatch(/<button\b[^>]*disabled/);
   });
 

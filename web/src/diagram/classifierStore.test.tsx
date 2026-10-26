@@ -5,6 +5,7 @@ import type { ClassifierResource, ModelResource, OperationEnvelope } from '../ap
 import { applyOptimisticCommand, buildClassifierSetStoreRequest } from './commands';
 import { default as PropertiesPanel, dispatchStoreSelection } from './PropertiesPanel';
 import { UmlClassCard } from './UmlClassNode';
+import { describeStoreReason } from './StoreBadge';
 
 const classifier = (over: Partial<ClassifierResource> = {}): ClassifierResource => ({
   id: '11111111-1111-4111-8111-111111111111',
@@ -54,6 +55,11 @@ const renderPanel = (target: ClassifierResource, onCommand = vi.fn(() => null)) 
 );
 
 describe('classifier persistence store', () => {
+  it('translates the automatic relational store reason for display', () => {
+    expect(describeStoreReason('No document signal, so it stays relational.'))
+      .toBe('No hay señales de documentos, por lo que se mantiene relacional.');
+  });
+
   it('sends the chosen store, or null to return to automatic, through classifier.setStore', () => {
     const onCommand = vi.fn(() => null);
 
@@ -95,8 +101,8 @@ describe('classifier persistence store', () => {
     expect(automatic).toContain('data-testid="uml-store-badge"');
     expect(automatic).toContain('data-store="DOCUMENT"');
     expect(automatic).toContain('data-manual="false"');
-    expect(automatic).toContain('>Document</span>');
-    expect(automatic).toContain('title="Document: Has list attributes, which a document stores natively."');
+    expect(automatic).toContain('>Documento</span>');
+    expect(automatic).toContain('title="Documento: Tiene atributos de lista, que un documento almacena de forma nativa."');
 
     const manual = renderToStaticMarkup(createElement(UmlClassCard, {
       classifier: classifier({ store: 'SQL', storeOverride: 'SQL', storeReason: 'Set manually.' }),
@@ -113,15 +119,16 @@ describe('classifier persistence store', () => {
 
   it('offers Automatic, SQL and Document with the reason, and selects the fixed choice', () => {
     const automatic = renderPanel(classifier({ store: 'DOCUMENT', storeReason: 'Part of a composition owned by Order.' }));
-    expect(automatic).toContain('for="classifier-store">Storage</label>');
-    expect(automatic).toContain('>Automatic (Document)</option>');
-    expect(automatic).toContain('>SQL (relational)</option>');
-    expect(automatic).toContain('>Document (MongoDB)</option>');
-    expect(automatic).toContain('Part of a composition owned by Order.');
+    expect(automatic).toContain('for="classifier-store">Almacenamiento</label>');
+    expect(automatic).toContain('>Automático (Documento)</option>');
+    expect(automatic).toContain('>SQL (relacional)</option>');
+    expect(automatic).toContain('>Documento (MongoDB)</option>');
+    expect(automatic).toContain('Forma parte de una composición propiedad de Order.');
     expect(automatic).not.toMatch(/<option value="(SQL|DOCUMENT)" selected/);
 
     const manual = renderPanel(classifier({ store: 'SQL', storeOverride: 'SQL', storeReason: 'Set manually.' }));
-    expect(manual).toContain('>Automatic</option>');
+    expect(manual).toContain('>Automático</option>');
+    expect(manual).toContain('Configurado manualmente.');
     expect(manual).toMatch(/<option value="SQL" selected/);
   });
 

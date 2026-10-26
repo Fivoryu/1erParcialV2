@@ -99,7 +99,7 @@ describe('package support', () => {
       onDelete: () => undefined,
     }));
 
-    expect(markup).toContain('>+ Package</button>');
+    expect(markup).toContain('>+ Paquete</button>');
   });
 
   it('offers only packages outside the selected classifier namespace subtree', () => {
@@ -112,8 +112,8 @@ describe('package support', () => {
       onSelect: () => undefined,
     }));
 
-    expect(markup).toContain('for="classifier-package">Package</label>');
-    expect(markup).toContain('>None</option>');
+    expect(markup).toContain('for="classifier-package">Paquete</label>');
+    expect(markup).toContain('>Ninguno</option>');
     expect(markup).toContain('>Shared</option>');
     expect(markup).not.toContain('>Billing</option>');
     expect(markup).not.toContain('>Internal</option>');

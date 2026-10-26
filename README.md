@@ -5,6 +5,10 @@ colaborativa que permite crear y modificar diagramas de clases UML 2.5 de forma 
 mantener un modelo canónico versionado, interoperar con Enterprise Architect mediante XMI y generar un
 backend Spring Boot conectado a PostgreSQL.
 
+## Idioma de la interfaz
+
+Las interfaces web y móvil muestran en español sus pantallas, formularios, ayudas, etiquetas de accesibilidad y mensajes propios. Los nombres de usuario, el contenido de los proyectos y conversaciones, los identificadores de API y los protocolos de los modelos no se traducen.
+
 ## Estado actual
 
 El repositorio **ya contiene código de producto**. Los Incrementos 1 y 2 están implementados y verificados: se

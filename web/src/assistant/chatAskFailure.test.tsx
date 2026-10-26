@@ -154,10 +154,10 @@ describe('chat ask failure feedback', () => {
 
     expect(askErrorMessage(structuredUnavailable)).toBe(PROVIDER_DISABLED_MESSAGE);
     expect(askErrorMessage(unstructuredUnavailable)).toBe(
-      'Your request could not be completed. Check the connection and try again.',
+      'No se pudo completar la solicitud. Revisa la conexión e inténtalo de nuevo.',
     );
     expect(askErrorMessage(unrelated)).toBe(
-      'Your request could not be completed. Check the connection and try again.',
+      'No se pudo completar la solicitud. Revisa la conexión e inténtalo de nuevo.',
     );
   });
 
@@ -169,7 +169,7 @@ describe('chat ask failure feedback', () => {
     speechState.reset.mockClear();
 
     const tree = ChatPanel(panelProps({ onAskAi, onDraftChange }));
-    const askButton = findButton(tree, (props) => props.children === 'Ask AI');
+    const askButton = findButton(tree, (props) => props.children === 'Preguntar a la IA');
 
     expect(askButton).not.toBeNull();
     await askButton?.props.onClick?.(undefined as never);

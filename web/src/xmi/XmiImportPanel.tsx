@@ -61,15 +61,15 @@ export interface XmiImportPanelViewProps {
 function LossReport({ losses }: { losses: XmiLossResource[] }) {
   return (
     <div className="generation-section">
-      <h3>Reported losses</h3>
+      <h3>Pérdidas detectadas</h3>
       {losses.length === 0 ? (
-        <p className="property-hint">No losses were reported.</p>
+        <p className="property-hint">No se detectaron pérdidas.</p>
       ) : (
         <ul className="generation-diagnostics">
           {losses.map((loss, index) => (
             <li key={`${loss.name}-${index}`}>
               <strong>{loss.name}</strong>
-              <span>{loss.count} affected</span>
+              <span>Elementos afectados: {loss.count}</span>
             </li>
           ))}
         </ul>
@@ -81,17 +81,17 @@ function LossReport({ losses }: { losses: XmiLossResource[] }) {
 function DisagreementReport({ disagreements }: { disagreements: XmiDisagreementResource[] }) {
   return (
     <div className="generation-section">
-      <h3>Disagreements</h3>
+      <h3>Discrepancias</h3>
       {disagreements.length === 0 ? (
-        <p className="property-hint">No disagreements were reported.</p>
+        <p className="property-hint">No se detectaron discrepancias.</p>
       ) : (
         <ul className="generation-diagnostics">
           {disagreements.map((disagreement, index) => (
             <li key={`${disagreement.kind}-${disagreement.subjectId}-${index}`}>
               <strong>{disagreement.kind}</strong>
-              <span>Subject: {disagreement.subjectId}</span>
-              <span>Semantic value: {disagreement.semanticValue}</span>
-              <span>Extension value: {disagreement.extensionValue}</span>
+              <span>Sujeto: {disagreement.subjectId}</span>
+              <span>Valor semántico: {disagreement.semanticValue}</span>
+              <span>Valor de extensión: {disagreement.extensionValue}</span>
             </li>
           ))}
         </ul>
@@ -121,44 +121,44 @@ export function XmiImportPanelView({
   ) ?? [];
   const hasNameCollision = collisionDiagnostics.length > 0;
   const counts = preview === null ? null : [
-    ['Classifiers', preview.counts.classifiers],
-    ['Relationships', preview.counts.relationships],
-    ['Views', preview.counts.views],
-    ['Figure placements', preview.counts.figurePlacements],
-    ['Connector placements', preview.counts.connectorPlacements],
+    ['Clasificadores', preview.counts.classifiers],
+    ['Relaciones', preview.counts.relationships],
+    ['Vistas', preview.counts.views],
+    ['Ubicaciones de figuras', preview.counts.figurePlacements],
+    ['Ubicaciones de conectores', preview.counts.connectorPlacements],
   ] as const;
   const confirmLabel = mode === 'REEMPLAZAR'
-    ? 'Confirm import and replace existing model'
+    ? 'Confirmar importación y reemplazar el modelo existente'
     : mode === 'AGREGAR'
-      ? 'Confirm import and add to existing model'
-      : 'Choose an import mode';
+      ? 'Confirmar importación y agregar al modelo existente'
+      : 'Elige un modo de importación';
 
   return (
     <section className="generation-panel" aria-labelledby="xmi-import-title">
       <div className="generation-heading">
         <div>
-          <p className="eyebrow">XMI interchange</p>
-          <h2 id="xmi-import-title">Import an XMI file</h2>
+          <p className="eyebrow">Intercambio XMI</p>
+          <h2 id="xmi-import-title">Importar un archivo XMI</h2>
         </div>
       </div>
 
       <p className="property-hint">
-        Preview only: reviewing this file does not change the project. The model changes only after you confirm import.
+        Solo vista previa: revisar este archivo no modifica el proyecto. El modelo solo cambia cuando confirmas la importación.
       </p>
 
       {error && (
         <div className="notice notice-error" role="alert">
           <span>{error}</span>
-          <button className="text-button" type="button" onClick={onDismissError}>Dismiss</button>
+          <button className="text-button" type="button" onClick={onDismissError}>Descartar</button>
         </div>
       )}
 
-      {busy && <p className="generation-notice" role="status">{busyMessage ?? 'Working…'}</p>}
+      {busy && <p className="generation-notice" role="status">{busyMessage ?? 'Procesando…'}</p>}
 
       <div className="generation-section">
-        <h3>Choose a file</h3>
+        <h3>Elegir un archivo</h3>
         <div className="generation-target-form">
-          <label htmlFor={`${fieldPrefix}-file`}>XMI file</label>
+          <label htmlFor={`${fieldPrefix}-file`}>Archivo XMI</label>
           <input
             id={`${fieldPrefix}-file`}
             type="file"
@@ -172,15 +172,15 @@ export function XmiImportPanelView({
               event.currentTarget.value = '';
             }}
           />
-          {fileName && <p className="property-hint">Selected file: {fileName}</p>}
+          {fileName && <p className="property-hint">Archivo seleccionado: {fileName}</p>}
         </div>
       </div>
 
       {preview && counts && (
         <div className="generation-run" aria-live="polite">
-          <p className="generation-run-state">Preview ready. No changes have been made to the project.</p>
+          <p className="generation-run-state">Vista previa lista. No se realizaron cambios en el proyecto.</p>
           <div className="generation-section">
-            <h3>Recognized content</h3>
+            <h3>Contenido reconocido</h3>
             <dl>
               {counts.map(([label, count]) => (
                 <div key={label}>
@@ -196,7 +196,7 @@ export function XmiImportPanelView({
 
       {preview && (
         <div className="generation-section">
-          <h3>Choose how to import</h3>
+          <h3>Elige cómo importar</h3>
           <div className="generation-target-form">
             <label htmlFor={replaceModeId}>
               <input
@@ -208,7 +208,7 @@ export function XmiImportPanelView({
                 onChange={() => onSelectMode('REEMPLAZAR')}
                 disabled={busy}
               />
-              {' '}REEMPLAZAR — replace the existing model
+              {' '}REEMPLAZAR — reemplazar el modelo existente
             </label>
             <label htmlFor={addModeId}>
               <input
@@ -220,12 +220,12 @@ export function XmiImportPanelView({
                 onChange={() => onSelectMode('AGREGAR')}
                 disabled={busy}
               />
-              {' '}AGREGAR — add alongside existing content
+              {' '}AGREGAR — agregar junto al contenido existente
             </label>
           </div>
           {mode === 'REEMPLAZAR' && (
             <div className="notice notice-error" role="alert">
-              REEMPLAZAR will delete all existing model content. This cannot be undone.
+              REEMPLAZAR eliminará todo el contenido existente del modelo. Esta acción no se puede deshacer.
             </div>
           )}
           <div className="generation-actions">
@@ -235,7 +235,7 @@ export function XmiImportPanelView({
               onClick={onConfirm}
               disabled={busy || mode === null}
             >
-              {busy && busyMessage?.startsWith('Importing') ? 'Importing…' : confirmLabel}
+              {busy && busyMessage?.startsWith('Importando') ? 'Importando…' : confirmLabel}
             </button>
           </div>
         </div>
@@ -243,13 +243,13 @@ export function XmiImportPanelView({
 
       {importResult && (
         <div className="generation-run" aria-live="polite">
-          <h3>Import result</h3>
+          <h3>Resultado de la importación</h3>
           <p className="generation-run-state" data-state={importResult.outcome}>
-            Import outcome: {importResult.outcome}
+            Resultado de importación: {importResult.outcome}
           </p>
           {hasNameCollision && (
             <div className="notice notice-error" role="alert">
-              <strong>The import is blocked by a name collision.</strong>
+              <strong>La importación está bloqueada por un conflicto de nombres.</strong>
               <ul>
                 {collisionDiagnostics.map((diagnostic, index) => (
                   <li key={`${diagnostic.code}-${index}`}>{diagnostic.message}</li>
@@ -259,7 +259,7 @@ export function XmiImportPanelView({
           )}
           {!hasNameCollision && importResult.command.status !== 'ACCEPTED' && (
             <div className="notice notice-error" role="alert">
-              <strong>Import was not applied.</strong>
+              <strong>No se aplicó la importación.</strong>
               {importResult.command.diagnostics.length > 0 && (
                 <ul>
                   {importResult.command.diagnostics.map((diagnostic, index) => (
@@ -285,7 +285,7 @@ function messageFor(error: unknown): string {
   if (error instanceof ApiTransportError) {
     return error.message;
   }
-  return 'The XMI request could not be completed. Check the file and try again.';
+  return 'No se pudo completar la solicitud XMI. Revisa el archivo e inténtalo de nuevo.';
 }
 
 export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
@@ -309,7 +309,7 @@ export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
     setImportResult(null);
     setError(null);
     setBusy(true);
-    setBusyMessage('Preparing preview…');
+    setBusyMessage('Preparando vista previa…');
     try {
       const loaded = await previewXmiFile(api, projectId, file);
       if (previewSequence.current === sequence) {
@@ -339,7 +339,7 @@ export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
       return;
     }
     setBusy(true);
-    setBusyMessage('Importing…');
+    setBusyMessage('Importando…');
     setError(null);
     setImportResult(null);
     try {
