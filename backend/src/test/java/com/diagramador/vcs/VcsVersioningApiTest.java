@@ -223,6 +223,87 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void aPlainCommitListsItsCommitterAsTheAuthor() throws Exception {
+        String owner = username("author-plain");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Authored");
+        JsonNode commit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add authored classifier"), 201);
+
+        JsonNode detail = getJson(owner, "/projects/{projectId}/vcs/commits/{commitId}",
+                projectId, commit.path("commitId").asText());
+
+        assertThat(detail.path("authors")).singleElement().satisfies(author -> {
+            assertThat(author.path("userId").asText()).isEqualTo(commit.path("authorUserId").asText());
+            assertThat(author.path("role").asText()).isEqualTo("AUTHOR");
+        });
+    }
+
+    @Test
+    void aMergeCommitListsWhoMergedAndWhoContributedTheMergedCommits() throws Exception {
+        String owner = username("author-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "feature");
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Owner work");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Owner commit"), 201);
+        String editor = username("author-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        applyClassifier(editor, projectId, UUID.randomUUID(), "Editor work");
+        JsonNode editorCommit = postJson(editor, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Editor commit"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "main");
+        JsonNode request = openMergeRequest(owner, projectId, "feature", "main", "Two contributors", 201);
+        postActionJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200,
+                projectId, request.path("mergeRequestId").asText());
+        UUID mergeHead = branchHead(getJson(owner, "/projects/{projectId}/vcs/branches", projectId), "main");
+
+        JsonNode detail = getJson(owner, "/projects/{projectId}/vcs/commits/{commitId}",
+                projectId, mergeHead.toString());
+
+        assertThat(detail.path("authors")).hasSize(2);
+        assertThat(detail.path("authors").get(0).path("role").asText()).isEqualTo("MERGED_BY");
+        assertThat(detail.path("authors").get(0).path("userId").asText()).isEqualTo(detail.path("authorUserId").asText());
+        assertThat(detail.path("authors").get(1).path("role").asText()).isEqualTo("CONTRIBUTOR");
+        assertThat(detail.path("authors").get(1).path("userId").asText())
+                .isEqualTo(editorCommit.path("authorUserId").asText());
+    }
+
+    @Test
+    void commitDetailListsTheFieldsThatChangedWithTheirBeforeAndAfterValues() throws Exception {
+        String owner = username("field-diff");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, classifierId, "Before name");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Add classifier"), 201);
+        renameClassifier(owner, projectId, classifierId, "After name");
+        JsonNode renameCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Rename classifier"), 201);
+
+        JsonNode detail = getJson(owner, "/projects/{projectId}/vcs/commits/{commitId}",
+                projectId, renameCommit.path("commitId").asText());
+
+        assertThat(detail.path("details")).singleElement().satisfies(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("MODIFIED");
+            assertThat(change.path("targetType").asText()).isEqualTo("CLASSIFIER");
+            assertThat(change.path("targetName").asText()).isEqualTo("After name");
+            assertThat(change.path("fields")).singleElement().satisfies(field -> {
+                assertThat(field.path("field").asText()).isEqualTo("name");
+                assertThat(field.path("before").asText()).isEqualTo("Before name");
+                assertThat(field.path("after").asText()).isEqualTo("After name");
+            });
+        });
+        // The coarse list every existing client reads is unchanged.
+        assertThat(detail.path("changes")).anySatisfy(change ->
+                assertThat(change.path("changeKind").asText()).isEqualTo("MODIFIED"));
+    }
+
+    @Test
     void repoHistoryFiltersByAuthorAndReturnsNewestFirst() throws Exception {
         String owner = username("repo-history-owner");
         UUID projectId = createProject(owner);
@@ -660,6 +741,225 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
         assertThat(vcsCommitCount(projectId)).isEqualTo(commitsBeforeMerge);
         assertThat(getJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}", projectId,
                 request.path("mergeRequestId").asText()).path("state").asText()).isEqualTo("OPEN");
+    }
+
+    @Test
+    void mergeRequestOpenedBeforeAnotherMergeIsRejectedWhenItNowConflictsWithTheMovedTarget() throws Exception {
+        String owner = username("merge-moved-conflict");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, classifierId, "Base name");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add base classifier"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "first", "fromBranch", "main"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "second", "fromBranch", "main"), 201);
+        renameOnBranch(owner, projectId, "first", classifierId, "Renamed by first");
+        renameOnBranch(owner, projectId, "second", classifierId, "Renamed by second");
+        // Both requests are opened while main has not moved, so neither one records a conflict.
+        JsonNode firstRequest = openMergeRequest(owner, projectId, "first", "main", "First", 201);
+        JsonNode secondRequest = openMergeRequest(owner, projectId, "second", "main", "Second", 201);
+        assertThat(firstRequest.path("hasConflicts").asBoolean()).isFalse();
+        assertThat(secondRequest.path("hasConflicts").asBoolean()).isFalse();
+
+        postActionJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200,
+                projectId, firstRequest.path("mergeRequestId").asText());
+        UUID headAfterFirstMerge = branchHead(getJson(owner, "/projects/{projectId}/vcs/branches", projectId), "main");
+        long commitsAfterFirstMerge = vcsCommitCount(projectId);
+
+        JsonNode error = postActionJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge",
+                409, projectId, secondRequest.path("mergeRequestId").asText());
+        assertThat(error.path("code").asText()).isEqualTo("MERGE_CONFLICTS");
+        assertThat(branchHead(getJson(owner, "/projects/{projectId}/vcs/branches", projectId), "main"))
+                .isEqualTo(headAfterFirstMerge);
+        assertThat(vcsCommitCount(projectId)).isEqualTo(commitsAfterFirstMerge);
+        assertThat(getJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}", projectId,
+                secondRequest.path("mergeRequestId").asText()).path("state").asText()).isEqualTo("OPEN");
+        assertThat(classifierNameOnMain(owner, projectId, classifierId)).isEqualTo("Renamed by first");
+    }
+
+    @Test
+    void mergeRequestOpenedBeforeAnotherMergeKeepsBothChangesWhenTheyDoNotConflict() throws Exception {
+        String owner = username("merge-moved-clean");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID firstClassifier = UUID.randomUUID();
+        UUID secondClassifier = UUID.randomUUID();
+        applyClassifier(owner, projectId, firstClassifier, "First base");
+        applyClassifier(owner, projectId, secondClassifier, "Second base");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add base classifiers"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "first", "fromBranch", "main"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "second", "fromBranch", "main"), 201);
+        renameOnBranch(owner, projectId, "first", firstClassifier, "First changed");
+        renameOnBranch(owner, projectId, "second", secondClassifier, "Second changed");
+        JsonNode firstRequest = openMergeRequest(owner, projectId, "first", "main", "First", 201);
+        JsonNode secondRequest = openMergeRequest(owner, projectId, "second", "main", "Second", 201);
+
+        postActionJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200,
+                projectId, firstRequest.path("mergeRequestId").asText());
+        UUID headAfterFirstMerge = branchHead(getJson(owner, "/projects/{projectId}/vcs/branches", projectId), "main");
+        postActionJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200,
+                projectId, secondRequest.path("mergeRequestId").asText());
+
+        // The second merge commit builds on the moved main, so the first merge stays in its history.
+        UUID mergeHead = branchHead(getJson(owner, "/projects/{projectId}/vcs/branches", projectId), "main");
+        assertThat(jdbcTemplate.queryForObject("SELECT parent_commit_id::text FROM diagrammer.vcs_commit "
+                + "WHERE commit_id = ?::uuid", String.class, mergeHead.toString()))
+                .isEqualTo(headAfterFirstMerge.toString());
+        assertThat(classifierNameOnMain(owner, projectId, firstClassifier)).isEqualTo("First changed");
+        assertThat(classifierNameOnMain(owner, projectId, secondClassifier)).isEqualTo("Second changed");
+    }
+
+    @Test
+    void comparingTwoCommitsListsTheFieldChangesTheCommitsBetweenThemAndTheirAuthors() throws Exception {
+        String owner = username("compare-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID orderId = UUID.randomUUID();
+        applyClassifier(owner, projectId, orderId, "Order");
+        JsonNode baseCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add order"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "feature");
+        renameClassifier(owner, projectId, orderId, "SaleOrder");
+        JsonNode renameCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Rename order"), 201);
+        String editor = username("compare-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        applyClassifier(editor, projectId, UUID.randomUUID(), "Invoice");
+        JsonNode invoiceCommit = postJson(editor, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add invoice"), 201);
+        String path = "/projects/{projectId}/vcs/repo/compare?fromCommitId={from}&toCommitId={to}";
+
+        JsonNode range = getJson(owner, path, projectId, baseCommit.path("commitId").asText(),
+                invoiceCommit.path("commitId").asText());
+
+        assertThat(range.path("changes")).anySatisfy(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("MODIFIED");
+            assertThat(change.path("targetName").asText()).isEqualTo("SaleOrder");
+            assertThat(change.path("fields").get(0).path("before").asText()).isEqualTo("Order");
+            assertThat(change.path("fields").get(0).path("after").asText()).isEqualTo("SaleOrder");
+        });
+        assertThat(range.path("changes")).anySatisfy(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("ADDED");
+            assertThat(change.path("targetName").asText()).isEqualTo("Invoice");
+        });
+        assertThat(range.path("commits")).extracting(commit -> commit.path("message").asText())
+                .containsExactlyInAnyOrder("Rename order", "Add invoice");
+        assertThat(range.path("contributors")).extracting(author -> author.path("userId").asText())
+                .containsExactlyInAnyOrder(renameCommit.path("authorUserId").asText(),
+                        invoiceCommit.path("authorUserId").asText());
+
+        // Without a start the target commit is compared with its own parent.
+        JsonNode single = getJson(owner, "/projects/{projectId}/vcs/repo/compare?toCommitId={to}", projectId,
+                invoiceCommit.path("commitId").asText());
+        assertThat(single.path("changes")).singleElement().satisfies(change ->
+                assertThat(change.path("targetName").asText()).isEqualTo("Invoice"));
+        assertThat(single.path("commits")).singleElement().satisfies(commit ->
+                assertThat(commit.path("message").asText()).isEqualTo("Add invoice"));
+
+        // A commit compared with itself has nothing to report.
+        JsonNode same = getJson(owner, path, projectId, invoiceCommit.path("commitId").asText(),
+                invoiceCommit.path("commitId").asText());
+        assertThat(same.path("changes")).isEmpty();
+        assertThat(same.path("commits")).isEmpty();
+    }
+
+    @Test
+    void comparingWithAnUnknownCommitIsNotFoundAndTheTargetIsRequired() throws Exception {
+        String owner = username("compare-errors");
+        UUID projectId = createProject(owner);
+        JsonNode status = getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        mockMvc.perform(authorizedAs(owner, get(
+                        "/projects/{projectId}/vcs/repo/compare?toCommitId={to}", projectId, UUID.randomUUID())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(authorizedAs(owner, get("/projects/{projectId}/vcs/repo/compare", projectId)))
+                .andExpect(status().isBadRequest());
+        assertThat(status.path("headCommitId").asText()).isNotBlank();
+    }
+
+    @Test
+    void mergeRequestDiffListsTheFieldChangesTheCommitsAndWhoContributed() throws Exception {
+        String owner = username("pr-diff-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID orderId = UUID.randomUUID();
+        applyClassifier(owner, projectId, orderId, "Order");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Add order"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "feature");
+        renameClassifier(owner, projectId, orderId, "SaleOrder");
+        JsonNode ownerCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Rename order"), 201);
+        String editor = username("pr-diff-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        applyClassifier(editor, projectId, UUID.randomUUID(), "Invoice");
+        JsonNode editorCommit = postJson(editor, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add invoice"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "main");
+        JsonNode request = openMergeRequest(owner, projectId, "feature", "main", "Rename and add", 201);
+
+        JsonNode diff = getJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/diff",
+                projectId, request.path("mergeRequestId").asText());
+
+        assertThat(diff.path("changes")).anySatisfy(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("MODIFIED");
+            assertThat(change.path("targetName").asText()).isEqualTo("SaleOrder");
+            assertThat(change.path("fields").get(0).path("before").asText()).isEqualTo("Order");
+            assertThat(change.path("fields").get(0).path("after").asText()).isEqualTo("SaleOrder");
+        });
+        assertThat(diff.path("changes")).anySatisfy(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("ADDED");
+            assertThat(change.path("targetName").asText()).isEqualTo("Invoice");
+        });
+        assertThat(diff.path("commits")).extracting(commit -> commit.path("message").asText())
+                .containsExactlyInAnyOrder("Rename order", "Add invoice");
+        assertThat(diff.path("contributors")).extracting(author -> author.path("userId").asText())
+                .containsExactlyInAnyOrder(ownerCommit.path("authorUserId").asText(),
+                        editorCommit.path("authorUserId").asText());
+        assertThat(diff.path("contributors")).allSatisfy(author ->
+                assertThat(author.path("role").asText()).isEqualTo("CONTRIBUTOR"));
+    }
+
+    @Test
+    void mergeRequestDiffReportsTheConflictsAgainstTheTargetAsItIsNow() throws Exception {
+        String owner = username("pr-diff-conflict");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, classifierId, "Base name");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Add base"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "first", "fromBranch", "main"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "second", "fromBranch", "main"), 201);
+        renameOnBranch(owner, projectId, "first", classifierId, "Renamed by first");
+        renameOnBranch(owner, projectId, "second", classifierId, "Renamed by second");
+        JsonNode firstRequest = openMergeRequest(owner, projectId, "first", "main", "First", 201);
+        JsonNode secondRequest = openMergeRequest(owner, projectId, "second", "main", "Second", 201);
+        String secondDiffPath = "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/diff";
+        assertThat(getJson(owner, secondDiffPath, projectId, secondRequest.path("mergeRequestId").asText())
+                .path("hasConflicts").asBoolean()).isFalse();
+
+        postActionJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200,
+                projectId, firstRequest.path("mergeRequestId").asText());
+
+        JsonNode diff = getJson(owner, secondDiffPath, projectId, secondRequest.path("mergeRequestId").asText());
+        assertThat(diff.path("hasConflicts").asBoolean()).isTrue();
+        assertThat(diff.path("conflicts")).singleElement().satisfies(conflict -> {
+            assertThat(conflict.path("kind").asText()).isEqualTo("FIELD_CONFLICT");
+            assertThat(conflict.path("field").asText()).isEqualTo("name");
+        });
     }
 
     @Test
@@ -1400,6 +1700,21 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
                 .andReturn();
         assertThat(objectMapper.readTree(result.getResponse().getContentAsByteArray())
                 .path("status").asText()).isEqualTo("ACCEPTED");
+    }
+
+    /** Checks the branch out, renames the classifier there and commits, leaving the working copy clean. */
+    private void renameOnBranch(String owner, UUID projectId, String branch, UUID classifierId, String newName)
+            throws Exception {
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, branch);
+        renameClassifier(owner, projectId, classifierId, newName);
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Rename on " + branch), 201);
+    }
+
+    private String classifierNameOnMain(String owner, UUID projectId, UUID classifierId) throws Exception {
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "main");
+        JsonNode model = getJson(owner, "/projects/{projectId}/model", projectId);
+        return findById(model.path("classifiers"), classifierId.toString()).path("name").asText();
     }
 
     private JsonNode openMergeRequest(String username, UUID projectId, String sourceBranch,

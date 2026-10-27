@@ -304,6 +304,19 @@ public final class MergeDiff {
                 baseValue, sourceValue, targetValue, message);
     }
 
+    /** One element of a snapshot with its comparable fields; read-only view shared with {@link SnapshotDiff}. */
+    record DiffElement(String targetType, UUID targetId, String targetName, Map<String, Object> fields) {
+    }
+
+    /** Every element of the snapshot keyed by {@code TYPE:id}, flattened the same way a merge compares them. */
+    static Map<String, DiffElement> diffElements(SnapshotModel snapshot) {
+        Map<String, DiffElement> result = new LinkedHashMap<>();
+        flatten(snapshot).forEach((key, element) -> result.put(key.targetType() + ":" + key.identity(),
+                new DiffElement(key.targetType(), element.targetId(), element.targetName(),
+                        java.util.Collections.unmodifiableMap(new LinkedHashMap<>(element.fields())))));
+        return result;
+    }
+
     private static Map<ElementKey, Element> flatten(SnapshotModel snapshot) {
         Map<ElementKey, Element> elements = new LinkedHashMap<>();
         for (ClassifierResource classifier : snapshot.classifiers()) {

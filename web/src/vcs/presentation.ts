@@ -33,9 +33,54 @@ const PERMISSION_ACTION_LABELS: Record<VcsPermissionAction, string> = {
 
 const COMMIT_CHANGE_LABELS: Record<string, string> = {
   ADDED: 'Agregado',
+  MODIFIED: 'Modificado',
   UPDATED: 'Actualizado',
   REMOVED: 'Eliminado',
   DELETED: 'Eliminado',
+};
+
+const ELEMENT_TYPE_LABELS: Record<string, string> = {
+  CLASSIFIER: 'Clase',
+  ATTRIBUTE: 'Atributo',
+  OPERATION: 'Operación',
+  PARAMETER: 'Parámetro',
+  CONSTRAINT: 'Restricción',
+  RELATIONSHIP: 'Relación',
+  RELATIONSHIP_END: 'Extremo de relación',
+  VIEW: 'Vista',
+  GEOMETRY: 'Posición',
+  CONNECTOR_PATH: 'Ruta del conector',
+  VIEW_STYLE: 'Estilo de vista',
+};
+
+const DIFF_FIELD_LABELS: Record<string, string> = {
+  name: 'Nombre',
+  kind: 'Tipo de elemento',
+  isAbstract: 'Abstracta',
+  isStatic: 'Estática',
+  isDefault: 'Predeterminada',
+  storeOverride: 'Almacenamiento',
+  visibility: 'Visibilidad',
+  multiplicity: 'Multiplicidad',
+  defaultValue: 'Valor predeterminado',
+  type: 'Tipo',
+  returnType: 'Tipo de retorno',
+  direction: 'Dirección',
+  stereotype: 'Estereotipo',
+  associationClass: 'Clase de asociación',
+  classifier: 'Clase',
+  role: 'Rol',
+  navigability: 'Navegabilidad',
+  aggregationKind: 'Agregación',
+  expression: 'Expresión',
+  severity: 'Severidad',
+  viewKind: 'Clase de vista',
+};
+
+const AUTHOR_ROLE_LABELS: Record<string, string> = {
+  AUTHOR: 'Autor/a',
+  MERGED_BY: 'Fusionó',
+  CONTRIBUTOR: 'Aportó cambios',
 };
 
 export function commitKindLabel(kind: VcsCommitKind): string {
@@ -56,6 +101,18 @@ export function permissionActionLabel(action: VcsPermissionAction): string {
 
 export function commitChangeLabel(changeKind: string): string {
   return COMMIT_CHANGE_LABELS[changeKind] ?? 'Cambio';
+}
+
+export function elementTypeLabel(targetType: string): string {
+  return ELEMENT_TYPE_LABELS[targetType] ?? 'Elemento';
+}
+
+export function diffFieldLabel(field: string): string {
+  return DIFF_FIELD_LABELS[field] ?? field;
+}
+
+export function authorRoleLabel(role: string): string {
+  return AUTHOR_ROLE_LABELS[role] ?? 'Participó';
 }
 
 export function relativeTimeLabel(timestamp: string, now = Date.now()): string {

@@ -182,12 +182,12 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
       'Guarda cambios con mensajes claros, consulta quién cambió qué y cuándo, y revisa el trabajo por separado antes de incorporarlo a la rama principal.',
     steps: [
       'Abre Versionado desde las opciones del editor para ver la rama actual y su historial.',
-      'Guarda un cambio con un mensaje claro; en el historial podrás ver quién lo hizo, qué cambió y cuándo.',
+      'Guarda un cambio con un mensaje claro; en el historial podrás ver quién lo hizo, qué cambió y cuándo. Abre un cambio con «Ver cambio» para ver las personas que figuran como autoras y, elemento por elemento, qué campos cambiaron, con su valor anterior y el nuevo. Con «Comparar confirmaciones» elige dos del historial para ver qué cambió de una a otra, quiénes participaron y las confirmaciones que hay entre ellas.',
       'Crea una rama para trabajar por separado y luego usa el selector para cambiar entre ramas.',
-      'Abre una solicitud de revisión entre dos ramas, comprueba si hay cambios en conflicto y fusiónala cuando el trabajo esté listo.',
+      'Abre una solicitud de revisión entre dos ramas y usa «Ver cambios» para ver los commits que aporta, quiénes participaron y las diferencias por campo. Si la rama de destino cambió desde que la abriste, los conflictos que se muestran son los actuales; fusiónala cuando el trabajo esté listo.',
       'La persona creadora del diagrama puede otorgar distintas capacidades, como ver, editar, guardar cambios, crear ramas, fusionar revisiones y administrar el acceso.',
     ],
-    keywords: ['history', 'message', 'author', 'changes', 'branch', 'switch', 'review', 'merge', 'permissions'],
+    keywords: ['history', 'message', 'author', 'authors', 'changes', 'diff', 'difference', 'commit', 'branch', 'switch', 'review', 'merge', 'conflict', 'permissions'],
     section: 'vcs',
   },
 ];

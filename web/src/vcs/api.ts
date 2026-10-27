@@ -76,8 +76,36 @@ export interface VcsCommitChange {
   targetName: string;
 }
 
+/** A field that differs between two snapshots; values are already formatted for display. */
+export interface VcsFieldChange {
+  field: string;
+  before: string | null;
+  after: string | null;
+}
+
+/** Field-level change of one element (class, attribute, operation, relationship...). */
+export interface VcsElementChange {
+  changeKind: string;
+  targetType: string;
+  targetId: Uuid;
+  targetName: string;
+  ownerName: string | null;
+  fields: VcsFieldChange[];
+}
+
+export type VcsCommitAuthorRole = 'AUTHOR' | 'MERGED_BY' | 'CONTRIBUTOR';
+
+export interface VcsCommitAuthor {
+  userId: Uuid;
+  displayName: string;
+  role: VcsCommitAuthorRole;
+}
+
 export interface VcsCommitDetail extends VcsCommit {
   changes: VcsCommitChange[];
+  /** Absent when talking to a server that predates field-level diffs. */
+  details?: VcsElementChange[];
+  authors?: VcsCommitAuthor[];
 }
 
 export interface VcsMergeConflict {
@@ -106,6 +134,22 @@ export interface VcsMergeRequest {
   openedByDisplayName: string;
   decidedByDisplayName: string | null;
   createdAt: string;
+}
+
+/** Two commits compared: field-level changes, the commits the target has that the start lacks, and their authors. */
+export interface VcsCommitComparison {
+  changes: VcsElementChange[];
+  commits: VcsCommit[];
+  contributors: VcsCommitAuthor[];
+}
+
+/** What a merge request brings; the conflicts are against the target as it is now when the request is open. */
+export interface VcsMergeRequestDiff {
+  changes: VcsElementChange[];
+  commits: VcsCommit[];
+  contributors: VcsCommitAuthor[];
+  hasConflicts: boolean;
+  conflicts: VcsMergeConflict[];
 }
 
 export interface VcsProjectPermission {
@@ -147,10 +191,13 @@ export interface VcsApiClient {
   updateBranchProtection(projectId: Uuid, branchName: string, isProtected: boolean): Promise<VcsBranch>;
   listCommits(projectId: Uuid, branch?: string, limit?: number): Promise<VcsCommit[]>;
   getCommit(projectId: Uuid, commitId: Uuid): Promise<VcsCommitDetail>;
+  /** Compares `toCommitId` with `fromCommitId`, or with its own parent when no start is given. */
+  compareCommits(projectId: Uuid, fromCommitId: Uuid | null, toCommitId: Uuid): Promise<VcsCommitComparison>;
   createCommit(projectId: Uuid, request: CreateVcsCommitRequest): Promise<VcsCommit>;
   listMergeRequests(projectId: Uuid): Promise<VcsMergeRequest[]>;
   createMergeRequest(projectId: Uuid, request: CreateVcsMergeRequestRequest): Promise<VcsMergeRequest>;
   getMergeRequest(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequest>;
+  getMergeRequestDiff(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequestDiff>;
   mergeMergeRequest(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequest>;
   closeMergeRequest(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequest>;
   listPermissions(projectId: Uuid): Promise<VcsProjectPermission[]>;
@@ -317,6 +364,14 @@ export function createVcsApiClient(
         `${projectPath(projectId)}/commits/${encodeURIComponent(commitId)}`,
       );
     },
+    compareCommits(projectId, fromCommitId, toCommitId) {
+      const query = new URLSearchParams();
+      if (fromCommitId !== null) {
+        query.set('fromCommitId', fromCommitId);
+      }
+      query.set('toCommitId', toCommitId);
+      return requestJson<VcsCommitComparison>(`${projectPath(projectId)}/repo/compare?${query.toString()}`);
+    },
     createCommit(projectId, request) {
       return postJson<VcsCommit>(`${projectPath(projectId)}/commits`, request);
     },
@@ -329,6 +384,11 @@ export function createVcsApiClient(
     getMergeRequest(projectId, mergeRequestId) {
       return requestJson<VcsMergeRequest>(
         `${projectPath(projectId)}/merge-requests/${encodeURIComponent(mergeRequestId)}`,
+      );
+    },
+    getMergeRequestDiff(projectId, mergeRequestId) {
+      return requestJson<VcsMergeRequestDiff>(
+        `${projectPath(projectId)}/merge-requests/${encodeURIComponent(mergeRequestId)}/diff`,
       );
     },
     mergeMergeRequest(projectId, mergeRequestId) {

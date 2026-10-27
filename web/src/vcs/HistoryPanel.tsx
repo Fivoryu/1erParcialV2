@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { commitChangeLabel, commitKindLabel, commitOriginLabel, relativeTimeLabel } from './presentation';
 import Modal from '../ui/Modal';
+import { AuthorsList, DiffView } from './DiffView';
 import type { Uuid } from '../api/types';
 import {
   createVcsApiClient,
   vcsErrorMessage,
   type VcsBranch,
   type VcsCommit,
+  type VcsCommitComparison,
   type VcsCommitDetail,
   type VcsStatus,
 } from './api';
@@ -15,12 +17,21 @@ const api = createVcsApiClient();
 
 export { relativeTimeLabel } from './presentation';
 
+/** A comparison of two commits while it loads, after it failed or once it is loaded. */
+export interface HistoryComparisonState {
+  loading: boolean;
+  error: string | null;
+  result: VcsCommitComparison | null;
+}
+
 export interface HistoryPanelViewProps {
   branches: VcsBranch[];
   status: VcsStatus | null;
   selectedBranch: string;
   commits: VcsCommit[];
   commitDetail: VcsCommitDetail | null;
+  /** The open comparison, or null/undefined while none is shown. */
+  comparison?: HistoryComparisonState | null;
   loading: boolean;
   detailLoading: boolean;
   busy: boolean;
@@ -29,6 +40,8 @@ export interface HistoryPanelViewProps {
   onSelectBranch(branch: string): void;
   onCommit(message: string): void;
   onOpenCommit(commitId: Uuid): void;
+  onCompare?(fromCommitId: Uuid, toCommitId: Uuid): void;
+  onCloseComparison?(): void;
   onCloseDetail(): void;
   onDismissError(): void;
 }
@@ -39,6 +52,7 @@ export function HistoryPanelView({
   selectedBranch,
   commits,
   commitDetail,
+  comparison = null,
   loading,
   detailLoading,
   busy,
@@ -47,10 +61,21 @@ export function HistoryPanelView({
   onSelectBranch,
   onCommit,
   onOpenCommit,
+  onCompare,
+  onCloseComparison,
   onCloseDetail,
   onDismissError,
 }: HistoryPanelViewProps) {
   const [message, setMessage] = useState('');
+  const [compareFrom, setCompareFrom] = useState('');
+  const [compareTo, setCompareTo] = useState('');
+
+  function submitCompare(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    if (compareFrom && compareTo && compareFrom !== compareTo && !busy) {
+      onCompare?.(compareFrom, compareTo);
+    }
+  }
 
   function submitCommit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -138,6 +163,68 @@ export function HistoryPanelView({
         )}
       </div>
 
+      {commits.length >= 2 && (
+        <form className="vcs-compare-form" onSubmit={submitCompare}>
+          <p className="vcs-subsection-label">Comparar confirmaciones</p>
+          <div className="vcs-compare-fields">
+            <label className="field-label">
+              Desde
+              <select aria-label="Confirmación inicial" onChange={(event) => setCompareFrom(event.target.value)} value={compareFrom}>
+                <option value="">Elige la confirmación inicial</option>
+                {commits.map((commit) => (
+                  <option key={commit.commitId} value={commit.commitId}>{commit.message} · {commit.authorDisplayName}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field-label">
+              Hasta
+              <select aria-label="Confirmación final" onChange={(event) => setCompareTo(event.target.value)} value={compareTo}>
+                <option value="">Elige la confirmación final</option>
+                {commits.map((commit) => (
+                  <option key={commit.commitId} value={commit.commitId}>{commit.message} · {commit.authorDisplayName}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button
+            className="button button-secondary"
+            disabled={busy || !compareFrom || !compareTo || compareFrom === compareTo}
+            type="submit"
+          >
+            Comparar
+          </button>
+        </form>
+      )}
+
+      <Modal
+        open={comparison !== null}
+        title="Comparación de confirmaciones"
+        size="md"
+        onClose={() => onCloseComparison?.()}
+      >
+        {comparison?.loading ? (
+          <p className="quiet-state" role="status">Comparando las confirmaciones…</p>
+        ) : comparison?.error ? (
+          <p className="notice notice-error" role="alert">{comparison.error}</p>
+        ) : comparison?.result && (
+          <div className="vcs-commit-detail">
+            <h4>Confirmaciones ({comparison.result.commits.length})</h4>
+            <ul className="vcs-merge-request-commits">
+              {comparison.result.commits.map((commit) => (
+                <li key={commit.commitId}>
+                  <strong>{commit.message}</strong>
+                  <span>{commit.authorDisplayName} · {relativeTimeLabel(commit.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+            {comparison.result.contributors.length > 0 && <h4>Participantes</h4>}
+            <AuthorsList authors={comparison.result.contributors} />
+            <h4>Cambios</h4>
+            <DiffView changes={comparison.result.changes} />
+          </div>
+        )}
+      </Modal>
+
       <Modal open={detailLoading || commitDetail !== null} title="Detalles de la confirmación" size="md" onClose={onCloseDetail}>
         {detailLoading ? (
           <p className="quiet-state" role="status">Cargando los elementos modificados…</p>
@@ -145,8 +232,12 @@ export function HistoryPanelView({
           <div className="vcs-commit-detail">
             <p className="eyebrow">{commitDetail.authorDisplayName} · {relativeTimeLabel(commitDetail.createdAt)}</p>
             <h3>{commitDetail.message}</h3>
+            {(commitDetail.authors ?? []).length > 0 && <h4>Autores</h4>}
+            <AuthorsList authors={commitDetail.authors ?? []} />
             <h4>Elementos modificados</h4>
-            {commitDetail.changes.length === 0 ? (
+            {(commitDetail.details ?? []).length > 0 ? (
+              <DiffView changes={commitDetail.details ?? []} />
+            ) : commitDetail.changes.length === 0 ? (
               <p className="quiet-state">No se enumeran cambios en los elementos. Selecciona otra confirmación para revisar sus cambios.</p>
             ) : (
               <ul className="vcs-change-list">
@@ -177,6 +268,7 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
   const [selectedBranch, setSelectedBranch] = useState('');
   const [commits, setCommits] = useState<VcsCommit[]>([]);
   const [commitDetail, setCommitDetail] = useState<VcsCommitDetail | null>(null);
+  const [comparison, setComparison] = useState<HistoryComparisonState | null>(null);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -192,6 +284,7 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
     setCommits([]);
     setSelectedBranch('');
     setCommitDetail(null);
+    setComparison(null);
 
     void Promise.all([api.getStatus(projectId), api.listBranches(projectId)])
       .then(([loadedStatus, loadedBranches]) => {
@@ -267,6 +360,26 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
     }
   }
 
+  async function handleCompare(fromCommitId: Uuid, toCommitId: Uuid): Promise<void> {
+    setComparison({ loading: true, error: null, result: null });
+    onDetailOpenChange?.(true);
+    try {
+      const result = await api.compareCommits(projectId, fromCommitId, toCommitId);
+      setComparison({ loading: false, error: null, result });
+    } catch (cause: unknown) {
+      setComparison({
+        loading: false,
+        error: vcsErrorMessage(cause, 'No se pudieron comparar las confirmaciones.'),
+        result: null,
+      });
+    }
+  }
+
+  function handleCloseComparison(): void {
+    setComparison(null);
+    onDetailOpenChange?.(false);
+  }
+
   async function handleOpenCommit(commitId: Uuid): Promise<void> {
     setCommitDetail(null);
     setDetailLoading(true);
@@ -290,6 +403,7 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
       selectedBranch={selectedBranch}
       commits={commits}
       commitDetail={commitDetail}
+      comparison={comparison}
       loading={loading}
       detailLoading={detailLoading}
       busy={busy}
@@ -301,6 +415,8 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
       }}
       onCommit={(message) => void handleCommit(message)}
       onOpenCommit={(commitId) => void handleOpenCommit(commitId)}
+      onCompare={(fromCommitId, toCommitId) => void handleCompare(fromCommitId, toCommitId)}
+      onCloseComparison={handleCloseComparison}
       onCloseDetail={() => {
         setCommitDetail(null);
         setDetailLoading(false);

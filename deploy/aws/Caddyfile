@@ -1,0 +1,35 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# /projects is the only API prefix that collides with a client route (/projects/:id). A browser
+	# navigation sends Accept: text/html and must get the SPA; data requests keep reaching the backend.
+	@spa_navigation {
+		path /projects/*
+		header Accept *text/html*
+	}
+	# The HTML shell and the JSON API share the URL /projects/<id>. Without these headers the browser
+	# cache answers the editor's JSON fetch with the cached HTML shell and the page stays blank.
+	handle @spa_navigation {
+		header Cache-Control "no-store"
+		header +Vary Accept
+		root * /srv
+		rewrite * /index.html
+		file_server
+	}
+
+	# Same top-level API prefixes as the Vite dev proxy (web/vite.config.ts).
+	@api path /projects /projects/* /auth /auth/* /deployments /deployments/* /invitations /invitations/*
+	handle @api {
+		header +Vary Accept
+		reverse_proxy diagrammer:8080 {
+			# Do not buffer server-sent events or long assistant answers.
+			flush_interval -1
+		}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

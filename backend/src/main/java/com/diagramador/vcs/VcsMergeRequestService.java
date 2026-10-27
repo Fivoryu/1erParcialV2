@@ -26,8 +26,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -91,6 +93,44 @@ public class VcsMergeRequestService {
         return resource(requireMergeRequest(managedModel.getId(), mergeRequestId));
     }
 
+    /**
+     * What the source branch adds on top of the merge base (what a pull request shows): the field-level changes, the
+     * commits it brings and the people behind them. An open request is compared against the target as it is now, so
+     * the diff matches what a merge would apply; a merged or closed one keeps the base it was decided with.
+     */
+    @Transactional(readOnly = true)
+    public VcsResources.MergeRequestDiff diff(UmlModel model, UUID mergeRequestId) {
+        UmlModel managedModel = requireModel(model.getId());
+        accessService.requireRead(managedModel.getProject().getId());
+        VcsMergeRequest request = requireMergeRequest(managedModel.getId(), mergeRequestId);
+        VcsCommit sourceHead = request.getSourceCommit();
+        VcsCommit base = request.getMergeBaseCommit();
+        boolean hasConflicts = request.hasConflicts();
+        JsonNode conflicts = request.getConflicts() == null ? objectMapper.createArrayNode() : request.getConflicts();
+        if (request.getState() == VcsMergeState.OPEN) {
+            VcsCommit targetHead = request.getTargetBranch().getHeadCommit();
+            base = MergeDiff.findMergeBase(sourceHead, targetHead).orElse(base);
+            if (base != null) {
+                // The conflicts frozen when the request was opened go stale once the target moves.
+                MergeDiff.Result comparison = MergeDiff.merge(snapshot(base), snapshot(sourceHead),
+                        snapshot(targetHead));
+                hasConflicts = comparison.hasConflicts();
+                conflicts = objectMapper.valueToTree(comparison.conflicts());
+            }
+        }
+        List<VcsResources.ElementChange> changes = SnapshotDiff.between(base == null ? null : snapshot(base),
+                snapshot(sourceHead));
+
+        Set<UUID> alreadyInBase = new HashSet<>();
+        VcsCommitService.reachable(base).forEach(reached -> alreadyInBase.add(reached.getId()));
+        List<VcsCommit> broughtByTheRequest = VcsCommitService.reachable(sourceHead).stream()
+                .filter(reached -> !alreadyInBase.contains(reached.getId()))
+                .toList();
+        return new VcsResources.MergeRequestDiff(changes,
+                broughtByTheRequest.stream().map(VcsCommitService::commitResource).toList(),
+                VcsCommitService.contributorsOf(broughtByTheRequest), hasConflicts, conflicts);
+    }
+
     @Transactional
     public VcsResources.MergeRequest open(UmlModel model, String sourceName, String targetName, String title,
             UserAccount author) {
@@ -143,14 +183,24 @@ public class VcsMergeRequestService {
                     "This merge request has conflicts and cannot be merged.", List.of(), null);
         }
 
+        VcsBranch targetBranch = request.getTargetBranch();
         VcsCommit sourceHead = request.getSourceCommit();
-        VcsCommit targetHead = request.getTargetCommit();
-        SnapshotModel base = snapshot(request.getMergeBaseCommit());
-        MergeDiff.Result comparison = MergeDiff.merge(base, snapshot(sourceHead), snapshot(targetHead));
+        // The merge must build on the target's CURRENT head. The head recorded when the request was opened can be
+        // stale (another merge or a commit moved the target since); merging on it would drop those commits.
+        VcsCommit targetHead = targetBranch.getHeadCommit();
+        VcsCommit mergeBase = request.getMergeBaseCommit();
+        boolean targetMoved = !targetHead.getId().equals(request.getTargetCommit().getId());
+        if (targetMoved) {
+            mergeBase = MergeDiff.findMergeBase(sourceHead, targetHead)
+                    .orElseThrow(() -> invalidPayload("No merge base exists for branches '"
+                            + request.getSourceBranch().getName() + "' and '" + targetBranch.getName() + "'."));
+        }
+        MergeDiff.Result comparison = MergeDiff.merge(snapshot(mergeBase), snapshot(sourceHead), snapshot(targetHead));
         if (comparison.hasConflicts()) {
-            // The recorded list is frozen at open time; fail closed rather than merge a different comparison.
-            throw new ApiException(HttpStatus.CONFLICT, "MERGE_CONFLICTS",
-                    "The frozen merge request no longer has a conflict-free comparison.", List.of(), null);
+            // Fail closed rather than merge a comparison the reviewer never saw.
+            throw new ApiException(HttpStatus.CONFLICT, "MERGE_CONFLICTS", targetMoved
+                    ? "The target branch changed after this merge request was opened and it now has conflicts."
+                    : "The frozen merge request no longer has a conflict-free comparison.", List.of(), null);
         }
 
         SnapshotModel mergedSnapshot = comparison.mergedSnapshot();
@@ -158,7 +208,6 @@ public class VcsMergeRequestService {
         VcsSnapshot mergedState = snapshotRepository.findByModel_IdAndStateHash(managedModel.getId(), stateHash)
                 .orElseGet(() -> snapshotRepository.saveAndFlush(
                         VcsSnapshot.create(managedModel, stateHash, snapshotService.toJson(mergedSnapshot))));
-        VcsBranch targetBranch = request.getTargetBranch();
         VcsCommit mergeCommit = commitRepository.saveAndFlush(VcsCommit.create(managedModel, targetHead, sourceHead,
                 mergedState, targetBranch.getName(), VcsCommitKind.MERGE, VcsCommitOrigin.MERGE,
                 "Merge " + request.getSourceBranch().getName() + " into " + targetBranch.getName(), author));

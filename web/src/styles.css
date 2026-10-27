@@ -3661,6 +3661,155 @@ h3 {
   color: var(--muted);
 }
 
+.vcs-compare-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.vcs-compare-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.vcs-compare-form .button {
+  justify-self: start;
+}
+
+.vcs-merge-request-commits {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.vcs-merge-request-commits li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.vcs-merge-request-commits strong {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.vcs-merge-request-commits span {
+  color: var(--muted);
+}
+
+.vcs-author-list {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+}
+
+.vcs-author-list li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.vcs-author-list span {
+  color: var(--muted);
+}
+
+.vcs-diff,
+.vcs-diff-fields {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vcs-diff-item {
+  padding: 8px 0 8px 10px;
+  border-top: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  font-size: 12px;
+}
+
+.vcs-diff-added {
+  border-left-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.vcs-diff-removed {
+  border-left-color: var(--danger);
+  background: var(--danger-wash);
+}
+
+.vcs-diff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.vcs-diff-head strong {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.vcs-diff-marker {
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.vcs-diff-added .vcs-diff-marker {
+  color: var(--accent-dark);
+}
+
+.vcs-diff-removed .vcs-diff-marker {
+  color: var(--danger);
+}
+
+.vcs-diff-type,
+.vcs-diff-kind {
+  color: var(--muted);
+}
+
+.vcs-diff-fields {
+  margin-top: 4px;
+}
+
+.vcs-diff-fields li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 2px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.vcs-diff-field {
+  color: var(--muted);
+}
+
+.vcs-diff-fields del {
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--danger);
+  background: var(--danger-wash);
+  text-decoration: line-through;
+}
+
+.vcs-diff-fields ins {
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--accent-dark);
+  background: var(--accent-wash);
+  text-decoration: none;
+}
+
 .vcs-merge-request-form {
   margin-bottom: 0;
 }
