@@ -171,6 +171,20 @@ public class VcsCommitService {
         return List.copyOf(authors);
     }
 
+    /** Each distinct author of the commits, in order, credited as a contributor. */
+    static List<VcsResources.CommitAuthor> contributorsOf(List<VcsCommit> commits) {
+        Set<UUID> listed = new HashSet<>();
+        List<VcsResources.CommitAuthor> contributors = new ArrayList<>();
+        for (VcsCommit commit : commits) {
+            UserAccount author = commit.getAuthor();
+            if (author != null && listed.add(author.getId())) {
+                contributors.add(new VcsResources.CommitAuthor(author.getId(), author.getDisplayName(),
+                        "CONTRIBUTOR"));
+            }
+        }
+        return List.copyOf(contributors);
+    }
+
     /** Every commit reachable from the head through either parent, newest first, without recursion. */
     static List<VcsCommit> reachable(VcsCommit head) {
         List<VcsCommit> reached = new ArrayList<>();

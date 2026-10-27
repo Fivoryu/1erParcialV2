@@ -67,6 +67,16 @@ public final class VcsResources {
             String decidedByDisplayName, OffsetDateTime createdAt) {
     }
 
+    /** Two commits compared: field-level changes, the commits the target has that the start lacks, and their authors. */
+    public record CommitComparison(List<ElementChange> changes, List<Commit> commits,
+            List<CommitAuthor> contributors) {
+        public CommitComparison {
+            changes = changes == null ? List.of() : List.copyOf(changes);
+            commits = commits == null ? List.of() : List.copyOf(commits);
+            contributors = contributors == null ? List.of() : List.copyOf(contributors);
+        }
+    }
+
     /**
      * What a merge request brings: field-level changes, the commits it adds, the people who made them and, for an
      * open request, the conflicts against the target as it is now.

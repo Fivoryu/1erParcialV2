@@ -132,6 +132,13 @@ public class VcsController {
         return repoQueryService.diff(readableModel(projectId), fromCommitId, toCommitId);
     }
 
+    @GetMapping("/repo/compare")
+    public VcsResources.CommitComparison repoCompare(@PathVariable UUID projectId,
+            @RequestParam(name = "fromCommitId", required = false) UUID fromCommitId,
+            @RequestParam(name = "toCommitId", required = false) UUID toCommitId) {
+        return repoQueryService.compare(readableModel(projectId), fromCommitId, toCommitId);
+    }
+
     @GetMapping("/repo/blame")
     public List<VcsResources.Commit> repoBlame(@PathVariable UUID projectId,
             @RequestParam(name = "targetType") String targetType,

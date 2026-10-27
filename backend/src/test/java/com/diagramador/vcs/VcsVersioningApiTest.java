@@ -816,6 +816,77 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void comparingTwoCommitsListsTheFieldChangesTheCommitsBetweenThemAndTheirAuthors() throws Exception {
+        String owner = username("compare-owner");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID orderId = UUID.randomUUID();
+        applyClassifier(owner, projectId, orderId, "Order");
+        JsonNode baseCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add order"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "feature");
+        renameClassifier(owner, projectId, orderId, "SaleOrder");
+        JsonNode renameCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Rename order"), 201);
+        String editor = username("compare-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        applyClassifier(editor, projectId, UUID.randomUUID(), "Invoice");
+        JsonNode invoiceCommit = postJson(editor, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add invoice"), 201);
+        String path = "/projects/{projectId}/vcs/repo/compare?fromCommitId={from}&toCommitId={to}";
+
+        JsonNode range = getJson(owner, path, projectId, baseCommit.path("commitId").asText(),
+                invoiceCommit.path("commitId").asText());
+
+        assertThat(range.path("changes")).anySatisfy(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("MODIFIED");
+            assertThat(change.path("targetName").asText()).isEqualTo("SaleOrder");
+            assertThat(change.path("fields").get(0).path("before").asText()).isEqualTo("Order");
+            assertThat(change.path("fields").get(0).path("after").asText()).isEqualTo("SaleOrder");
+        });
+        assertThat(range.path("changes")).anySatisfy(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("ADDED");
+            assertThat(change.path("targetName").asText()).isEqualTo("Invoice");
+        });
+        assertThat(range.path("commits")).extracting(commit -> commit.path("message").asText())
+                .containsExactlyInAnyOrder("Rename order", "Add invoice");
+        assertThat(range.path("contributors")).extracting(author -> author.path("userId").asText())
+                .containsExactlyInAnyOrder(renameCommit.path("authorUserId").asText(),
+                        invoiceCommit.path("authorUserId").asText());
+
+        // Without a start the target commit is compared with its own parent.
+        JsonNode single = getJson(owner, "/projects/{projectId}/vcs/repo/compare?toCommitId={to}", projectId,
+                invoiceCommit.path("commitId").asText());
+        assertThat(single.path("changes")).singleElement().satisfies(change ->
+                assertThat(change.path("targetName").asText()).isEqualTo("Invoice"));
+        assertThat(single.path("commits")).singleElement().satisfies(commit ->
+                assertThat(commit.path("message").asText()).isEqualTo("Add invoice"));
+
+        // A commit compared with itself has nothing to report.
+        JsonNode same = getJson(owner, path, projectId, invoiceCommit.path("commitId").asText(),
+                invoiceCommit.path("commitId").asText());
+        assertThat(same.path("changes")).isEmpty();
+        assertThat(same.path("commits")).isEmpty();
+    }
+
+    @Test
+    void comparingWithAnUnknownCommitIsNotFoundAndTheTargetIsRequired() throws Exception {
+        String owner = username("compare-errors");
+        UUID projectId = createProject(owner);
+        JsonNode status = getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        mockMvc.perform(authorizedAs(owner, get(
+                        "/projects/{projectId}/vcs/repo/compare?toCommitId={to}", projectId, UUID.randomUUID())))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(authorizedAs(owner, get("/projects/{projectId}/vcs/repo/compare", projectId)))
+                .andExpect(status().isBadRequest());
+        assertThat(status.path("headCommitId").asText()).isNotBlank();
+    }
+
+    @Test
     void mergeRequestDiffListsTheFieldChangesTheCommitsAndWhoContributed() throws Exception {
         String owner = username("pr-diff-owner");
         UUID projectId = createProject(owner);

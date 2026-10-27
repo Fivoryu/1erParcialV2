@@ -26,7 +26,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -127,18 +126,9 @@ public class VcsMergeRequestService {
         List<VcsCommit> broughtByTheRequest = VcsCommitService.reachable(sourceHead).stream()
                 .filter(reached -> !alreadyInBase.contains(reached.getId()))
                 .toList();
-        Set<UUID> listed = new HashSet<>();
-        List<VcsResources.CommitAuthor> contributors = new ArrayList<>();
-        for (VcsCommit brought : broughtByTheRequest) {
-            UserAccount author = brought.getAuthor();
-            if (author != null && listed.add(author.getId())) {
-                contributors.add(new VcsResources.CommitAuthor(author.getId(), author.getDisplayName(),
-                        "CONTRIBUTOR"));
-            }
-        }
         return new VcsResources.MergeRequestDiff(changes,
-                broughtByTheRequest.stream().map(VcsCommitService::commitResource).toList(), contributors,
-                hasConflicts, conflicts);
+                broughtByTheRequest.stream().map(VcsCommitService::commitResource).toList(),
+                VcsCommitService.contributorsOf(broughtByTheRequest), hasConflicts, conflicts);
     }
 
     @Transactional

@@ -86,6 +86,35 @@ public class VcsRepoQueryService {
         return VcsCommitService.changesBetween(before, after);
     }
 
+    /**
+     * Field-level comparison of two commits, GitHub style: what {@code toCommit} changed relative to
+     * {@code fromCommit} (its own parent when no start is given), the commits {@code toCommit} has that
+     * {@code fromCommit} lacks, and the people behind them.
+     */
+    @Transactional(readOnly = true)
+    public VcsResources.CommitComparison compare(UmlModel model, UUID fromCommitId, UUID toCommitId) {
+        UmlModel managedModel = readableModel(model);
+        if (toCommitId == null) {
+            throw invalidPayload("toCommitId is required.");
+        }
+        VcsCommit toCommit = findCommit(managedModel, toCommitId);
+        VcsCommit fromCommit = fromCommitId == null
+                ? toCommit.getParent()
+                : findCommit(managedModel, fromCommitId);
+        SnapshotModel before = fromCommit == null ? null
+                : snapshotService.fromJson(fromCommit.getSnapshot().getPayload());
+        SnapshotModel after = snapshotService.fromJson(toCommit.getSnapshot().getPayload());
+
+        Set<UUID> alreadyThere = new HashSet<>();
+        VcsCommitService.reachable(fromCommit).forEach(reached -> alreadyThere.add(reached.getId()));
+        List<VcsCommit> between = VcsCommitService.reachable(toCommit).stream()
+                .filter(reached -> !alreadyThere.contains(reached.getId()))
+                .toList();
+        return new VcsResources.CommitComparison(SnapshotDiff.between(before, after),
+                between.stream().map(VcsCommitService::commitResource).toList(),
+                VcsCommitService.contributorsOf(between));
+    }
+
     @Transactional(readOnly = true)
     public List<VcsResources.Commit> blame(UmlModel model, String targetType, UUID targetId, String branchName) {
         UmlModel managedModel = readableModel(model);
