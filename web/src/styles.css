@@ -3661,6 +3661,31 @@ h3 {
   color: var(--muted);
 }
 
+.vcs-merge-request-commits {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.vcs-merge-request-commits li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.vcs-merge-request-commits strong {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.vcs-merge-request-commits span {
+  color: var(--muted);
+}
+
 .vcs-author-list {
   margin: 0 0 12px;
   padding: 0;

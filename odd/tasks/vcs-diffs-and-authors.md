@@ -21,7 +21,7 @@ Assumptions (not requested verbatim, marked as assumptions):
 - T3 (S2, S3) backend: `GET /vcs/merge-requests/{id}/diff` with changes, commits, contributors and the conflicts against the target as it is now — route: inline — status: done — commits: c9d50b0 + live conflicts
 - T4 (S1, S2, S3) web: commit detail with diff and authors in Historial — route: inline — status: done (compare two commits is not built: needs a field-level compare endpoint, offered as a follow-up)
 - T5 (S2, S3) web: PR diff, commits, contributors and live conflicts in Revisiones — route: inline — status: done
-- T6 (S1-S3) help text (done), deploy to the AWS instance and verify with two users in ego-lite — route: inline — status: pending
+- T6 (S1-S3) help text, deploy to the AWS instance and verify in ego-lite — route: inline — status: done
 
 ## Log
 
@@ -31,3 +31,5 @@ Assumptions (not requested verbatim, marked as assumptions):
 - L4 (2026-10-27) finding: a commit stores one author and nothing links it to the model revisions it covers (`model_version.created_by_user_id` has no FK to `vcs_commit`), so "everyone who changed the model since the parent commit" is not computable without a migration. Decision: phase 1 without migration (A2 revised); phase 2 stays optional.
 - L5 (2026-10-27) evidence: `SnapshotDiffTest` 6/6, `VcsVersioningApiTest` 43/43 (4 new API tests), `VcsMergeDiffTest` 8/8. The first full run had 4 mobile-test errors (`Container startup failed for image postgres:16-alpine`) caused by running several maven builds at once; the three classes pass alone (23/23). A clean full run is pending at the end.
 - L6 (2026-10-27) evidence: backend `VcsVersioningApiTest` 44/44; web `npm test` 743 passed (4 skipped before this work), `npm run lint` and `npm run build` clean; help test extended.
+- L7 (2026-10-27) evidence: clean full backend run `Tests run: 786, Failures: 0, Errors: 0, Skipped: 1`, BUILD SUCCESS (the earlier 4 errors were environmental). Deployed to the instance and checked in ego-lite with the two users: the merge commit `Merge ui-dos into main` lists `Prueba AWS · Fusionó` and `Usuario B · Aportó cambios` with the field diff `Nombre: Cliente_01d25_r2 → Cliente_UI_dos`; a merge request expands commits, participants and diff; pressing Fusionar on a request whose target moved answers 409 and opens `Conflictos con la rama de destino actual (1)`. Deploy gotcha: replacing `web/dist` by deleting the directory breaks Caddy's bind mount (404); replace its content in place.
+- L8 open follow-ups: compare two commits field by field (needs a compare endpoint); who changed the model between commits (migration, phase 2); the checkout is one working copy per project.

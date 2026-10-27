@@ -403,10 +403,8 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
         try {
           replaceMergeRequest(await api.getMergeRequest(projectId, mergeRequest.mergeRequestId));
           conflictsRefreshed = true;
-          if (mergeRequest.mergeRequestId in diffs) {
-            // The stored conflicts are frozen; the diff has the ones against the target as it is now.
-            void loadDiff(mergeRequest);
-          }
+          // The stored conflicts are frozen; the diff has the ones against the target as it is now, so open it.
+          void loadDiff(mergeRequest);
         } catch {
           // Keep the failed merge explicit even if the follow-up read cannot refresh the conflict details.
         }
