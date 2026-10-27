@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { commitChangeLabel, commitKindLabel, commitOriginLabel, relativeTimeLabel } from './presentation';
 import Modal from '../ui/Modal';
+import { AuthorsList, DiffView } from './DiffView';
 import type { Uuid } from '../api/types';
 import {
   createVcsApiClient,
@@ -145,8 +146,12 @@ export function HistoryPanelView({
           <div className="vcs-commit-detail">
             <p className="eyebrow">{commitDetail.authorDisplayName} · {relativeTimeLabel(commitDetail.createdAt)}</p>
             <h3>{commitDetail.message}</h3>
+            {(commitDetail.authors ?? []).length > 0 && <h4>Autores</h4>}
+            <AuthorsList authors={commitDetail.authors ?? []} />
             <h4>Elementos modificados</h4>
-            {commitDetail.changes.length === 0 ? (
+            {(commitDetail.details ?? []).length > 0 ? (
+              <DiffView changes={commitDetail.details ?? []} />
+            ) : commitDetail.changes.length === 0 ? (
               <p className="quiet-state">No se enumeran cambios en los elementos. Selecciona otra confirmación para revisar sus cambios.</p>
             ) : (
               <ul className="vcs-change-list">

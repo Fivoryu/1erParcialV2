@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiTransportError } from '../api/client';
-import type { VcsBranch, VcsMergeConflict, VcsMergeRequest } from './api';
+import type { VcsBranch, VcsMergeConflict, VcsMergeRequest, VcsMergeRequestDiff } from './api';
 import {
   mergeRequestErrorMessage,
   MergeRequestsPanelView,
@@ -182,5 +182,88 @@ describe('merge requests panel', () => {
   it('distinguishes loading from an empty request list', () => {
     expect(render({ loading: true, mergeRequests: [] })).toContain('Cargando las solicitudes de fusión…');
     expect(render({ loading: false, mergeRequests: [] })).toContain('Aún no hay solicitudes de fusión. Abre una para pedir la revisión de una rama.');
+  });
+});
+
+describe('merge request diff', () => {
+  const diff: VcsMergeRequestDiff = {
+    changes: [{
+      changeKind: 'MODIFIED',
+      targetType: 'CLASSIFIER',
+      targetId: '11111111-1111-4111-8111-111111111111',
+      targetName: 'SaleOrder',
+      ownerName: null,
+      fields: [{ field: 'name', before: 'Order', after: 'SaleOrder' }],
+    }],
+    commits: [{
+      commitId: '77777777-7777-4777-8777-777777777777',
+      branchName: 'feature-orders',
+      kind: 'MANUAL',
+      origin: 'MANUAL',
+      message: 'Rename order',
+      authorUserId: '88888888-8888-4888-8888-888888888888',
+      authorDisplayName: 'Avery Rivera',
+      parentCommitId: null,
+      secondParentCommitId: null,
+      stateHash: 'a'.repeat(64),
+      createdAt: '2026-10-22T12:00:00Z',
+    }],
+    contributors: [{ userId: '88888888-8888-4888-8888-888888888888', displayName: 'Avery Rivera', role: 'CONTRIBUTOR' }],
+    hasConflicts: false,
+    conflicts: [],
+  };
+  const cleanRequest: VcsMergeRequest = { ...openRequest, hasConflicts: false, conflicts: [] };
+
+  it('offers to show the changes of every request without loading them up front', () => {
+    const markup = render({ mergeRequests: [cleanRequest] });
+
+    expect(markup).toContain('Ver cambios');
+    expect(markup).not.toContain('vcs-merge-request-diff');
+  });
+
+  it('shows the commits, the contributors and the field-level diff once opened', () => {
+    const markup = render({
+      mergeRequests: [cleanRequest],
+      diffs: { [cleanRequest.mergeRequestId]: { loading: false, error: null, diff } },
+    });
+
+    expect(markup).toContain('Ocultar cambios');
+    expect(markup).toContain('Commits (1)');
+    expect(markup).toContain('Rename order');
+    expect(markup).toContain('Aportó cambios');
+    expect(markup).toContain('<del>Order</del>');
+    expect(markup).toContain('<ins>SaleOrder</ins>');
+  });
+
+  it('shows the conflicts against the target as it is now and blocks the merge', () => {
+    const markup = render({
+      mergeRequests: [cleanRequest],
+      diffs: {
+        [cleanRequest.mergeRequestId]: {
+          loading: false,
+          error: null,
+          diff: { ...diff, hasConflicts: true, conflicts: [conflicts[0]!] },
+        },
+      },
+    });
+
+    expect(markup).toContain('Conflictos con la rama de destino actual (1)');
+    expect(markup).toContain('The name changed on both branches.');
+    expect(markup).toMatch(/disabled=""[^>]*>Fusionar</);
+  });
+
+  it('shows the loading and the error state of the diff', () => {
+    const loading = render({
+      mergeRequests: [cleanRequest],
+      diffs: { [cleanRequest.mergeRequestId]: { loading: true, error: null, diff: null } },
+    });
+    const failed = render({
+      mergeRequests: [cleanRequest],
+      diffs: { [cleanRequest.mergeRequestId]: { loading: false, error: 'No se pudieron cargar los cambios.', diff: null } },
+    });
+
+    expect(loading).toContain('Cargando los cambios…');
+    expect(failed).toContain('role="alert"');
+    expect(failed).toContain('No se pudieron cargar los cambios.');
   });
 });

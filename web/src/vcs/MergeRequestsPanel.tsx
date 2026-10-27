@@ -7,8 +7,10 @@ import {
   type VcsBranch,
   type VcsMergeConflict,
   type VcsMergeRequest,
+  type VcsMergeRequestDiff,
 } from './api';
-import { mergeRequestStateLabel } from './presentation';
+import { AuthorsList, DiffView } from './DiffView';
+import { mergeRequestStateLabel, relativeTimeLabel } from './presentation';
 
 const api = createVcsApiClient();
 
@@ -49,6 +51,71 @@ export function mergeRequestErrorMessage(error: unknown, conflictsRefreshed = fa
   return vcsErrorMessage(error, 'No se pudo completar la acción de la solicitud de fusión.');
 }
 
+/** The diff of one expanded merge request: loading, failed or loaded. */
+export interface MergeRequestDiffEntry {
+  loading: boolean;
+  error: string | null;
+  diff: VcsMergeRequestDiff | null;
+}
+
+function ConflictList({ conflicts, title }: { conflicts: VcsMergeConflict[]; title: string }) {
+  return (
+    <div className="vcs-conflict-section">
+      <h5>{title}</h5>
+      <ul className="vcs-conflict-list">
+        {conflicts.map((conflict, index) => (
+          <li className="vcs-conflict-row" key={`${conflict.targetType}-${conflict.targetId}-${index}`}>
+            <h4>{conflictKindLabel(conflict.kind)} · {conflict.targetName}</h4>
+            <p>{conflict.message}</p>
+            <dl className="vcs-conflict-values">
+              <div><dt>Campo</dt><dd>{conflict.field ?? '—'}</dd></div>
+              <div><dt>Base</dt><dd>{conflictValueLabel(conflict.baseValue)}</dd></div>
+              <div><dt>Origen</dt><dd>{conflictValueLabel(conflict.sourceValue)}</dd></div>
+              <div><dt>Destino</dt><dd>{conflictValueLabel(conflict.targetValue)}</dd></div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function MergeRequestDiffSection({ entry }: { entry: MergeRequestDiffEntry }) {
+  if (entry.loading) {
+    return <p className="quiet-state" role="status">Cargando los cambios…</p>;
+  }
+  if (entry.error !== null) {
+    return <p className="notice notice-error" role="alert">{entry.error}</p>;
+  }
+  if (entry.diff === null) {
+    return null;
+  }
+  const { diff } = entry;
+  return (
+    <>
+      {diff.conflicts.length > 0 && (
+        <ConflictList
+          conflicts={diff.conflicts}
+          title={`Conflictos con la rama de destino actual (${diff.conflicts.length})`}
+        />
+      )}
+      <h5>Commits ({diff.commits.length})</h5>
+      <ul className="vcs-merge-request-commits">
+        {diff.commits.map((commit) => (
+          <li key={commit.commitId}>
+            <strong>{commit.message}</strong>
+            <span>{commit.authorDisplayName} · {relativeTimeLabel(commit.createdAt)}</span>
+          </li>
+        ))}
+      </ul>
+      {diff.contributors.length > 0 && <h5>Participantes</h5>}
+      <AuthorsList authors={diff.contributors} />
+      <h5>Cambios</h5>
+      <DiffView changes={diff.changes} />
+    </>
+  );
+}
+
 export interface MergeRequestsPanelViewProps {
   branches: VcsBranch[];
   mergeRequests: VcsMergeRequest[];
@@ -57,9 +124,12 @@ export interface MergeRequestsPanelViewProps {
   busyMergeRequestId: Uuid | null;
   error: string | null;
   notice: string | null;
+  /** Expanded requests by id; a request is expanded while it has an entry here. */
+  diffs?: Record<Uuid, MergeRequestDiffEntry>;
   onOpen(sourceBranch: string, targetBranch: string, title: string): void;
   onMerge(mergeRequest: VcsMergeRequest): void;
   onClose(mergeRequest: VcsMergeRequest): void;
+  onToggleDiff?(mergeRequest: VcsMergeRequest): void;
   onDismissError(): void;
 }
 
@@ -71,9 +141,11 @@ export function MergeRequestsPanelView({
   busyMergeRequestId,
   error,
   notice,
+  diffs = {},
   onOpen,
   onMerge,
   onClose,
+  onToggleDiff,
   onDismissError,
 }: MergeRequestsPanelViewProps) {
   const [sourceBranch, setSourceBranch] = useState('');
@@ -161,6 +233,9 @@ export function MergeRequestsPanelView({
             {mergeRequests.map((mergeRequest) => {
               const requestBusy = busyMergeRequestId === mergeRequest.mergeRequestId;
               const isOpen = mergeRequest.state === 'OPEN';
+              const diffEntry = diffs[mergeRequest.mergeRequestId];
+              // The frozen conflicts go stale when the target moves; the diff reports the current ones.
+              const hasCurrentConflicts = mergeRequest.hasConflicts || Boolean(diffEntry?.diff?.hasConflicts);
               return (
                 <li className="vcs-merge-request-row" key={mergeRequest.mergeRequestId}>
                   <div className="vcs-merge-request-copy">
@@ -179,29 +254,29 @@ export function MergeRequestsPanelView({
                       </p>
                     )}
                     {mergeRequest.conflicts.length > 0 && (
-                      <div className="vcs-conflict-section">
-                        <h5>Conflictos ({mergeRequest.conflicts.length})</h5>
-                        <ul className="vcs-conflict-list">
-                          {mergeRequest.conflicts.map((conflict, index) => (
-                            <li className="vcs-conflict-row" key={`${conflict.targetType}-${conflict.targetId}-${index}`}>
-                              <h4>{conflictKindLabel(conflict.kind)} · {conflict.targetName}</h4>
-                              <p>{conflict.message}</p>
-                              <dl className="vcs-conflict-values">
-                                <div><dt>Campo</dt><dd>{conflict.field ?? '—'}</dd></div>
-                                <div><dt>Base</dt><dd>{conflictValueLabel(conflict.baseValue)}</dd></div>
-                                <div><dt>Origen</dt><dd>{conflictValueLabel(conflict.sourceValue)}</dd></div>
-                                <div><dt>Destino</dt><dd>{conflictValueLabel(conflict.targetValue)}</dd></div>
-                              </dl>
-                            </li>
-                          ))}
-                        </ul>
+                      <ConflictList
+                        conflicts={mergeRequest.conflicts}
+                        title={`Conflictos (${mergeRequest.conflicts.length})`}
+                      />
+                    )}
+                    {diffEntry && (
+                      <div className="vcs-merge-request-diff">
+                        <MergeRequestDiffSection entry={diffEntry} />
                       </div>
                     )}
                   </div>
                   <div className="vcs-merge-request-controls">
                     <button
+                      className="button button-secondary button-compact"
+                      onClick={() => onToggleDiff?.(mergeRequest)}
+                      aria-expanded={diffEntry !== undefined}
+                      type="button"
+                    >
+                      {diffEntry ? 'Ocultar cambios' : 'Ver cambios'}
+                    </button>
+                    <button
                       className="button button-primary button-compact"
-                      disabled={busy || !isOpen || mergeRequest.hasConflicts}
+                      disabled={busy || !isOpen || hasCurrentConflicts}
                       onClick={() => onMerge(mergeRequest)}
                       type="button"
                     >
@@ -238,6 +313,7 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
   const [busyMergeRequestId, setBusyMergeRequestId] = useState<Uuid | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [diffs, setDiffs] = useState<Record<Uuid, MergeRequestDiffEntry>>({});
 
   useEffect(() => {
     let active = true;
@@ -245,6 +321,7 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
     setError(null);
     setBranches([]);
     setMergeRequests([]);
+    setDiffs({});
     void Promise.all([api.listBranches(projectId), api.listMergeRequests(projectId)])
       .then(([loadedBranches, loadedRequests]) => {
         if (active) {
@@ -272,6 +349,28 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
       updated,
       ...current.filter((item) => item.mergeRequestId !== updated.mergeRequestId),
     ]);
+  }
+
+  async function loadDiff(mergeRequest: VcsMergeRequest): Promise<void> {
+    const id = mergeRequest.mergeRequestId;
+    setDiffs((current) => ({ ...current, [id]: { loading: true, error: null, diff: null } }));
+    try {
+      const diff = await api.getMergeRequestDiff(projectId, id);
+      // Ignore the answer if the request was collapsed meanwhile.
+      setDiffs((current) => (id in current ? { ...current, [id]: { loading: false, error: null, diff } } : current));
+    } catch (cause: unknown) {
+      const message = vcsErrorMessage(cause, 'No se pudieron cargar los cambios de la solicitud.');
+      setDiffs((current) => (id in current ? { ...current, [id]: { loading: false, error: message, diff: null } } : current));
+    }
+  }
+
+  function handleToggleDiff(mergeRequest: VcsMergeRequest): void {
+    const id = mergeRequest.mergeRequestId;
+    if (id in diffs) {
+      setDiffs((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== id)));
+      return;
+    }
+    void loadDiff(mergeRequest);
   }
 
   async function handleOpen(sourceBranch: string, targetBranch: string, title: string): Promise<void> {
@@ -304,6 +403,10 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
         try {
           replaceMergeRequest(await api.getMergeRequest(projectId, mergeRequest.mergeRequestId));
           conflictsRefreshed = true;
+          if (mergeRequest.mergeRequestId in diffs) {
+            // The stored conflicts are frozen; the diff has the ones against the target as it is now.
+            void loadDiff(mergeRequest);
+          }
         } catch {
           // Keep the failed merge explicit even if the follow-up read cannot refresh the conflict details.
         }
@@ -341,9 +444,11 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
       busyMergeRequestId={busyMergeRequestId}
       error={error}
       notice={notice}
+      diffs={diffs}
       onOpen={(sourceBranch, targetBranch, title) => void handleOpen(sourceBranch, targetBranch, title)}
       onMerge={(mergeRequest) => void handleMerge(mergeRequest)}
       onClose={(mergeRequest) => void handleClose(mergeRequest)}
+      onToggleDiff={handleToggleDiff}
       onDismissError={() => setError(null)}
     />
   );

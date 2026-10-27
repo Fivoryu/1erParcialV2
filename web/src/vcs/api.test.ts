@@ -39,6 +39,7 @@ describe('version-control API contract', () => {
       sourceBranch: 'feature', targetBranch: 'main', title: 'Review the change',
     });
     await api.getMergeRequest(projectId, mergeRequestId);
+    await api.getMergeRequestDiff(projectId, mergeRequestId);
     await api.mergeMergeRequest(projectId, mergeRequestId);
     await api.closeMergeRequest(projectId, mergeRequestId);
     await api.listPermissions(projectId);
@@ -75,6 +76,7 @@ describe('version-control API contract', () => {
         body: JSON.stringify({ sourceBranch: 'feature', targetBranch: 'main', title: 'Review the change' }),
       },
       { url: '/api/projects/project-1/vcs/merge-requests/merge-request-1', method: 'GET', body: null },
+      { url: '/api/projects/project-1/vcs/merge-requests/merge-request-1/diff', method: 'GET', body: null },
       {
         url: '/api/projects/project-1/vcs/merge-requests/merge-request-1/merge', method: 'POST', body: '{}',
       },

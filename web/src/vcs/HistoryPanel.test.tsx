@@ -84,6 +84,33 @@ describe('version history panel', () => {
     expect(markup).toContain('Confirmar cambios');
   });
 
+  it('shows who is credited and the field-level diff of the selected commit', () => {
+    const markup = render({
+      commitDetail: {
+        ...commitDetail,
+        authors: [
+          { userId: commit.authorUserId, displayName: 'Avery Rivera', role: 'MERGED_BY' },
+          { userId: '55555555-5555-4555-8555-555555555555', displayName: 'Blake Ortiz', role: 'CONTRIBUTOR' },
+        ],
+        details: [{
+          changeKind: 'MODIFIED',
+          targetType: 'CLASSIFIER',
+          targetId: '44444444-4444-4444-8444-444444444444',
+          targetName: 'SaleOrder',
+          ownerName: null,
+          fields: [{ field: 'name', before: 'Order', after: 'SaleOrder' }],
+        }],
+      },
+    });
+
+    expect(markup).toContain('Autores');
+    expect(markup).toContain('Blake Ortiz');
+    expect(markup).toContain('Aportó cambios');
+    expect(markup).toContain('vcs-diff');
+    expect(markup).toContain('<del>Order</del>');
+    expect(markup).toContain('<ins>SaleOrder</ins>');
+  });
+
   it('renders changed elements in the selected commit details', () => {
     const markup = render({ commitDetail });
 
