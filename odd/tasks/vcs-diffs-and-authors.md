@@ -23,7 +23,7 @@ Assumptions (not requested verbatim, marked as assumptions):
 - T5 (S2, S3) web: PR diff, commits, contributors and live conflicts in Revisiones — route: inline — status: done
 - T7 (S1) backend: `GET /vcs/repo/compare?fromCommitId&toCommitId` returning field-level changes, the commits between and their contributors — route: inline — status: done
 - T8 (S1) web: compare two commits from the history panel — route: inline — status: done
-- T9 (S1) deploy and verify the comparison in ego-lite with two users — route: inline — status: pending
+- T9 (S1) deploy and verify the comparison in ego-lite with two users — route: inline — status: done
 - T6 (S1-S3) help text, deploy to the AWS instance and verify in ego-lite — route: inline — status: done
 
 ## Log
@@ -37,3 +37,4 @@ Assumptions (not requested verbatim, marked as assumptions):
 - L7 (2026-10-27) evidence: clean full backend run `Tests run: 786, Failures: 0, Errors: 0, Skipped: 1`, BUILD SUCCESS (the earlier 4 errors were environmental). Deployed to the instance and checked in ego-lite with the two users: the merge commit `Merge ui-dos into main` lists `Prueba AWS · Fusionó` and `Usuario B · Aportó cambios` with the field diff `Nombre: Cliente_01d25_r2 → Cliente_UI_dos`; a merge request expands commits, participants and diff; pressing Fusionar on a request whose target moved answers 409 and opens `Conflictos con la rama de destino actual (1)`. Deploy gotcha: replacing `web/dist` by deleting the directory breaks Caddy's bind mount (404); replace its content in place.
 - L8 open follow-ups: compare two commits field by field (needs a compare endpoint); who changed the model between commits (migration, phase 2); the checkout is one working copy per project.
 - L9 (2026-10-27) user: "Comparar" (answer to: push and PR, or first compare two commits). Compare is T7-T9; `VcsVersioningApiTest` 46/46 with the two new compare tests.
+- L10 (2026-10-27) evidence: `VcsVersioningApiTest` 46/46, web 747 passed, lint and build clean. In ego-lite on the instance, comparing `Initial commit` with the head of main lists 9 commits, the participants `Prueba AWS` and `Usuario B` and the field diffs. A full backend run after this slice was started last.
