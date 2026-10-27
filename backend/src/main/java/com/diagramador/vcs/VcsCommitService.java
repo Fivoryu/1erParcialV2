@@ -138,7 +138,8 @@ public class VcsCommitService {
                 author == null ? null : author.getDisplayName(),
                 commit.getParent() == null ? null : commit.getParent().getId(),
                 commit.getSecondParent() == null ? null : commit.getSecondParent().getId(),
-                commit.getSnapshot().getStateHash(), commit.getCreatedAt(), changes);
+                commit.getSnapshot().getStateHash(), commit.getCreatedAt(), changes,
+                SnapshotDiff.between(parent, child));
     }
 
     private void collectHistory(VcsCommit commit, Set<UUID> seen, List<VcsCommit> reachable) {

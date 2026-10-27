@@ -223,6 +223,36 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void commitDetailListsTheFieldsThatChangedWithTheirBeforeAndAfterValues() throws Exception {
+        String owner = username("field-diff");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, classifierId, "Before name");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Add classifier"), 201);
+        renameClassifier(owner, projectId, classifierId, "After name");
+        JsonNode renameCommit = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Rename classifier"), 201);
+
+        JsonNode detail = getJson(owner, "/projects/{projectId}/vcs/commits/{commitId}",
+                projectId, renameCommit.path("commitId").asText());
+
+        assertThat(detail.path("details")).singleElement().satisfies(change -> {
+            assertThat(change.path("changeKind").asText()).isEqualTo("MODIFIED");
+            assertThat(change.path("targetType").asText()).isEqualTo("CLASSIFIER");
+            assertThat(change.path("targetName").asText()).isEqualTo("After name");
+            assertThat(change.path("fields")).singleElement().satisfies(field -> {
+                assertThat(field.path("field").asText()).isEqualTo("name");
+                assertThat(field.path("before").asText()).isEqualTo("Before name");
+                assertThat(field.path("after").asText()).isEqualTo("After name");
+            });
+        });
+        // The coarse list every existing client reads is unchanged.
+        assertThat(detail.path("changes")).anySatisfy(change ->
+                assertThat(change.path("changeKind").asText()).isEqualTo("MODIFIED"));
+    }
+
+    @Test
     void repoHistoryFiltersByAuthorAndReturnsNewestFirst() throws Exception {
         String owner = username("repo-history-owner");
         UUID projectId = createProject(owner);

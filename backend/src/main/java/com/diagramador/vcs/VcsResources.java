@@ -31,11 +31,25 @@ public final class VcsResources {
     public record Change(String changeKind, String targetType, UUID targetId, String targetName) {
     }
 
+    /** A field that differs between two snapshots; values are already formatted for display. */
+    public record FieldChange(String field, String before, String after) {
+    }
+
+    /** Field-level change of one element (classifier, attribute, operation, relationship...) between two snapshots. */
+    public record ElementChange(String changeKind, String targetType, UUID targetId, String targetName,
+            String ownerName, List<FieldChange> fields) {
+        public ElementChange {
+            fields = fields == null ? List.of() : List.copyOf(fields);
+        }
+    }
+
     public record CommitDetail(UUID commitId, String branchName, VcsCommitKind kind, VcsCommitOrigin origin,
             String message, UUID authorUserId, String authorDisplayName, UUID parentCommitId,
-            UUID secondParentCommitId, String stateHash, OffsetDateTime createdAt, List<Change> changes) {
+            UUID secondParentCommitId, String stateHash, OffsetDateTime createdAt, List<Change> changes,
+            List<ElementChange> details) {
         public CommitDetail {
             changes = changes == null ? List.of() : List.copyOf(changes);
+            details = details == null ? List.of() : List.copyOf(details);
         }
     }
 
