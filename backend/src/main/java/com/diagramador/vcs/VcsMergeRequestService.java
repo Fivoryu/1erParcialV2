@@ -143,14 +143,24 @@ public class VcsMergeRequestService {
                     "This merge request has conflicts and cannot be merged.", List.of(), null);
         }
 
+        VcsBranch targetBranch = request.getTargetBranch();
         VcsCommit sourceHead = request.getSourceCommit();
-        VcsCommit targetHead = request.getTargetCommit();
-        SnapshotModel base = snapshot(request.getMergeBaseCommit());
-        MergeDiff.Result comparison = MergeDiff.merge(base, snapshot(sourceHead), snapshot(targetHead));
+        // The merge must build on the target's CURRENT head. The head recorded when the request was opened can be
+        // stale (another merge or a commit moved the target since); merging on it would drop those commits.
+        VcsCommit targetHead = targetBranch.getHeadCommit();
+        VcsCommit mergeBase = request.getMergeBaseCommit();
+        boolean targetMoved = !targetHead.getId().equals(request.getTargetCommit().getId());
+        if (targetMoved) {
+            mergeBase = MergeDiff.findMergeBase(sourceHead, targetHead)
+                    .orElseThrow(() -> invalidPayload("No merge base exists for branches '"
+                            + request.getSourceBranch().getName() + "' and '" + targetBranch.getName() + "'."));
+        }
+        MergeDiff.Result comparison = MergeDiff.merge(snapshot(mergeBase), snapshot(sourceHead), snapshot(targetHead));
         if (comparison.hasConflicts()) {
-            // The recorded list is frozen at open time; fail closed rather than merge a different comparison.
-            throw new ApiException(HttpStatus.CONFLICT, "MERGE_CONFLICTS",
-                    "The frozen merge request no longer has a conflict-free comparison.", List.of(), null);
+            // Fail closed rather than merge a comparison the reviewer never saw.
+            throw new ApiException(HttpStatus.CONFLICT, "MERGE_CONFLICTS", targetMoved
+                    ? "The target branch changed after this merge request was opened and it now has conflicts."
+                    : "The frozen merge request no longer has a conflict-free comparison.", List.of(), null);
         }
 
         SnapshotModel mergedSnapshot = comparison.mergedSnapshot();
@@ -158,7 +168,6 @@ public class VcsMergeRequestService {
         VcsSnapshot mergedState = snapshotRepository.findByModel_IdAndStateHash(managedModel.getId(), stateHash)
                 .orElseGet(() -> snapshotRepository.saveAndFlush(
                         VcsSnapshot.create(managedModel, stateHash, snapshotService.toJson(mergedSnapshot))));
-        VcsBranch targetBranch = request.getTargetBranch();
         VcsCommit mergeCommit = commitRepository.saveAndFlush(VcsCommit.create(managedModel, targetHead, sourceHead,
                 mergedState, targetBranch.getName(), VcsCommitKind.MERGE, VcsCommitOrigin.MERGE,
                 "Merge " + request.getSourceBranch().getName() + " into " + targetBranch.getName(), author));
