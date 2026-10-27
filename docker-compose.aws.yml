@@ -1,0 +1,131 @@
+name: uml-diagrammer-aws
+
+# Single-host production stack for a small AWS ARM64 instance (target: c7g.xlarge, 4 vCPU / 8 GB).
+# Caddy terminates HTTPS and serves the built web app; only ports 80 and 443 are published. The database,
+# the backend and the local model are reachable only through the internal Docker network.
+#
+# Required environment variables (no .env file is required):
+#   DOMAIN                  public host name Caddy requests a certificate for (e.g. mydiagrammer.duckdns.org)
+#   DIAGRAMMER_DB_NAME, DIAGRAMMER_DB_USER, DIAGRAMMER_DB_PASSWORD
+#   LLM_HF_REPO             Hugging Face repo[:quant] of the model, e.g. <user>/<model>:Q4_K_M. llama-server
+#                           downloads the vision projector (mmproj) automatically when the repo ships one.
+# Optional tuning: LLM_THREADS (default 3), LLM_PARALLEL (default 2), LLM_CTX (default 12288, shared by the
+# slots), LLM_IMAGE_MIN_TOKENS (default 1024) and LLM_IMAGE_MAX_TOKENS (default 1280). Qwen-VL needs about
+# 1024 image tokens to read small text such as a UML diagram; fewer tokens are faster but unreliable. The
+# backend also shrinks each image to DIAGRAMMER_ASSISTANT_IMAGE_MAX_SIDE px on its long side (default 1280,
+# 0 disables it) before sending it to the model.
+#
+# Before the first start build the backend jar and the web app on the host:
+#   (cd backend && mvn -DskipTests package) && (cd web && npm ci && npm run build)
+# The web app is built WITHOUT VITE_API_BASE_URL so it calls the API with relative URLs on the same origin.
+#
+# Memory budget (mem_limit values add up to ~5.1 GB) leaves room for one generated backend (~1.7 GB worst
+# case, hybrid SQL + MongoDB) on an 8 GB host. Add 2 GB of swap on the instance as a safety net.
+x-postgres-image: &postgres-image postgres:16-alpine
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN must be provided in the environment}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web/dist:/srv:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      diagrammer:
+        condition: service_healthy
+
+  diagrammer-db:
+    image: *postgres-image
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: ${DIAGRAMMER_DB_NAME:?DIAGRAMMER_DB_NAME must be provided in the environment}
+      POSTGRES_USER: ${DIAGRAMMER_DB_USER:?DIAGRAMMER_DB_USER must be provided in the environment}
+      POSTGRES_PASSWORD: ${DIAGRAMMER_DB_PASSWORD:?DIAGRAMMER_DB_PASSWORD must be provided in the environment}
+    volumes:
+      - diagrammer-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  diagrammer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m"
+      # Caddy terminates TLS and sends X-Forwarded-Proto: honouring it makes the editor's same-origin
+      # requests (Origin: https://<domain>) same-origin for Spring instead of rejected CORS requests.
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      DIAGRAMADOR_DB_URL: jdbc:postgresql://diagrammer-db:5432/${DIAGRAMMER_DB_NAME:?DIAGRAMMER_DB_NAME must be provided in the environment}
+      DIAGRAMADOR_DB_USERNAME: ${DIAGRAMMER_DB_USER:?DIAGRAMMER_DB_USER must be provided in the environment}
+      DIAGRAMADOR_DB_PASSWORD: ${DIAGRAMMER_DB_PASSWORD:?DIAGRAMMER_DB_PASSWORD must be provided in the environment}
+      DIAGRAMMER_ASSISTANT_ENABLED: "true"
+      DIAGRAMMER_ASSISTANT_URL: http://llm:8081
+      DIAGRAMMER_ASSISTANT_IMAGE_MAX_SIDE: ${DIAGRAMMER_ASSISTANT_IMAGE_MAX_SIDE:-1280}
+    depends_on:
+      diagrammer-db:
+        condition: service_healthy
+      llm:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    restart: unless-stopped
+    mem_limit: 3500m
+    environment:
+      LLAMA_CACHE: /models
+    # --parallel splits --ctx-size between the slots (12288 / 2 = 6144 tokens each: system prompt, diagram
+    # context, one image and the 2048-token answer). --threads should equal the physical cores left to the
+    # model; Graviton vCPUs are physical cores, so 3 of 4 leaves one for the backend and PostgreSQL.
+    # --image-min-tokens / --image-max-tokens bound the vision-encoder output per image: it is what makes image
+    # prompts slow, but too few tokens make small text (diagram labels) unreadable for a 2B model.
+    command:
+      - "-hf"
+      - "${LLM_HF_REPO:?LLM_HF_REPO must be provided in the environment}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8081"
+      - "--threads"
+      - "${LLM_THREADS:-3}"
+      - "--parallel"
+      - "${LLM_PARALLEL:-2}"
+      - "--ctx-size"
+      - "${LLM_CTX:-12288}"
+      - "--image-min-tokens"
+      - "${LLM_IMAGE_MIN_TOKENS:-1024}"
+      - "--image-max-tokens"
+      - "${LLM_IMAGE_MAX_TOKENS:-1280}"
+    volumes:
+      - llm-models:/models
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8081/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 60s
+
+volumes:
+  diagrammer-postgres-data:
+  llm-models:
+  caddy-data:
+  caddy-config:
