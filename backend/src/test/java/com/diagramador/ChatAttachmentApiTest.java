@@ -160,6 +160,40 @@ class ChatAttachmentApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void aLargeImageReachesTheModelReducedWhileTheStoredCopyKeepsItsSize() throws Exception {
+        String owner = username("owner");
+        UUID projectId = createProject(owner);
+        UUID sessionId = createSession(owner, projectId, defaultViewId(projectId), "Grande");
+        java.awt.image.BufferedImage canvas = new java.awt.image.BufferedImage(
+                2000, 1000, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.io.ByteArrayOutputStream png = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(canvas, "png", png);
+        UUID attachmentId = upload(owner, projectId, sessionId, "captura.png", png.toByteArray());
+        String questionId = postMessage(owner, projectId, sessionId, attachmentId, "¿qué ves?");
+
+        when(chatAssistantProvider.chat(anyList())).thenReturn("Veo un lienzo vacío.");
+        mockMvc.perform(ask(owner, projectId, sessionId, questionId))
+                .andExpect(status().isAccepted());
+        awaitAiAnswer(owner, projectId, sessionId, questionId);
+
+        ArgumentCaptor<List<ChatAssistantProvider.Turn>> calls = ArgumentCaptor.captor();
+        verify(chatAssistantProvider, timeout(5_000).atLeastOnce()).chat(calls.capture());
+        String sent = calls.getAllValues().stream().flatMap(List::stream)
+                .map(ChatAssistantProvider.Turn::imageBase64)
+                .filter(java.util.Objects::nonNull).findFirst().orElseThrow();
+        java.awt.image.BufferedImage received = javax.imageio.ImageIO.read(
+                new java.io.ByteArrayInputStream(java.util.Base64.getDecoder().decode(sent)));
+        assertThat(Math.max(received.getWidth(), received.getHeight())).isEqualTo(768);
+
+        // The attachment served back to the chat is still the original upload.
+        byte[] stored = mockMvc.perform(authorizedAs(owner, get(
+                        "/projects/{projectId}/sessions/{sessionId}/attachments/{attachmentId}",
+                        projectId, sessionId, attachmentId)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertThat(stored).isEqualTo(png.toByteArray());
+    }
+
+    @Test
     void imageCostCountsAgainstTheBudgetExactlyWhenTheAskSendsIt() throws Exception {
         String owner = username("owner");
         UUID projectId = createProject(owner);

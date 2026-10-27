@@ -46,6 +46,7 @@ public class ChatAiService {
     private final DiagramMemoryService diagramMemoryService;
     private final ChatMemoryAgentService chatMemoryAgentService;
     private final boolean enabled;
+    private final int imageMaxSide;
 
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
             new LinkedBlockingQueue<>(MAX_QUEUE), runnable -> {
@@ -87,7 +88,8 @@ public class ChatAiService {
             com.diagramador.identity.CurrentUserContext currentUserContext,
             ProjectEventBus eventBus, DiagramMemoryService diagramMemoryService,
             ChatMemoryAgentService chatMemoryAgentService,
-            @Value("${diagrammer.assistant.enabled:false}") boolean enabled) {
+            @Value("${diagrammer.assistant.enabled:false}") boolean enabled,
+            @Value("${diagrammer.assistant.image-max-side:768}") int imageMaxSide) {
         this.chatService = chatService;
         this.contextBudgetService = contextBudgetService;
         this.chatAttachmentRepository = chatAttachmentRepository;
@@ -96,6 +98,7 @@ public class ChatAiService {
         this.diagramMemoryService = diagramMemoryService;
         this.chatMemoryAgentService = chatMemoryAgentService;
         this.enabled = enabled;
+        this.imageMaxSide = imageMaxSide;
     }
 
     /**
@@ -274,9 +277,11 @@ public class ChatAiService {
                 turns.add(live.questionTurn());
             } else {
                 var image = questionAttachments.get(0);
+                // Only the copy sent to the model is reduced; the stored attachment stays as uploaded.
+                var fitted = ImageDownscaler.fit(image.getData(), image.getContentType(), imageMaxSide);
                 turns.add(new ChatAssistantProvider.Turn("user", live.questionTurn().content(),
-                        java.util.Base64.getEncoder().encodeToString(image.getData()),
-                        image.getContentType()));
+                        java.util.Base64.getEncoder().encodeToString(fitted.data()),
+                        fitted.mime()));
             }
         }
         return turns;
