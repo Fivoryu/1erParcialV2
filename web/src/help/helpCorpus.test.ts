@@ -93,6 +93,7 @@ describe('help corpus', () => {
     expect(copy).toContain('Ver cambio');
     expect(copy).toContain('valor anterior y el nuevo');
     expect(copy).toContain('Ver cambios');
+    expect(copy).toContain('Comparar confirmaciones');
     expect(copy).toContain('los conflictos que se muestran son los actuales');
     expect(copy).toContain('Crea una rama');
     expect(copy).toContain('cambiar entre ramas');

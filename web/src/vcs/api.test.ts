@@ -33,6 +33,8 @@ describe('version-control API contract', () => {
     await api.updateBranchProtection(projectId, 'main', true);
     await api.listCommits(projectId, 'main', 20);
     await api.getCommit(projectId, commitId);
+    await api.compareCommits(projectId, commitId, 'commit-2');
+    await api.compareCommits(projectId, null, 'commit-2');
     await api.createCommit(projectId, { message: 'Add a class' });
     await api.listMergeRequests(projectId);
     await api.createMergeRequest(projectId, {
@@ -66,6 +68,8 @@ describe('version-control API contract', () => {
       },
       { url: '/api/projects/project-1/vcs/commits?branch=main&limit=20', method: 'GET', body: null },
       { url: '/api/projects/project-1/vcs/commits/commit-1', method: 'GET', body: null },
+      { url: '/api/projects/project-1/vcs/repo/compare?fromCommitId=commit-1&toCommitId=commit-2', method: 'GET', body: null },
+      { url: '/api/projects/project-1/vcs/repo/compare?toCommitId=commit-2', method: 'GET', body: null },
       {
         url: '/api/projects/project-1/vcs/commits', method: 'POST',
         body: JSON.stringify({ message: 'Add a class' }),

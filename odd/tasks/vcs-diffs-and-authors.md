@@ -22,7 +22,7 @@ Assumptions (not requested verbatim, marked as assumptions):
 - T4 (S1, S2, S3) web: commit detail with diff and authors in Historial — route: inline — status: done (compare two commits is not built: needs a field-level compare endpoint, offered as a follow-up)
 - T5 (S2, S3) web: PR diff, commits, contributors and live conflicts in Revisiones — route: inline — status: done
 - T7 (S1) backend: `GET /vcs/repo/compare?fromCommitId&toCommitId` returning field-level changes, the commits between and their contributors — route: inline — status: done
-- T8 (S1) web: compare two commits from the history panel — route: inline — status: pending
+- T8 (S1) web: compare two commits from the history panel — route: inline — status: done
 - T9 (S1) deploy and verify the comparison in ego-lite with two users — route: inline — status: pending
 - T6 (S1-S3) help text, deploy to the AWS instance and verify in ego-lite — route: inline — status: done
 

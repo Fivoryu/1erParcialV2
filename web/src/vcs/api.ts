@@ -136,6 +136,13 @@ export interface VcsMergeRequest {
   createdAt: string;
 }
 
+/** Two commits compared: field-level changes, the commits the target has that the start lacks, and their authors. */
+export interface VcsCommitComparison {
+  changes: VcsElementChange[];
+  commits: VcsCommit[];
+  contributors: VcsCommitAuthor[];
+}
+
 /** What a merge request brings; the conflicts are against the target as it is now when the request is open. */
 export interface VcsMergeRequestDiff {
   changes: VcsElementChange[];
@@ -184,6 +191,8 @@ export interface VcsApiClient {
   updateBranchProtection(projectId: Uuid, branchName: string, isProtected: boolean): Promise<VcsBranch>;
   listCommits(projectId: Uuid, branch?: string, limit?: number): Promise<VcsCommit[]>;
   getCommit(projectId: Uuid, commitId: Uuid): Promise<VcsCommitDetail>;
+  /** Compares `toCommitId` with `fromCommitId`, or with its own parent when no start is given. */
+  compareCommits(projectId: Uuid, fromCommitId: Uuid | null, toCommitId: Uuid): Promise<VcsCommitComparison>;
   createCommit(projectId: Uuid, request: CreateVcsCommitRequest): Promise<VcsCommit>;
   listMergeRequests(projectId: Uuid): Promise<VcsMergeRequest[]>;
   createMergeRequest(projectId: Uuid, request: CreateVcsMergeRequestRequest): Promise<VcsMergeRequest>;
@@ -354,6 +363,14 @@ export function createVcsApiClient(
       return requestJson<VcsCommitDetail>(
         `${projectPath(projectId)}/commits/${encodeURIComponent(commitId)}`,
       );
+    },
+    compareCommits(projectId, fromCommitId, toCommitId) {
+      const query = new URLSearchParams();
+      if (fromCommitId !== null) {
+        query.set('fromCommitId', fromCommitId);
+      }
+      query.set('toCommitId', toCommitId);
+      return requestJson<VcsCommitComparison>(`${projectPath(projectId)}/repo/compare?${query.toString()}`);
     },
     createCommit(projectId, request) {
       return postJson<VcsCommit>(`${projectPath(projectId)}/commits`, request);

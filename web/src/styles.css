@@ -3661,6 +3661,24 @@ h3 {
   color: var(--muted);
 }
 
+.vcs-compare-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.vcs-compare-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.vcs-compare-form .button {
+  justify-self: start;
+}
+
 .vcs-merge-request-commits {
   margin: 0 0 12px;
   padding: 0;
