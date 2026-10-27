@@ -861,6 +861,37 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void mergeRequestDiffReportsTheConflictsAgainstTheTargetAsItIsNow() throws Exception {
+        String owner = username("pr-diff-conflict");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, classifierId, "Base name");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Add base"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "first", "fromBranch", "main"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "second", "fromBranch", "main"), 201);
+        renameOnBranch(owner, projectId, "first", classifierId, "Renamed by first");
+        renameOnBranch(owner, projectId, "second", classifierId, "Renamed by second");
+        JsonNode firstRequest = openMergeRequest(owner, projectId, "first", "main", "First", 201);
+        JsonNode secondRequest = openMergeRequest(owner, projectId, "second", "main", "Second", 201);
+        String secondDiffPath = "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/diff";
+        assertThat(getJson(owner, secondDiffPath, projectId, secondRequest.path("mergeRequestId").asText())
+                .path("hasConflicts").asBoolean()).isFalse();
+
+        postActionJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200,
+                projectId, firstRequest.path("mergeRequestId").asText());
+
+        JsonNode diff = getJson(owner, secondDiffPath, projectId, secondRequest.path("mergeRequestId").asText());
+        assertThat(diff.path("hasConflicts").asBoolean()).isTrue();
+        assertThat(diff.path("conflicts")).singleElement().satisfies(conflict -> {
+            assertThat(conflict.path("kind").asText()).isEqualTo("FIELD_CONFLICT");
+            assertThat(conflict.path("field").asText()).isEqualTo("name");
+        });
+    }
+
+    @Test
     void crossBranchAssociationClassCollisionIsReportedAndRejectedWithoutMaterialization() throws Exception {
         String owner = username("ac-merge");
         UUID projectId = createProject(owner);

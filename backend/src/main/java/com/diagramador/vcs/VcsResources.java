@@ -67,9 +67,12 @@ public final class VcsResources {
             String decidedByDisplayName, OffsetDateTime createdAt) {
     }
 
-    /** What a merge request brings: field-level changes, the commits it adds and the people who made them. */
+    /**
+     * What a merge request brings: field-level changes, the commits it adds, the people who made them and, for an
+     * open request, the conflicts against the target as it is now.
+     */
     public record MergeRequestDiff(List<ElementChange> changes, List<Commit> commits,
-            List<CommitAuthor> contributors) {
+            List<CommitAuthor> contributors, boolean hasConflicts, JsonNode conflicts) {
         public MergeRequestDiff {
             changes = changes == null ? List.of() : List.copyOf(changes);
             commits = commits == null ? List.of() : List.copyOf(commits);

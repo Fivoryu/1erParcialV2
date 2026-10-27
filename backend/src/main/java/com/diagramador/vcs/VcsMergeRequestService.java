@@ -106,8 +106,18 @@ public class VcsMergeRequestService {
         VcsMergeRequest request = requireMergeRequest(managedModel.getId(), mergeRequestId);
         VcsCommit sourceHead = request.getSourceCommit();
         VcsCommit base = request.getMergeBaseCommit();
+        boolean hasConflicts = request.hasConflicts();
+        JsonNode conflicts = request.getConflicts() == null ? objectMapper.createArrayNode() : request.getConflicts();
         if (request.getState() == VcsMergeState.OPEN) {
-            base = MergeDiff.findMergeBase(sourceHead, request.getTargetBranch().getHeadCommit()).orElse(base);
+            VcsCommit targetHead = request.getTargetBranch().getHeadCommit();
+            base = MergeDiff.findMergeBase(sourceHead, targetHead).orElse(base);
+            if (base != null) {
+                // The conflicts frozen when the request was opened go stale once the target moves.
+                MergeDiff.Result comparison = MergeDiff.merge(snapshot(base), snapshot(sourceHead),
+                        snapshot(targetHead));
+                hasConflicts = comparison.hasConflicts();
+                conflicts = objectMapper.valueToTree(comparison.conflicts());
+            }
         }
         List<VcsResources.ElementChange> changes = SnapshotDiff.between(base == null ? null : snapshot(base),
                 snapshot(sourceHead));
@@ -127,7 +137,8 @@ public class VcsMergeRequestService {
             }
         }
         return new VcsResources.MergeRequestDiff(changes,
-                broughtByTheRequest.stream().map(VcsCommitService::commitResource).toList(), contributors);
+                broughtByTheRequest.stream().map(VcsCommitService::commitResource).toList(), contributors,
+                hasConflicts, conflicts);
     }
 
     @Transactional
