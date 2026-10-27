@@ -139,7 +139,61 @@ public class VcsCommitService {
                 commit.getParent() == null ? null : commit.getParent().getId(),
                 commit.getSecondParent() == null ? null : commit.getSecondParent().getId(),
                 commit.getSnapshot().getStateHash(), commit.getCreatedAt(), changes,
-                SnapshotDiff.between(parent, child));
+                SnapshotDiff.between(parent, child), authorsOf(commit));
+    }
+
+    /**
+     * Who is credited on the commit: its author, or for a merge commit the merger plus everyone whose commits the
+     * merge brought in (reachable from the second parent but not from the first).
+     */
+    static List<VcsResources.CommitAuthor> authorsOf(VcsCommit commit) {
+        boolean merge = commit.getSecondParent() != null;
+        List<VcsResources.CommitAuthor> authors = new ArrayList<>();
+        Set<UUID> listed = new HashSet<>();
+        UserAccount committer = commit.getAuthor();
+        if (committer != null) {
+            listed.add(committer.getId());
+            authors.add(new VcsResources.CommitAuthor(committer.getId(), committer.getDisplayName(),
+                    merge ? "MERGED_BY" : "AUTHOR"));
+        }
+        if (merge) {
+            Set<UUID> alreadyOnTarget = new HashSet<>();
+            reachable(commit.getParent()).forEach(reached -> alreadyOnTarget.add(reached.getId()));
+            for (VcsCommit merged : reachable(commit.getSecondParent())) {
+                UserAccount contributor = merged.getAuthor();
+                if (!alreadyOnTarget.contains(merged.getId()) && contributor != null
+                        && listed.add(contributor.getId())) {
+                    authors.add(new VcsResources.CommitAuthor(contributor.getId(), contributor.getDisplayName(),
+                            "CONTRIBUTOR"));
+                }
+            }
+        }
+        return List.copyOf(authors);
+    }
+
+    /** Every commit reachable from the head through either parent, newest first, without recursion. */
+    static List<VcsCommit> reachable(VcsCommit head) {
+        List<VcsCommit> reached = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();
+        java.util.ArrayDeque<VcsCommit> pending = new java.util.ArrayDeque<>();
+        if (head != null) {
+            pending.add(head);
+        }
+        while (!pending.isEmpty()) {
+            VcsCommit current = pending.poll();
+            if (!seen.add(current.getId())) {
+                continue;
+            }
+            reached.add(current);
+            if (current.getParent() != null) {
+                pending.add(current.getParent());
+            }
+            if (current.getSecondParent() != null) {
+                pending.add(current.getSecondParent());
+            }
+        }
+        reached.sort(Comparator.comparing(VcsCommit::getCreatedAt).reversed());
+        return reached;
     }
 
     private void collectHistory(VcsCommit commit, Set<UUID> seen, List<VcsCommit> reachable) {

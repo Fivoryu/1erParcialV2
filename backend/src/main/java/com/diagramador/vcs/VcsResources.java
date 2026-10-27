@@ -43,13 +43,18 @@ public final class VcsResources {
         }
     }
 
+    /** A person credited on a commit: AUTHOR, or for a merge commit MERGED_BY plus one CONTRIBUTOR per merged author. */
+    public record CommitAuthor(UUID userId, String displayName, String role) {
+    }
+
     public record CommitDetail(UUID commitId, String branchName, VcsCommitKind kind, VcsCommitOrigin origin,
             String message, UUID authorUserId, String authorDisplayName, UUID parentCommitId,
             UUID secondParentCommitId, String stateHash, OffsetDateTime createdAt, List<Change> changes,
-            List<ElementChange> details) {
+            List<ElementChange> details, List<CommitAuthor> authors) {
         public CommitDetail {
             changes = changes == null ? List.of() : List.copyOf(changes);
             details = details == null ? List.of() : List.copyOf(details);
+            authors = authors == null ? List.of() : List.copyOf(authors);
         }
     }
 
@@ -60,6 +65,16 @@ public final class VcsResources {
             String sourceBranch, String targetBranch, UUID sourceCommitId, UUID targetCommitId,
             UUID mergeBaseCommitId, boolean hasConflicts, JsonNode conflicts, String openedByDisplayName,
             String decidedByDisplayName, OffsetDateTime createdAt) {
+    }
+
+    /** What a merge request brings: field-level changes, the commits it adds and the people who made them. */
+    public record MergeRequestDiff(List<ElementChange> changes, List<Commit> commits,
+            List<CommitAuthor> contributors) {
+        public MergeRequestDiff {
+            changes = changes == null ? List.of() : List.copyOf(changes);
+            commits = commits == null ? List.of() : List.copyOf(commits);
+            contributors = contributors == null ? List.of() : List.copyOf(contributors);
+        }
     }
 
     public record Permission(UUID userId, String username, String displayName, List<VcsAction> actions) {

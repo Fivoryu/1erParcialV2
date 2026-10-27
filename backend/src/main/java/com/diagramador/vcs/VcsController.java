@@ -163,6 +163,12 @@ public class VcsController {
         return mergeRequestService.detail(readableModel(projectId), mergeRequestId);
     }
 
+    @GetMapping("/merge-requests/{mergeRequestId}/diff")
+    public VcsResources.MergeRequestDiff mergeRequestDiff(@PathVariable UUID projectId,
+            @PathVariable UUID mergeRequestId) {
+        return mergeRequestService.diff(readableModel(projectId), mergeRequestId);
+    }
+
     @PostMapping("/merge-requests/{mergeRequestId}/merge")
     public VcsResources.MergeRequest merge(@PathVariable UUID projectId, @PathVariable UUID mergeRequestId) {
         return mergeRequestService.merge(requiredModel(projectId), mergeRequestId, author());

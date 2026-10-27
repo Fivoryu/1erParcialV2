@@ -26,8 +26,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -89,6 +92,42 @@ public class VcsMergeRequestService {
         UmlModel managedModel = requireModel(model.getId());
         accessService.requireRead(managedModel.getProject().getId());
         return resource(requireMergeRequest(managedModel.getId(), mergeRequestId));
+    }
+
+    /**
+     * What the source branch adds on top of the merge base (what a pull request shows): the field-level changes, the
+     * commits it brings and the people behind them. An open request is compared against the target as it is now, so
+     * the diff matches what a merge would apply; a merged or closed one keeps the base it was decided with.
+     */
+    @Transactional(readOnly = true)
+    public VcsResources.MergeRequestDiff diff(UmlModel model, UUID mergeRequestId) {
+        UmlModel managedModel = requireModel(model.getId());
+        accessService.requireRead(managedModel.getProject().getId());
+        VcsMergeRequest request = requireMergeRequest(managedModel.getId(), mergeRequestId);
+        VcsCommit sourceHead = request.getSourceCommit();
+        VcsCommit base = request.getMergeBaseCommit();
+        if (request.getState() == VcsMergeState.OPEN) {
+            base = MergeDiff.findMergeBase(sourceHead, request.getTargetBranch().getHeadCommit()).orElse(base);
+        }
+        List<VcsResources.ElementChange> changes = SnapshotDiff.between(base == null ? null : snapshot(base),
+                snapshot(sourceHead));
+
+        Set<UUID> alreadyInBase = new HashSet<>();
+        VcsCommitService.reachable(base).forEach(reached -> alreadyInBase.add(reached.getId()));
+        List<VcsCommit> broughtByTheRequest = VcsCommitService.reachable(sourceHead).stream()
+                .filter(reached -> !alreadyInBase.contains(reached.getId()))
+                .toList();
+        Set<UUID> listed = new HashSet<>();
+        List<VcsResources.CommitAuthor> contributors = new ArrayList<>();
+        for (VcsCommit brought : broughtByTheRequest) {
+            UserAccount author = brought.getAuthor();
+            if (author != null && listed.add(author.getId())) {
+                contributors.add(new VcsResources.CommitAuthor(author.getId(), author.getDisplayName(),
+                        "CONTRIBUTOR"));
+            }
+        }
+        return new VcsResources.MergeRequestDiff(changes,
+                broughtByTheRequest.stream().map(VcsCommitService::commitResource).toList(), contributors);
     }
 
     @Transactional
