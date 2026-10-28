@@ -103,6 +103,20 @@ class AssistantPlanValidatorTest {
     }
 
     @Test
+    void classifierMoveIsInTheCatalogAndResolvesItsTargetByName() {
+        AssistantPlanResponse response = validate("plan",
+                List.of(operation("classifier.move", "Persona", "args", Map.of("x", 300, "y", 120))),
+                model(classifier(PERSON_ID, "Persona"), classifier(ACCOUNT_ID, "Cliente")));
+
+        assertThat(response.intent()).isEqualTo("PLAN");
+        assertThat(response.operations()).singleElement().satisfies(operation -> {
+            assertThat(operation.type()).isEqualTo("classifier.move");
+            assertThat(operation.targetId()).isEqualTo(PERSON_ID);
+            assertThat(operation.args()).containsEntry("x", 300).containsEntry("y", 120);
+        });
+    }
+
+    @Test
     void sameDraftCreateAttributeAndRelationshipResolvesAgainstThePlannedCreate() {
         List<Map<String, Object>> draft = List.of(
                 operation("classifier.create", "Pedido", "kind", "CLASS"),

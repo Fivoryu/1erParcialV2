@@ -153,6 +153,54 @@ class AssistantApplyServiceTest {
     }
 
     @Test
+    void classifierMoveBecomesAGeometryCommandKeepingTheCurrentSize() {
+        UUID viewId = UUID.fromString("50000000-0000-0000-0000-000000000001");
+        ModelResource base = model(7L);
+        ModelResource.GeometryResource geometry = new ModelResource.GeometryResource(UUID.randomUUID(),
+                com.diagramador.domain.TargetType.CLASSIFIER, CLASSIFIER_ID, 40, 60, 220, 130, 3);
+        ModelResource withView = new ModelResource(MODEL_ID, PROJECT_ID, 7L, UUID.randomUUID(),
+                List.of(new ModelResource.ViewResource(viewId, "Class Diagram", true, List.of(geometry), List.of())),
+                base.classifiers(), List.of());
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(withView);
+        when(commandService.execute(any())).thenReturn(accepted(8L));
+
+        AssistantApplyResponse absolute = service().apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("classifier.move", CLASSIFIER_ID, Map.of("x", 300, "y", 120))), 7L));
+        AssistantApplyResponse relative = service().apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("classifier.move", CLASSIFIER_ID, Map.of("dx", 100))), 7L));
+
+        assertThat(absolute.steps()).singleElement().satisfies(step -> {
+            assertThat(step.status()).isEqualTo("ACCEPTED");
+            assertThat(step.type()).isEqualTo("classifier.move");
+        });
+        assertThat(relative.steps().get(0).status()).isEqualTo("ACCEPTED");
+        ArgumentCaptor<OperationEnvelope> envelopes = ArgumentCaptor.forClass(OperationEnvelope.class);
+        verify(commandService, times(2)).execute(envelopes.capture());
+        OperationEnvelope first = envelopes.getAllValues().get(0);
+        assertThat(first.type()).isEqualTo("geometry.set");
+        assertThat(first.origin()).isEqualTo(CommandOrigin.AI);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) first.payload();
+        assertThat(payload).containsEntry("targetType", "CLASSIFIER").containsEntry("viewId", viewId.toString())
+                .containsEntry("targetId", CLASSIFIER_ID.toString()).containsEntry("x", 300)
+                .containsEntry("y", 120).containsEntry("w", 220).containsEntry("h", 130);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> shifted = (Map<String, Object>) envelopes.getAllValues().get(1).payload();
+        assertThat(shifted).containsEntry("x", 140).containsEntry("y", 60);
+    }
+
+    @Test
+    void classifierMoveWithoutAnyPositionIsRejectedBeforeCallingTheCommandService() {
+        when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L));
+
+        AssistantApplyResponse response = service().apply(PROJECT_ID, new AssistantApplyRequest(List.of(
+                new AssistantApplyOp("classifier.move", CLASSIFIER_ID, Map.of())), 7L));
+
+        verify(commandService, never()).execute(any());
+        assertThat(response.steps()).singleElement().satisfies(step -> assertThat(step.status()).isEqualTo("REJECTED"));
+    }
+
+    @Test
     void unknownTargetMidPlanStopsTheSequenceAndSkipsTheRemainingSteps() {
         when(projectApiService.getModel(PROJECT_ID)).thenReturn(model(7L));
         when(commandService.execute(any())).thenReturn(accepted(8L));

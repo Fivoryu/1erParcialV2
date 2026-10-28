@@ -44,6 +44,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class AssistantApplyService {
 
+    /** Size of a class that has no rectangle yet in the view (the editor's default node size). */
+    private static final int DEFAULT_CLASS_WIDTH = 220;
+    private static final int DEFAULT_CLASS_HEIGHT = 120;
+
     private final ProjectApiService projectApiService;
     private final ProjectAuthorizationService projectAuthorizationService;
     private final CurrentUserContext currentUserContext;
@@ -111,7 +115,7 @@ public class AssistantApplyService {
                 break;
             }
 
-            OperationEnvelope envelope = new OperationEnvelope(UUID.randomUUID(), operation.type(), author,
+            OperationEnvelope envelope = new OperationEnvelope(UUID.randomUUID(), commandType(operation.type()), author,
                     projectId, model.id(), model.revision(), mapped.targets(), mapped.preconditions(),
                     mapped.payload(), CommandOrigin.AI, null, UUID.randomUUID().toString());
             // IA4-04: the AI path bypasses the HTTP capture hook, so it records the undo_log
@@ -230,6 +234,35 @@ public class AssistantApplyService {
                 Object raw = args.get("isAbstract") == null ? args.get("value") : args.get("isAbstract");
                 yield mapped(payload("isAbstract", raw instanceof Boolean value ? value : true),
                         targets("classifier", operation.targetId()), List.of());
+            }
+            case "classifier.move" -> {
+                // Absolute x/y or relative dx/dy on the default view; the size and the stacking order stay.
+                Integer x = intArg(args.get("x"));
+                Integer y = intArg(args.get("y"));
+                Integer dx = intArg(args.get("dx"));
+                Integer dy = intArg(args.get("dy"));
+                if (x == null && y == null && dx == null && dy == null) {
+                    yield missing("x|y|dx|dy", operation.type());
+                }
+                ModelResource.ViewResource view = model.views().stream()
+                        .filter(ModelResource.ViewResource::isDefault).findFirst()
+                        .orElse(model.views().isEmpty() ? null : model.views().get(0));
+                if (operation.targetId() == null || view == null) {
+                    yield unresolvableTarget(operation.type());
+                }
+                ModelResource.GeometryResource current = view.elementGeometry().stream()
+                        .filter(geometry -> geometry.targetType() == com.diagramador.domain.TargetType.CLASSIFIER
+                                && operation.targetId().equals(geometry.targetId()))
+                        .findFirst().orElse(null);
+                int baseX = current == null ? 0 : current.x();
+                int baseY = current == null ? 0 : current.y();
+                Map<String, Object> payload = linkedPayload("targetType", "CLASSIFIER",
+                        "viewId", view.id().toString(), "targetId", operation.targetId().toString(),
+                        "x", x != null ? x : baseX + (dx == null ? 0 : dx),
+                        "y", y != null ? y : baseY + (dy == null ? 0 : dy),
+                        "w", current == null ? DEFAULT_CLASS_WIDTH : current.w(),
+                        "h", current == null ? DEFAULT_CLASS_HEIGHT : current.h());
+                yield mapped(payload, targets("classifier", operation.targetId()), List.of());
             }
             case "attribute.add" -> {
                 String name = text(args.get("name"));
@@ -374,6 +407,25 @@ public class AssistantApplyService {
                             relationshipCascadeCount(model.id(), operation.targetId()), null)));
             default -> mapped(new LinkedHashMap<>(), List.of(), List.of());
         };
+    }
+
+    /** A plan step name is not always a command name: moving a class is a geometry upsert. */
+    private static String commandType(String operationType) {
+        return "classifier.move".equals(operationType) ? "geometry.set" : operationType;
+    }
+
+    private static Integer intArg(Object raw) {
+        if (raw instanceof Number number) {
+            return number.intValue();
+        }
+        if (raw instanceof String text) {
+            try {
+                return Integer.valueOf(text.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private void copyEndUpdate(Map<String, Object> payload, String field, Object raw) {
