@@ -151,7 +151,7 @@ public class AssistantPlanValidator {
             }
 
             List<Candidate> matches = switch (type) {
-                case "classifier.rename", "classifier.delete", "classifier.setAbstract" ->
+                case "classifier.rename", "classifier.delete", "classifier.setAbstract", "classifier.move" ->
                     classifierMatches(targetName, model);
                 case "attribute.update", "attribute.remove" -> attributeMatches(targetName, model);
                 case "relationship.update", "relationship.delete" -> relationshipMatches(targetName, model);

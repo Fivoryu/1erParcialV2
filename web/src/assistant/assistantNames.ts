@@ -294,6 +294,25 @@ export function describeAssistantOperation(
       const classifierName = classifierNameForOperation(operation, names) ?? name;
       return classifierName ? `Eliminar clase ${quoted(classifierName)}` : 'Eliminar clase seleccionada';
     }
+    case 'classifier.move': {
+      const classifierName = classifierNameForOperation(operation, names);
+      const subject = classifierName ? `Mover clase ${quoted(classifierName)}` : 'Mover clase seleccionada';
+      const x = args['x'];
+      const y = args['y'];
+      if (typeof x === 'number' && typeof y === 'number') {
+        return `${subject} a (${x}, ${y})`;
+      }
+      const dx = args['dx'];
+      const dy = args['dy'];
+      const parts: string[] = [];
+      if (typeof dx === 'number' && dx !== 0) {
+        parts.push(`${Math.abs(dx)} px a la ${dx > 0 ? 'derecha' : 'izquierda'}`);
+      }
+      if (typeof dy === 'number' && dy !== 0) {
+        parts.push(`${Math.abs(dy)} px ${dy > 0 ? 'abajo' : 'arriba'}`);
+      }
+      return parts.length > 0 ? `${subject} ${parts.join(' y ')}` : subject;
+    }
     case 'classifier.setAbstract': {
       const classifierName = classifierNameForOperation(operation, names);
       const isAbstract = args['isAbstract'];

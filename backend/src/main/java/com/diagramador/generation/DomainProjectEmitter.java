@@ -1580,6 +1580,9 @@ public final class DomainProjectEmitter {
 
     private String migration(List<EntityPlan> plans) {
         List<String> statements = new ArrayList<>();
+        // Foreign keys are added once every table exists: the tables are emitted in name order, which says
+        // nothing about which one references which, and inline constraints fail on a not yet created table.
+        List<String> foreignKeys = new ArrayList<>();
         statements.add("-- Initial schema generated from the normalized domain IR.");
         for (EntityPlan plan : plans) {
             List<String> columns = new ArrayList<>();
@@ -1607,8 +1610,8 @@ public final class DomainProjectEmitter {
                         && attribute.source().collectionIntent() != CollectionIntent.COLLECTION) {
                     String columnName = attribute.columnName() + "_id";
                     String constraint = foreignKeyName(plan.type.tableName(), columnName);
-                    columns.add("CONSTRAINT " + quoted(constraint) + " FOREIGN KEY (" + quoted(columnName)
-                            + ") REFERENCES " + quoted(attribute.referencedType().type.tableName()) + " (" + quoted("id") + ")");
+                    foreignKeys.add(addForeignKey(plan.type.tableName(), constraint, columnName,
+                            attribute.referencedType().type.tableName()));
                 }
             }
             for (OwningRelationshipPlan relationship : plan.owningRelationships) {
@@ -1617,8 +1620,8 @@ public final class DomainProjectEmitter {
                 }
                 String columnName = snakeCase(relationship.descriptor().owningFieldName()) + "_id";
                 String constraint = foreignKeyName(plan.type.tableName(), columnName);
-                columns.add("CONSTRAINT " + quoted(constraint) + " FOREIGN KEY (" + quoted(columnName)
-                        + ") REFERENCES " + quoted(relationship.referenced().type.tableName()) + " (" + quoted("id") + ")");
+                foreignKeys.add(addForeignKey(plan.type.tableName(), constraint, columnName,
+                        relationship.referenced().type.tableName()));
             }
             statements.add("CREATE TABLE " + quoted(plan.type.tableName()) + " (\n  "
                     + String.join(",\n  ", columns) + "\n);");
@@ -1636,7 +1639,13 @@ public final class DomainProjectEmitter {
                         + (attribute.source().nullable() ? "" : " NOT NULL") + enumCheck(attribute, "value") + "\n);");
             }
         }
+        statements.addAll(foreignKeys);
         return lines(statements.toArray(String[]::new));
+    }
+
+    private static String addForeignKey(String table, String constraint, String column, String referencedTable) {
+        return "ALTER TABLE " + quoted(table) + " ADD CONSTRAINT " + quoted(constraint) + " FOREIGN KEY ("
+                + quoted(column) + ") REFERENCES " + quoted(referencedTable) + " (" + quoted("id") + ");";
     }
 
     private static String enumCheck(AttributePlan attribute) {

@@ -128,6 +128,12 @@ describe('describeAssistantOperation', () => {
       .toBe('Renombrar clase "Producto" a "Artículo"');
     expect(describeAssistantOperation(operation('classifier.delete', PRODUCT_ID), names))
       .toBe('Eliminar clase "Producto"');
+    expect(describeAssistantOperation(operation('classifier.move', PRODUCT_ID, { x: 300, y: 120 }), names))
+      .toBe('Mover clase "Producto" a (300, 120)');
+    expect(describeAssistantOperation(operation('classifier.move', PRODUCT_ID, { dx: 100, dy: -20 }), names))
+      .toBe('Mover clase "Producto" 100 px a la derecha y 20 px arriba');
+    expect(describeAssistantOperation(operation('classifier.move', PRODUCT_ID, { dy: 40 }), names))
+      .toBe('Mover clase "Producto" 40 px abajo');
     expect(describeAssistantOperation(operation('attribute.add', PRODUCT_ID, { name: 'nombre', type: 'String' }), names))
       .toBe('Agregar atributo "nombre: String" a "Producto"');
     expect(describeAssistantOperation(operation('attribute.update', ATTRIBUTE_ID), names))

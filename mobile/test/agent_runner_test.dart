@@ -94,6 +94,12 @@ void main() {
           '{"tag":"query","entity":"Note","filter":[],"sort":"text","desc":false,"limit":20,"respond":"show"}'));
       expect(instruction, contains(
           '{"tag":"report","entity":"Note","metric":"count","filter":[],"respond":"show"}'));
+      // A small model answered "average price" with a calculation over invented numbers: the prompt must show
+      // the average report of a stored field and forbid calculating over values that are not in observations.
+      expect(instruction, contains(
+          '{"tag":"report","entity":"Note","metric":"avg","field":"score","filter":[],"respond":"show"}'));
+      expect(instruction, contains('never calculate over stored records'));
+      expect(instruction, contains('never add "observations"'));
       expect(instruction, contains(r'\n;'));
       expect(gatewayCalls, 0);
     },

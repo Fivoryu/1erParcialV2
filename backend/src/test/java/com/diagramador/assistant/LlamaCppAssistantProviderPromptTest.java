@@ -16,8 +16,16 @@ class LlamaCppAssistantProviderPromptTest {
 
     @Test
     void promptDeclaresTheV3ContractVersion() {
-        assertThat(PROMPT).contains("ia4-02-prompt-v6");
+        assertThat(PROMPT).contains("ia4-02-prompt-v7");
         assertThat(PROMPT).doesNotContain("ia4-01-prompt-v4").doesNotContain("ia4-01-prompt-v3");
+    }
+
+    @Test
+    void promptTeachesMovingAClassAndTheGeneratorDateType() {
+        assertThat(PROMPT).contains("classifier.move");
+        assertThat(PROMPT).contains("\"x\"", "\"y\"", "\"dx\"", "\"dy\"");
+        // The generator only maps LocalDate: the prompt must not teach the bare "Date" type again.
+        assertThat(PROMPT).contains("\"LocalDate\"").doesNotContain("\"Date\"");
     }
 
     @Test

@@ -9,6 +9,7 @@ public final class AssistantPlanCatalog {
             "classifier.rename",
             "classifier.delete",
             "classifier.setAbstract",
+            "classifier.move",
             "attribute.add",
             "attribute.update",
             "attribute.remove",
