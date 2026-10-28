@@ -219,6 +219,15 @@ class DomainProjectEmitterTest {
     }
 
     @Test
+    void foreignKeysComeAfterEveryTableSoTableOrderNeverBreaksTheMigration() {
+        String migration = emitter.emit("course-store", mapper.map(snapshot(false)))
+                .get("src/main/resources/db/migration/V1__init.sql");
+
+        assertThat(migration.indexOf("FOREIGN KEY")).isGreaterThan(migration.lastIndexOf("CREATE TABLE"));
+        assertThat(migration).contains("ALTER TABLE \"order\" ADD CONSTRAINT");
+    }
+
+    @Test
     void emittedOwnershipFollowsTheIrForBothNormalizedAndInvertedEndIds() {
         DomainModelIR normal = mapper.map(snapshot(false));
         DomainModelIR inverted = mapper.map(snapshot(true));
