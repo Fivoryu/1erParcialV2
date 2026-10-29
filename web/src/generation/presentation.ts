@@ -4,6 +4,7 @@ import type {
   GenerationRunResource,
   GenerationState,
   GenerationTargetResource,
+  VerificationState,
 } from '../api/types';
 
 /**
@@ -14,6 +15,41 @@ import type {
  * is rebuilt from the diagnostic `code` and its named `feature`, so a product label can never carry
  * an identifier through by accident.
  */
+
+const VERIFICATION_LABELS: Record<string, string> = {
+  artifact_set_structure: 'Estructura de archivos generados',
+  flyway_migration_file: 'Contenido de la migración',
+  artifact_hashes: 'Integridad de archivos',
+  frozen_input_determinism: 'Reproducción de archivos',
+  target_safe_configuration: 'Configuración segura del destino',
+  jpa_entities_and_relationships: 'Entidades y relaciones JPA',
+  repositories: 'Repositorios',
+  services_and_supported_operations: 'Servicios y operaciones',
+  rest_dto_openapi_behavior: 'Comportamiento REST y OpenAPI',
+  validation_and_error_handling: 'Validación y manejo de errores',
+  security: 'Seguridad', authorization: 'Autorización', audit: 'Auditoría',
+  postgres_migration_execution: 'Ejecución de migración en PostgreSQL',
+  generated_backend_compilation: 'Compilación del backend',
+  generated_backend_startup: 'Inicio del backend',
+  generated_backend_health: 'Estado del backend',
+  generated_backend_contract_smoke: 'Prueba del contrato HTTP',
+  generated_backend_tests: 'Pruebas del backend generado',
+  docker_compose_execution: 'Ejecución de Docker Compose',
+  generated_backend_runtime_reproducibility: 'Reproducción del entorno de ejecución',
+};
+
+export function verificationCheckLabel(name: string): string {
+  return VERIFICATION_LABELS[name] ?? 'Comprobación adicional';
+}
+
+export function verificationStateLabel(state: VerificationState): string {
+  switch (state) {
+    case 'PASSED': return 'Aprobada';
+    case 'FAILED': return 'Fallida';
+    case 'NOT_RUN': return 'No ejecutada';
+    default: return 'Estado desconocido';
+  }
+}
 
 const FEATURE_LABELS: Record<string, string> = {
   GENERALIZATION: 'Generalización (herencia)',

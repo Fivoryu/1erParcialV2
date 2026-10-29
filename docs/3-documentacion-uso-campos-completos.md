@@ -19,8 +19,7 @@ El software se compone de tres superficies de uso: el **editor web** (`http://lo
 editor. Esta sección documenta las dieciséis operaciones de uso con la secuencia real de pasos y la
 captura correspondiente.
 
-Salvo la generación de backend, que **no tiene botón en el editor** y se ejecuta por la API del
-proyecto desde las herramientas del repositorio, todas las operaciones se realizan desde la interfaz.
+La generación, descarga, verificación disponible e implementación del backend se manejan desde el panel de generación del editor.
 
 | # | Operación | Capturas |
 | --- | --- | --- |
@@ -373,25 +372,12 @@ nombre de archivo; eso está declarado a propósito y no se presenta como un dat
 
 ## 13. Generar y verificar un backend
 
-**Importante para el informe:** la generación **no tiene botón en el editor web**. Se ejecuta contra
-la API del proyecto (`POST /projects/{id}/generation-targets`, `POST /projects/{id}/generations`,
-`GET /generations/{runId}/artifacts`) y su corrida verificable se hace con las herramientas del
-repositorio.
+1. En el panel **Generación**, crear o seleccionar un destino y seleccionar un perfil.
+2. Pulsar **Generar backend** y esperar a que termine; corregir los diagnósticos bloqueantes si aparecen.
+3. Cuando esté listo, usar **Descargar ZIP** o **Implementar backend**. El backend generado no tiene autenticación y debe usarse solo en una red de confianza.
+4. En una ejecución terminada, pulsar **Verificar generación**. El panel muestra cada comprobación como aprobada, fallida o no ejecutada y no presenta un resultado incompleto como verificación completa.
 
-1. Definir y seleccionar el **perfil de generación** (persistencia, API, migraciones, validación,
-   errores, pruebas y capas). El perfil queda versionado y asociado a la generación.
-2. Fijar la **versión validada** del modelo y el **target** (backend y base de datos independientes).
-3. Ejecutar la generación:
-
-   ```bash
-   powershell -File tools/generation-e2e/run-e2e.ps1
-   ```
-
-4. El generador construye el modelo intermedio, mapea entidades, atributos y relaciones, y emite el
-   proyecto con sus **cuatro capas**, DTO y mapeadores, migraciones, contrato OpenAPI, pruebas,
-   `docker-compose` y artefactos de despliegue.
-5. Verificar: estructura y capas, compilación, arranque, `health`, contrato, persistencia y
-   **determinismo** repitiendo la generación y comparando los artefactos.
+La verificación disponible inspecciona estructura, contenido de la migración, hashes, determinismo de artefactos y configuración. No ejecuta por corrida la compilación, el arranque, `health`, las pruebas o el contrato HTTP, Docker Compose ni la migración en PostgreSQL; tampoco verifica el comportamiento de seguridad, autorización o auditoría. Esas comprobaciones aparecen como **No ejecutada**. Las herramientas de extremo a extremo pueden aportar evidencia independiente, pero no convierten esas comprobaciones de la interfaz en ejecutadas.
 
 ![Salud del backend generado](capturas/uso/13-health-backend-generado.png)
 

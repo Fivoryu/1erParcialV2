@@ -118,6 +118,8 @@ function props(overrides: Partial<GenerationPanelViewProps> = {}): GenerationPan
     phoneUrl: null,
     editorOnLocalhost: false,
     busy: false,
+    generating: false,
+    verifying: false,
     error: null,
     notice: null,
     onSelectTarget: vi.fn(),
@@ -125,6 +127,7 @@ function props(overrides: Partial<GenerationPanelViewProps> = {}): GenerationPan
     onCreateTarget: vi.fn(),
     onGenerate: vi.fn(),
     onDownload: vi.fn(),
+    onVerify: vi.fn(),
     onDeploy: vi.fn(),
     onStopDeployment: vi.fn(),
     onDismiss: vi.fn(),
@@ -220,6 +223,40 @@ describe('generation panel, presentational surface', () => {
     }
     // The raw backend message names an internal element shape; the panel rebuilds it instead.
     expect(markup).not.toContain("does not map relationship feature");
+  });
+
+  it('labels generation and verification separately while each request is pending', () => {
+    const generating = render({ run: readyRun, busy: true, generating: true, verifying: false });
+    expect(generating).toContain('Generando…');
+    expect(generating).toContain('Verificar generación');
+    expect(generating).not.toContain('Verificando…');
+
+    const verifying = render({ run: readyRun, busy: true, generating: false, verifying: true });
+    expect(verifying).toContain('Generar backend');
+    expect(verifying).not.toContain('Generando…');
+    expect(verifying).toContain('Verificando…');
+  });
+
+  it('offers verification and reports unexecuted checks without claiming full verification', () => {
+    const markup = render({ run: { ...readyRun, verification: {
+      runId: readyRun.runId, generationState: 'SUCCEEDED', status: 'NOT_RUN', verifiedBackend: false,
+      checks: [{ verificationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', checkName: 'generated_backend_compilation', state: 'NOT_RUN', evidence: '', evidenceHash: '', toolName: '' }],
+    } } });
+    expect(markup).toContain('Verificar generación');
+    expect(markup).toContain('Verificación incompleta');
+    expect(markup).toContain('Compilación del backend');
+    expect(markup).toContain('No ejecutada');
+    expect(markup).not.toContain('Backend completamente verificado');
+  });
+
+  it('distinguishes failed checks and does not offer verification while generating', () => {
+    const failed = render({ run: { ...readyRun, verification: {
+      runId: readyRun.runId, generationState: 'SUCCEEDED', status: 'FAILED', verifiedBackend: false,
+      checks: [{ verificationId: 'x', checkName: 'artifact_hashes', state: 'FAILED', evidence: '', evidenceHash: '', toolName: '' }],
+    } } });
+    expect(failed).toContain('La verificación encontró fallos.');
+    expect(failed).toContain('Fallida');
+    expect(render({ run: { ...readyRun, state: 'RUNNING' } })).not.toContain('Verificar generación');
   });
 
   it('offers the download only once the run is complete and unblocked', () => {

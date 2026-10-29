@@ -19,6 +19,7 @@ import type {
   GenerationProfileResource,
   GenerationRunResource,
   GenerationTargetResource,
+  VerificationSummaryResource,
   HelpGuideRequest,
   HelpGuideResponse,
   GenerationReadinessResource,
@@ -185,6 +186,7 @@ export interface ApiClient {
     request: CreateGenerationRequest,
   ): Promise<OperationOutcomeResource<GenerationRunResource>>;
   getGeneration(projectId: Uuid, runId: Uuid): Promise<OperationOutcomeResource<GenerationRunResource>>;
+  verifyGeneration(projectId: Uuid, runId: Uuid): Promise<OperationOutcomeResource<VerificationSummaryResource>>;
   downloadGenerationArchive(projectId: Uuid, runId: Uuid): Promise<GenerationArchiveDownload>;
   listDeployments(projectId: Uuid): Promise<DeploymentResource[]>;
   requestDeployment(projectId: Uuid, runId: Uuid): Promise<DeploymentResource>;
@@ -590,6 +592,15 @@ export function createApiClient(
       return requestJson<OperationOutcomeResource<GenerationRunResource>>(
         `/projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(runId)}`,
       );
+    },
+    async verifyGeneration(projectId, runId) {
+      const outcome = await requestJson<OperationOutcomeResource<VerificationSummaryResource>>(
+        `/projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(runId)}/verification`,
+        { method: 'POST' },
+      );
+      return outcome.outcome === 'REJECTED'
+        ? { ...outcome, message: localizedErrorMessage(outcome.code, outcome.message) }
+        : outcome;
     },
     downloadGenerationArchive(projectId, runId) {
       return requestArchive(projectId, runId);
