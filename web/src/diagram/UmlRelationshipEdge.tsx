@@ -874,24 +874,24 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
     <>
       <defs>
         <marker id={markerIds['open-arrow']} viewBox="-10 -6 11 12" refX="0" refY="0" markerWidth="11" markerHeight="12" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
+          <path d={OPEN_ARROW_PATH} fill="none" stroke="#6b4a6d" strokeWidth="1.4" />
         </marker>
         <marker id={markerIds['hollow-diamond']} viewBox="-15 -7 16 14" refX="0" refY="0" markerWidth="16" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d={DIAMOND_PATH} fill="white" stroke="#526b62" strokeWidth="1.4" />
+          <path d={DIAMOND_PATH} fill="white" stroke="#6b4a6d" strokeWidth="1.4" />
         </marker>
         <marker id={markerIds['filled-diamond']} viewBox="-15 -7 16 14" refX="0" refY="0" markerWidth="16" markerHeight="14" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d={DIAMOND_PATH} fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
+          <path d={DIAMOND_PATH} fill="#6b4a6d" stroke="#6b4a6d" strokeWidth="1.4" />
         </marker>
         <marker id={markerIds['hollow-diamond-open-arrow']} viewBox="-26 -8 28 16" refX="0" refY="0" markerWidth="28" markerHeight="16" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
-          <path d={DIAMOND_BEHIND_ARROW_PATH} fill="white" stroke="#526b62" strokeWidth="1.4" />
+          <path d={OPEN_ARROW_PATH} fill="none" stroke="#6b4a6d" strokeWidth="1.4" />
+          <path d={DIAMOND_BEHIND_ARROW_PATH} fill="white" stroke="#6b4a6d" strokeWidth="1.4" />
         </marker>
         <marker id={markerIds['filled-diamond-open-arrow']} viewBox="-26 -8 28 16" refX="0" refY="0" markerWidth="28" markerHeight="16" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d={OPEN_ARROW_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
-          <path d={DIAMOND_BEHIND_ARROW_PATH} fill="#526b62" stroke="#526b62" strokeWidth="1.4" />
+          <path d={OPEN_ARROW_PATH} fill="none" stroke="#6b4a6d" strokeWidth="1.4" />
+          <path d={DIAMOND_BEHIND_ARROW_PATH} fill="#6b4a6d" stroke="#6b4a6d" strokeWidth="1.4" />
         </marker>
         <marker id={markerIds.cross} viewBox="-13 -6 14 12" refX="0" refY="0" markerWidth="14" markerHeight="12" orient="auto-start-reverse" markerUnits="strokeWidth">
-          <path d={CROSS_PATH} fill="none" stroke="#526b62" strokeWidth="1.4" />
+          <path d={CROSS_PATH} fill="none" stroke="#6b4a6d" strokeWidth="1.4" />
         </marker>
         <marker
           id={markerIds['hollow-triangle']}
@@ -903,7 +903,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
           orient={HOLLOW_TRIANGLE_MARKER.orient}
           markerUnits={HOLLOW_TRIANGLE_MARKER.markerUnits}
         >
-          <path d={HOLLOW_TRIANGLE_MARKER.path} fill="white" stroke="#526b62" strokeWidth="1.4" />
+          <path d={HOLLOW_TRIANGLE_MARKER.path} fill="white" stroke="#6b4a6d" strokeWidth="1.4" />
         </marker>
       </defs>
       <BaseEdge
@@ -913,7 +913,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
         {...(markers.targetMarker ? { markerEnd: markerUrl(markers.targetMarker, markerIds)! } : {})}
         interactionWidth={20}
         style={{
-          stroke: '#526b62',
+          stroke: '#6b4a6d',
           strokeWidth: style.strokeWidth > 0 ? style.strokeWidth : EDGE_STROKE_WIDTH_PX,
           ...((markers.lineStyle === 'dashed' || style.dashed) ? { strokeDasharray: '6 4' } : {}),
         }}
@@ -923,7 +923,7 @@ export default function UmlRelationshipEdge(props: EdgeProps<RelationshipFlowEdg
           className="uml-association-class-link"
           d={`M ${associationClassSegment.from.x} ${associationClassSegment.from.y} L ${associationClassSegment.to.x} ${associationClassSegment.to.y}`}
           fill="none"
-          stroke="#526b62"
+          stroke="#6b4a6d"
           strokeDasharray="6 4"
           strokeWidth={1.4}
         />

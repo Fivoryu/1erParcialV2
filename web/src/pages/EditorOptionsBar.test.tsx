@@ -35,6 +35,21 @@ describe('EditorOptionsBar', () => {
     ]);
   });
 
+  it('renders only the requested sections, still in the frozen order', () => {
+    const markup = renderToStaticMarkup(createElement(EditorOptionsBar, {
+      activeSection: null,
+      onOpenSection: () => undefined,
+      sections: ['vcs', 'xmi', 'members', 'generation'],
+    }));
+
+    expect(markup.match(/data-section="[a-z]+"/g)).toEqual([
+      'data-section="xmi"',
+      'data-section="members"',
+      'data-section="generation"',
+      'data-section="vcs"',
+    ]);
+  });
+
   it('marks exactly the active section as expanded', () => {
     const markup = render('members');
 

@@ -288,7 +288,7 @@ export function UmlClassNode({ data, selected }: NodeProps<ClassFlowNode>) {
   return (
     <div className="uml-flow-node">
       <NodeResizer
-        color="#216b61"
+        color="#8b3c86"
         isVisible={selected}
         minHeight={96}
         minWidth={190}

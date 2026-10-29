@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   Background,
   BackgroundVariant,
   Controls,
+  Panel,
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
@@ -15,7 +16,7 @@ import {
   type NodeTypes,
 } from '@xyflow/react';
 import type { ClassifierResource, ModelResource, OperationEnvelope } from '../api/types';
-import type { GeometryUpdate, ModelCommandRequest, ClassifierKind, RelationshipKind, ViewStyleUpdate } from './commands';
+import type { GeometryUpdate, ModelCommandRequest, ClassifierKind, ViewStyleUpdate } from './commands';
 import {
   buildAnchorStyleRequest,
   buildGeometrySetRequest,
@@ -23,7 +24,6 @@ import {
   buildStyleSetRequest,
   DEFAULT_ROUTING,
   mergeViewStyleUpdate,
-  RELATIONSHIP_KINDS,
 } from './commands';
 import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildUnplacedGeometryRequests, type UnplacedGeometryAttempt } from './unplaced-geometry';
@@ -46,6 +46,7 @@ import {
 import RemoteCursors from '../collaboration/RemoteCursors.tsx';
 import type { RemoteCursorMarker } from '../collaboration/remoteCursors';
 import type { TouchedElement } from './touch-highlight';
+import type { RelationToolKind } from './relationTool';
 import {
   PASTE_OFFSET,
   copySelection,
@@ -62,6 +63,25 @@ import {
  */
 let canvasClipboard: { clipboard: DiagramClipboard; pastes: number } | null = null;
 
+/** Per-browser memory of the folded copy/paste hint; storage can be missing or blocked. */
+const CLIPBOARD_HINT_KEY = 'diagram.clipboardHint.folded';
+
+function readHintFolded(): boolean {
+  try {
+    return window.localStorage.getItem(CLIPBOARD_HINT_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeHintFolded(folded: boolean): void {
+  try {
+    window.localStorage.setItem(CLIPBOARD_HINT_KEY, String(folded));
+  } catch {
+    // Without storage the hint simply opens again on the next visit.
+  }
+}
+
 const DEFAULT_NODE_WIDTH = 260;
 const GRID_SIZE = 24;
 // Bounded re-check for the deferred fit: React Flow measures a node's DOM size with a
@@ -74,15 +94,6 @@ const MAX_FIT_FRAMES = 120;
 const nodeTypes: NodeTypes = { umlClass: UmlClassNode };
 const edgeTypes: EdgeTypes = { umlRelationship: UmlRelationshipEdge };
 
-const RELATIONSHIP_KIND_LABELS: Record<RelationshipKind, string> = {
-  ASSOCIATION: 'Asociación',
-  AGGREGATION: 'Agregación',
-  COMPOSITION: 'Composición',
-  GENERALIZATION: 'Generalización',
-  INTERFACE_REALIZATION: 'Realización de interfaz',
-  DEPENDENCY: 'Dependencia',
-};
-
 interface UmlCanvasProps {
   model: ModelResource;
   selection: CanvasSelection | null;
@@ -90,6 +101,13 @@ interface UmlCanvasProps {
   /** Returns the envelope it dispatched, so a caller can refer to the element a command creates. */
   onCommand: (request: ModelCommandRequest) => OperationEnvelope | null | void;
   onAddClassifier: (kind: ClassifierKind) => void;
+  /** Kind a drag between two classes creates; chosen in the tool rail. */
+  relationKind?: RelationToolKind;
+  /** While the relation tool is on, a clicked class becomes the next end of the relation setup. */
+  relationActive?: boolean;
+  onRelationEndPicked?: (classifierId: string) => void;
+  /** A drag for an association class still needs its class: the setup takes over with both ends. */
+  onConnectionNeedsClass?: (ends: { sourceId: string; targetId: string }) => void;
   onDelete: (selection: CanvasSelection) => void;
   touchedElements?: TouchedElement[];
   remoteCursors?: readonly RemoteCursorMarker[];
@@ -425,13 +443,6 @@ function CanvasFrame(props: UmlCanvasProps) {
   const styleCoalescer = useMemo(() => createGeometryCoalescer<ViewStyleUpdate>((_elementId, payload) => {
     props.onCommand(buildStyleSetRequest(payload));
   }), [props.onCommand]);
-  const [connectionDraft, setConnectionDraft] = useState<{
-    sourceId: string;
-    targetId: string;
-    /** The sides the user connected through, when they could be read from the handles. */
-    sides: { source: AnchorSide; target: AnchorSide } | null;
-  } | null>(null);
-  const [connectionKind, setConnectionKind] = useState<RelationshipKind>('ASSOCIATION');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   // Latest endpoint anchors per edge, reported by UmlRelationshipEdge after each
   // render; only the edge component knows the resolved sourceX/Y and targetX/Y.
@@ -473,6 +484,14 @@ function CanvasFrame(props: UmlCanvasProps) {
   // and released when the classifier gains geometry or leaves the model so a later
   // re-arrival can request again.
   const unplacedAttemptsRef = useRef(new Map<string, UnplacedGeometryAttempt>());
+  // Mirrors the module clipboard so the Pegar button enables as soon as something is copied.
+  const [hasClipboard, setHasClipboard] = useState(canvasClipboard !== null);
+  // The hint covers a corner of the diagram, so it folds into a small button once read.
+  const [hintFolded, setHintFolded] = useState(() => typeof window !== 'undefined' && readHintFolded());
+  const foldHint = (folded: boolean) => {
+    setHintFolded(folded);
+    writeHintFolded(folded);
+  };
   // Classifiers of the last paste: the next model sync selects them, so they can be dragged as a group.
   const pastedIdsRef = useRef<Set<string> | null>(null);
 
@@ -700,8 +719,15 @@ function CanvasFrame(props: UmlCanvasProps) {
     if (connection.source && connection.target) {
       const direction = connectionDirection(connection.source, connection.target, connectStartNodeRef.current);
       const flipped = direction.sourceId !== connection.source;
-      setConnectionDraft({ ...direction, sides: connectionSides(connection.sourceHandle, connection.targetHandle, flipped) });
-      setConnectionKind('ASSOCIATION');
+      const draft = { ...direction, sides: connectionSides(connection.sourceHandle, connection.targetHandle, flipped) };
+      const kind = props.relationKind ?? 'ASSOCIATION';
+      if (kind === 'ASSOCIATION_CLASS') {
+        props.onConnectionNeedsClass?.({ sourceId: draft.sourceId, targetId: draft.targetId });
+        return;
+      }
+      // The kind comes from the tool rail, so a drag creates the relationship straight away.
+      const envelope = props.onCommand(buildRelationshipCreateRequest(draft.sourceId, draft.targetId, kind));
+      keepConnectedSides(envelope, draft);
     }
   }
 
@@ -728,20 +754,6 @@ function CanvasFrame(props: UmlCanvasProps) {
     }
   }
 
-  function createRelationship(event: FormEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    if (!connectionDraft) {
-      return;
-    }
-    const envelope = props.onCommand(buildRelationshipCreateRequest(
-      connectionDraft.sourceId,
-      connectionDraft.targetId,
-      connectionKind,
-    ));
-    keepConnectedSides(envelope, connectionDraft);
-    setConnectionDraft(null);
-  }
-
   /** The classes of the canvas multi-selection; without one, the single selection of the page. */
   function selectedClassifierIds(): string[] {
     const classifierIds = nodesRef.current.filter((node) => node.selected).map((node) => node.id);
@@ -755,6 +767,7 @@ function CanvasFrame(props: UmlCanvasProps) {
     const clipboard = copySelection(props.model, selectedClassifierIds());
     if (clipboard) {
       canvasClipboard = { clipboard, pastes: 0 };
+      setHasClipboard(true);
     }
     return clipboard;
   }
@@ -769,6 +782,7 @@ function CanvasFrame(props: UmlCanvasProps) {
       `Cortar estas clases también elimina ${lost} relación(es) con clases que no seleccionaste; esas no se copian. ¿Continuar?`,
     )) {
       canvasClipboard = null;
+      setHasClipboard(false);
       return;
     }
     canvasClipboard.pastes = -1;
@@ -869,74 +883,20 @@ function CanvasFrame(props: UmlCanvasProps) {
       : undefined);
   }
 
-  const sourceName = connectionDraft
-    ? props.model.classifiers.find((classifier) => classifier.id === connectionDraft.sourceId)?.name
-    : null;
-  const targetName = connectionDraft
-    ? props.model.classifiers.find((classifier) => classifier.id === connectionDraft.targetId)?.name
-    : null;
-
   return (
     <section className="surface diagram-panel" aria-label="Editor de diagramas de clases">
       <div className="diagram-toolbar">
         <div className="diagram-toolbar-title">
-          <p className="eyebrow">Diagrama de clases</p>
-          <span className="mode-chip">UML 2.5</span>
+          <h2>Diagrama de clases</h2>
+          <p>Modelo principal · selecciona un elemento para inspeccionarlo</p>
         </div>
-        <div className="diagram-toolbar-actions" aria-label="Herramientas del diagrama">
-          <p className="diagram-connection-hint">
-            Arrastra desde el punto de una clase hasta otra para conectarlas. Mayús + arrastrar o Ctrl + clic selecciona
-            varias; Ctrl + C, Ctrl + X y Ctrl + V copian, cortan y pegan.
-          </p>
-          <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('CLASS')} type="button">
-            + Clase
-          </button>
-          <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('ABSTRACT_CLASS')} type="button">
-            + Clase abstracta
-          </button>
-          <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('INTERFACE')} type="button">
-            + Interfaz
-          </button>
-          <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('ENUMERATION')} type="button">
-            + Enumeración
-          </button>
-          <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('PACKAGE')} type="button">
-            + Paquete
-          </button>
+        <div className="diagram-toolbar-actions">
+          <span className="mode-chip">UML 2.5</span>
           <button className="button button-secondary button-compact" onClick={() => void fitView({ padding: 0.2 })} type="button">
             Ajustar a la vista
           </button>
         </div>
       </div>
-      {connectionDraft && (
-        <form className="connection-kind-picker" aria-label="Elegir tipo de relación" onSubmit={createRelationship}>
-          <label className="field-label" htmlFor="relationship-kind">
-            Conectar {sourceName ?? 'clase'} con {targetName ?? 'clase'}
-          </label>
-          <select
-            id="relationship-kind"
-            onChange={(event) => setConnectionKind(event.target.value as RelationshipKind)}
-            value={connectionKind}
-          >
-            {RELATIONSHIP_KINDS.map((kind) => (
-              <option key={kind} value={kind}>{RELATIONSHIP_KIND_LABELS[kind]}</option>
-            ))}
-          </select>
-          <p className="property-hint">
-            {connectionKind === 'GENERALIZATION'
-              ? 'Empieza en la subclase y termina en su clase padre.'
-              : connectionKind === 'INTERFACE_REALIZATION'
-                ? 'Empieza en la clase que implementa y termina en la interfaz.'
-                : connectionKind === 'AGGREGATION' || connectionKind === 'COMPOSITION'
-                  ? 'Empieza en el todo; el rombo marca este extremo.'
-                  : connectionKind === 'DEPENDENCY'
-                    ? 'La flecha abierta apunta al destino.'
-                    : 'Las flechas abiertas aparecen en los extremos navegables.'}
-          </p>
-          <button className="button button-primary button-compact" type="submit">Crear relación</button>
-          <button className="text-button" onClick={() => setConnectionDraft(null)} type="button">Cancelar</button>
-        </form>
-      )}
       <div
         className="diagram-canvas"
         onKeyDown={handleKeyDown}
@@ -956,7 +916,12 @@ function CanvasFrame(props: UmlCanvasProps) {
           edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          onNodeClick={(_, node) => props.onSelect({ kind: 'classifier', classifierId: node.id })}
+          onNodeClick={(_, node) => {
+            props.onSelect({ kind: 'classifier', classifierId: node.id });
+            if (props.relationActive) {
+              props.onRelationEndPicked?.(node.id);
+            }
+          }}
           onNodeContextMenu={(event, node) => openContextMenu(event, { kind: 'classifier', classifierId: node.id })}
           onNodeDragStop={(_, node) => settleNodeGeometry(node)}
           onConnectStart={(_, params) => { connectStartNodeRef.current = params.nodeId; }}
@@ -984,9 +949,36 @@ function CanvasFrame(props: UmlCanvasProps) {
           proOptions={{ hideAttribution: false }}
           aria-label="Lienzo del diagrama de clases UML"
         >
-          <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1.2} color="#cbd8d3" />
-          <Controls position="bottom-left" showInteractive={false} />
+          <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1.2} color="#e2d3e2" />
+          <Controls position="top-right" showInteractive={false} />
           <RemoteCursors markers={screenCursors} />
+          {hintFolded ? (
+            <Panel position="bottom-left">
+              <button className="button button-secondary button-compact canvas-clipboard-reopen" onClick={() => foldHint(false)} type="button">
+                Copiar y pegar <kbd>Ctrl + C</kbd>
+              </button>
+            </Panel>
+          ) : (
+          <Panel className="canvas-clipboard-hint" position="bottom-left">
+            <div className="canvas-clipboard-head">
+              <span>Mayús + arrastrar o Ctrl + clic selecciona varias clases.</span>
+              <button aria-label="Ocultar la ayuda de copiar y pegar" className="canvas-clipboard-close" onClick={() => foldHint(true)} type="button">
+                ×
+              </button>
+            </div>
+            <div className="canvas-clipboard-actions" aria-label="Copiar y pegar">
+              <button className="button button-secondary button-compact" onClick={() => { copySelected(); }} type="button">
+                Copiar <kbd>Ctrl + C</kbd>
+              </button>
+              <button className="button button-secondary button-compact" onClick={cutSelected} type="button">
+                Cortar <kbd>Ctrl + X</kbd>
+              </button>
+              <button className="button button-secondary button-compact" disabled={!hasClipboard} onClick={pasteFromClipboard} type="button">
+                Pegar <kbd>Ctrl + V</kbd>
+              </button>
+            </div>
+          </Panel>
+          )}
         </ReactFlow>
       </div>
       {contextMenu && (
