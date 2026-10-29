@@ -50,6 +50,56 @@ describe('TourOverlay', () => {
     expect(markup).toContain('Finalizar recorrido');
   });
 
+  it('explains read-only access instead of asking a viewer to create a class', () => {
+    const markup = renderToStaticMarkup(
+      <TourOverlay
+        stepIndex={0}
+        role="VIEWER"
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+        onFinish={vi.fn()}
+        onReopenHelp={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('Tu acceso es de lectura');
+    expect(markup).not.toContain('Hacé clic en «Clase»');
+    expect(markup).toContain('Siguiente');
+  });
+
+  it('pauses the visual overlay while the help panel is open', () => {
+    const markup = renderToStaticMarkup(
+      <TourOverlay
+        stepIndex={0}
+        paused
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+        onFinish={vi.fn()}
+        onReopenHelp={vi.fn()}
+      />,
+    );
+
+    expect(markup).not.toContain('Recorrido del editor');
+    expect(markup).not.toContain('editor-tour-highlight');
+  });
+
+  it('keeps a selected topic separate from the preceding topic', () => {
+    const markup = renderToStaticMarkup(
+      <TourOverlay
+        stepIndex={1}
+        topicOnly
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+        onFinish={vi.fn()}
+        onReopenHelp={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('Menú contextual y multiplicidad');
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Anterior<\/button>/);
+    expect(markup).toContain('Finalizar recorrido');
+  });
+
   it('offers a way to reopen the tour on the final step without exposing technical identifiers', () => {
     const markup = renderToStaticMarkup(
       <TourOverlay

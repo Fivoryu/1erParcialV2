@@ -76,9 +76,9 @@ import TourOverlay from '../help/TourOverlay';
 import { createTourProgress } from '../help/tourProgress';
 import {
   clampTourStepIndex,
-  getTourStep,
   nextTourStepIndex,
   previousTourStepIndex,
+  TOUR_STEPS,
 } from '../help/tourSteps';
 import { findEditorSection, nextActiveSection, type EditorSectionId } from './editorSections';
 import EditorOptionsBar from './EditorOptionsBar';
@@ -204,6 +204,9 @@ export default function ProjectEditorPage() {
   const [openSection, setOpenSection] = useState<EditorSectionId | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStepIndex, setTourStepIndex] = useState(0);
+  const [tourTopicOnly, setTourTopicOnly] = useState(false);
+  const [tourRun, setTourRun] = useState(0);
+  const [helpOpen, setHelpOpen] = useState(false);
   const modelRef = useRef<ModelResource | null>(null);
   const canonicalModelRef = useRef<ModelResource | null>(null);
   const revisionRef = useRef<number | null>(null);
@@ -422,6 +425,7 @@ export default function ProjectEditorPage() {
 
     const progress = createTourProgress(projectId, window.localStorage);
     setTourStepIndex(0);
+    setTourTopicOnly(false);
     setTourOpen(progress.shouldShow());
   }, [modelLoaded, project?.id, projectId]);
 
@@ -822,13 +826,21 @@ export default function ProjectEditorPage() {
   const closeSection = useCallback(() => setOpenSection(null), []);
   const openTour = useCallback(() => {
     setTourStepIndex(0);
-    setOpenSection(null);
+    setTourTopicOnly(false);
+    setTourRun((run) => run + 1);
     setTourOpen(true);
   }, []);
+  const openTopicTour = useCallback((slug: string) => {
+    const index = TOUR_STEPS.findIndex((step) => step.slug === slug);
+    if (index !== -1) {
+      setTourStepIndex(index);
+      setTourTopicOnly(true);
+      setTourRun((run) => run + 1);
+      setTourOpen(true);
+    }
+  }, []);
   const changeTourStep = useCallback((requestedIndex: number) => {
-    const nextIndex = clampTourStepIndex(requestedIndex);
-    setTourStepIndex(nextIndex);
-    setOpenSection(getTourStep(nextIndex).section ?? null);
+    setTourStepIndex(clampTourStepIndex(requestedIndex));
   }, []);
   const finishTour = useCallback(() => {
     if (projectId) {
@@ -1464,16 +1476,23 @@ export default function ProjectEditorPage() {
               api={api}
               openSection={openSection}
               onNavigateToSection={handleNavigateToSection}
+              onStartTour={openTopicTour}
+              onOpenChange={setHelpOpen}
             />
-            {tourOpen && openSection === null && project.id === projectId && (
+            {tourOpen && project.id === projectId && (
               <TourOverlay
+                key={tourRun}
                 stepIndex={tourStepIndex}
                 selection={selection}
+                openSection={openSection}
+                topicOnly={tourTopicOnly}
+                paused={helpOpen}
+                role={currentUserRole}
                 {...(guideAttributeName === undefined ? {} : { attributeName: guideAttributeName })}
                 onPrevious={() => changeTourStep(previousTourStepIndex(tourStepIndex))}
                 onNext={() => changeTourStep(nextTourStepIndex(tourStepIndex))}
                 onFinish={finishTour}
-                onReopenHelp={openTour}
+                onReopenHelp={() => tourTopicOnly ? openTopicTour(TOUR_STEPS[tourStepIndex]!.slug) : openTour()}
               />
             )}
           </>

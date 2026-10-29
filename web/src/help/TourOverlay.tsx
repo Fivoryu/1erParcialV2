@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
+import { createPortal } from 'react-dom';
 import './tour.css';
+import type { MemberRole } from '../api/types';
 import type { CanvasSelection } from '../diagram/selection';
+import type { EditorSectionId } from '../pages/editorSections';
 import {
   clampTourStepIndex,
   getTourStep,
   TOUR_STEPS,
+  type TourTarget,
   type VisualTourStep,
 } from './tourSteps';
 
@@ -12,6 +16,10 @@ export type TourOverlayProps = {
   stepIndex: number;
   selection?: CanvasSelection | null;
   attributeName?: string;
+  openSection?: EditorSectionId | null;
+  topicOnly?: boolean;
+  paused?: boolean;
+  role?: MemberRole | null;
   onPrevious: () => void;
   onNext: () => void;
   onFinish: () => void;
@@ -20,13 +28,64 @@ export type TourOverlayProps = {
 
 type Highlight = { top: number; left: number; width: number; height: number };
 
+const EDIT_TARGETS = new Set<TourTarget>([
+  'class-add', 'class-name', 'attribute-add', 'attribute-name', 'operation-add', 'relationship-select',
+]);
+
+const TARGET_SECTIONS: Partial<Record<TourTarget, EditorSectionId>> = {
+  'xmi-export': 'xmi', 'xmi-file': 'xmi',
+  presence: 'collaboration', 'chat-session': 'collaboration', 'chat-input': 'collaboration',
+  'chat-suggest': 'collaboration',
+  'members-list': 'members', 'members-invite': 'members', 'members-role': 'members',
+  'review-run': 'review', 'review-results': 'review',
+  'generation-new': 'generation', 'generation-target': 'generation',
+  'generation-run': 'generation', 'generation-deployment': 'generation',
+  'version-tabs': 'vcs',
+};
+
+const TARGET_SELECTORS: Partial<Record<TourTarget, string>> = {
+  'class-add': '[data-guide-target="class-add"]',
+  'attribute-add': '[data-guide-target="attribute-add"]',
+  'operation-add': '[data-guide-target="operation-add"]',
+  'relationship-select': '[aria-label="Elegir tipo de relación"]',
+  validation: '[aria-label="Validación en vivo"]',
+  canvas: '.react-flow',
+  'project-list': '.editor-breadcrumb a',
+  'xmi-export': '[aria-labelledby="xmi-export-title"] .generation-actions button',
+  'xmi-file': '[aria-labelledby="xmi-import-title"] input[type="file"]',
+  presence: '.presence-panel',
+  'chat-session': '#chat-session-selector',
+  'chat-input': '#chat-message-draft',
+  'chat-suggest': '.chat-suggest-change',
+  'members-list': '.members-panel',
+  'members-invite': '.member-invite-form input',
+  'members-role': '.member-invite-form select',
+  'review-run': '.review-run-button',
+  'review-results': '.review-panel',
+  'generation-new': '[aria-labelledby="generation-title"] .generation-heading button',
+  'generation-target': '[aria-labelledby="generation-title"] .generation-target-list',
+  'generation-run': '[aria-labelledby="generation-title"] .generation-actions > button:first-child',
+  'generation-deployment': '.generation-deployment',
+  'version-tabs': '.vcs-tab-list',
+};
+
 function findTarget(
   step: VisualTourStep,
   selection: CanvasSelection | null | undefined,
   attributeName: string | undefined,
+  openSection: EditorSectionId | null,
 ): HTMLElement | null {
-  if (step.target === 'class-add' || step.target === 'attribute-add') {
-    return document.querySelector<HTMLElement>(`[data-guide-target="${step.target}"]`);
+  const requiredSection = TARGET_SECTIONS[step.target];
+  if (requiredSection ? requiredSection !== openSection : openSection !== null) {
+    return null;
+  }
+  if (step.target.startsWith('section-')) {
+    const section = step.target.slice('section-'.length);
+    return document.querySelector<HTMLElement>(`[data-section="${section}"]`);
+  }
+  const selector = TARGET_SELECTORS[step.target];
+  if (selector) {
+    return document.querySelector<HTMLElement>(selector);
   }
   if (!selection || selection.kind === 'relationship') {
     return null;
@@ -40,7 +99,7 @@ function findTarget(
   if (step.target === 'class-name') {
     return node.querySelector<HTMLElement>('[aria-label="Editar nombre de la clase"]');
   }
-  if (selection.kind !== 'attribute' || !attributeName) {
+  if (step.target !== 'attribute-name' || selection.kind !== 'attribute' || !attributeName) {
     return null;
   }
   return Array.from(node.querySelectorAll<HTMLElement>('[aria-label]'))
@@ -56,6 +115,10 @@ export default function TourOverlay({
   stepIndex,
   selection,
   attributeName,
+  openSection = null,
+  topicOnly = false,
+  paused = false,
+  role = null,
   onPrevious,
   onNext,
   onFinish,
@@ -64,17 +127,24 @@ export default function TourOverlay({
   const currentIndex = clampTourStepIndex(stepIndex);
   const step = getTourStep(currentIndex);
   const [cursor, setCursor] = useState({ topic: currentIndex, visual: 0 });
+  const [modalHost, setModalHost] = useState<HTMLElement | null>(null);
   const visualIndex = cursor.topic === currentIndex ? cursor.visual : 0;
-  const visualSteps = step.visualSteps ?? [];
+  const visualSteps = step.visualSteps;
   const visualStep = visualSteps[visualIndex];
+  const readOnlyStep = role === 'VIEWER' && visualStep !== undefined && EDIT_TARGETS.has(visualStep.target);
   const hasMoreVisualSteps = visualIndex < visualSteps.length - 1;
-  const isFinalStep = currentIndex === TOUR_STEPS.length - 1 && !hasMoreVisualSteps;
+  const isFinalStep = (topicOnly || currentIndex === TOUR_STEPS.length - 1) && !hasMoreVisualSteps;
   const targetRef = useRef<HTMLElement | null>(null);
   const [highlight, setHighlight] = useState<Highlight | null>(null);
   const [targetMissing, setTargetMissing] = useState(false);
 
+  // Keep the same tour state mounted while placing its controls inside the active modal's focus trap.
+  useLayoutEffect(() => {
+    setModalHost(openSection === null ? null : document.querySelector<HTMLElement>('.editor-modal[aria-modal="true"]'));
+  }, [openSection]);
+
   useEffect(() => {
-    if (!visualStep) {
+    if (!visualStep || paused) {
       targetRef.current = null;
       setHighlight(null);
       setTargetMissing(false);
@@ -85,7 +155,7 @@ export default function TourOverlay({
     let observed: HTMLElement | null = null;
     const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
     function measure(): void {
-      const target = findTarget(visualStep!, selection, attributeName);
+      const target = findTarget(visualStep!, selection, attributeName, openSection);
       targetRef.current = target;
       if (target !== observed) {
         if (observed) resize?.unobserve(observed);
@@ -96,7 +166,9 @@ export default function TourOverlay({
       const next = rect && rect.width > 0 && rect.height > 0
         ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
         : null;
-      setTargetMissing(next === null);
+      const disabled = target instanceof HTMLButtonElement || target instanceof HTMLInputElement || target instanceof HTMLSelectElement
+        ? target.disabled : false;
+      setTargetMissing(next === null || disabled);
       setHighlight((previous) => equalHighlight(previous, next) ? previous : next);
     }
     function schedule(): void {
@@ -120,21 +192,21 @@ export default function TourOverlay({
       document.removeEventListener('scroll', schedule, true);
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
-  }, [visualStep, selection, attributeName]);
+  }, [visualStep, selection, attributeName, openSection, paused]);
 
   useEffect(() => {
-    if (!visualStep || visualStep.advanceOn !== 'click' || !hasMoreVisualSteps) {
+    if (paused || readOnlyStep || !visualStep || visualStep.advanceOn !== 'click' || !hasMoreVisualSteps) {
       return undefined;
     }
     function observeUserClick(event: MouseEvent): void {
-      const target = findTarget(visualStep!, selection, attributeName);
+      const target = findTarget(visualStep!, selection, attributeName, openSection);
       if (target && event.target instanceof Node && target.contains(event.target)) {
         setCursor({ topic: currentIndex, visual: visualIndex + 1 });
       }
     }
     document.addEventListener('click', observeUserClick, true);
     return () => document.removeEventListener('click', observeUserClick, true);
-  }, [visualStep, selection, attributeName, hasMoreVisualSteps, currentIndex, visualIndex]);
+  }, [visualStep, selection, attributeName, openSection, paused, readOnlyStep, hasMoreVisualSteps, currentIndex, visualIndex]);
 
   function previous(): void {
     if (visualIndex > 0) {
@@ -154,7 +226,7 @@ export default function TourOverlay({
 
   const cardOnLeft = highlight !== null && typeof window !== 'undefined'
     && highlight.left > window.innerWidth / 2;
-  return (
+  const content = (
     <>
       {visualStep && highlight && (
         <div
@@ -170,13 +242,22 @@ export default function TourOverlay({
       )}
       <aside aria-label="Recorrido del editor" className={`editor-tour-overlay${cardOnLeft ? ' editor-tour-overlay--left' : ''}`}>
         <section className="editor-tour-card">
-          <p className="eyebrow">Paso {currentIndex + 1} de {TOUR_STEPS.length}</p>
+          <p className="eyebrow">
+            {topicOnly ? `Paso ${visualIndex + 1} de ${visualSteps.length}` : `Tema ${currentIndex + 1} de ${TOUR_STEPS.length}`}
+          </p>
           <h2>{step.title}</h2>
           <p>{step.explanation}</p>
           {visualStep && (
             <div aria-live="polite" className="editor-tour-instruction">
-              <p>{visualStep.instruction}</p>
-              {targetMissing && <p className="quiet-state">{visualStep.missingHint}</p>}
+              <p>{readOnlyStep
+                ? 'Tu acceso es de lectura. Para modificar el diagrama necesitás permiso de edición; podés seguir explorando la guía.'
+                : visualStep.instruction}</p>
+              {targetMissing && (
+                <p className="quiet-state">
+                  {openSection !== null && !TARGET_SECTIONS[visualStep.target]
+                    ? 'Cerrá la ventana actual para volver al editor y continuar.' : visualStep.missingHint}
+                </p>
+              )}
               {highlight && (
                 <button
                   className="text-button"
@@ -191,14 +272,17 @@ export default function TourOverlay({
           <div className="diagram-toolbar-actions">
             <button
               className="button button-secondary button-compact"
-              disabled={currentIndex === 0 && visualIndex === 0}
+              disabled={(topicOnly || currentIndex === 0) && visualIndex === 0}
               onClick={previous}
               type="button"
             >
               Anterior
             </button>
             {isFinalStep ? (
-              <button className="button button-secondary button-compact" onClick={onReopenHelp} type="button">
+              <button className="button button-secondary button-compact" onClick={() => {
+                setCursor({ topic: currentIndex, visual: 0 });
+                onReopenHelp();
+              }} type="button">
                 Reiniciar recorrido
               </button>
             ) : (
@@ -214,4 +298,12 @@ export default function TourOverlay({
       </aside>
     </>
   );
+
+  if (paused) {
+    return <></>;
+  }
+  if (openSection !== null) {
+    return modalHost?.isConnected ? createPortal(content, modalHost) : <></>;
+  }
+  return content;
 }

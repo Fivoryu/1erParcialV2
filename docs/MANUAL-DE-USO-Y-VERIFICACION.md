@@ -301,15 +301,24 @@ solo el despliegue del ingreso.
 
 El editor tiene dos capas de ayuda, una sin IA y otra con IA local:
 
-**Recorrido de bienvenida (sin IA, determinista).** La primera vez que entrás a un proyecto aparece una tarjeta
-con siete temas del editor. El primero te acompaña para crear una clase, cambiar su nombre y agregar un atributo:
-el contorno señala el control real y la tarjeta explica qué hacer. El nombre de la clase y del atributo se
-cambia con doble clic sobre el lienzo. Si un control todavía no está disponible, la tarjeta explica qué falta;
-**Mostrar dónde está** lo acerca a la vista cuando existe. Podés usar **Anterior**, **Siguiente** y
-**Finalizar recorrido** sin que la guía haga cambios por vos. La animación respeta la preferencia de movimiento
-reducido del navegador. Finalizar marca el recorrido como visto **para ese proyecto** en ese navegador;
-**Mostrar recorrido del editor** lo vuelve a abrir. Los temas provienen del mismo inventario que la guía
-conversacional.
+**Recorridos visuales (sin IA, deterministas).** La primera vez que entrás a un proyecto aparece una tarjeta
+con doce temas: clases y relaciones, intercambio XMI, colaboración, integrantes, revisión, generación,
+implementación, asistente, chat, versionado y proyectos. El recorrido de clases te acompaña para crear una clase,
+cambiar su nombre y agregar un atributo: el contorno señala el control real y la tarjeta explica qué hacer.
+El nombre de la clase y del atributo se cambia con doble clic sobre el lienzo. Si un control todavía no está
+disponible, la tarjeta explica qué falta; **Mostrar dónde está** lo acerca a la vista cuando existe. Podés usar
+**Anterior**, **Siguiente** y **Finalizar recorrido** sin que la guía haga cambios por vos. Si tu acceso es de
+lectura, la tarjeta avisa cuando necesitás permiso de edición. Abrí los paneles cuando la tarjeta lo indique;
+si otro diálogo tapa el control buscado, cerralo primero. La animación respeta la
+preferencia de movimiento reducido del navegador. Finalizar marca el recorrido como visto **para ese proyecto**
+en ese navegador; **Mostrar recorrido del editor** lo vuelve a abrir.
+
+Para ir directamente a un tema, abrí **Ayuda**, desplegá **Recorridos visuales** y elegí el que necesites.
+Estos recorridos funcionan aunque la IA local no esté disponible. Al abrir Ayuda durante un recorrido, este se
+pausa; al elegir un tema empieza desde el principio. La guía no envía invitaciones, no importa archivos, no
+genera ni implementa servicios y no acepta propuestas por vos: esas acciones requieren tu propia intervención.
+El tema de proyectos señala el enlace para volver a la página de proyectos; el recorrido se cierra al salir del
+editor.
 
 **Guía conversacional (IA local).** El botón flotante de ayuda abre un panel propio, independiente del chat
 del diagrama: no comparte sesiones ni memoria, y nunca modifica el modelo. Escribís una pregunta (por ejemplo

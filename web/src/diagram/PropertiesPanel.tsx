@@ -459,6 +459,7 @@ function ClassifierProperties({
         <MemberSection
           title="Operaciones"
           addLabel="Agregar operación"
+          guideTarget="operation-add"
           onAdd={addOperation}
           rows={orderedOperations(classifier).map((operation) => ({
             id: operation.id,

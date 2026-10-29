@@ -1,6 +1,8 @@
 import type { CSSProperties, FormEvent, ReactElement } from 'react';
+import './helpGuide.css';
 
 import type { EditorSectionId } from '../pages/editorSections';
+import { HELP_TOPICS } from './helpCorpus';
 import { getHelpGuideStatusText, type HelpGuidePanelState } from './helpGuide';
 import { getHelpNavigationSuggestions } from './helpNavigation';
 
@@ -14,6 +16,7 @@ export type HelpGuidePanelProps = {
   onDraftChange: (draft: string) => void;
   onSubmit: (question: string) => void;
   onNavigateToSection: (section: EditorSectionId) => void;
+  onStartTour: (slug: string) => void;
 };
 
 const triggerStyle: CSSProperties = {
@@ -25,7 +28,7 @@ const triggerStyle: CSSProperties = {
   height: '56px',
   borderRadius: '50%',
   border: '1px solid var(--line)',
-  background: 'var(--surface)',
+  background: 'var(--paper)',
   color: 'var(--ink)',
   boxShadow: 'var(--shadow-soft)',
   fontWeight: 700,
@@ -41,7 +44,7 @@ const panelStyle: CSSProperties = {
   maxHeight: 'min(70vh, 42rem)',
   overflowY: 'auto',
   padding: '20px',
-  background: 'var(--surface)',
+  background: 'var(--paper)',
   border: '1px solid var(--line)',
   borderRadius: 'var(--radius)',
   boxShadow: '0 16px 48px rgba(15, 23, 42, 0.24)',
@@ -57,6 +60,7 @@ export default function HelpGuidePanel({
   onDraftChange,
   onSubmit,
   onNavigateToSection,
+  onStartTour,
 }: HelpGuidePanelProps): ReactElement {
   const statusText = getHelpGuideStatusText(state);
   const navigationSuggestions = state.kind === 'answered'
@@ -98,6 +102,20 @@ export default function HelpGuidePanel({
           <p className="quiet-state">
             Las respuestas se limitan a los temas de ayuda documentados de la aplicación y no usan el historial del chat ni los recuerdos del diagrama.
           </p>
+
+          <details className="help-guide-tours">
+            <summary>Recorridos visuales</summary>
+            <p className="quiet-state">Elegí un tema para ver dónde están sus controles, sin necesitar IA.</p>
+            <ul>
+              {HELP_TOPICS.map((topic) => (
+                <li key={topic.slug}>
+                  <button className="text-button" onClick={() => onStartTour(topic.slug)} type="button">
+                    {topic.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
 
           {statusText !== null && (
             <p className={state.kind === 'error' ? 'notice notice-error' : 'quiet-state'}
