@@ -224,6 +224,43 @@ class AgentRunner {
     return alias.substring(1);
   }
 
+  static final _entitiesQuestion = RegExp(
+    r'((qu[eé]|cu[aá]les)\s+(son\s+(las|los)\s+)?(clases|entidades|tablas|recursos|modelos)'
+    r'|(clases|entidades|tablas|recursos)\s+(hay|existen|tiene))',
+    caseSensitive: false,
+  );
+  static final _fieldsQuestion = RegExp(
+    r'(campos|atributos|propiedades|columnas)\s+(tiene|de|del|hay)',
+    caseSensitive: false,
+  );
+
+  /// Questions about the backend's own structure (which entities exist, which fields one has) are
+  /// answered from the contract, without the model: a small on-device model maps them to the
+  /// nearest data example (a count) instead of describing the schema.
+  String? _schemaAnswer(String request) {
+    final asksEntities = _entitiesQuestion.hasMatch(request);
+    final asksFields = _fieldsQuestion.hasMatch(request);
+    if (!asksEntities && !asksFields) return null;
+    final described = contract.compactDescriptor;
+    String fieldsOf(Map<String, dynamic> entry) {
+      final fields = (entry['fields'] as Map?)?.keys.cast<String>().toList() ?? const <String>[];
+      return fields.isEmpty ? 'sin campos declarados' : fields.join(', ');
+    }
+
+    if (asksFields) {
+      final lower = request.toLowerCase();
+      final named = described
+          .where((entry) => lower.contains((entry['entity'] as String).toLowerCase()))
+          .toList();
+      if (named.isNotEmpty) {
+        return named.map((entry) => '**${entry['entity']}**: ${fieldsOf(entry)}').join('\n\n');
+      }
+    }
+    final lines = described.map((entry) => '- **${entry['entity']}**: ${fieldsOf(entry)}').join('\n');
+    return 'El backend tiene ${described.length} '
+        '${described.length == 1 ? 'entidad' : 'entidades'}:\n\n$lines';
+  }
+
   static bool _asksForIdentifiers(String request) =>
       RegExp(r'\b(uuids?|ids?|identificador(es)?)\b', caseSensitive: false).hasMatch(request);
 
@@ -331,6 +368,11 @@ class AgentRunner {
     );
     final trusted = authorization ?? contract.authorize(request);
     try {
+      final schemaAnswer = _schemaAnswer(request);
+      if (schemaAnswer != null) {
+        event('finished');
+        return AgentRunResult(AgentRunStatus.answered, schemaAnswer);
+      }
       for (var step = 0; step < maxSteps; step++) {
         if (!allowed()) {
           return const AgentRunResult(
@@ -355,6 +397,8 @@ class AgentRunner {
               'Complete list example: {"tag":"query","entity":"Note","filter":[],"sort":"text","desc":false,"limit":20,"respond":"show"}. '
               'Complete count example: {"tag":"report","entity":"Note","metric":"count","filter":[],"respond":"show"}. '
               'Complete average example: {"tag":"report","entity":"Note","metric":"avg","field":"score","filter":[],"respond":"show"}. '
+              'A report or summary request that names no entity or no metric ("hazme un reporte") is a clarify that '
+              'asks which entity and which metric, naming the contract entities; never default to a count. '
               'Use the user words as real values ("mañana", "1ro"); the app maps them to backend values. '
               'Split compound values into their fields ("1ro A" is grado 1 and seccion A). '
               'Dates relative to today use value {"relative":"today"} (also yesterday, tomorrow, this_week, last_week, this_month, last_month, this_year, last_year) or {"last_days":7}. '

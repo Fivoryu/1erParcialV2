@@ -41,12 +41,14 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     summary:
       'El lienzo es el editor: crea clases, ponles nombre, agrega atributos y operaciones y muévelas libremente.',
     steps: [
-      'Usa la barra de herramientas del lienzo para crear una clase; aparecerá lista para que le pongas nombre.',
-      'Selecciona una clase para cambiarle el nombre, marcarla como abstracta o eliminarla.',
+      'Usa la barra de herramientas de la izquierda para crear una clase, una interfaz, una enumeración o un paquete; aparecerá lista para que le pongas nombre.',
+      'Para relacionar dos clases, elige el tipo con la flecha ▾ de la herramienta Relación (incluida la clase de asociación) y arrastra desde el punto de una clase hasta otra, o haz clic en las dos clases y confirma en el panel de la derecha.',
+      'Selecciona una clase para cambiarle el nombre, marcarla como abstracta o eliminarla; sus atributos y operaciones se pueden ocultar o mostrar en el panel.',
       'Arrastra una clase para moverla; la distribución se conserva tal como la dejes.',
-      'Haz doble clic en una clase o selecciónala para abrir sus propiedades y agregar atributos y operaciones con visibilidad, tipo y multiplicidad.',
+      'Mayús + arrastrar o Ctrl + clic selecciona varias clases; Ctrl + C, Ctrl + X y Ctrl + V las copian, cortan y pegan junto con las relaciones entre ellas.',
+      'La validación en vivo, sobre el lienzo, cuenta los errores y advertencias del modelo, como herencias circulares o relaciones repetidas.',
     ],
-    keywords: ['class', 'canvas', 'attribute', 'operation', 'move', 'abstract', 'edit'],
+    keywords: ['class', 'canvas', 'attribute', 'operation', 'move', 'abstract', 'edit', 'relationship', 'copy', 'paste', 'validation'],
   },
   {
     slug: 'context-menu-and-multiplicity',

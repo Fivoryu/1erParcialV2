@@ -324,6 +324,26 @@ describe('UML class node presentation', () => {
     expect(markup.indexOf('firstCall')).toBeLessThan(markup.indexOf('laterCall'));
   });
 
+  it('lists the class attributes and operations in sections that can be hidden', () => {
+    const selected = modelFixture.classifiers[0]!;
+    const markup = renderToStaticMarkup(createElement(PropertiesPanel, {
+      model: modelFixture,
+      selection: { kind: 'classifier', classifierId: selected.id },
+      onCommand: () => null,
+      onDelete: () => undefined,
+      onSelect: () => undefined,
+    }));
+
+    expect(markup.match(/<details class="property-section member-section" open="">/g)).toHaveLength(2);
+    expect(markup).toContain('<strong>Atributos</strong><span class="member-count">' + selected.attributes.length + '</span>');
+    expect(markup).toContain('<strong>Operaciones</strong><span class="member-count">' + selected.operations.length + '</span>');
+    for (const attribute of selected.attributes) {
+      expect(markup).toContain(`<span>${attribute.name}</span>`);
+    }
+    expect(markup).toContain('Agregar atributo');
+    expect(markup).toContain('Agregar operación');
+  });
+
   it('offers editable expression and severity controls for a classifier constraint', () => {
     const selected = modelFixture.classifiers[0]!;
     const markup = renderToStaticMarkup(createElement(PropertiesPanel, {

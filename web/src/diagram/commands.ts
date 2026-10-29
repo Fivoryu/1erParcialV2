@@ -868,6 +868,35 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         return { ...classifier, operations: classifier.operations.filter((operation) => operation.id !== removedId) };
       });
     }
+    case 'geometry.set': {
+      // Server upsert of one classifier rectangle per (view, target). Projecting it keeps a class
+      // created in the same batch (a paste) off the fallback grid until the server answers.
+      const viewId = payloadString(envelope, 'viewId');
+      const geometryTargetId = payloadString(envelope, 'targetId');
+      const [x, y, w, h] = ['x', 'y', 'w', 'h'].map((key) => payloadNumber(envelope, key));
+      if (payloadString(envelope, 'targetType') !== 'CLASSIFIER' || !viewId || !geometryTargetId
+          || x == null || y == null || w == null || h == null) {
+        return model;
+      }
+      const zOrder = payloadNumber(envelope, 'zOrder') ?? 0;
+      return {
+        ...model,
+        views: model.views.map((view) => {
+          if (view.id !== viewId) {
+            return view;
+          }
+          const existing = view.element_geometry.find((candidate) =>
+            candidate.targetType === 'CLASSIFIER' && candidate.targetId === geometryTargetId);
+          const row = { id: existing?.id ?? geometryTargetId, targetType: 'CLASSIFIER', targetId: geometryTargetId, x, y, w, h, zOrder };
+          return {
+            ...view,
+            element_geometry: existing
+              ? view.element_geometry.map((candidate) => (candidate === existing ? row : candidate))
+              : [...view.element_geometry, row],
+          };
+        }),
+      };
+    }
     case 'style.set': {
       // Server upsert semantics (StyleSetHandler): one view_style row per (viewId, targetId),
       // applied locally so the optimistic model already carries the adjustment and the next

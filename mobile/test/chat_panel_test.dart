@@ -5,6 +5,7 @@ import 'package:http/testing.dart';
 import 'package:diagrammer_mobile/data/chat_store.dart';
 import 'package:diagrammer_mobile/data/platform_service.dart';
 import 'package:diagrammer_mobile/domain/chat_models.dart';
+import 'package:diagrammer_mobile/presentation/app_theme.dart';
 import 'package:diagrammer_mobile/presentation/chat_controller.dart';
 import 'package:diagrammer_mobile/presentation/screens/chat_panel.dart';
 
@@ -60,6 +61,8 @@ void main() {
       expect(c.messages.single.content, 'Remember this locally');
       expect(c.messages.single.role, 'user');
       expect(find.text('Remember this locally'), findsOneWidget);
+      // The person's own turn is labelled as theirs, as in the agent mockup.
+      expect(find.text('Tú'), findsOneWidget);
       expect(paths, everyElement(contains('/chats')));
       expect(await st.outbox(s), isEmpty);
       await tester.pumpWidget(const SizedBox());
@@ -133,6 +136,59 @@ void main() {
       hasStrongHola(tester.widget<SelectableText>(renderedAnswer).textSpan!),
       isTrue,
     );
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
+  testWidgets('message bubbles take their colors from the theme, so dark mode stays readable', (
+    tester,
+  ) async {
+    final scope = ChatScope(
+      platform: 'https://example.test',
+      userId: 'u',
+      projectId: 'p',
+      deploymentId: 'd',
+      contractHash: 'h',
+    );
+    final now = DateTime.utc(2025);
+    final controller = ChatController(
+      store: MemoryChatStore(),
+      service: PlatformService(
+        baseUri: Uri.parse(scope.platform),
+        client: MockClient((_) async => http.Response('{}', 200)),
+      ),
+    )
+      ..selected = LocalConversation(
+        id: 'conversation-1',
+        scope: scope,
+        title: 'Fixture',
+        createdAt: now,
+        updatedAt: now,
+      )
+      ..messages = [
+        ChatMessage(id: 'user-1', role: 'user', content: 'Pregunta', createdAt: now),
+        ChatMessage(id: 'assistant-1', role: 'assistant', content: 'Respuesta', createdAt: now),
+      ];
+    final dark = buildDarkTheme();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: dark,
+        home: Scaffold(body: SingleChildScrollView(child: ChatPanel(controller: controller))),
+      ),
+    );
+
+    Color bubbleOf(String text) {
+      final box = tester.widgetList<Container>(
+        find.ancestor(of: find.text(text), matching: find.byType(Container)),
+      ).firstWhere((container) => container.decoration is BoxDecoration);
+      return (box.decoration! as BoxDecoration).color!;
+    }
+
+    expect(bubbleOf('Pregunta'), dark.colorScheme.primaryContainer);
+    expect(bubbleOf('Respuesta'), dark.colorScheme.surface);
+    expect(bubbleOf('Pregunta'), isNot(AppPalette.wash));
 
     await tester.pumpWidget(const SizedBox());
     controller.dispose();

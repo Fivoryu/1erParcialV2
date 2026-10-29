@@ -105,7 +105,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 WorkspacePage.agent =>
                   widget.chat == null
                       ? _agentCard()
-                      : ChatPanel(controller: widget.chat!),
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _backendContext(),
+                            const SizedBox(height: 16),
+                            ChatPanel(controller: widget.chat!),
+                          ],
+                        ),
                 WorkspacePage.settings => _settingsCard(),
               },
             ],
@@ -113,6 +120,55 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         ),
       ),
     ),
+  );
+
+  /// The backend the agent talks to, always in view, with the way back to pick another one.
+  Widget _backendContext() => ListenableBuilder(
+    listenable: widget.controller,
+    builder: (context, _) {
+      final c = widget.controller;
+      final name = [c.project?.name, c.backend?.name].whereType<String>().join(' · ');
+      final scheme = Theme.of(context).colorScheme;
+      return Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        decoration: BoxDecoration(
+          color: scheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'BACKEND SELECCIONADO',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.onSecondaryContainer,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    name.isEmpty ? 'Ningún backend elegido' : name,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(backgroundColor: scheme.surface),
+              onPressed: () => context.go('/backends'),
+              child: const Text('Cambiar'),
+            ),
+          ],
+        ),
+      );
+    },
   );
 
   Widget _settingsCard() => ListenableBuilder(

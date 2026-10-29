@@ -35,7 +35,7 @@ import {
 } from './commands';
 import type { CanvasSelection } from './selection';
 import { associationClassCandidates, isAssociationKind } from './associationClass';
-import { formatStereotype } from './uml-format';
+import { formatStereotype, orderedAttributes, orderedOperations } from './uml-format';
 import { describeStoreReason, STORE_LABELS, StoreBadge } from './StoreBadge';
 
 interface PropertiesPanelProps {
@@ -279,6 +279,49 @@ function ConstraintSection({
   );
 }
 
+/**
+ * A collapsible list of a class's members: a class with many attributes would otherwise push the
+ * rest of the panel out of view. Each row selects its member for editing.
+ */
+function MemberSection({
+  title,
+  addLabel,
+  onAdd,
+  rows,
+}: {
+  title: string;
+  addLabel: string;
+  onAdd: () => void;
+  rows: Array<{ id: string; name: string; detail: string; onSelect: () => void }>;
+}) {
+  return (
+    <details className="property-section member-section" open>
+      <summary>
+        <strong>{title}</strong>
+        <span className="member-count">{rows.length}</span>
+        <span className="member-toggle-hint">Ocultar / mostrar</span>
+      </summary>
+      {rows.length > 0 ? (
+        <ul className="member-list">
+          {rows.map((row) => (
+            <li key={row.id}>
+              <button className="member-row" onClick={row.onSelect} type="button">
+                <span>{row.name}</span>
+                {row.detail && <span className="member-detail">{row.detail}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="property-hint">Todavía no hay {title.toLowerCase()}.</p>
+      )}
+      <div className="property-actions">
+        <button className="button button-secondary button-compact" onClick={onAdd} type="button">{addLabel}</button>
+      </div>
+    </details>
+  );
+}
+
 function typeReference(model: ModelResource, name: string): TypeReferenceInput {
   const classifier = model.classifiers.find((candidate) => candidate.name === name.trim());
   return classifier
@@ -394,18 +437,34 @@ function ClassifierProperties({
           </label>
         )}
         {canBeAbstract && <StoreField classifier={classifier} onCommand={onCommand} />}
-        {isEnumeration && (
-          <div className="property-actions">
-            <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Agregar literal</button>
-          </div>
-        )}
-        {!isPackage && !isEnumeration && (
-          <div className="property-actions">
-            <button className="button button-secondary button-compact" onClick={addAttribute} type="button">Agregar atributo</button>
-            <button className="button button-secondary button-compact" onClick={addOperation} type="button">Agregar operación</button>
-          </div>
-        )}
       </section>
+
+      {!isPackage && (
+        <MemberSection
+          title={isEnumeration ? 'Literales' : 'Atributos'}
+          addLabel={isEnumeration ? 'Agregar literal' : 'Agregar atributo'}
+          onAdd={addAttribute}
+          rows={orderedAttributes(classifier).map((attribute) => ({
+            id: attribute.id,
+            name: attribute.name,
+            detail: isEnumeration ? '' : attribute.type ?? '',
+            onSelect: () => onSelect({ kind: 'attribute', classifierId: classifier.id, elementId: attribute.id }),
+          }))}
+        />
+      )}
+      {!isPackage && !isEnumeration && (
+        <MemberSection
+          title="Operaciones"
+          addLabel="Agregar operación"
+          onAdd={addOperation}
+          rows={orderedOperations(classifier).map((operation) => ({
+            id: operation.id,
+            name: `${operation.name}()`,
+            detail: operation.returnType ?? '',
+            onSelect: () => onSelect({ kind: 'operation', classifierId: classifier.id, elementId: operation.id }),
+          }))}
+        />
+      )}
 
       {!isPackage && (
         <ConstraintSection

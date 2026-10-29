@@ -43,6 +43,10 @@ import { buildRemoteCursorMarkers } from '../collaboration/remoteCursors';
 import { subscribeProjectEvents } from '../collaboration/projectEvents';
 import { useEditingLease } from '../collaboration/useEditingLease';
 import UmlCanvas from '../diagram/UmlCanvas';
+import ToolRail from '../diagram/ToolRail';
+import RelationSetup from '../diagram/RelationSetup';
+import ValidationStrip from '../diagram/ValidationStrip';
+import type { RelationToolKind } from '../diagram/relationTool';
 import { useUndoRedoShortcuts } from '../diagram/useUndoRedoShortcuts';
 import PropertiesPanel from '../diagram/PropertiesPanel';
 import { createDiagramNames } from '../assistant/assistantNames';
@@ -766,6 +770,24 @@ export default function ProjectEditorPage() {
     dispatchEnvelope(envelope);
   }, [dispatchEnvelope]);
 
+  // Relation tool of the rail: the kind it creates, whether its setup is open, and the ends picked so far.
+  const [relationKind, setRelationKind] = useState<RelationToolKind>('ASSOCIATION');
+  const [relationActive, setRelationActive] = useState(false);
+  const [relationEnds, setRelationEnds] = useState({ sourceId: '', targetId: '' });
+  const pickRelationEnd = useCallback((classifierId: string) => {
+    setRelationEnds((ends) => (!ends.sourceId
+      ? { sourceId: classifierId, targetId: '' }
+      : !ends.targetId
+        ? { ...ends, targetId: classifierId }
+        : { sourceId: classifierId, targetId: '' }));
+  }, []);
+  const loadValidation = useCallback(async () => {
+    if (!projectId) {
+      return [];
+    }
+    return (await api.getModelValidation(projectId)).diagnostics;
+  }, [projectId]);
+
   const targetElementId = selectedTargetElementId(selection);
   const activeSection = openSection === null ? null : findEditorSection(openSection);
   const handleOpenSection = useCallback((id: EditorSectionId) => {
@@ -1130,15 +1152,87 @@ export default function ProjectEditorPage() {
 
   return (
     <main className="page-shell">
-      <header className="topbar">
-        <Link className="brand" to="/" aria-label="Inicio de Class Diagrammer">
-          <span className="brand-mark" aria-hidden="true">C</span>
-          <span>Class Diagrammer</span>
-        </Link>
-        <Link className="topbar-link" to="/">Todos los proyectos <span aria-hidden="true">↗</span></Link>
+      <header className="editor-header">
+        <div className="editor-top">
+          <Link className="brand" to="/" aria-label="Inicio de Class Diagrammer">
+            <span className="brand-mark" aria-hidden="true">C</span>
+            <span className="brand-text">
+              <strong>Class Diagrammer</strong>
+              <small>Espacio de modelado</small>
+            </span>
+          </Link>
+          {project && (
+            <div className="editor-title">
+              <nav aria-label="Ruta" className="editor-breadcrumb">
+                <Link to="/">Proyectos</Link> / <span>{project.name}</span>
+              </nav>
+              <h1 id="project-title">{project.name}</h1>
+            </div>
+          )}
+          {project && model && (
+            <div className="editor-actions" aria-label="Acciones del editor">
+              <div className="revision-chip" aria-live="polite">
+                <span className="status-dot" />
+                Revisión {model.revision}
+                <span className="revision-status">{pendingCount > 0 ? 'Guardando cambios…' : 'Guardado'}</span>
+              </div>
+              <button
+                className="button button-secondary button-compact"
+                type="button"
+                disabled={!undoRedo.canUndo || undoRedo.busy}
+                onClick={() => undoRedo.undo()}
+              >
+                Deshacer <kbd>Ctrl + Z</kbd>
+              </button>
+              <button
+                className="button button-secondary button-compact"
+                type="button"
+                disabled={!undoRedo.canRedo || undoRedo.busy}
+                onClick={() => undoRedo.redo()}
+              >
+                Rehacer <kbd>Ctrl + Y</kbd>
+              </button>
+              <button
+                aria-expanded={openSection === 'collaboration'}
+                aria-haspopup="dialog"
+                className="button button-secondary button-compact"
+                data-section="collaboration"
+                onClick={() => handleOpenSection('collaboration')}
+                type="button"
+              >
+                Colaboración
+                {presence.length > 0 && <span className="options-bar-badge">{presence.length}</span>}
+              </button>
+              <button
+                aria-expanded={openSection === 'review'}
+                aria-haspopup="dialog"
+                className="button button-primary button-compact"
+                data-section="review"
+                onClick={() => handleOpenSection('review')}
+                type="button"
+              >
+                Revisar diagrama
+              </button>
+            </div>
+          )}
+        </div>
+        {project && model && (
+          <div className="editor-sectionbar">
+            <EditorOptionsBar
+              activeSection={openSection}
+              onOpenSection={handleOpenSection}
+              sections={['xmi', 'members', 'generation', 'vcs']}
+            />
+            {!tourOpen && (
+              <button className="text-button" onClick={openTour} type="button">
+                Mostrar recorrido del editor
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
-      <div className="content-wrap editor-wrap">
+      <div className="editor-wrap">
         {loading ? (
           <p className="quiet-state" role="status">Abriendo proyecto…</p>
         ) : error && !model ? (
@@ -1148,74 +1242,66 @@ export default function ProjectEditorPage() {
           </div>
         ) : project && model ? (
           <>
-            <section className="editor-heading" aria-labelledby="project-title">
-              <div>
-                <p className="eyebrow">Espacio de trabajo del proyecto</p>
-                <h1 id="project-title">{project.name}</h1>
-                {project.description && <p className="lede">{project.description}</p>}
-              </div>
-              <div className="diagram-toolbar-actions" aria-label="Deshacer y rehacer">
-                <button
-                  className="button button-secondary button-compact"
-                  type="button"
-                  disabled={!undoRedo.canUndo || undoRedo.busy}
-                  onClick={() => undoRedo.undo()}
-                >
-                  Deshacer
-                </button>
-                <button
-                  className="button button-secondary button-compact"
-                  type="button"
-                  disabled={!undoRedo.canRedo || undoRedo.busy}
-                  onClick={() => undoRedo.redo()}
-                >
-                  Rehacer
-                </button>
-                <div className="revision-chip" aria-live="polite">
-                  <span className="status-dot" />
-                  Revisión {model.revision}
-                  <span className="revision-status">{pendingCount > 0 ? 'Guardando cambios…' : 'Guardado'}</span>
-                </div>
-              </div>
-            </section>
-
             {error && (
-              <div className="notice notice-error" role="alert">
+              <div className="notice notice-error editor-notice" role="alert">
                 <span>{error}</span>
                 <button className="text-button" onClick={() => setError(null)} type="button">Descartar</button>
               </div>
             )}
 
-            <EditorOptionsBar
-              activeSection={openSection}
-              onOpenSection={handleOpenSection}
-              badges={{ collaboration: presence.length }}
-            />
-            {!tourOpen && (
-              <button className="text-button" onClick={openTour} type="button">
-                Mostrar recorrido del editor
-              </button>
-            )}
-
-            <div className="editor-workspace">
-              <UmlCanvas
-                model={model}
-                selection={selection}
-                onSelect={setSelection}
-                onCommand={dispatchCommand}
+            <div className="editor-shell">
+              <ToolRail
+                relationKind={relationKind}
+                relationActive={relationActive}
+                onSelectTool={() => setRelationActive(false)}
                 onAddClassifier={addClassifier}
-                onDelete={deleteSelection}
-                touchedElements={touchedElements}
-                remoteCursors={remoteCursorMarkers}
-                onCursorMove={(position) => cursorCoalescerRef.current?.schedule(position)}
+                onToggleRelation={() => setRelationActive((active) => !active)}
+                onRelationKindChange={(kind) => {
+                  setRelationKind(kind);
+                  setRelationActive(true);
+                }}
               />
-              <PropertiesPanel
-                model={model}
-                selection={selection}
-                onCommand={dispatchCommand}
-                onDelete={deleteSelection}
-                onSelect={setSelection}
-              />
+              <div className="editor-main">
+                <ValidationStrip model={model} loadDiagnostics={loadValidation} />
+                <UmlCanvas
+                  model={model}
+                  selection={selection}
+                  onSelect={setSelection}
+                  onCommand={dispatchCommand}
+                  onAddClassifier={addClassifier}
+                  onDelete={deleteSelection}
+                  touchedElements={touchedElements}
+                  remoteCursors={remoteCursorMarkers}
+                  onCursorMove={(position) => cursorCoalescerRef.current?.schedule(position)}
+                  relationKind={relationKind}
+                  relationActive={relationActive}
+                  onRelationEndPicked={pickRelationEnd}
+                  onConnectionNeedsClass={(ends) => {
+                    setRelationEnds(ends);
+                    setRelationActive(true);
+                  }}
+                />
+              </div>
+              <div className="editor-inspector">
+                {relationActive && (
+                  <RelationSetup
+                    model={model}
+                    kind={relationKind}
+                    sourceId={relationEnds.sourceId}
+                    targetId={relationEnds.targetId}
+                    onEndsChange={setRelationEnds}
+                    onCommand={dispatchCommand}
+                    onExit={() => setRelationActive(false)}
+                  />
+                )}
+                <PropertiesPanel
+                  model={model}
+                  selection={selection}
+                  onCommand={dispatchCommand}
+                  onDelete={deleteSelection}
+                  onSelect={setSelection}
+                />
+              </div>
             </div>
 
             <Modal
@@ -1336,6 +1422,7 @@ export default function ProjectEditorPage() {
             >
               <VersioningPanel
                 projectId={project.id}
+                projectName={project.name}
                 onModelCheckout={(checkoutModel) => {
                   canonicalModelRef.current = checkoutModel;
                   revisionRef.current = checkoutModel.revision;

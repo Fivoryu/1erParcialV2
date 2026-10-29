@@ -8,7 +8,7 @@ import {
   default as PropertiesPanel,
   dispatchPackageSelection,
 } from './PropertiesPanel';
-import UmlCanvas from './UmlCanvas';
+import ToolRail from './ToolRail';
 import { UmlClassCard } from './UmlClassNode';
 
 const emptyClassifier = (id: string, name: string, namespaceId: string | null = null): ClassifierResource => ({
@@ -90,16 +90,18 @@ describe('package support', () => {
   });
 
   it('exposes the package palette action on the existing classifier creation path', () => {
-    const markup = renderToStaticMarkup(createElement(UmlCanvas, {
-      model,
-      selection: null,
-      onSelect: () => undefined,
-      onCommand: () => undefined,
+    // The palette moved from the canvas toolbar to the tool rail of the editor.
+    const markup = renderToStaticMarkup(createElement(ToolRail, {
+      relationKind: 'ASSOCIATION',
+      relationActive: false,
+      onSelectTool: () => undefined,
       onAddClassifier: () => undefined,
-      onDelete: () => undefined,
+      onToggleRelation: () => undefined,
+      onRelationKindChange: () => undefined,
     }));
 
-    expect(markup).toContain('>+ Paquete</button>');
+    expect(markup).toContain('title="Agregar paquete"');
+    expect(markup).toContain('Paquete</button>');
   });
 
   it('offers only packages outside the selected classifier namespace subtree', () => {

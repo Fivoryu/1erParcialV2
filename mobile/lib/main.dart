@@ -1,4 +1,5 @@
 import 'data/chat_store.dart';
+import 'presentation/app_theme.dart';
 import 'domain/chat_models.dart';
 import 'presentation/chat_controller.dart';
 
@@ -158,24 +159,8 @@ class _DiagrammerAppState extends State<DiagrammerApp> {
   @override
   Widget build(BuildContext context) => MaterialApp.router(
     title: 'Diagrammer Mobile',
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff28685c)),
-      useMaterial3: true,
-      scaffoldBackgroundColor: const Color(0xfff7f8f7),
-      inputDecorationTheme: const InputDecorationTheme(
-        border: OutlineInputBorder(),
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-      ),
-    ),
-    darkTheme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xff92c9b5),
-        brightness: Brightness.dark,
-      ),
-      useMaterial3: true,
-    ),
+    theme: buildLightTheme(),
+    darkTheme: buildDarkTheme(),
     routerConfig: _router,
   );
 }

@@ -5,6 +5,8 @@ export type EditorOptionsBarProps = {
   activeSection: EditorSectionId | null;
   onOpenSection: (id: EditorSectionId) => void;
   badges?: Partial<Record<EditorSectionId, number>>;
+  /** The sections this bar shows; every section when left out. */
+  sections?: readonly EditorSectionId[];
 };
 
 /**
@@ -17,11 +19,12 @@ export default function EditorOptionsBar({
   activeSection,
   onOpenSection,
   badges,
+  sections,
 }: EditorOptionsBarProps): ReactElement {
   return createElement(
     'div',
     { className: 'editor-options-bar', role: 'toolbar', 'aria-label': 'Opciones del editor' },
-    EDITOR_SECTIONS.map((section) =>
+    EDITOR_SECTIONS.filter((section) => !sections || sections.includes(section.id)).map((section) =>
       createElement(
         'button',
         {
