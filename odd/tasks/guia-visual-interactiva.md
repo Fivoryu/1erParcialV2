@@ -25,7 +25,7 @@ Realizar los cambios y las pruebas de la funcionalidad en el worktree indicado a
 
 - T1 [done] S1-S3 · inline: guía visual reutilizable y recorrido de creación/edición con sus pruebas y documentación · Risk: item 3 (componentes compartidos) · commit `9378cbbaf6b07c299407b9b809537e233513c571`; verificación independiente de la función en T3.
 - T2 [done] S1-S3 · inline: recorridos de los demás temas del editor y acceso desde la ayuda, con pruebas y documentación · Risk: item 3 (componentes y navegación compartidos) · commit `dd63708478281482c9af6d2f419b1903da908055`; verificación final en T3.
-- T3 [in_progress] S1-S3 · inline + una verificación independiente por Risk item 3: suite, revisión de accesibilidad y prueba funcional de recorridos en navegador con datos aislados · Risk: item 3 (guía y selectores compartidos) · commit pendiente; depende de T1-T2.
+- T3 [done] S1-S3 · inline + una verificación independiente por Risk item 3: suite, revisión de accesibilidad y prueba funcional de recorridos en navegador con datos aislados · Risk: item 3 (guía y selectores compartidos) · commit `1a1fe34ca131a8ce4775eab0a00e25a9ee5004ab`.
 
 ## Log
 
@@ -107,3 +107,5 @@ L36 — La suite definitiva del worktree salió 0: 810 pruebas aprobadas y 4 omi
 L37 — La revalidación independiente puntual aprobó los bloqueos de Ayuda y clase en móvil, cierre XMI, rol desconocido/lector y objetivo de validación; sus pruebas enfocadas pasaron 13/13 y sus cinco probes sin escritura no emitieron comandos. S1 y S2 aprobaron para esos bloqueos y S3 para el worktree. Límite: la ausencia de avance automático mientras el rol es desconocido se corroboró por el guard del código, no con un clic en ese objetivo; no se repitieron todos los temas en esa revalidación. El padre está repitiendo una prueba puntual antes del commit final.
 
 L38 — La prueba puntual repetida por el padre después del verificador pasó 13/13. Las correcciones y pruebas de T3 están preparadas para su commit; 4 pruebas de la suite permanecen omitidas y ASSESS del lote final no estuvo disponible por timeout. No hubo push ni PR.
+
+L39 — Correcciones y pruebas de T3 confirmadas como `1a1fe34ca131a8ce4775eab0a00e25a9ee5004ab`. Las cuatro pruebas omitidas requieren un backend real configurado mediante `VITE_API_BASE_URL` (tres de lienzo y una de contrato); no se usó ni modificó un proyecto real. ASSESS del lote final agotó el tiempo y no se reintentó; la verificación independiente puntual aprobó los bloqueos. Cierre del trabajo en el worktree, sin push ni PR.
