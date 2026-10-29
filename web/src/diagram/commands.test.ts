@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createApiClient } from '../api/client';
 import type { ModelResource, OperationEnvelope, ViewStyleResource } from '../api/types';
 import {
+  buildProjectRenameRequest,
   buildAnchorStyleRequest,
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
@@ -326,5 +327,15 @@ describe('buildAnchorStyleRequest', () => {
   it('follows the axis of the source side', () => {
     expect((buildAnchorStyleRequest('v', 'r', { source: 'E', target: 'N' }).payload as { routeAdjustment: { axis: string } })
       .routeAdjustment.axis).toBe('H');
+  });
+});
+
+describe('buildProjectRenameRequest', () => {
+  it('targets the project and sends the trimmed name', () => {
+    expect(buildProjectRenameRequest('project-1', '  Biblioteca  ')).toEqual({
+      type: 'project.rename',
+      targets: [{ scope: 'project', id: 'project-1' }],
+      payload: { name: 'Biblioteca' },
+    });
   });
 });

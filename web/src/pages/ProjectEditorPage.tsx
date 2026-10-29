@@ -61,6 +61,7 @@ import {
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
   buildModelCommandEnvelope,
+  buildProjectRenameRequest,
   buildRelationshipDeleteRequest,
   classifierCascadeCount,
   type ClassifierKind,
@@ -80,6 +81,7 @@ import {
 } from '../help/tourSteps';
 import { findEditorSection, nextActiveSection, type EditorSectionId } from './editorSections';
 import EditorOptionsBar from './EditorOptionsBar';
+import ProjectNameEditor from './ProjectNameEditor';
 import FloatingAssistantButton from '../ui/FloatingAssistantButton';
 import Modal from '../ui/Modal';
 
@@ -757,6 +759,22 @@ export default function ProjectEditorPage() {
     return envelope;
   }, [dispatchEnvelope]);
 
+  const renameProject = useCallback(async (name: string): Promise<void> => {
+    if (!projectId || !dispatchCommand(buildProjectRenameRequest(projectId, name))) {
+      return;
+    }
+    // dispatchEnvelope chains the command onto the queue, so this waits for the server outcome.
+    await queueRef.current;
+    try {
+      const refreshed = await api.getProject(projectId);
+      if (currentProjectIdRef.current === projectId) {
+        setProject(refreshed);
+      }
+    } catch (cause: unknown) {
+      setError(messageFor(cause));
+    }
+  }, [dispatchCommand, projectId]);
+
   const addClassifier = useCallback((kind: ClassifierKind) => {
     const current = modelRef.current;
     if (!current) {
@@ -1166,7 +1184,7 @@ export default function ProjectEditorPage() {
               <nav aria-label="Ruta" className="editor-breadcrumb">
                 <Link to="/">Proyectos</Link> / <span>{project.name}</span>
               </nav>
-              <h1 id="project-title">{project.name}</h1>
+              <ProjectNameEditor key={project.name} name={project.name} onRename={renameProject} />
             </div>
           )}
           {project && model && (
