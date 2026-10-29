@@ -5,6 +5,7 @@ import {
   Controls,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -45,6 +46,21 @@ import {
 import RemoteCursors from '../collaboration/RemoteCursors.tsx';
 import type { RemoteCursorMarker } from '../collaboration/remoteCursors';
 import type { TouchedElement } from './touch-highlight';
+import {
+  PASTE_OFFSET,
+  copySelection,
+  deleteClipboardClassifiers,
+  pasteClipboard,
+  relationshipsLostByCut,
+  type DiagramClipboard,
+} from './clipboard';
+
+/**
+ * Shared by every canvas of the tab, so a group copied in one project can be pasted in another.
+ * `pastes` drives the offset: each paste lands one step further, and a cut starts at -1 so its
+ * first paste goes back exactly where the cut classes were.
+ */
+let canvasClipboard: { clipboard: DiagramClipboard; pastes: number } | null = null;
 
 const DEFAULT_NODE_WIDTH = 260;
 const GRID_SIZE = 24;
@@ -457,6 +473,8 @@ function CanvasFrame(props: UmlCanvasProps) {
   // and released when the classifier gains geometry or leaves the model so a later
   // re-arrival can request again.
   const unplacedAttemptsRef = useRef(new Map<string, UnplacedGeometryAttempt>());
+  // Classifiers of the last paste: the next model sync selects them, so they can be dragged as a group.
+  const pastedIdsRef = useRef<Set<string> | null>(null);
 
   const persistResize = useCallback((classifierId: string, rectangle: NodeRectangle, zOrder: number) => {
     const payload = geometryPayload(props.model, classifierId, rectangle, zOrder);
@@ -528,19 +546,25 @@ function CanvasFrame(props: UmlCanvasProps) {
     // nodesRef holds the nodes committed before this model update, i.e. exactly the
     // elements already on screen; the new classifier is not among them.
     const unplaced = unplacedClassifierIds(props.model, nodesRef.current);
-    setNodes((current) => buildFlowNodes(
-      props.model,
-      current,
-      props.onCommand,
-      props.onSelect,
-      persistResize,
-      props.touchedElements,
-    ));
-    setEdges(buildFlowEdges(props.model, updateWaypoints, {
+    const pasted = pastedIdsRef.current;
+    pastedIdsRef.current = null;
+    setNodes((current) => {
+      const next = buildFlowNodes(
+        props.model,
+        current,
+        props.onCommand,
+        props.onSelect,
+        persistResize,
+        props.touchedElements,
+      );
+      return pasted ? next.map((node) => ({ ...node, selected: pasted.has(node.id) })) : next;
+    });
+    const nextEdges = buildFlowEdges(props.model, updateWaypoints, {
       onRelationshipContextMenu: openRelationshipEndContextMenu,
       onEdgeEndpointsChange: rememberEdgeEndpoints,
       onRouteAdjustmentChange: updateRouteAdjustment,
-    }, edgesRef.current));
+    }, edgesRef.current);
+    setEdges(pasted ? nextEdges.map((edge) => ({ ...edge, selected: false })) : nextEdges);
     if (unplaced.length > 0 && pendingFitRef.current === null) {
       // A node handed over in this render is not yet measured by React Flow, so a
       // synchronous fitView would silently drop it from the fit bounds. Record the
@@ -718,10 +742,73 @@ function CanvasFrame(props: UmlCanvasProps) {
     setConnectionDraft(null);
   }
 
+  /** The classes of the canvas multi-selection; without one, the single selection of the page. */
+  function selectedClassifierIds(): string[] {
+    const classifierIds = nodesRef.current.filter((node) => node.selected).map((node) => node.id);
+    if (classifierIds.length === 0 && props.selection?.kind === 'classifier') {
+      classifierIds.push(props.selection.classifierId);
+    }
+    return classifierIds;
+  }
+
+  function copySelected(): DiagramClipboard | null {
+    const clipboard = copySelection(props.model, selectedClassifierIds());
+    if (clipboard) {
+      canvasClipboard = { clipboard, pastes: 0 };
+    }
+    return clipboard;
+  }
+
+  function cutSelected(): void {
+    const clipboard = copySelected();
+    if (!clipboard || !canvasClipboard) {
+      return;
+    }
+    const lost = relationshipsLostByCut(props.model, clipboard);
+    if (lost > 0 && !window.confirm(
+      `Cortar estas clases también elimina ${lost} relación(es) con clases que no seleccionaste; esas no se copian. ¿Continuar?`,
+    )) {
+      canvasClipboard = null;
+      return;
+    }
+    canvasClipboard.pastes = -1;
+    props.onSelect(null);
+    deleteClipboardClassifiers(clipboard, props.model, props.onCommand);
+  }
+
+  function pasteFromClipboard(): void {
+    if (!canvasClipboard) {
+      return;
+    }
+    canvasClipboard.pastes += 1;
+    const result = pasteClipboard(canvasClipboard.clipboard, props.model, props.onCommand, canvasClipboard.pastes * PASTE_OFFSET);
+    pastedIdsRef.current = new Set(result.classifierIds);
+    props.onSelect(result.classifierIds.length === 1
+      ? { kind: 'classifier', classifierId: result.classifierIds[0]! }
+      : null);
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const target = event.target;
     if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) {
       return;
+    }
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && !event.repeat) {
+      const key = event.key.toLowerCase();
+      if (key === 'c' && copySelected()) {
+        event.preventDefault();
+        return;
+      }
+      if (key === 'x') {
+        event.preventDefault();
+        cutSelected();
+        return;
+      }
+      if (key === 'v' && canvasClipboard) {
+        event.preventDefault();
+        pasteFromClipboard();
+        return;
+      }
     }
     if (event.key === 'Escape' && contextMenu) {
       event.preventDefault();
@@ -797,7 +884,10 @@ function CanvasFrame(props: UmlCanvasProps) {
           <span className="mode-chip">UML 2.5</span>
         </div>
         <div className="diagram-toolbar-actions" aria-label="Herramientas del diagrama">
-          <p className="diagram-connection-hint">Arrastra desde el punto de una clase hasta otra para conectarlas.</p>
+          <p className="diagram-connection-hint">
+            Arrastra desde el punto de una clase hasta otra para conectarlas. Mayús + arrastrar o Ctrl + clic selecciona
+            varias; Ctrl + C, Ctrl + X y Ctrl + V copian, cortan y pegan.
+          </p>
           <button className="button button-secondary button-compact" onClick={() => props.onAddClassifier('CLASS')} type="button">
             + Clase
           </button>
@@ -886,6 +976,7 @@ function CanvasFrame(props: UmlCanvasProps) {
           minZoom={0.25}
           maxZoom={2}
           panOnDrag
+          selectionMode={SelectionMode.Partial}
           zoomOnScroll
           zoomOnPinch
           nodesConnectable
