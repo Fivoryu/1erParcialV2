@@ -60,6 +60,8 @@ void main() {
       expect(c.messages.single.content, 'Remember this locally');
       expect(c.messages.single.role, 'user');
       expect(find.text('Remember this locally'), findsOneWidget);
+      // The person's own turn is labelled as theirs, as in the agent mockup.
+      expect(find.text('Tú'), findsOneWidget);
       expect(paths, everyElement(contains('/chats')));
       expect(await st.outbox(s), isEmpty);
       await tester.pumpWidget(const SizedBox());

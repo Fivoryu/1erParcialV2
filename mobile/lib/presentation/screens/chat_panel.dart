@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
+import '../app_theme.dart';
 import '../chat_controller.dart';
 
 class ChatPanel extends StatefulWidget {
@@ -35,20 +36,22 @@ class _ChatPanelState extends State<ChatPanel> {
         children: [
           Row(
             children: [
-              if (c.selected != null)
-                IconButton(
-                  tooltip: 'Historial de conversaciones',
-                  onPressed: c.busy ? null : c.showHistory,
-                  icon: const Icon(Icons.history),
-                ),
               Expanded(
                 child: Text(
                   c.selected == null
                       ? 'Conversaciones'
                       : _displayConversationTitle(c.selected!.title),
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
+              if (c.selected != null)
+                Tooltip(
+                  message: 'Historial de conversaciones',
+                  child: OutlinedButton(
+                    onPressed: c.busy ? null : c.showHistory,
+                    child: const Text('Historial'),
+                  ),
+                ),
               IconButton(
                 tooltip: 'Actualizar historial',
                 onPressed: c.busy ? null : c.refresh,
@@ -116,9 +119,18 @@ class _ChatPanelState extends State<ChatPanel> {
                 ),
               ),
             ),
-          TextButton(
-            onPressed: c.busy ? null : c.inspectOperations,
-            child: const Text('Revisar operaciones pendientes'),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                alignment: Alignment.centerLeft,
+                minimumSize: const Size.fromHeight(48),
+                backgroundColor: AppPalette.paper,
+              ),
+              onPressed: c.busy ? null : c.inspectOperations,
+              icon: const Icon(Icons.arrow_right),
+              label: const Text('Revisar operaciones pendientes'),
+            ),
           ),
           if (c.error != null)
             Padding(padding: const EdgeInsets.all(8), child: Text(c.error!)),
@@ -140,20 +152,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 onTap: c.busy ? null : () => c.open(conversation),
               ),
           ] else ...[
-            for (final message in c.messages)
-              Align(
-                alignment: message.role == 'user'
-                    ? Alignment.centerRight
-                    : Alignment.centerLeft,
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: message.role == 'assistant'
-                        ? MarkdownBody(data: message.content, selectable: true)
-                        : SelectableText(message.content),
-                  ),
-                ),
-              ),
+            for (final message in c.messages) _MessageBubble(message.role, message.content),
             Semantics(
               identifier: 'chat-message',
               label: 'Mensaje',
@@ -180,6 +179,47 @@ class _ChatPanelState extends State<ChatPanel> {
       );
     },
   );
+}
+
+/// One turn of the conversation: the person's own message sits right in a soft purple
+/// bubble, the agent's answer left in a bordered card, each under its author.
+class _MessageBubble extends StatelessWidget {
+  const _MessageBubble(this.role, this.content);
+  final String role;
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    final mine = role == 'user';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Text(
+            mine ? 'Tú' : 'Agente local',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: mine ? AppPalette.accent : AppPalette.dark,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            margin: EdgeInsets.only(left: mine ? 32 : 0),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: mine ? AppPalette.wash : AppPalette.paper,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppPalette.line),
+            ),
+            child: mine
+                ? SelectableText(content)
+                : MarkdownBody(data: content, selectable: true),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 String _displayConversationTitle(String title) =>
