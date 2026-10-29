@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../domain/models.dart';
-import '../app_theme.dart';
 import '../session_controller.dart';
 import '../workspace_controller.dart';
 
@@ -129,10 +128,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     builder: (context, _) {
       final c = widget.controller;
       final name = [c.project?.name, c.backend?.name].whereType<String>().join(' · ');
+      final scheme = Theme.of(context).colorScheme;
       return Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
         decoration: BoxDecoration(
-          color: AppPalette.roseWash,
+          color: scheme.secondaryContainer,
           borderRadius: BorderRadius.circular(9),
         ),
         child: Row(
@@ -144,7 +144,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   Text(
                     'BACKEND SELECCIONADO',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: AppPalette.rose,
+                      color: scheme.onSecondaryContainer,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0.4,
                     ),
@@ -152,13 +152,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   const SizedBox(height: 2),
                   Text(
                     name.isEmpty ? 'Ningún backend elegido' : name,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
             ),
             OutlinedButton(
-              style: OutlinedButton.styleFrom(backgroundColor: AppPalette.paper),
+              style: OutlinedButton.styleFrom(backgroundColor: scheme.surface),
               onPressed: () => context.go('/backends'),
               child: const Text('Cambiar'),
             ),

@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
-import '../app_theme.dart';
 import '../chat_controller.dart';
 
 class ChatPanel extends StatefulWidget {
@@ -125,7 +124,7 @@ class _ChatPanelState extends State<ChatPanel> {
               style: OutlinedButton.styleFrom(
                 alignment: Alignment.centerLeft,
                 minimumSize: const Size.fromHeight(48),
-                backgroundColor: AppPalette.paper,
+                backgroundColor: Theme.of(context).colorScheme.surface,
               ),
               onPressed: c.busy ? null : c.inspectOperations,
               icon: const Icon(Icons.arrow_right),
@@ -191,6 +190,8 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mine = role == 'user';
+    // Theme roles, not fixed colors: the phone may run the dark theme.
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
@@ -199,7 +200,7 @@ class _MessageBubble extends StatelessWidget {
           Text(
             mine ? 'Tú' : 'Agente local',
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: mine ? AppPalette.accent : AppPalette.dark,
+              color: mine ? scheme.tertiary : scheme.primary,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -208,9 +209,9 @@ class _MessageBubble extends StatelessWidget {
             margin: EdgeInsets.only(left: mine ? 32 : 0),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: mine ? AppPalette.wash : AppPalette.paper,
+              color: mine ? scheme.primaryContainer : scheme.surface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppPalette.line),
+              border: Border.all(color: scheme.outlineVariant),
             ),
             child: mine
                 ? SelectableText(content)

@@ -21,6 +21,8 @@ ThemeData buildLightTheme() {
     // Primary actions use the dark purple; the lighter accent marks emphasis.
     primary: AppPalette.dark,
     onPrimary: AppPalette.paper,
+    primaryContainer: AppPalette.wash,
+    onPrimaryContainer: AppPalette.dark,
     secondary: AppPalette.rose,
     secondaryContainer: AppPalette.roseWash,
     onSecondaryContainer: AppPalette.rose,
