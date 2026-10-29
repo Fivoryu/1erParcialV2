@@ -124,7 +124,7 @@ void main() {
   test('a session-capable Gemma gets the static prompt once per backend and only the request per message', () async {
     final events = <String>[];
     final gemma = FakeSessionGemma(events);
-    final c = WorkspaceController(mnn: FakeQwen(events), litert: gemma);
+    final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: FakeQwen(events), litert: gemma);
     await c.selectRuntime(LocalRuntime.gemma);
     await c.loadDetectedModel();
     c.contract = const BackendContract(deploymentId: 'd', runId: 'r', contractHash: 'h', openApi: {});
@@ -140,11 +140,16 @@ void main() {
     expect(gemma.received, 'not an envelope');
   });
 
+  test('the app starts on Gemma, the default local model', () {
+    final c = WorkspaceController();
+    expect(c.selectedRuntime, LocalRuntime.gemma);
+  });
+
   test('explicit switch clears ready but retains backend and draft; release precedes load', () async {
     final events = <String>[];
     final qwen = FakeQwen(events);
     final gemma = FakeGemma(events);
-    final c = WorkspaceController(mnn: qwen, litert: gemma);
+    final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: qwen, litert: gemma);
     expect(c.selectedRuntime, LocalRuntime.qwen);
     await c.discoverModel();
     await c.loadDetectedModel();
@@ -173,7 +178,7 @@ void main() {
     () async {
       final events = <String>[];
       final gemma = FakeGemma(events);
-      final c = WorkspaceController(mnn: FakeQwen(events), litert: gemma);
+      final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: FakeQwen(events), litert: gemma);
       await c.selectRuntime(LocalRuntime.gemma);
       await c.loadDetectedModel();
       gemma.generation = Completer<String>();
@@ -199,7 +204,7 @@ void main() {
     () async {
       final events = <String>[];
       final gemma = FakeGemma(events);
-      final c = WorkspaceController(mnn: FakeQwen(events), litert: gemma);
+      final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: FakeQwen(events), litert: gemma);
       await c.selectRuntime(LocalRuntime.gemma);
       gemma.loading = Completer<LiteRtAgentStatus>();
       final load = c.loadDetectedModel();
@@ -223,7 +228,7 @@ void main() {
     'optional Gemma absent remains controlled and never falls back',
     () async {
       final events = <String>[];
-      final c = WorkspaceController(mnn: FakeQwen(events));
+      final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: FakeQwen(events));
       await c.selectRuntime(LocalRuntime.gemma);
       await c.loadDetectedModel();
       expect(c.mnnStatus.isLoaded, false);
@@ -233,7 +238,7 @@ void main() {
   test('failed old release prevents loading another engine', () async {
     final events = <String>[];
     final gemma = FakeGemma(events);
-    final c = WorkspaceController(mnn: FakeQwen(events), litert: gemma);
+    final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: FakeQwen(events), litert: gemma);
     await c.selectRuntime(LocalRuntime.gemma);
     await c.loadDetectedModel();
     gemma.failRelease = true;
@@ -247,7 +252,7 @@ void main() {
     () async {
       final events = <String>[];
       final gemma = FakeGemma(events);
-      final c = WorkspaceController(mnn: FakeQwen(events), litert: gemma);
+      final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: FakeQwen(events), litert: gemma);
       await c.selectRuntime(LocalRuntime.gemma);
       await c.loadDetectedModel();
       expect(events.where((e) => e == 'gemma.load').length, 1);
@@ -267,7 +272,7 @@ void main() {
     () async {
       final events = <String>[];
       final gemma = FakeGemma(events);
-      final c = WorkspaceController(mnn: FakeQwen(events), litert: gemma);
+      final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: FakeQwen(events), litert: gemma);
       await c.selectRuntime(LocalRuntime.gemma);
       await c.loadDetectedModel();
       gemma.failRelease = true;

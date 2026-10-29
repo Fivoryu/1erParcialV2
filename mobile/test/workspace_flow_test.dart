@@ -95,7 +95,7 @@ const backend = GeneratedBackend(
 void main() {
   test('backend selection ignores stale responses', () async {
     final api = FakePlatform();
-    final controller = WorkspaceController(
+    final controller = WorkspaceController(selectedRuntime: LocalRuntime.qwen, 
       service: api,
       store: MemoryStore(),
       mnn: FakeMnn(),
@@ -115,7 +115,7 @@ void main() {
     () async {
       final api = FakePlatform()..failWrites = true;
       final store = MemoryStore();
-      final controller = WorkspaceController(
+      final controller = WorkspaceController(selectedRuntime: LocalRuntime.qwen, 
         service: api,
         store: store,
         mnn: FakeMnn(),

@@ -50,7 +50,7 @@ void main() {
     final api = f.FakePlatform();
     final store = f.MemoryStore();
     final mnn = OutputMnn(fence);
-    final c = WorkspaceController(service: api, store: store, mnn: mnn)
+    final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, service: api, store: store, mnn: mnn)
       ..project = f.project
       ..backend = f.backend
       ..contract = contract;
@@ -82,7 +82,7 @@ void main() {
       final store = f.MemoryStore()..pending['u.p.d.hash'] = raw;
       final before = Map<String, String>.from(store.pending);
       final mnn = OutputMnn(output);
-      final c = WorkspaceController(service: api, store: store, mnn: mnn)
+      final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, service: api, store: store, mnn: mnn)
         ..project = f.project
         ..backend = f.backend
         ..contract = contract

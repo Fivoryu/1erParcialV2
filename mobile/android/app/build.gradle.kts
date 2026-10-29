@@ -3,7 +3,8 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val litertTrial = providers.gradleProperty("litertTrial").orNull == "true"
+// Gemma (LiteRT-LM) is the default phone model, so it is compiled in unless -PlitertTrial=false.
+val litertTrial = providers.gradleProperty("litertTrial").orNull != "false"
 
 val mnnRoot = providers.environmentVariable("DIAGRAMMER_MNN_ROOT").orNull ?: ""
 

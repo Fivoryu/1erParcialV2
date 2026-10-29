@@ -5,7 +5,7 @@ This opt-in diagnostic evaluates Gemma with LiteRT-LM inside the Android app. It
 ## Isolation and identity
 
 - Normal builds exclude the trial native source and LiteRT dependency. Production Flutter main, MNN channel, gateway guards and SQLite data remain unchanged.
-- Trial builds enable `-PlitertTrial=true` and use the separate Flutter entrypoint `tool/litert_trial.dart` with channel `diagrammer/litert_trial`.
+- LiteRT is compiled into every build by default (Gemma is the default phone model since 2026-10-29); pass `-PlitertTrial=false` to build without it. Trial builds use the separate Flutter entrypoint `tool/litert_trial.dart` with channel `diagrammer/litert_trial`.
 - Native dependency: `com.google.ai.edge.litertlm:litertlm-android:0.18.0`. The resolved AAR requires Android API 24; this app retains API 28.
 - Model: `litert-community/gemma-4-E2B-it-litert-lm`, revision `b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1`, file `gemma-4-E2B-it.litertlm`.
 - Required bytes: `2588147712`. SHA-256: `181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c`.
@@ -96,7 +96,7 @@ Greeting sampled PSS peak was 3,195,692 KiB and RSS 2,391,184 KiB, separate coun
 
 ## Optional production chat adapter
 
-The optional native and Dart Gemma adapters now have a visible Settings selector. Qwen remains the initial default. Three actual-widget selector checks and the full 116-test Flutter suite passed; integrated phone behavior still requires separate evidence. Builds with the existing explicit `litertTrial=true` Gradle property include both the diagnostic and the separate `diagrammer/litert_agent` production adapter. Normal default-off builds report Gemma unavailable; they do not silently fall back.
+The optional native and Dart Gemma adapters now have a visible Settings selector. Qwen was the initial default until 2026-10-29, when Gemma 4 E2B became the default because Qwen's answers were too weak; Qwen stays selectable in Settings. Three actual-widget selector checks and the full 116-test Flutter suite passed; integrated phone behavior still requires separate evidence. Builds with the existing explicit `litertTrial=true` Gradle property include both the diagnostic and the separate `diagrammer/litert_agent` production adapter. Normal default-off builds report Gemma unavailable; they do not silently fall back.
 
 The adapter receives the complete bounded runner envelope and returns a strict action decision. Native tools cannot execute; existing Dart authorization, frozen contract checks, operation receipts and exact deletion confirmation remain authoritative. A fresh native conversation is created for each decision while the app supplies bounded chat history and observations. Runtime switching preserves the backend and draft and releases the actual resource owner before another load; failed cleanup must retain ownership.
 

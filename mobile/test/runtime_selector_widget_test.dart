@@ -55,7 +55,7 @@ void main() {
     'visible Settings selector reaches Gemma load and preserves workspace',
     (tester) async {
       final events = <String>[];
-      final controller = WorkspaceController(
+      final controller = WorkspaceController(selectedRuntime: LocalRuntime.qwen, 
         mnn: runtime.FakeQwen(events),
         litert: runtime.FakeGemma(events),
       );
@@ -85,7 +85,7 @@ void main() {
     tester,
   ) async {
     final events = <String>[];
-    final controller = WorkspaceController(
+    final controller = WorkspaceController(selectedRuntime: LocalRuntime.qwen, 
       mnn: runtime.FakeQwen(events),
       litert: UnavailableGemma(events),
     );
@@ -108,7 +108,7 @@ void main() {
     final events = <String>[];
     final gemma = runtime.FakeGemma(events)
       ..loading = Completer<LiteRtAgentStatus>();
-    final controller = WorkspaceController(
+    final controller = WorkspaceController(selectedRuntime: LocalRuntime.qwen, 
       mnn: runtime.FakeQwen(events),
       litert: gemma,
     );

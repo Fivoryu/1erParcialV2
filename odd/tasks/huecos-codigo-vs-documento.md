@@ -23,7 +23,7 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
 - **S6.** "Las solicitudes de fusión no tienen aprobación de revisores; solo el propietario fusiona".
 - **S7.** "La verificación de una generación (`POST /projects/{projectId}/generations/{runId}/verification`, `api/GenerationController.java:103-107`) no tiene botón en `web/src/generation/GenerationPanel.tsx`; solo se invoca por API."
 - **S8.** "La pasarela móvil está apagada por defecto (`diagrammer.mobile-gateway.enabled`, `backend/src/main/resources/application.yml:30`); los CU-28 y CU-29 no funcionan hasta habilitarla."
-- **S9.** "El teléfono usa Qwen3.5-0.8B, pero la evaluación recomendó Qwen3.5-2B (`docs/puds/verificacion/03-evaluacion-modelos-ia4-01.md:51`)."
+- **S9.** "El teléfono usa Qwen3.5-0.8B, pero la evaluación recomendó Qwen3.5-2B (`docs/puds/verificacion/03-evaluacion-modelos-ia4-01.md:51`)." Decisión del usuario (2026-10-29): "Se correrá gemma por defecto en el teléfono ya que qwen no es muy inteligente".
 
 ## Tasks
 
@@ -37,7 +37,7 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
 | T6 | S6 | por decidir | pendiente | — |
 | T7 | S7 | worker + verificador | hecho (pruebas web y navegador con respuestas simuladas) | ecbde55 |
 | T8 | S8 | por decidir | pendiente | — |
-| T9 | S9 | por decidir | pendiente | — |
+| T9 | S9 | inline | hecho (201 pruebas Flutter; APK release 41,9 MB con LiteRT) | ver L36 |
 
 ## Log
 
@@ -80,3 +80,7 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
 - **L31 (decisión del usuario):** "Retry with separate checks". Autoriza un nuevo intento con comprobaciones individuales para identificar en qué paso se detiene.
 - **L32 (T4, reintento agotado):** El trabajo autorizado confirmó `HEAD`, actualizó el registro preparado y comprobó las 16 rutas previstas. `git diff --quiet -- backend/src/main/java/com/diagramador/api/InvitationApiService.java` agotó 30 segundos; el script terminó con código 1 antes de intentar crear el commit. No se volvió a ejecutar el comando y la causa sigue sin determinarse.
 - **L33 (T4, commit):** En esta sesión `git diff --quiet` respondió en 0,07 s, así que el timeout de L30-L32 fue propio del otro entorno. Se revisó el diff preparado de 16 rutas y se confirmó como un commit aparte.
+- **L34 (2026-10-29, pedido del usuario):** "Vamos con todo papu :D". Revisión: T5, T6, T8 y T9 coincidían con el Google Doc (cambiar de rama, solo el propietario fusiona, pasarela habilitada como precondición con `MOBILE_GATEWAY_DISABLED (503)`, Qwen se mantiene en el teléfono). T5, T6 y T8 quedan sin cambios hasta que el usuario decida.
+- **L35 (2026-10-29, decisión del usuario):** "Se correrá gemma por defecto en el teléfono ya que qwen no es muy inteligente".
+- **L36 (T9):** `WorkspaceController.selectedRuntime` arranca en `LocalRuntime.gemma`; los 26 tests que prueban flujos de Qwen lo fijan explícitamente. LiteRT se compila por defecto (`-PlitertTrial=false` lo excluye). La página del agente usa `ChatPanel`, que funciona con ambos modelos, así que la restricción de `propose` con Gemma no afecta a la app real. Google Doc: decisión del modelo, tecnologías y manual de usuario actualizados; se conservan las mediciones de Gemma (43,8 s, cierre inesperado). Riesgo conocido: en la prueba previa Gemma usó unos 3,2 GB de memoria del proceso.
+
