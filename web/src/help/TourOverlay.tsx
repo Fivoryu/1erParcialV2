@@ -4,6 +4,7 @@ import './tour.css';
 import type { MemberRole } from '../api/types';
 import type { CanvasSelection } from '../diagram/selection';
 import type { EditorSectionId } from '../pages/editorSections';
+import { placeTourAboveTarget, scrollOffsetBelowHeader } from './tourPlacement';
 import {
   clampTourStepIndex,
   getTourStep,
@@ -48,7 +49,7 @@ const TARGET_SELECTORS: Partial<Record<TourTarget, string>> = {
   'attribute-add': '[data-guide-target="attribute-add"]',
   'operation-add': '[data-guide-target="operation-add"]',
   'relationship-select': '[aria-label="Elegir tipo de relación"]',
-  validation: '[aria-label="Validación en vivo"]',
+  validation: '.validation-strip',
   canvas: '.react-flow',
   'project-list': '.editor-breadcrumb a',
   'xmi-export': '[aria-labelledby="xmi-export-title"] .generation-actions button',
@@ -69,7 +70,7 @@ const TARGET_SELECTORS: Partial<Record<TourTarget, string>> = {
   'version-tabs': '.vcs-tab-list',
 };
 
-function findTarget(
+export function findTarget(
   step: VisualTourStep,
   selection: CanvasSelection | null | undefined,
   attributeName: string | undefined,
@@ -131,12 +132,18 @@ export default function TourOverlay({
   const visualIndex = cursor.topic === currentIndex ? cursor.visual : 0;
   const visualSteps = step.visualSteps;
   const visualStep = visualSteps[visualIndex];
-  const readOnlyStep = role === 'VIEWER' && visualStep !== undefined && EDIT_TARGETS.has(visualStep.target);
+  const editStep = visualStep !== undefined && EDIT_TARGETS.has(visualStep.target);
+  const readOnlyStep = role === 'VIEWER' && editStep;
+  const unconfirmedRoleStep = role === null && editStep;
   const hasMoreVisualSteps = visualIndex < visualSteps.length - 1;
   const isFinalStep = (topicOnly || currentIndex === TOUR_STEPS.length - 1) && !hasMoreVisualSteps;
   const targetRef = useRef<HTMLElement | null>(null);
   const [highlight, setHighlight] = useState<Highlight | null>(null);
   const [targetMissing, setTargetMissing] = useState(false);
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window === 'undefined' ? 0 : window.innerWidth,
+    height: typeof window === 'undefined' ? 0 : window.innerHeight,
+  }));
 
   // Keep the same tour state mounted while placing its controls inside the active modal's focus trap.
   useLayoutEffect(() => {
@@ -155,6 +162,8 @@ export default function TourOverlay({
     let observed: HTMLElement | null = null;
     const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
     function measure(): void {
+      setViewport((previous) => previous.width === window.innerWidth && previous.height === window.innerHeight
+        ? previous : { width: window.innerWidth, height: window.innerHeight });
       const target = findTarget(visualStep!, selection, attributeName, openSection);
       targetRef.current = target;
       if (target !== observed) {
@@ -195,7 +204,7 @@ export default function TourOverlay({
   }, [visualStep, selection, attributeName, openSection, paused]);
 
   useEffect(() => {
-    if (paused || readOnlyStep || !visualStep || visualStep.advanceOn !== 'click' || !hasMoreVisualSteps) {
+    if (paused || readOnlyStep || unconfirmedRoleStep || !visualStep || visualStep.advanceOn !== 'click' || !hasMoreVisualSteps) {
       return undefined;
     }
     function observeUserClick(event: MouseEvent): void {
@@ -206,7 +215,7 @@ export default function TourOverlay({
     }
     document.addEventListener('click', observeUserClick, true);
     return () => document.removeEventListener('click', observeUserClick, true);
-  }, [visualStep, selection, attributeName, openSection, paused, readOnlyStep, hasMoreVisualSteps, currentIndex, visualIndex]);
+  }, [visualStep, selection, attributeName, openSection, paused, readOnlyStep, unconfirmedRoleStep, hasMoreVisualSteps, currentIndex, visualIndex]);
 
   function previous(): void {
     if (visualIndex > 0) {
@@ -224,8 +233,19 @@ export default function TourOverlay({
     }
   }
 
-  const cardOnLeft = highlight !== null && typeof window !== 'undefined'
-    && highlight.left > window.innerWidth / 2;
+  function showTarget(): void {
+    const target = targetRef.current;
+    if (!target) return;
+    target.scrollIntoView({ block: 'center', inline: 'nearest' });
+
+    const header = document.querySelector<HTMLElement>('.editor-header');
+    if (openSection !== null || !header || header.contains(target)) return;
+    const offset = scrollOffsetBelowHeader(target.getBoundingClientRect().top, header.getBoundingClientRect().bottom);
+    if (offset < 0) window.scrollBy({ top: offset, behavior: 'auto' });
+  }
+
+  const cardOnLeft = highlight !== null && highlight.left > viewport.width / 2;
+  const cardOnTop = placeTourAboveTarget(highlight, viewport.height);
   const content = (
     <>
       {visualStep && highlight && (
@@ -240,7 +260,7 @@ export default function TourOverlay({
           }}
         />
       )}
-      <aside aria-label="Recorrido del editor" className={`editor-tour-overlay${cardOnLeft ? ' editor-tour-overlay--left' : ''}`}>
+      <aside aria-label="Recorrido del editor" className={`editor-tour-overlay${cardOnLeft ? ' editor-tour-overlay--left' : ''}${cardOnTop ? ' editor-tour-overlay--top' : ''}${openSection !== null ? ' editor-tour-overlay--modal' : ''}`}>
         <section className="editor-tour-card">
           <p className="eyebrow">
             {topicOnly ? `Paso ${visualIndex + 1} de ${visualSteps.length}` : `Tema ${currentIndex + 1} de ${TOUR_STEPS.length}`}
@@ -251,7 +271,9 @@ export default function TourOverlay({
             <div aria-live="polite" className="editor-tour-instruction">
               <p>{readOnlyStep
                 ? 'Tu acceso es de lectura. Para modificar el diagrama necesitás permiso de edición; podés seguir explorando la guía.'
-                : visualStep.instruction}</p>
+                : unconfirmedRoleStep
+                  ? 'Todavía no pudimos confirmar tu permiso. Para modificar el diagrama necesitás permiso de edición; podés seguir explorando la guía.'
+                  : visualStep.instruction}</p>
               {targetMissing && (
                 <p className="quiet-state">
                   {openSection !== null && !TARGET_SECTIONS[visualStep.target]
@@ -261,7 +283,7 @@ export default function TourOverlay({
               {highlight && (
                 <button
                   className="text-button"
-                  onClick={() => targetRef.current?.scrollIntoView({ block: 'center', inline: 'nearest' })}
+                  onClick={showTarget}
                   type="button"
                 >
                   Mostrar dónde está
