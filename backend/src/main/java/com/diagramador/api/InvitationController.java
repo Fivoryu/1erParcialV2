@@ -56,6 +56,12 @@ public class InvitationController {
         return invitationApiService.acceptInvitation(projectId, invitationId);
     }
 
+    @PostMapping(path = "/projects/{projectId}/invitations/{invitationId}/decline")
+    public InvitationResource declineInvitation(@PathVariable("projectId") UUID projectId,
+            @PathVariable("invitationId") UUID invitationId) {
+        return invitationApiService.declineInvitation(projectId, invitationId);
+    }
+
     @PostMapping(path = "/projects/{projectId}/invitations/{invitationId}/revoke")
     public InvitationResource revokeInvitation(@PathVariable("projectId") UUID projectId,
             @PathVariable("invitationId") UUID invitationId) {

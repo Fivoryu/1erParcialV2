@@ -210,6 +210,29 @@ describe('typed API client', () => {
   });
 });
 
+describe('generation verification API client', () => {
+  it('localizes rejected outcomes by code while preserving Spanish messages', async () => {
+    const rejected = (message: string) => ({ outcome: 'REJECTED', code: 'RUN_NOT_FOUND', message, idempotencyKey: null, result: null });
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(rejected('Generation run was not found.')), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(rejected('La generación ya no está disponible.')), { status: 200 }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    expect((await client.verifyGeneration(projectId, 'run')).message).toBe('No se encontró la generación.');
+    expect((await client.verifyGeneration(projectId, 'run')).message).toBe('La generación ya no está disponible.');
+  });
+
+  it('posts without a body and preserves incomplete results', async () => {
+    const result = { outcome: 'ACCEPTED', code: 'VERIFICATION_RECORDED', message: 'Recorded', idempotencyKey: null,
+      result: { runId: 'run/1', generationState: 'SUCCEEDED', status: 'NOT_RUN', verifiedBackend: false, checks: [] } };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(result), { status: 200 }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    await expect(client.verifyGeneration('project/1', 'run/1')).resolves.toEqual(result);
+    expect(fetcher).toHaveBeenCalledWith('https://diagram.test/projects/project%2F1/generations/run%2F1/verification',
+      expect.objectContaining({ method: 'POST' }));
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+});
+
 describe('model review API client', () => {
   it('calls the UML validation and generation readiness GET routes with the exact version query', async () => {
     const versionId = '99999999-9999-4999-8999-999999999999';
@@ -248,6 +271,16 @@ describe('model review API client', () => {
 });
 
 describe('project member and invitation API client', () => {
+  it('posts a decline without a body and returns the persisted invitation', async () => {
+    const result = { id: 'invitation/1', status: 'DECLINED' };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(result), { status: 200 }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    await expect(client.declineProjectInvitation('project/1', 'invitation/1')).resolves.toEqual(result);
+    expect(fetcher).toHaveBeenCalledWith('https://diagram.test/projects/project%2F1/invitations/invitation%2F1/decline',
+      expect.objectContaining({ method: 'POST' }));
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+
   it('calls all member and invitation routes with contract methods, bodies, and the session bearer', async () => {
     const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

@@ -48,7 +48,7 @@ CREATE EXTENSION IF NOT EXISTS citext;     -- correo/identificadores comparables
 -- Enumeraciones
 -- ---------------------------------------------------------------------------
 CREATE TYPE project_member_role AS ENUM ('OWNER', 'EDITOR', 'VIEWER');
-CREATE TYPE invitation_status AS ENUM ('PENDING', 'ACCEPTED', 'REVOKED', 'EXPIRED');
+CREATE TYPE invitation_status AS ENUM ('PENDING', 'ACCEPTED', 'REVOKED', 'EXPIRED', 'DECLINED');
 CREATE TYPE classifier_kind AS ENUM ('CLASS', 'ABSTRACT_CLASS', 'INTERFACE', 'ENUMERATION', 'PACKAGE');
 CREATE TYPE relationship_kind AS ENUM ('ASSOCIATION', 'AGGREGATION', 'COMPOSITION', 'GENERALIZATION', 'INTERFACE_REALIZATION', 'DEPENDENCY');
 CREATE TYPE navigation_kind AS ENUM ('NAVIGABLE', 'NOT_NAVIGABLE', 'UNSPECIFIED');

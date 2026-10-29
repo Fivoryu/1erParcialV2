@@ -29,6 +29,8 @@ import {
   suggestedTargetKey,
   targetOptionLabel,
   uniqueTargetKey,
+  verificationCheckLabel,
+  verificationStateLabel,
 } from './presentation';
 
 const api = createApiClient();
@@ -58,6 +60,8 @@ export interface GenerationPanelViewProps {
   phoneUrl: string | null;
   editorOnLocalhost: boolean;
   busy: boolean;
+  generating: boolean;
+  verifying: boolean;
   error: string | null;
   notice: string | null;
   editingLeaseConflict?: EditingLeaseConflict | null;
@@ -68,6 +72,7 @@ export interface GenerationPanelViewProps {
   onCreateTarget(name: string, databaseName: string): void;
   onGenerate(): void;
   onDownload(): void;
+  onVerify(): void;
   onDeploy(): void;
   onStopDeployment(): void;
   onDismiss(): void;
@@ -83,6 +88,8 @@ export function GenerationPanelView({
   phoneUrl,
   editorOnLocalhost,
   busy,
+  generating,
+  verifying,
   error,
   notice,
   editingLeaseConflict = null,
@@ -93,6 +100,7 @@ export function GenerationPanelView({
   onCreateTarget,
   onGenerate,
   onDownload,
+  onVerify,
   onDeploy,
   onStopDeployment,
   onDismiss,
@@ -234,7 +242,7 @@ export function GenerationPanelView({
           onClick={onGenerate}
           disabled={busy || !selectedTarget || !selectedProfile}
         >
-          {busy ? 'Generando…' : 'Generar backend'}
+          {generating ? 'Generando…' : 'Generar backend'}
         </button>
         {ready && (
           <button className="button button-secondary" type="button" onClick={onDownload} disabled={busy}>
@@ -257,6 +265,30 @@ export function GenerationPanelView({
                 </li>
               ))}
             </ul>
+          )}
+          {isTerminalState(run.state) && (
+            <button className="button button-secondary" type="button" onClick={onVerify} disabled={busy}>
+              {verifying ? 'Verificando…' : 'Verificar generación'}
+            </button>
+          )}
+          {run.verification && (
+            <div className="generation-section">
+              <h3>Verificación</h3>
+              <p>{run.verification.status === 'FAILED' || run.verification.checks.some((check) => check.state === 'FAILED')
+                ? 'La verificación encontró fallos.'
+                : run.verification.verifiedBackend && run.verification.status === 'PASSED'
+                  && run.verification.checks.length > 0 && run.verification.checks.every((check) => check.state === 'PASSED')
+                  ? 'Backend completamente verificado'
+                  : 'Verificación incompleta'}</p>
+              <ul className="generation-diagnostics">
+                {run.verification.checks.map((check, index) => (
+                  <li key={index}>
+                    <strong>{verificationCheckLabel(check.checkName)}</strong>
+                    <span>{verificationStateLabel(check.state)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {!isTerminalState(run.state) && (
             <p className="property-hint">La ejecución sigue en curso. Este panel se actualiza automáticamente.</p>
@@ -356,6 +388,8 @@ export default function GenerationPanel({
   const [run, setRun] = useState<GenerationRunResource | null>(null);
   const [deployments, setDeployments] = useState<DeploymentResource[]>([]);
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const activeRunRef = useRef<GenerationRunResource | null>(null);
@@ -467,6 +501,7 @@ export default function GenerationPanel({
       return;
     }
     setBusy(true);
+    setGenerating(true);
     setError(null);
     setNotice(null);
     try {
@@ -492,6 +527,7 @@ export default function GenerationPanel({
         setError(messageFor(cause));
       }
     } finally {
+      setGenerating(false);
       setBusy(false);
     }
   }, [captureLeaseConflict, modelId, profiles, projectId, publishRun, selectedProfileId, selectedTargetId, versionId]);
@@ -561,6 +597,29 @@ export default function GenerationPanel({
     }
   }, [deployment]);
 
+  const verify = useCallback(async () => {
+    const current = activeRunRef.current;
+    if (!current || !isTerminalState(current.state)) return;
+    setBusy(true);
+    setVerifying(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const outcome = await api.verifyGeneration(projectId, current.runId);
+      if (activeRunRef.current !== current) return;
+      if (outcome.outcome === 'ACCEPTED' && outcome.result) {
+        publishRun({ ...current, verification: outcome.result });
+      } else {
+        setError(outcome.message);
+      }
+    } catch (cause: unknown) {
+      if (activeRunRef.current === current) setError(messageFor(cause));
+    } finally {
+      setVerifying(false);
+      setBusy(false);
+    }
+  }, [projectId, publishRun]);
+
   const download = useCallback(async () => {
     const current = activeRunRef.current;
     if (!current) {
@@ -603,6 +662,8 @@ export default function GenerationPanel({
       phoneUrl={phoneUrl}
       editorOnLocalhost={editorOnLocalhost}
       busy={busy}
+      generating={generating}
+      verifying={verifying}
       error={error}
       notice={notice}
       editingLeaseConflict={editingLease.conflict}
@@ -620,6 +681,9 @@ export default function GenerationPanel({
       }}
       onDownload={() => {
         void download();
+      }}
+      onVerify={() => {
+        void verify();
       }}
       onDeploy={() => {
         void deploy();

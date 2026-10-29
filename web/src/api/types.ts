@@ -9,7 +9,7 @@ export interface ProjectResource {
 export type MemberRole = 'OWNER' | 'EDITOR' | 'VIEWER';
 export type AssignableRole = Exclude<MemberRole, 'OWNER'>;
 export type MemberStatus = 'ACTIVE' | 'REMOVED';
-export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED' | 'DECLINED';
 
 export interface MemberResource {
   userId: Uuid;

@@ -193,6 +193,74 @@ class InvitationApiTest extends AuthenticatedApiTest {
     }
 
     @org.junit.jupiter.api.Test
+    void onlyInviteeCanDeclinePendingInvitationWithoutMembership() throws Exception {
+        String owner = username("owner");
+        String invitee = username("decline");
+        String outsider = username("outsider");
+        UUID projectId = createProject(owner, "decline");
+        bearer(invitee);
+        bearer(outsider);
+        UUID invitationId = invitationId(invite(owner, projectId, invitee, "VIEWER"));
+
+        mockMvc.perform(authorizedAs(outsider,
+                post("/projects/{projectId}/invitations/{invitationId}/decline", projectId, invitationId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(authorizedAs(invitee, get("/invitations")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(invitationId.toString()))
+                .andExpect(jsonPath("$[0].status").value("PENDING"));
+        mockMvc.perform(authorizedAs(invitee, get("/projects/{projectId}/model", projectId)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(authorizedAs(owner, get("/projects/{projectId}/members", projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+
+        mockMvc.perform(authorizedAs(invitee,
+                post("/projects/{projectId}/invitations/{invitationId}/decline", projectId, invitationId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DECLINED"));
+        mockMvc.perform(authorizedAs(invitee, get("/invitations")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(invitationId.toString()))
+                .andExpect(jsonPath("$[0].status").value("DECLINED"));
+        mockMvc.perform(authorizedAs(invitee, get("/projects/{projectId}/model", projectId)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(authorizedAs(owner, get("/projects/{projectId}/members", projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+        MvcResult nextInvite = invite(owner, projectId, invitee, "EDITOR");
+        assertThat(nextInvite.getResponse().getStatus()).isEqualTo(201);
+        assertThat(objectMapper.readTree(nextInvite.getResponse().getContentAsByteArray()).path("status").asText())
+                .isEqualTo("PENDING");
+    }
+
+    @org.junit.jupiter.api.Test
+    void declineNonpendingInvitationPreservesStatusAndAccess() throws Exception {
+        for (String transition : new String[] {"accept", "revoke", "decline"}) {
+            String owner = username("owner");
+            String invitee = username("nonpending");
+            UUID projectId = createProject(owner, "nonpending");
+            bearer(invitee);
+            UUID invitationId = invitationId(invite(owner, projectId, invitee, "VIEWER"));
+            String actor = transition.equals("revoke") ? owner : invitee;
+            mockMvc.perform(authorizedAs(actor, post("/projects/{projectId}/invitations/{invitationId}/" + transition,
+                    projectId, invitationId))).andExpect(status().isOk());
+            mockMvc.perform(authorizedAs(invitee, post("/projects/{projectId}/invitations/{invitationId}/decline",
+                    projectId, invitationId))).andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("INVITATION_NOT_PENDING"));
+            String expected = transition.equals("accept") ? "ACCEPTED"
+                    : transition.equals("revoke") ? "REVOKED" : "DECLINED";
+            mockMvc.perform(authorizedAs(invitee, get("/invitations")))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$[0].status").value(expected));
+            mockMvc.perform(authorizedAs(invitee, get("/projects/{projectId}/model", projectId)))
+                    .andExpect(transition.equals("accept") ? status().isOk() : status().isForbidden());
+        }
+    }
+
+    @org.junit.jupiter.api.Test
     void ownerCannotChangeTheirOwnRole() throws Exception {
         String owner = username("owner");
         UUID projectId = createProject(owner, "owner-role");
