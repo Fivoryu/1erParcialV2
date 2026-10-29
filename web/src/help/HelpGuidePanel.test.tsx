@@ -1,8 +1,11 @@
+// @ts-expect-error Node built-ins are available in Vitest, but this browser project omits Node type declarations.
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { HelpGuideResponse } from '../api/types';
 import HelpGuidePanel from './HelpGuidePanel';
+import { HELP_TOPICS } from './helpCorpus';
 import type { HelpGuidePanelState } from './helpGuide';
 
 const answer: HelpGuideResponse = {
@@ -27,6 +30,7 @@ function renderPanel(
       onDraftChange={vi.fn()}
       onSubmit={vi.fn()}
       onNavigateToSection={vi.fn()}
+      onStartTour={vi.fn()}
     />,
   );
 }
@@ -72,6 +76,21 @@ describe('HelpGuidePanel', () => {
       .toContain('The server could not be reached.');
     expect(renderPanel({ kind: 'unsupported', message: 'Local AI is not available here.' }))
       .toContain('Local AI is not available here.');
+  });
+
+  it('keeps compact help text from inheriting the full-size empty-state height', () => {
+    const css = readFileSync(new URL('./helpGuide.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.help-guide-panel\s+\.quiet-state\s*\{[^}]*min-height:\s*0/s);
+  });
+
+  it('offers each documented visual route even when local AI is unavailable', () => {
+    const markup = renderPanel({ kind: 'unsupported', message: 'Local AI is not available here.' });
+
+    expect(markup).toContain('Recorridos visuales');
+    for (const topic of HELP_TOPICS) {
+      expect(markup).toContain(topic.title);
+      expect(markup).not.toContain(topic.slug);
+    }
   });
 
   it('keeps the panel closed until the separate help control is opened', () => {

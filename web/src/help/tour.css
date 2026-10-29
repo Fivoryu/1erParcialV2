@@ -32,6 +32,12 @@
   margin: 0 0 8px;
 }
 
+.editor-tour-instruction .quiet-state {
+  min-height: 0;
+  display: block;
+  text-align: left;
+}
+
 .editor-tour-highlight {
   position: fixed;
   z-index: 49;
@@ -52,10 +58,24 @@
   .editor-tour-overlay,
   .editor-tour-overlay--left {
     right: 12px;
-    bottom: 12px;
+    bottom: 96px;
     left: 12px;
     width: auto;
-    max-height: 40dvh;
+    max-height: min(40dvh, calc(50dvh - 54px));
+  }
+
+  .editor-tour-overlay--top {
+    top: 12px;
+    bottom: auto;
+  }
+
+  .editor-tour-overlay--modal {
+    position: relative;
+    inset: auto;
+    flex: 0 1 auto;
+    width: auto;
+    max-height: min(40dvh, 19rem);
+    margin: 8px 12px 12px;
   }
 }
 
