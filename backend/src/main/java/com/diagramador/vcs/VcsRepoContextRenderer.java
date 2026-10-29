@@ -33,7 +33,7 @@ public class VcsRepoContextRenderer {
     public String render(UUID modelId) {
         UmlModel model = modelRepository.findById(modelId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
-                        "Model was not found.", List.of(), null));
+                        "No se encontró el modelo.", List.of(), null));
         List<VcsResources.Commit> commits = repoQueryService.history(model, null, null, RECENT_COMMITS);
         return renderHistory(commits, OffsetDateTime.now());
     }

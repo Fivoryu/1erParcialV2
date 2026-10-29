@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 public class ProjectAuthorizationService {
 
     private static final String ACTIVE_STATUS = "ACTIVE";
-    private static final String NO_PROJECT_ACCESS = "You do not have access to this project.";
+    private static final String NO_PROJECT_ACCESS = "No tienes acceso a este proyecto.";
     private static final String EDIT_ACCESS_REQUIRED = "This action requires edit access to this project.";
     private static final String ADMINISTRATION_REQUIRED = "This action requires administration of this project.";
 

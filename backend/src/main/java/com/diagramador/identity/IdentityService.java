@@ -131,7 +131,7 @@ public class IdentityService {
 
     private static ApiException invalidCredentials() {
         return new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS",
-                "Username or password is incorrect.", List.of(), null);
+                "El usuario o la contraseña son incorrectos.", List.of(), null);
     }
 
     private static ApiException unauthenticated() {

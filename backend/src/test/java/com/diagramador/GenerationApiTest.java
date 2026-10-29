@@ -485,7 +485,7 @@ class GenerationApiTest extends AuthenticatedApiTest {
                 .andReturn();
         JsonNode error = objectMapper.readTree(unknownProject.getResponse().getContentAsByteArray());
         assertThat(error.path("code").asText()).isEqualTo("NOT_FOUND");
-        assertThat(error.path("message").asText()).isEqualTo("Project was not found.");
+        assertThat(error.path("message").asText()).isEqualTo("No se encontró el proyecto.");
         assertThat(error.path("details").isArray()).isTrue();
         assertThat(error.has("operationId")).isTrue();
     }
@@ -501,7 +501,7 @@ class GenerationApiTest extends AuthenticatedApiTest {
                     .andReturn();
             JsonNode error = objectMapper.readTree(response.getResponse().getContentAsByteArray());
             assertThat(error.path("code").asText()).isEqualTo("NOT_FOUND");
-            assertThat(error.path("message").asText()).isEqualTo("Project was not found.");
+            assertThat(error.path("message").asText()).isEqualTo("No se encontró el proyecto.");
             assertThat(error.path("details").isArray()).isTrue();
             assertThat(error.has("operationId")).isTrue();
         }

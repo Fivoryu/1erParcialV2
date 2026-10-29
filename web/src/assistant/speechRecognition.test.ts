@@ -3,6 +3,7 @@ import {
   INITIAL_SPEECH_RECOGNITION_STATE,
   SPEECH_RECOGNITION_LANG,
   getSpeechRecognitionConstructor,
+  speechRecognitionErrorMessage,
   isSpeechRecognitionSupported,
   transitionSpeechRecognitionState,
   type SpeechRecognitionMachineEvent,
@@ -270,5 +271,20 @@ describe('feature detection', () => {
     // This suite runs in the Node environment: there is no global window.
     expect(typeof globalThis.window).toBe('undefined');
     expect(isSpeechRecognitionSupported()).toBe(false);
+  });
+});
+
+describe('speechRecognitionErrorMessage', () => {
+  it('explains every visible dictation failure in Spanish', () => {
+    expect(speechRecognitionErrorMessage('not-allowed')).toBe('Permite el acceso al micrófono para dictar.');
+    expect(speechRecognitionErrorMessage('not-supported')).toBe('Este navegador no admite el dictado en español.');
+    expect(speechRecognitionErrorMessage('network')).toBe('El dictado necesita conexión a internet. Revisa la red e inténtalo de nuevo.');
+    expect(speechRecognitionErrorMessage('unknown')).toBe('No se pudo usar el dictado. Inténtalo de nuevo.');
+  });
+
+  it('stays silent when nobody spoke or the user stopped', () => {
+    expect(speechRecognitionErrorMessage('no-speech')).toBeNull();
+    expect(speechRecognitionErrorMessage('aborted')).toBeNull();
+    expect(speechRecognitionErrorMessage(null)).toBeNull();
   });
 });

@@ -222,7 +222,7 @@ public class ProjectApiService {
         requireProject(projectId);
         projectAuthorizationService.requireMember(projectId);
         UUID modelId = modelRepository.findByProjectId(projectId)
-                .orElseThrow(() -> notFound("Model was not found.")).getId();
+                .orElseThrow(() -> notFound("No se encontró el modelo.")).getId();
         int cappedLimit = limit == null ? 50 : Math.max(0, Math.min(limit, 200));
         List<ModelCommand> commands = sinceRevision == null
                 ? modelCommandRepository.findByModelIdAndResultRevisionNotNullOrderByResultRevisionDesc(modelId,
@@ -237,7 +237,7 @@ public class ProjectApiService {
         requireProject(projectId);
         projectAuthorizationService.requireMember(projectId);
         UUID modelId = modelRepository.findByProjectId(projectId)
-                .orElseThrow(() -> notFound("Model was not found.")).getId();
+                .orElseThrow(() -> notFound("No se encontró el modelo.")).getId();
         return Map.of("pendingChanges", modelCommandRepository.countByModelIdAndKnowledgePendingTrue(modelId));
     }
 
@@ -256,7 +256,7 @@ public class ProjectApiService {
     public ModelResource getModel(UUID projectId) {
         requireProject(projectId);
         projectAuthorizationService.requireMember(projectId);        UmlModel model = modelRepository.findByProjectId(projectId)
-                .orElseThrow(() -> notFound("Model was not found."));
+                .orElseThrow(() -> notFound("No se encontró el modelo."));
 
         List<UmlConstraint> modelConstraints = constraintRepository.findByModelId(model.getId());
         Map<UUID, List<UmlConstraint>> classifierConstraints = modelConstraints.stream()
@@ -347,7 +347,7 @@ public class ProjectApiService {
     }
 
     private Project requireProject(UUID projectId) {
-        return projectRepository.findById(projectId).orElseThrow(() -> notFound("Project was not found."));
+        return projectRepository.findById(projectId).orElseThrow(() -> notFound("No se encontró el proyecto."));
     }
 
     private ViewResource viewResource(DiagramView view) {

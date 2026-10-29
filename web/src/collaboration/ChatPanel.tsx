@@ -9,6 +9,7 @@ import type {
 } from '../api/types';
 import { describeAssistantOperation, type DiagramNames } from '../assistant/assistantNames';
 import { appendTranscript } from '../assistant/speechTranscript';
+import { speechRecognitionErrorMessage } from '../assistant/speechRecognition';
 import { useSpeechRecognition } from '../assistant/useSpeechRecognition';
 import MarkdownText from './MarkdownText';
 import { formatMessageTime } from './messageTime';
@@ -216,6 +217,7 @@ export default function ChatPanel({
 }: ChatPanelProps) {
   const { timeZone } = new Intl.DateTimeFormat().resolvedOptions();
   const speech = useSpeechRecognition();
+  const speechNotice = speechRecognitionErrorMessage(speech.error);
   const draftRef = useRef(draft);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
@@ -500,6 +502,7 @@ export default function ChatPanel({
           </form>
 
           {proposalNotice && <p className="notice notice-error" role="alert">{proposalNotice}</p>}
+          {speechNotice && <p className="notice notice-error" role="alert">{speechNotice}</p>}
 
           {selectedImages.length > 0 && (
             <ul className="chat-selected-attachments" aria-label="Imágenes por enviar">
