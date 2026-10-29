@@ -1,0 +1,66 @@
+.editor-tour-overlay {
+  position: fixed;
+  z-index: 50;
+  right: 24px;
+  bottom: 96px;
+  width: min(28rem, calc(100vw - 48px));
+  max-height: min(60vh, 42rem);
+  overflow-y: auto;
+}
+
+.editor-tour-overlay--left {
+  right: auto;
+  left: 24px;
+}
+
+.editor-tour-card {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 0 16px 48px rgb(15 23 42 / 24%);
+}
+
+.editor-tour-instruction {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--paper);
+}
+
+.editor-tour-instruction p {
+  margin: 0 0 8px;
+}
+
+.editor-tour-highlight {
+  position: fixed;
+  z-index: 49;
+  box-sizing: border-box;
+  border: 3px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: 0 0 0 3px var(--paper), 0 0 0 6px var(--accent);
+  pointer-events: none;
+  animation: editor-tour-highlight 700ms ease-out 2;
+}
+
+@keyframes editor-tour-highlight {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 600px) {
+  .editor-tour-overlay,
+  .editor-tour-overlay--left {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 40dvh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-tour-highlight {
+    animation: none;
+  }
+}

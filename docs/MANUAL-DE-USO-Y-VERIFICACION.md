@@ -301,20 +301,25 @@ solo el despliegue del ingreso.
 
 El editor tiene dos capas de ayuda, una sin IA y otra con IA local:
 
-**Tour de bienvenida (sin IA, determinista).** La primera vez que entrás a un proyecto aparece una tarjeta
-con cinco pasos que recorren el editor: dibujar clases, menú contextual, XMI, colaboración, generación y
-despliegue. Cerrar el tour lo marca como visto **para ese proyecto** (queda en tu navegador); el botón
-**Show editor tour** de la barra de opciones lo vuelve a abrir cuando quieras. Los textos del tour vienen del
-mismo inventario que la guía conversacional: si una sección cambia, las pruebas lo detectan.
+**Recorrido de bienvenida (sin IA, determinista).** La primera vez que entrás a un proyecto aparece una tarjeta
+con siete temas del editor. El primero te acompaña para crear una clase, cambiar su nombre y agregar un atributo:
+el contorno señala el control real y la tarjeta explica qué hacer. El nombre de la clase y del atributo se
+cambia con doble clic sobre el lienzo. Si un control todavía no está disponible, la tarjeta explica qué falta;
+**Mostrar dónde está** lo acerca a la vista cuando existe. Podés usar **Anterior**, **Siguiente** y
+**Finalizar recorrido** sin que la guía haga cambios por vos. La animación respeta la preferencia de movimiento
+reducido del navegador. Finalizar marca el recorrido como visto **para ese proyecto** en ese navegador;
+**Mostrar recorrido del editor** lo vuelve a abrir. Los temas provienen del mismo inventario que la guía
+conversacional.
 
 **Guía conversacional (IA local).** El botón flotante de ayuda abre un panel propio, independiente del chat
 del diagrama: no comparte sesiones ni memoria, y nunca modifica el modelo. Escribís una pregunta (por ejemplo
 «¿cómo genero el backend?» o «¿cómo invito a alguien?»), el editor envía la pregunta junto con el inventario
 de temas y el estado actual, y el modelo local responde en breve basándose solo en esos temas. Si la pregunta
 queda fuera de la ayuda de la app, lo dice en vez de inventar. Cuando la respuesta sugiere una sección, ves
-botones **Open …**: apretar uno abre esa sección del editor; nada se abre solo.
+botones **Abrir …**: apretar uno abre esa sección del editor; nada se abre solo.
 
 **Si la guía no responde:** si el despliegue no tiene la IA local habilitada, el panel lo declara
-explícitamente («not available on this deployment») en vez de fallar en silencio; con el proveedor activo,
+explícitamente («La guía de ayuda no está disponible en esta implementación porque la IA local está deshabilitada.»)
+en vez de fallar en silencio; con el proveedor activo,
 un error transitorio se reintenta con la misma pregunta. El panel no necesita configuración adicional: usa el
 mismo runtime local que el chat del diagrama.

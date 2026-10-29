@@ -33,6 +33,17 @@ describe('editor tour steps', () => {
     expect(TOUR_STEPS.map((step) => step.section)).toEqual(expectedTopics.map((topic) => topic.section));
   });
 
+  it('guides a beginner through creating, naming, and adding an attribute to a class', () => {
+    expect(getTourStep(0)).toMatchObject({
+      visualSteps: [
+        { target: 'class-add', advanceOn: 'click' },
+        { target: 'class-name', advanceOn: 'manual' },
+        { target: 'attribute-add', advanceOn: 'click' },
+        { target: 'attribute-name', advanceOn: 'manual' },
+      ],
+    });
+  });
+
   it('associates tour sections only with sections that exist in the editor', () => {
     const validSections = EDITOR_SECTIONS.map((section) => section.id);
     for (const step of TOUR_STEPS) {

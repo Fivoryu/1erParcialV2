@@ -808,6 +808,10 @@ export default function ProjectEditorPage() {
   }, [projectId]);
 
   const targetElementId = selectedTargetElementId(selection);
+  const guideAttributeName = selection?.kind === 'attribute'
+    ? model?.classifiers.find((item) => item.id === selection.classifierId)
+      ?.attributes.find((item) => item.id === selection.elementId)?.name
+    : undefined;
   const activeSection = openSection === null ? null : findEditorSection(openSection);
   const handleOpenSection = useCallback((id: EditorSectionId) => {
     setOpenSection((current) => nextActiveSection(current, id));
@@ -1464,6 +1468,8 @@ export default function ProjectEditorPage() {
             {tourOpen && openSection === null && project.id === projectId && (
               <TourOverlay
                 stepIndex={tourStepIndex}
+                selection={selection}
+                {...(guideAttributeName === undefined ? {} : { attributeName: guideAttributeName })}
                 onPrevious={() => changeTourStep(previousTourStepIndex(tourStepIndex))}
                 onNext={() => changeTourStep(nextTourStepIndex(tourStepIndex))}
                 onFinish={finishTour}
