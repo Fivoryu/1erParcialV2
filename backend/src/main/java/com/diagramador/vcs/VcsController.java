@@ -220,9 +220,9 @@ public class VcsController {
     }
 
     private UmlModel requiredModel(UUID projectId) {
-        projectRepository.findById(projectId).orElseThrow(() -> notFound("Project was not found."));
+        projectRepository.findById(projectId).orElseThrow(() -> notFound("No se encontró el proyecto."));
         return modelRepository.findByProjectId(projectId)
-                .orElseThrow(() -> notFound("Model was not found."));
+                .orElseThrow(() -> notFound("No se encontró el modelo."));
     }
 
     private UserAccount author() {

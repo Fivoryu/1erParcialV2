@@ -104,6 +104,7 @@ class AuthenticationApiTest extends AuthenticatedApiTest {
                 .andExpect(status().isUnauthorized())
                 .andReturn());
         assertThat(error.path("code").asText()).isEqualTo("INVALID_CREDENTIALS");
+        assertThat(error.path("message").asText()).isEqualTo("El usuario o la contraseña son incorrectos.");
     }
 
     @Test
@@ -142,7 +143,7 @@ class AuthenticationApiTest extends AuthenticatedApiTest {
                 .andExpect(status().isForbidden())
                 .andReturn());
         assertThat(error.path("code").asText()).isEqualTo("FORBIDDEN");
-        assertThat(error.path("message").asText()).isEqualTo("You do not have access to this project.");
+        assertThat(error.path("message").asText()).isEqualTo("No tienes acceso a este proyecto.");
     }
 
     private JsonNode register(String username, String password) throws Exception {

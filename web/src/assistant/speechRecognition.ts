@@ -20,6 +20,22 @@ export type SpeechRecognitionErrorReason =
   | 'network'
   | 'unknown';
 
+/** User-facing text for a dictation failure; null when the failure needs no notice. */
+export function speechRecognitionErrorMessage(reason: SpeechRecognitionErrorReason | null): string | null {
+  switch (reason) {
+    case 'not-allowed':
+      return 'Permite el acceso al micrófono para dictar.';
+    case 'not-supported':
+      return 'Este navegador no admite el dictado en español.';
+    case 'network':
+      return 'El dictado necesita conexión a internet. Revisa la red e inténtalo de nuevo.';
+    case 'unknown':
+      return 'No se pudo usar el dictado. Inténtalo de nuevo.';
+    default:
+      return null;
+  }
+}
+
 export interface SpeechRecognitionState {
   phase: SpeechRecognitionPhase;
   /** Final segments concatenated with a single space separator, trimmed. */

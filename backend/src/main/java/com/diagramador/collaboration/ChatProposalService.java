@@ -158,7 +158,7 @@ public class ChatProposalService {
         chatService.requireAccessibleSession(projectId, sessionId);
         projectAuthorizationService.requireEditor(projectId);
         claim(sessionId, proposalId, ChatProposal.REJECTED);
-        return finish(projectId, sessionId, proposalId, ChatProposal.REJECTED, "Rejected without changes.");
+        return finish(projectId, sessionId, proposalId, ChatProposal.REJECTED, "Rechazada sin cambios.");
     }
 
     /** Atomically takes a PENDING proposal; a lost race or an earlier decision is a 409. */
@@ -185,9 +185,9 @@ public class ChatProposalService {
             proposalRepository.saveAndFlush(proposal);
             return resource(proposal);
         });
-        String verb = ChatProposal.REJECTED.equals(status) ? "rejected" : "reviewed";
+        String verb = ChatProposal.REJECTED.equals(status) ? "rechazó" : "revisó";
         chatService.postAiAnswer(sessionId, resource.messageId(),
-                decider.getDisplayName() + " " + verb + " the suggestion: " + summary);
+                decider.getDisplayName() + " " + verb + " la sugerencia: " + summary);
         publishDecision("proposal.decided", projectId, resource);
         return resource;
     }
@@ -218,17 +218,17 @@ public class ChatProposalService {
             AssistantApplyResponse applied) {
         int total = applied.steps().size();
         StringBuilder text = new StringBuilder();
-        text.append(accepted).append(" of ").append(total).append(accepted == 1 ? " change" : " changes")
-                .append(" applied");
+        text.append(accepted).append(" de ").append(total)
+                .append(accepted == 1 ? " cambio aplicado" : " cambios aplicados");
         if (skipped > 0) {
-            text.append(", ").append(skipped).append(" skipped");
+            text.append(", ").append(skipped).append(skipped == 1 ? " omitido" : " omitidos");
         }
         if (stopped) {
             String reason = applied.steps().stream()
                     .filter(step -> "REJECTED".equals(step.status()) && !step.diagnostics().isEmpty())
                     .map(step -> step.diagnostics().get(0).message())
-                    .findFirst().orElse("a step was rejected");
-            text.append("; stopped: ").append(reason);
+                    .findFirst().orElse("se rechazó un paso");
+            text.append("; se detuvo: ").append(reason);
         }
         return text.append('.').toString();
     }
@@ -236,7 +236,7 @@ public class ChatProposalService {
     private static String cardTitle(String utterance) {
         String line = utterance.replaceAll("\\s+", " ");
         String clipped = line.length() > CARD_TITLE_LENGTH ? line.substring(0, CARD_TITLE_LENGTH) + "…" : line;
-        return "Suggested change: " + clipped;
+        return "Cambio sugerido: " + clipped;
     }
 
     private ProposalResource resource(ChatProposal proposal) {

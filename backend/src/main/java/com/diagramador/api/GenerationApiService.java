@@ -299,11 +299,11 @@ public class GenerationApiService {
 
     private UmlModel findModel(UUID projectId) {
         return modelRepository.findByProjectId(projectId)
-                .orElseThrow(() -> notFound("Model was not found."));
+                .orElseThrow(() -> notFound("No se encontró el modelo."));
     }
 
     private void requireProject(UUID projectId) {
-        projectRepository.findById(projectId).orElseThrow(() -> notFound("Project was not found."));
+        projectRepository.findById(projectId).orElseThrow(() -> notFound("No se encontró el proyecto."));
     }
 
     private static ApiException notFound(String message) {

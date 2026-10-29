@@ -42,7 +42,7 @@ public class VcsPermissionService {
         if (actor != null) {
             projectMemberRepository.findByProjectIdAndUserId(model.getProject().getId(), actor.getId())
                     .filter(member -> "ACTIVE".equals(member.getStatus()))
-                    .orElseThrow(() -> forbidden("You do not have access to this project's permissions."));
+                    .orElseThrow(() -> forbidden("No tienes acceso a los permisos de este proyecto."));
         }
         return projectMemberRepository.findByProjectId(model.getProject().getId()).stream()
                 .filter(member -> "ACTIVE".equals(member.getStatus()))

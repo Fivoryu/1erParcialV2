@@ -283,9 +283,9 @@ public class DeploymentApiService {
     private UmlModel requireModel(UUID projectId) {
         projectRepository.findById(projectId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
-                        "Project was not found.", List.of(), null));
+                        "No se encontró el proyecto.", List.of(), null));
         return modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
-                        "Model was not found.", List.of(), null));
+                        "No se encontró el modelo.", List.of(), null));
     }
 }

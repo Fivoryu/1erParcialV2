@@ -172,13 +172,13 @@ public class VcsAccessService {
     private ProjectMember requireActiveMember(UUID projectId, UUID userId) {
         return projectMemberRepository.findByProjectIdAndUserId(projectId, userId)
                 .filter(member -> ACTIVE_STATUS.equals(member.getStatus()))
-                .orElseThrow(() -> forbidden("You do not have access to this project's version history."));
+                .orElseThrow(() -> forbidden("No tienes acceso al historial de versiones de este proyecto."));
     }
 
     private UmlModel requireModel(UUID projectId) {
         return modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
-                        "Model was not found.", List.of(), null));
+                        "No se encontró el modelo.", List.of(), null));
     }
 
     private static ApiException forbidden(String message) {

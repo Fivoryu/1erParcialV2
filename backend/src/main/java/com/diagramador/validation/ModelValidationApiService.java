@@ -105,7 +105,7 @@ public class ModelValidationApiService {
     }
 
     private static ApiException notFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Project was not found.",
+        return new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "No se encontró el proyecto.",
                 List.of(), null);
     }
 }

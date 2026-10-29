@@ -92,12 +92,12 @@ class ChatProposalApiTest extends AuthenticatedApiTest {
 
         assertThat(decided.path("status").asText()).isEqualTo("ACCEPTED");
         assertThat(decided.path("decidedByUserId").asText()).isEqualTo(userIdFor(owner).toString());
-        assertThat(decided.path("resultSummary").asText()).startsWith("1 of 1 change applied");
+        assertThat(decided.path("resultSummary").asText()).startsWith("1 de 1 cambio aplicado");
         assertThat(classifierNames(owner, projectId)).contains("Paciente");
         JsonNode history = json(mockMvc.perform(authorizedAs(owner,
                         get("/projects/{p}/sessions/{s}/messages", projectId, sessionId)))
                 .andExpect(status().isOk()).andReturn());
-        assertThat(history.findValuesAsText("body")).anyMatch(body -> body.contains("the suggestion: 1 of 1"));
+        assertThat(history.findValuesAsText("body")).anyMatch(body -> body.contains("revisó la sugerencia: 1 de 1"));
     }
 
     @Test
@@ -112,6 +112,7 @@ class ChatProposalApiTest extends AuthenticatedApiTest {
                         post("/projects/{p}/sessions/{s}/proposals/{id}/reject", projectId, sessionId, id)))
                 .andExpect(status().isOk()).andReturn());
         assertThat(rejected.path("status").asText()).isEqualTo("REJECTED");
+        assertThat(rejected.path("resultSummary").asText()).isEqualTo("Rechazada sin cambios.");
         assertThat(classifierNames(owner, projectId)).doesNotContain("Paciente");
 
         MvcResult again = mockMvc.perform(authorizedAs(owner,

@@ -378,14 +378,14 @@ public class UndoService {
     private UmlModel requireModel(UUID projectId) {
         UmlModel model = modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new com.diagramador.api.ApiException(org.springframework.http.HttpStatus.NOT_FOUND,
-                        "NOT_FOUND", "Model was not found.", List.of(), null));
+                        "NOT_FOUND", "No se encontró el modelo.", List.of(), null));
         return model;
     }
 
     private long freshRevision(UUID modelId) {
         return modelRepository.findById(modelId)
                 .orElseThrow(() -> new com.diagramador.api.ApiException(org.springframework.http.HttpStatus.NOT_FOUND,
-                        "NOT_FOUND", "Model was not found.", List.of(), null))
+                        "NOT_FOUND", "No se encontró el modelo.", List.of(), null))
                 .getCurrentRevision();
     }
 
