@@ -58,11 +58,11 @@ export default function ValidationStrip({ model, loadDiagnostics }: ValidationSt
           </div>
         </div>
         <div className="validation-stats">
-          <span aria-live="polite" className="validation-count validation-error" data-empty={summary.errors.length === 0}>
-            Errores <strong>{summary.errors.length}</strong>
+          <span aria-live="polite" className="validation-count validation-error" data-empty={state.kind !== 'ready' || summary.errors.length === 0}>
+            Errores <strong>{state.kind === 'ready' ? summary.errors.length : '—'}</strong>
           </span>
-          <span aria-live="polite" className="validation-count validation-warning" data-empty={summary.warnings.length === 0}>
-            Advertencias <strong>{summary.warnings.length}</strong>
+          <span aria-live="polite" className="validation-count validation-warning" data-empty={state.kind !== 'ready' || summary.warnings.length === 0}>
+            Advertencias <strong>{state.kind === 'ready' ? summary.warnings.length : '—'}</strong>
           </span>
           <button
             aria-controls="validation-details"

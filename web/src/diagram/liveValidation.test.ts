@@ -72,6 +72,16 @@ describe('summarizeValidation', () => {
     expect(summary.warnings.map((finding) => finding.text)).toContain('Something new.');
   });
 
+  it('keeps finding keys unique when one element repeats an unknown code', () => {
+    const summary = summarizeValidation(model, [
+      diagnostic('NEW_RULE', 'ERROR', 'book', 'First.'),
+      diagnostic('NEW_RULE', 'ERROR', 'book', 'Second.'),
+    ]);
+
+    const keys = summary.errors.map((finding) => finding.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
   it('counts nothing on a clean model', () => {
     const clean = { ...model, relationships: [] };
 

@@ -42,8 +42,12 @@ export default function RelationSetup(props: RelationSetupProps): ReactElement {
         : 'Elige el origen y el destino.');
       return;
     }
-    props.onCommand(request);
-    setStatus(`${choice.label} creada: ${name(props.sourceId)} → ${name(props.targetId)}.`);
+    if (!props.onCommand(request)) {
+      setStatus('No se pudo enviar la relación; vuelve a intentarlo.');
+      return;
+    }
+    // Sent, not yet confirmed: a server rejection shows up in the editor's error notice.
+    setStatus(`${choice.label} enviada: ${name(props.sourceId)} → ${name(props.targetId)}.`);
     setAssociationClassId('');
     props.onEndsChange({ sourceId: '', targetId: '' });
   }

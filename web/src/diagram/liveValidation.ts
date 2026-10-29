@@ -79,7 +79,8 @@ function grouped(diagnostics: ValidationDiagnosticResource[], names: Map<string,
   const findings: ValidationFinding[] = [];
   for (const diagnostic of diagnostics) {
     if (!RULE_TITLES[diagnostic.code]) {
-      findings.push({ key: `${diagnostic.code}:${diagnostic.elementId ?? findings.length}`, text: diagnostic.message });
+      // The position keeps keys unique when one element repeats a code.
+      findings.push({ key: `${diagnostic.code}:${diagnostic.elementId ?? ''}:${findings.length}`, text: diagnostic.message });
       continue;
     }
     byRule.set(diagnostic.code, [...(byRule.get(diagnostic.code) ?? []), diagnostic]);

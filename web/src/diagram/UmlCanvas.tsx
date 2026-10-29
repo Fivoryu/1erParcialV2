@@ -720,7 +720,9 @@ function CanvasFrame(props: UmlCanvasProps) {
       const direction = connectionDirection(connection.source, connection.target, connectStartNodeRef.current);
       const flipped = direction.sourceId !== connection.source;
       const draft = { ...direction, sides: connectionSides(connection.sourceHandle, connection.targetHandle, flipped) };
-      const kind = props.relationKind ?? 'ASSOCIATION';
+      // The rail kind applies while the relation tool is on; a drag with the tool off is a plain association,
+      // so a kind chosen long ago never surprises the user.
+      const kind = props.relationActive ? props.relationKind ?? 'ASSOCIATION' : 'ASSOCIATION';
       if (kind === 'ASSOCIATION_CLASS') {
         props.onConnectionNeedsClass?.({ sourceId: draft.sourceId, targetId: draft.targetId });
         return;
@@ -773,6 +775,8 @@ function CanvasFrame(props: UmlCanvasProps) {
   }
 
   function cutSelected(): void {
+    // A cancelled cut must leave the clipboard as it was, not empty it.
+    const previous = canvasClipboard;
     const clipboard = copySelected();
     if (!clipboard || !canvasClipboard) {
       return;
@@ -781,8 +785,8 @@ function CanvasFrame(props: UmlCanvasProps) {
     if (lost > 0 && !window.confirm(
       `Cortar estas clases también elimina ${lost} relación(es) con clases que no seleccionaste; esas no se copian. ¿Continuar?`,
     )) {
-      canvasClipboard = null;
-      setHasClipboard(false);
+      canvasClipboard = previous;
+      setHasClipboard(previous !== null);
       return;
     }
     canvasClipboard.pastes = -1;
@@ -796,7 +800,8 @@ function CanvasFrame(props: UmlCanvasProps) {
     }
     canvasClipboard.pastes += 1;
     const result = pasteClipboard(canvasClipboard.clipboard, props.model, props.onCommand, canvasClipboard.pastes * PASTE_OFFSET);
-    pastedIdsRef.current = new Set(result.classifierIds);
+    // A paste that created nothing must not reselect anything on a later, unrelated sync.
+    pastedIdsRef.current = result.classifierIds.length > 0 ? new Set(result.classifierIds) : null;
     props.onSelect(result.classifierIds.length === 1
       ? { kind: 'classifier', classifierId: result.classifierIds[0]! }
       : null);
@@ -918,7 +923,8 @@ function CanvasFrame(props: UmlCanvasProps) {
           onEdgesChange={onEdgesChange}
           onNodeClick={(_, node) => {
             props.onSelect({ kind: 'classifier', classifierId: node.id });
-            if (props.relationActive) {
+            // A package is not a relationship end; the setup lists only classes too.
+            if (props.relationActive && node.data.classifier.kind !== 'PACKAGE') {
               props.onRelationEndPicked?.(node.id);
             }
           }}
