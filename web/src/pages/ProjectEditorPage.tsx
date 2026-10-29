@@ -1422,6 +1422,7 @@ export default function ProjectEditorPage() {
             >
               <VersioningPanel
                 projectId={project.id}
+                projectName={project.name}
                 onModelCheckout={(checkoutModel) => {
                   canonicalModelRef.current = checkoutModel;
                   revisionRef.current = checkoutModel.revision;

@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { VcsBranch, VcsStatus } from './api';
 import {
+  HISTORY_COUNT_LIMIT,
   nextVersioningTab,
+  tabCountLabel,
   VersioningPanelView,
   VersioningStatusBar,
 } from './VersioningPanel';
@@ -59,11 +61,46 @@ describe('versioning workspace', () => {
     expect(markup).toContain('aria-labelledby="vcs-tab-history"');
   });
 
-  it('wraps roving keyboard navigation around all four tabs', () => {
-    expect(nextVersioningTab('branches', 'previous')).toBe('permissions');
-    expect(nextVersioningTab('branches', 'next')).toBe('history');
-    expect(nextVersioningTab('history', 'next')).toBe('reviews');
-    expect(nextVersioningTab('permissions', 'next')).toBe('branches');
+  it('wraps roving keyboard navigation around all four tabs, in repository order', () => {
+    expect(nextVersioningTab('history', 'previous')).toBe('permissions');
+    expect(nextVersioningTab('history', 'next')).toBe('branches');
+    expect(nextVersioningTab('branches', 'next')).toBe('reviews');
+    expect(nextVersioningTab('permissions', 'next')).toBe('history');
+  });
+
+  it('heads the workspace like a repository, with a counter on each tab that has one', () => {
+    const markup = renderToStaticMarkup(createElement(VersioningPanelView, {
+      projectId: '55555555-5555-4555-8555-555555555555',
+      projectName: 'Library',
+      counts: { history: 12, branches: 2, reviews: 1 },
+      status,
+      headBranch,
+      loading: false,
+      error: null,
+      onStatusChanged: vi.fn(),
+      onModelCheckout: vi.fn(),
+      historyDetailOpen: false,
+      onHistoryDetailOpenChange: vi.fn(),
+    }));
+
+    expect(markup).toContain('Library / <strong>modelo-uml</strong>');
+    expect(markup).toContain('<span class="vcs-repo-tag">main</span>');
+    expect(markup.match(/id="vcs-tab-[a-z]+"/g)).toEqual([
+      'id="vcs-tab-history"',
+      'id="vcs-tab-branches"',
+      'id="vcs-tab-reviews"',
+      'id="vcs-tab-permissions"',
+    ]);
+    expect(markup).toContain('Historial<span class="vcs-tab-count">12</span>');
+    expect(markup).toContain('Ramas<span class="vcs-tab-count">2</span>');
+    expect(markup).toContain('Revisiones<span class="vcs-tab-count">1</span>');
+    expect(markup).toContain('Permisos</button>');
+  });
+
+  it('caps the history counter at the number of commits it reads', () => {
+    expect(tabCountLabel('history', { history: HISTORY_COUNT_LIMIT + 1 })).toBe(`${HISTORY_COUNT_LIMIT}+`);
+    expect(tabCountLabel('history', { history: HISTORY_COUNT_LIMIT })).toBe(String(HISTORY_COUNT_LIMIT));
+    expect(tabCountLabel('reviews', {})).toBeNull();
   });
 
   it('shows clean and uncommitted working-copy states with distinct chips', () => {

@@ -4890,3 +4890,94 @@ kbd {
     min-height: 420px;
   }
 }
+
+/* Versioning laid out like a code-host repository (taller mockup): identity
+   header, underlined tabs with counters, and the existing panels below. */
+
+.vcs-repo-head {
+  padding: 4px 0 12px;
+}
+
+.vcs-repo-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.vcs-repo-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--accent-wash);
+  color: var(--accent-dark);
+}
+
+.vcs-repo-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.vcs-repo-name {
+  color: var(--accent-dark);
+  font-size: 17px;
+}
+
+.vcs-repo-tag {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.vcs-repo-caption {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.vcs-tab-list {
+  gap: 4px;
+  padding: 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  overflow-x: auto;
+}
+
+.vcs-tab {
+  min-height: 46px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.vcs-tab:hover:not(:disabled) {
+  background: var(--canvas);
+}
+
+.vcs-tab[aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  background: transparent;
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+
+.vcs-tab-count {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+}

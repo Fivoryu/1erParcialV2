@@ -16,12 +16,48 @@ const api = createVcsApiClient();
 export type VersioningTab = 'branches' | 'history' | 'reviews' | 'permissions';
 export type VersioningTabDirection = 'next' | 'previous';
 
+// Repository order, as a code host shows it: what happened first, then where it happened.
 const VERSIONING_TABS: ReadonlyArray<{ id: VersioningTab; label: string }> = [
-  { id: 'branches', label: 'Ramas' },
   { id: 'history', label: 'Historial' },
+  { id: 'branches', label: 'Ramas' },
   { id: 'reviews', label: 'Revisiones' },
   { id: 'permissions', label: 'Permisos' },
 ];
+
+/** How many commits the header reads to count them; past it the count shows as "N+". */
+export const HISTORY_COUNT_LIMIT = 100;
+
+/** Counters of the repository tabs; a missing one is not shown. */
+export interface VersioningCounts {
+  history?: number;
+  branches?: number;
+  reviews?: number;
+}
+
+export function tabCountLabel(tab: VersioningTab, counts: VersioningCounts): string | null {
+  const count = tab === 'permissions' ? undefined : counts[tab];
+  if (count === undefined) {
+    return null;
+  }
+  return tab === 'history' && count > HISTORY_COUNT_LIMIT ? `${HISTORY_COUNT_LIMIT}+` : String(count);
+}
+
+export function RepositoryHeader({ projectName, branch }: { projectName: string; branch: string | null }) {
+  return (
+    <header className="vcs-repo-head">
+      <div className="vcs-repo-identity">
+        <span aria-hidden="true" className="vcs-repo-icon">
+          <svg fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24">
+            <path d="M5 4.5h12a2 2 0 0 1 2 2v13H7a2 2 0 0 1-2-2v-13Zm2 0v15M9.5 8h6" />
+          </svg>
+        </span>
+        <span className="vcs-repo-name">{projectName} / <strong>modelo-uml</strong></span>
+        {branch && <span className="vcs-repo-tag">{branch}</span>}
+      </div>
+      <p className="vcs-repo-caption">Revisiones, ramas y propuestas de cambio del modelo.</p>
+    </header>
+  );
+}
 
 export function nextVersioningTab(current: VersioningTab, direction: VersioningTabDirection): VersioningTab {
   const currentIndex = VERSIONING_TABS.findIndex((tab) => tab.id === current);
@@ -69,6 +105,8 @@ export function VersioningStatusBar({ status, headBranch, loading, error }: Vers
 
 interface VersioningPanelViewProps {
   projectId: Uuid;
+  projectName?: string;
+  counts?: VersioningCounts;
   status: VcsStatus | null;
   headBranch: VcsBranch | null;
   loading: boolean;
@@ -81,6 +119,8 @@ interface VersioningPanelViewProps {
 
 export function VersioningPanelView({
   projectId,
+  projectName,
+  counts = {},
   status,
   headBranch,
   loading,
@@ -122,6 +162,7 @@ export function VersioningPanelView({
 
   return (
     <div className="vcs-workspace">
+      {projectName && <RepositoryHeader branch={status?.branch ?? null} projectName={projectName} />}
       <VersioningStatusBar
         status={status}
         headBranch={headBranch}
@@ -150,6 +191,9 @@ export function VersioningPanelView({
               type="button"
             >
               {tab.label}
+              {tabCountLabel(tab.id, counts) !== null && (
+                <span className="vcs-tab-count">{tabCountLabel(tab.id, counts)}</span>
+              )}
             </button>
           );
         })}
@@ -188,12 +232,14 @@ export function VersioningPanelView({
 
 export interface VersioningPanelProps {
   projectId: Uuid;
+  projectName?: string;
   onModelCheckout(model: ModelResource): void;
 }
 
-export default function VersioningPanel({ projectId, onModelCheckout }: VersioningPanelProps) {
+export default function VersioningPanel({ projectId, projectName, onModelCheckout }: VersioningPanelProps) {
   const [status, setStatus] = useState<VcsStatus | null>(null);
   const [branches, setBranches] = useState<VcsBranch[]>([]);
+  const [counts, setCounts] = useState<VersioningCounts>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshSequence, setRefreshSequence] = useState(0);
@@ -205,11 +251,26 @@ export default function VersioningPanel({ projectId, onModelCheckout }: Versioni
     setError(null);
     setStatus(null);
     setBranches([]);
-    void Promise.allSettled([api.getStatus(projectId), api.listBranches(projectId)])
-      .then(([statusResult, branchesResult]) => {
+    setCounts({});
+    void Promise.allSettled([
+      api.getStatus(projectId),
+      api.listBranches(projectId),
+      // One past the limit tells "exactly the limit" apart from "more than the limit".
+      api.listCommits(projectId, undefined, HISTORY_COUNT_LIMIT + 1),
+      api.listMergeRequests(projectId),
+    ])
+      .then(([statusResult, branchesResult, commitsResult, mergeRequestsResult]) => {
         if (!active) {
           return;
         }
+        // Counters are a convenience: a failed read leaves its tab without a number.
+        setCounts({
+          ...(commitsResult.status === 'fulfilled' ? { history: commitsResult.value.length } : {}),
+          ...(branchesResult.status === 'fulfilled' ? { branches: branchesResult.value.length } : {}),
+          ...(mergeRequestsResult.status === 'fulfilled'
+            ? { reviews: mergeRequestsResult.value.filter((request) => request.state === 'OPEN').length }
+            : {}),
+        });
         if (statusResult.status === 'fulfilled') {
           setStatus(statusResult.value);
         } else {
@@ -241,6 +302,8 @@ export default function VersioningPanel({ projectId, onModelCheckout }: Versioni
   return (
     <VersioningPanelView
       projectId={projectId}
+      {...(projectName ? { projectName } : {})}
+      counts={counts}
       status={status}
       headBranch={headBranch}
       loading={loading}
