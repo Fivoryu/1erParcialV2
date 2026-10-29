@@ -74,7 +74,7 @@ describe('project invitations section', () => {
     ));
     const markup = renderView({ error: failure });
 
-    expect(markup).toContain('That invitation is no longer available.');
+    expect(markup).toContain('No se encontró la invitación en este proyecto.');
     expect(markup).not.toContain('INVITATION_NOT_FOUND');
     expect(markup).not.toMatch(UUID_PATTERN);
   });

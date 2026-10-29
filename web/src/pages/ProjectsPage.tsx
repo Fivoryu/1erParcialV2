@@ -5,6 +5,7 @@ import { clearSession, loadSession } from '../api/session';
 import type { ProjectResource } from '../api/types';
 import InvitationsSection from '../members/InvitationsSection';
 import LoginPage, { loginErrorMessage } from './LoginPage';
+import { PROJECT_NAME_MAX_LENGTH, projectNameError } from './ProjectNameEditor';
 
 const api = createApiClient();
 
@@ -86,8 +87,9 @@ export default function ProjectsPage() {
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedName = name.trim();
-    if (!trimmedName) {
-      setError('Enter a project name to continue.');
+    const validation = projectNameError(trimmedName);
+    if (validation) {
+      setError(validation);
       return;
     }
 
@@ -138,7 +140,7 @@ export default function ProjectsPage() {
             <div className="section-heading">
               <div>
                 <p className="eyebrow">Biblioteca</p>
-                <h2 id="project-list-title">All projects</h2>
+                <h2 id="project-list-title">Todos los proyectos</h2>
               </div>
               <span className="count-chip">{projects.length}</span>
             </div>
@@ -165,7 +167,7 @@ export default function ProjectsPage() {
                   <li className="project-row" key={project.id}>
                     <div className="project-row-copy">
                       <h3>{project.name}</h3>
-                      <p>{project.description || 'No description'}</p>
+                      <p>{project.description || 'Sin descripción'}</p>
                     </div>
                     <Link className="button button-secondary button-compact" to={`/projects/${encodeURIComponent(project.id)}`}>
                       Abrir
@@ -187,7 +189,7 @@ export default function ProjectsPage() {
               <input
                 autoComplete="off"
                 id="project-name"
-                maxLength={200}
+                maxLength={PROJECT_NAME_MAX_LENGTH}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="p. ej., sistema de biblioteca"
                 required

@@ -69,6 +69,7 @@ export default function ToolRail(props: ToolRailProps): ReactElement {
       {CLASSIFIER_TOOLS.map((tool) => (
         <button
           className="tool-button"
+          data-guide-target={tool.kind === 'CLASS' ? 'class-add' : undefined}
           key={tool.kind}
           onClick={() => props.onAddClassifier(tool.kind)}
           title={`Agregar ${tool.label.toLowerCase()}`}

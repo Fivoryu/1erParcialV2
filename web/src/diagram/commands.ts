@@ -336,6 +336,14 @@ export function buildStyleSetRequest(payload: ViewStyleUpdate): ModelCommandRequ
   return { type: 'style.set', payload: { ...payload } };
 }
 
+export function buildProjectRenameRequest(projectId: string, name: string): ModelCommandRequest {
+  return {
+    type: 'project.rename',
+    targets: [{ scope: 'project', id: projectId }],
+    payload: { name: name.trim() },
+  };
+}
+
 export function buildModelCommandEnvelope(
   model: ModelResource,
   request: ModelCommandRequest,

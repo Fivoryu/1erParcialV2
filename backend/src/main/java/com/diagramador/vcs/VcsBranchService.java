@@ -160,7 +160,7 @@ public class VcsBranchService {
 
         // materialize clears the persistence context; all entities used below are freshly loaded.
         Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> notFound("Project was not found."));
+                .orElseThrow(() -> notFound("No se encontró el proyecto."));
         UmlModel refreshedModel = requireModel(modelId);
         long nextRevision = expectedRevision + 1;
         if (modelRepository.bumpRevisionIfCurrent(modelId, expectedRevision, nextRevision) != 1) {
@@ -175,7 +175,7 @@ public class VcsBranchService {
         entityManager.flush();
         entityManager.clear();
         // Re-read both project and model after the materializer's clear so callers never observe stale entities.
-        projectRepository.findById(project.getId()).orElseThrow(() -> notFound("Project was not found."));
+        projectRepository.findById(project.getId()).orElseThrow(() -> notFound("No se encontró el proyecto."));
         return requireModel(modelId);
     }
 
@@ -221,7 +221,7 @@ public class VcsBranchService {
     }
 
     private UmlModel requireModel(UUID modelId) {
-        return modelRepository.findById(modelId).orElseThrow(() -> notFound("Model was not found."));
+        return modelRepository.findById(modelId).orElseThrow(() -> notFound("No se encontró el modelo."));
     }
 
     private static VcsResources.Branch branchResource(VcsBranch branch) {

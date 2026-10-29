@@ -190,7 +190,8 @@ describe('typed API client', () => {
     await expect(request).rejects.toMatchObject({
       kind: 'transport',
       code: 'PRECONDITION_FAILED',
-      message: 'The model has an unresolved name collision.',
+      message: 'La operación no se pudo aplicar en el estado actual del modelo. Recarga e inténtalo de nuevo.',
+      serverMessage: 'The model has an unresolved name collision.',
       details: errorBody.details,
       operationId: errorBody.operationId,
       status: 409,
@@ -719,7 +720,8 @@ describe('XMI export API client', () => {
     await expect(client.exportXmi(projectId)).rejects.toMatchObject({
       kind: 'transport',
       code: 'PRECONDITION_FAILED',
-      message: 'Another editor holds the editing lease for this project.',
+      message: 'La operación no se pudo aplicar en el estado actual del modelo. Recarga e inténtalo de nuevo.',
+      serverMessage: 'Another editor holds the editing lease for this project.',
       status: 409,
     });
   });

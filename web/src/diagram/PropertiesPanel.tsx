@@ -286,11 +286,13 @@ function ConstraintSection({
 function MemberSection({
   title,
   addLabel,
+  guideTarget,
   onAdd,
   rows,
 }: {
   title: string;
   addLabel: string;
+  guideTarget?: string | undefined;
   onAdd: () => void;
   rows: Array<{ id: string; name: string; detail: string; onSelect: () => void }>;
 }) {
@@ -316,7 +318,7 @@ function MemberSection({
         <p className="property-hint">Todavía no hay {title.toLowerCase()}.</p>
       )}
       <div className="property-actions">
-        <button className="button button-secondary button-compact" onClick={onAdd} type="button">{addLabel}</button>
+        <button className="button button-secondary button-compact" data-guide-target={guideTarget} onClick={onAdd} type="button">{addLabel}</button>
       </div>
     </details>
   );
@@ -443,6 +445,7 @@ function ClassifierProperties({
         <MemberSection
           title={isEnumeration ? 'Literales' : 'Atributos'}
           addLabel={isEnumeration ? 'Agregar literal' : 'Agregar atributo'}
+          guideTarget={isEnumeration ? undefined : 'attribute-add'}
           onAdd={addAttribute}
           rows={orderedAttributes(classifier).map((attribute) => ({
             id: attribute.id,
@@ -456,6 +459,7 @@ function ClassifierProperties({
         <MemberSection
           title="Operaciones"
           addLabel="Agregar operación"
+          guideTarget="operation-add"
           onAdd={addOperation}
           rows={orderedOperations(classifier).map((operation) => ({
             id: operation.id,

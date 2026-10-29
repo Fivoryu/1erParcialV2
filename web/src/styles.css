@@ -4981,3 +4981,25 @@ kbd {
   font-size: 11px;
   font-weight: 600;
 }
+
+.project-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-name h1 {
+  min-width: 0;
+}
+
+.project-name-form input {
+  min-width: 0;
+  max-width: 280px;
+  font-size: 15px;
+}
+
+.project-name-error {
+  color: var(--danger);
+  font-size: 12px;
+}

@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ApiTransportError, createApiClient } from '../api/client';
+import { commandRejectionMessage } from '../api/errorMessages';
 import { loadSession } from '../api/session';
 import type {
   ChatMessageResource,
@@ -61,6 +62,7 @@ import {
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
   buildModelCommandEnvelope,
+  buildProjectRenameRequest,
   buildRelationshipDeleteRequest,
   classifierCascadeCount,
   type ClassifierKind,
@@ -74,12 +76,13 @@ import TourOverlay from '../help/TourOverlay';
 import { createTourProgress } from '../help/tourProgress';
 import {
   clampTourStepIndex,
-  getTourStep,
   nextTourStepIndex,
   previousTourStepIndex,
+  TOUR_STEPS,
 } from '../help/tourSteps';
 import { findEditorSection, nextActiveSection, type EditorSectionId } from './editorSections';
 import EditorOptionsBar from './EditorOptionsBar';
+import ProjectNameEditor from './ProjectNameEditor';
 import FloatingAssistantButton from '../ui/FloatingAssistantButton';
 import Modal from '../ui/Modal';
 
@@ -92,9 +95,9 @@ function messageFor(error: unknown): string {
   return 'No se pudo abrir el proyecto. Revisa la conexión e inténtalo de nuevo.';
 }
 
-function messageForOutcome(outcome: { kind: string; diagnostics?: Array<{ message: string }> }): string {
+function messageForOutcome(outcome: { kind: string; diagnostics?: Array<{ code: string; message: string }> }): string {
   if (outcome.kind === 'rejected') {
-    return outcome.diagnostics?.[0]?.message ?? 'El modelo rechazó el cambio.';
+    return commandRejectionMessage(outcome.diagnostics);
   }
   if (outcome.kind === 'conflict') {
     return 'El cambio entra en conflicto con la revisión actual del modelo.';
@@ -201,6 +204,9 @@ export default function ProjectEditorPage() {
   const [openSection, setOpenSection] = useState<EditorSectionId | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStepIndex, setTourStepIndex] = useState(0);
+  const [tourTopicOnly, setTourTopicOnly] = useState(false);
+  const [tourRun, setTourRun] = useState(0);
+  const [helpOpen, setHelpOpen] = useState(false);
   const modelRef = useRef<ModelResource | null>(null);
   const canonicalModelRef = useRef<ModelResource | null>(null);
   const revisionRef = useRef<number | null>(null);
@@ -419,6 +425,7 @@ export default function ProjectEditorPage() {
 
     const progress = createTourProgress(projectId, window.localStorage);
     setTourStepIndex(0);
+    setTourTopicOnly(false);
     setTourOpen(progress.shouldShow());
   }, [modelLoaded, project?.id, projectId]);
 
@@ -757,6 +764,22 @@ export default function ProjectEditorPage() {
     return envelope;
   }, [dispatchEnvelope]);
 
+  const renameProject = useCallback(async (name: string): Promise<void> => {
+    if (!projectId || !dispatchCommand(buildProjectRenameRequest(projectId, name))) {
+      return;
+    }
+    // dispatchEnvelope chains the command onto the queue, so this waits for the server outcome.
+    await queueRef.current;
+    try {
+      const refreshed = await api.getProject(projectId);
+      if (currentProjectIdRef.current === projectId) {
+        setProject(refreshed);
+      }
+    } catch (cause: unknown) {
+      setError(messageFor(cause));
+    }
+  }, [dispatchCommand, projectId]);
+
   const addClassifier = useCallback((kind: ClassifierKind) => {
     const current = modelRef.current;
     if (!current) {
@@ -789,6 +812,10 @@ export default function ProjectEditorPage() {
   }, [projectId]);
 
   const targetElementId = selectedTargetElementId(selection);
+  const guideAttributeName = selection?.kind === 'attribute'
+    ? model?.classifiers.find((item) => item.id === selection.classifierId)
+      ?.attributes.find((item) => item.id === selection.elementId)?.name
+    : undefined;
   const activeSection = openSection === null ? null : findEditorSection(openSection);
   const handleOpenSection = useCallback((id: EditorSectionId) => {
     setOpenSection((current) => nextActiveSection(current, id));
@@ -799,13 +826,21 @@ export default function ProjectEditorPage() {
   const closeSection = useCallback(() => setOpenSection(null), []);
   const openTour = useCallback(() => {
     setTourStepIndex(0);
-    setOpenSection(null);
+    setTourTopicOnly(false);
+    setTourRun((run) => run + 1);
     setTourOpen(true);
   }, []);
+  const openTopicTour = useCallback((slug: string) => {
+    const index = TOUR_STEPS.findIndex((step) => step.slug === slug);
+    if (index !== -1) {
+      setTourStepIndex(index);
+      setTourTopicOnly(true);
+      setTourRun((run) => run + 1);
+      setTourOpen(true);
+    }
+  }, []);
   const changeTourStep = useCallback((requestedIndex: number) => {
-    const nextIndex = clampTourStepIndex(requestedIndex);
-    setTourStepIndex(nextIndex);
-    setOpenSection(getTourStep(nextIndex).section ?? null);
+    setTourStepIndex(clampTourStepIndex(requestedIndex));
   }, []);
   const finishTour = useCallback(() => {
     if (projectId) {
@@ -1166,7 +1201,7 @@ export default function ProjectEditorPage() {
               <nav aria-label="Ruta" className="editor-breadcrumb">
                 <Link to="/">Proyectos</Link> / <span>{project.name}</span>
               </nav>
-              <h1 id="project-title">{project.name}</h1>
+              <ProjectNameEditor key={project.name} name={project.name} onRename={renameProject} />
             </div>
           )}
           {project && model && (
@@ -1441,14 +1476,23 @@ export default function ProjectEditorPage() {
               api={api}
               openSection={openSection}
               onNavigateToSection={handleNavigateToSection}
+              onStartTour={openTopicTour}
+              onOpenChange={setHelpOpen}
             />
-            {tourOpen && openSection === null && project.id === projectId && (
+            {tourOpen && project.id === projectId && (
               <TourOverlay
+                key={tourRun}
                 stepIndex={tourStepIndex}
+                selection={selection}
+                openSection={openSection}
+                topicOnly={tourTopicOnly}
+                paused={helpOpen}
+                role={currentUserRole}
+                {...(guideAttributeName === undefined ? {} : { attributeName: guideAttributeName })}
                 onPrevious={() => changeTourStep(previousTourStepIndex(tourStepIndex))}
                 onNext={() => changeTourStep(nextTourStepIndex(tourStepIndex))}
                 onFinish={finishTour}
-                onReopenHelp={openTour}
+                onReopenHelp={() => tourTopicOnly ? openTopicTour(TOUR_STEPS[tourStepIndex]!.slug) : openTour()}
               />
             )}
           </>

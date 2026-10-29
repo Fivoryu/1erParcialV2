@@ -154,10 +154,10 @@ public class VcsRepoQueryService {
 
     private UmlModel readableModel(UmlModel model) {
         if (model == null || model.getId() == null) {
-            throw notFound("Model was not found.");
+            throw notFound("No se encontró el modelo.");
         }
         UmlModel managedModel = modelRepository.findById(model.getId())
-                .orElseThrow(() -> notFound("Model was not found."));
+                .orElseThrow(() -> notFound("No se encontró el modelo."));
         accessService.requireRead(managedModel.getProject().getId());
         return managedModel;
     }

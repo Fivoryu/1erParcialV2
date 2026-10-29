@@ -32,7 +32,7 @@ public class XmiExportController {
     @PostMapping("/export")
     public XmiExportResource exportXmi(@PathVariable("projectId") UUID projectId) {
         projectRepository.findById(projectId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Project was not found.",
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "No se encontró el proyecto.",
                         List.of(), null));
         authorizationService.requireEditor(projectId);
         // The declared export editing guard lives in XmiExportService, next to the model id it guards.

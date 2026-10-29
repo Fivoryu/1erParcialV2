@@ -89,7 +89,7 @@ public class XmiImportController {
 
     private Project requireProject(UUID projectId) {
         return projectRepository.findById(projectId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Project was not found.",
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "No se encontró el proyecto.",
                         List.of(), null));
     }
 

@@ -84,7 +84,7 @@ public class EditingLeaseController {
         UUID modelId = modelRepository.findByProjectId(projectId)
                 .map(model -> model.getId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
-                        "Model was not found.", List.of(), null));
+                        "No se encontró el modelo.", List.of(), null));
         CurrentUser user = currentUserContext.require();
         return new Caller(modelId, user);
     }

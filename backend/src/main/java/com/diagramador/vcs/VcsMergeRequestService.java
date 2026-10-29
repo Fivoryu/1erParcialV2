@@ -225,7 +225,7 @@ public class VcsMergeRequestService {
 
             // The materializer flushes and clears. Re-read every entity used after this point.
             Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> notFound("Project was not found."));
+                    .orElseThrow(() -> notFound("No se encontró el proyecto."));
             UmlModel refreshedModel = requireModel(modelId);
             long nextRevision = expectedRevision + 1;
             if (modelRepository.bumpRevisionIfCurrent(modelId, expectedRevision, nextRevision) != 1) {
@@ -238,7 +238,7 @@ public class VcsMergeRequestService {
                     stateHash, ValidationState.VALID, refreshedAuthor));
             entityManager.flush();
             entityManager.clear();
-            projectRepository.findById(project.getId()).orElseThrow(() -> notFound("Project was not found."));
+            projectRepository.findById(project.getId()).orElseThrow(() -> notFound("No se encontró el proyecto."));
             requireModel(modelId);
         }
         return resource(requireMergeRequest(modelId, mergeRequestId));
@@ -272,7 +272,7 @@ public class VcsMergeRequestService {
     }
 
     private UmlModel requireModel(UUID modelId) {
-        return modelRepository.findById(modelId).orElseThrow(() -> notFound("Model was not found."));
+        return modelRepository.findById(modelId).orElseThrow(() -> notFound("No se encontró el modelo."));
     }
 
     private void requireOpen(VcsMergeRequest request) {

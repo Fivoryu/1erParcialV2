@@ -341,6 +341,7 @@ describe('UML class node presentation', () => {
       expect(markup).toContain(`<span>${attribute.name}</span>`);
     }
     expect(markup).toContain('Agregar atributo');
+    expect(markup).toMatch(/<button(?=[^>]*data-guide-target="attribute-add")[^>]*>Agregar atributo<\/button>/);
     expect(markup).toContain('Agregar operación');
   });
 

@@ -40,6 +40,10 @@ describe('ToolRail', () => {
     expect(markup).not.toContain('id="relation-picker"');
   });
 
+  it('exposes the real class creation control as a stable visual-guide target', () => {
+    expect(rail(false)).toMatch(/<button(?=[^>]*data-guide-target="class-add")(?=[^>]*title="Agregar clase")[^>]*>/);
+  });
+
   it('presses Seleccionar unless the relation tool is on', () => {
     expect(rail(false)).toMatch(/aria-pressed="true" class="tool-button"[^>]*>.*Seleccionar/);
     expect(rail(true)).toMatch(/aria-pressed="true" class="tool-button relation-tool"/);

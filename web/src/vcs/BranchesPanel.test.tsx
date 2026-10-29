@@ -86,10 +86,10 @@ describe('version branches panel', () => {
     expect(result).toEqual({
       kind: 'error',
       currentBranch: 'main',
-      message: 'Commit or discard changes before switching branches.',
+      message: 'Confirma o descarta los cambios pendientes antes de cambiar de rama.',
     });
     expect(render({ error: result.kind === 'error' ? result.message : null })).toContain(
-      'Commit or discard changes before switching branches.',
+      'Confirma o descarta los cambios pendientes antes de cambiar de rama.',
     );
   });
 

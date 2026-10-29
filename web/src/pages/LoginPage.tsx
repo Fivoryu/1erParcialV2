@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ApiTransportError, createApiClient } from '../api/client';
+import { isSpanishText } from '../api/errorMessages';
 import { saveSession } from '../api/session';
 import type { LoginResponse } from '../api/types';
 
@@ -22,13 +23,13 @@ export function loginErrorMessage(error: unknown): string {
 
   const fallback = FRIENDLY_MESSAGES[error.code]
     ?? 'No se pudo completar la solicitud. Revisa la conexión e inténtalo de nuevo.';
-  const backendMessage = error.message.trim();
+  const backendMessage = error.serverMessage.trim();
   if (!backendMessage || backendMessage === error.code || UUID_PATTERN.test(backendMessage)
     || TECHNICAL_MESSAGE_PATTERN.test(backendMessage)) {
     return fallback;
   }
 
-  return backendMessage;
+  return isSpanishText(backendMessage) ? backendMessage : FRIENDLY_MESSAGES[error.code] ?? error.message;
 }
 
 export function saveLoginResponse(response: LoginResponse): void {

@@ -226,7 +226,7 @@ public class VcsCommitService {
     }
 
     private UmlModel requireModel(UUID modelId) {
-        return modelRepository.findById(modelId).orElseThrow(() -> notFound("Model was not found."));
+        return modelRepository.findById(modelId).orElseThrow(() -> notFound("No se encontró el modelo."));
     }
 
     private static String normalizeMessage(String message) {

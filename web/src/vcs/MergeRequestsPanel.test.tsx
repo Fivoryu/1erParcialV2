@@ -169,14 +169,14 @@ describe('merge requests panel', () => {
     expect(markup).not.toContain('La solicitud de fusión se completó.');
   });
 
-  it('preserves the server message for other merge-request errors', () => {
+  it('shows the Spanish text for other merge-request errors', () => {
     expect(mergeRequestErrorMessage(new ApiTransportError(
       'MERGE_REQUEST_EXISTS',
       'An open request already exists for these branches.',
       [],
       null,
       409,
-    ))).toBe('An open request already exists for these branches.');
+    ))).toBe('Ya hay una solicitud de fusión abierta entre esas ramas.');
   });
 
   it('distinguishes loading from an empty request list', () => {
