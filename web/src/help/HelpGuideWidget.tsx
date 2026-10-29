@@ -14,12 +14,19 @@ export type HelpGuideProps = {
   api: Pick<ApiClient, 'askHelpGuide'>;
   openSection: EditorSectionId | null;
   onNavigateToSection: (section: EditorSectionId) => void;
+  onStartTour: (slug: string) => void;
+  onOpenChange: (open: boolean) => void;
 };
 
-export default function HelpGuide({ api, openSection, onNavigateToSection }: HelpGuideProps) {
+export default function HelpGuide({ api, openSection, onNavigateToSection, onStartTour, onOpenChange }: HelpGuideProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [state, setState] = useState<HelpGuidePanelState>({ kind: 'idle' });
+
+  function changeOpen(open: boolean): void {
+    setIsOpen(open);
+    onOpenChange(open);
+  }
 
   async function ask(question: string): Promise<void> {
     if (state.kind === 'loading') {
@@ -44,11 +51,15 @@ export default function HelpGuide({ api, openSection, onNavigateToSection }: Hel
       draft={draft}
       state={state}
       openSection={openSection}
-      onToggle={() => setIsOpen((current) => !current)}
-      onClose={() => setIsOpen(false)}
+      onToggle={() => changeOpen(!isOpen)}
+      onClose={() => changeOpen(false)}
       onDraftChange={setDraft}
       onSubmit={(question) => void ask(question)}
       onNavigateToSection={onNavigateToSection}
+      onStartTour={(slug) => {
+        changeOpen(false);
+        onStartTour(slug);
+      }}
     />
   );
 }

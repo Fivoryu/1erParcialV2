@@ -18,6 +18,11 @@ const expectedTopicSlugs = [
   'invite-and-manage-members',
   'generate-a-backend',
   'deploy-the-generated-backend',
+  'review-the-diagram',
+  'assistant-with-natural-language',
+  'diagram-chat',
+  'versioning-and-branches',
+  'create-and-open-projects',
 ];
 
 describe('editor tour steps', () => {
@@ -31,6 +36,22 @@ describe('editor tour steps', () => {
     expect(TOUR_STEPS.map((step) => step.title)).toEqual(expectedTopics.map((topic) => topic.title));
     expect(TOUR_STEPS.map((step) => step.explanation)).toEqual(expectedTopics.map((topic) => topic.summary));
     expect(TOUR_STEPS.map((step) => step.section)).toEqual(expectedTopics.map((topic) => topic.section));
+  });
+
+  it('guides a beginner through creating, naming, and adding an attribute to a class', () => {
+    expect(getTourStep(0).visualSteps.slice(0, 4)).toMatchObject([
+      { target: 'class-add', advanceOn: 'click' },
+      { target: 'class-name', advanceOn: 'manual' },
+      { target: 'attribute-add', advanceOn: 'click' },
+      { target: 'attribute-name', advanceOn: 'manual' },
+    ]);
+  });
+
+  it('offers a visual route for every documented topic', () => {
+    expect(TOUR_STEPS.map((step) => step.slug).sort()).toEqual(HELP_TOPICS.map((topic) => topic.slug).sort());
+    for (const step of TOUR_STEPS) {
+      expect(step.visualSteps?.length, step.title).toBeGreaterThan(0);
+    }
   });
 
   it('associates tour sections only with sections that exist in the editor', () => {
