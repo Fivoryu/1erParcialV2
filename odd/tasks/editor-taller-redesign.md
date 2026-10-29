@@ -28,7 +28,7 @@ Branch: `feat/editor-taller-redesign` · Delivery: `ask-on-risk` · Runners: `cd
 | T5 | S6, S7 attributes + copy/paste hint | inline | done, browser-checked | bad3237 |
 | T6 | S8 versioning repo layout | inline | done, browser-checked | 462833b |
 | T7 | S1, S9 mobile theme + agent screen | inline | done; flutter test + analyze green; no device to view it | 5b22e57 |
-| T8 | all | inline | done for web (1440px and 700px); mobile on device pending | — |
+| T8 | all | inline | done: web (1440px, 700px) and phone end to end | — |
 
 Route evidence: one writer (the parent) because units share `styles.css` and `ProjectEditorPage.tsx`; no writer trigger fires.
 
@@ -42,3 +42,5 @@ Route evidence: one writer (the parent) because units share `styles.css` and `Pr
 - L6: pending — mobile agent screen not seen on a device (no phone or emulator attached); delivery is about 2,700 authored lines over 4 commits, above the ~400 slice heuristic: PR strategy (single PR or chained) is the user's call.
 - L7 (2026-10-29, user): "Entregamos en un solor PR, ya lo conecte a mi cel" — one PR; phone connected.
 - L8: on the phone (Samsung SM-S711B, dark mode) the app runs the dark theme; the chat bubbles and backend card used fixed light colors, unreadable in dark mode. Fixed with theme roles and pinned by a dark-mode widget test. Login and Proyectos verified on the phone against the local backend via adb reverse. The Agente screen needs a deployed generated backend, which the local stack does not have; it stays covered by widget tests.
+- L9 (2026-10-29, user): "En local todo" — full local stack for the phone.
+- L10: local stack: diagrammer restarted with an operator token and `DIAGRAMMER_MOBILE_GATEWAY_ENABLED=true`; a generated backend (Customer/Order) deployed through the operator on 19001 for user `demo-movil`; `eclipse-temurin:21-jre-alpine` pulled because the operator never pulls. On the phone (dark mode, Gemma 4 E2B loaded from Configuración): Agente screen with the backend card, "Tú" bubble and "Agente local" card; the query "Cuantos clientes hay registrados?" ran a GET through the gateway and answered "Hay 0 registros de customer" in 23 s.
