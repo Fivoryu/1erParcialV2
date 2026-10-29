@@ -115,7 +115,8 @@ describe('undo/redo API client', () => {
     await expect(api.undo(projectId)).rejects.toMatchObject({
       kind: 'transport',
       code: 'FORBIDDEN',
-      message: 'Not a member.',
+      message: 'No tienes permiso para realizar esta acción.',
+      serverMessage: 'Not a member.',
       status: 403,
     });
   });

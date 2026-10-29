@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ApiTransportError, createApiClient } from '../api/client';
+import { commandRejectionMessage } from '../api/errorMessages';
 import { loadSession } from '../api/session';
 import type {
   ChatMessageResource,
@@ -94,9 +95,9 @@ function messageFor(error: unknown): string {
   return 'No se pudo abrir el proyecto. Revisa la conexión e inténtalo de nuevo.';
 }
 
-function messageForOutcome(outcome: { kind: string; diagnostics?: Array<{ message: string }> }): string {
+function messageForOutcome(outcome: { kind: string; diagnostics?: Array<{ code: string; message: string }> }): string {
   if (outcome.kind === 'rejected') {
-    return outcome.diagnostics?.[0]?.message ?? 'El modelo rechazó el cambio.';
+    return commandRejectionMessage(outcome.diagnostics);
   }
   if (outcome.kind === 'conflict') {
     return 'El cambio entra en conflicto con la revisión actual del modelo.';

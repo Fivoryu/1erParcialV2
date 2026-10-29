@@ -17,13 +17,15 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
   - Web: "Enter a project name to continue." (`web/src/pages/ProjectsPage.tsx:89-92`).
   - Web: los errores del dictado por voz no tienen texto localizado (`web/src/assistant/useSpeechRecognition.ts:38-46`).
   - Al corregirlos, actualizar las excepciones de los CU-01, CU-02, CU-13, CU-19 y CU-25 en el documento, que hoy citan los textos en inglés.
+- **S3. Resto de los mensajes de error en inglés.** Pedido: "Contina papu"; decisión del usuario (2026-10-29): "Mapa por código en web (Recommended)". La web traduce por código de error en un solo lugar; si el servidor ya respondió en español, se conserva su texto.
 
 ## Tasks
 
 | ID | Specs | Ruta | Estado | Commit |
 | --- | --- | --- | --- | --- |
-| T1 | S1 | inline | hecho (Vitest verde) | |
-| T2 | S2 | inline | hecho (Vitest verde; JUnit en curso) | |
+| T1 | S1 | inline | hecho (Vitest verde) | fa90eb2 |
+| T2 | S2 | inline | hecho (Vitest y JUnit verdes) | 91144fa |
+| T3 | S3 | inline | hecho (Vitest verde) | |
 
 ## Log
 
@@ -39,3 +41,6 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
 - **L4 (2026-10-29, pedido del usuario):** "Hagamos los huecos de doc vs cod"
 - **L5 (2026-10-29, T1):** El nombre del proyecto en el encabezado del editor ahora tiene el botón "Renombrar"; envía `project.rename` por la misma cola de comandos y luego relee el proyecto (`web/src/pages/ProjectNameEditor.tsx`, `ProjectEditorPage.tsx`). La validación "Escribe un nombre de proyecto para continuar." se comparte con la creación.
 - **L6 (2026-10-29, T2):** Traducidos en el backend "El usuario o la contraseña son incorrectos.", "No tienes acceso a este proyecto." (y las variantes de historial y permisos), "No se encontró el proyecto.", "No se encontró el modelo." en todos sus usos, y los textos de propuestas ("Rechazada sin cambios.", "N de M cambios aplicados", "Cambio sugerido: …", "… rechazó/revisó la sugerencia: …"). En la web: "Todos los proyectos", "Sin descripción", y los errores del dictado ahora se muestran en el chat. Los motivos de almacenamiento ya se traducían en `web/src/diagram/StoreBadge.tsx`, así que no se cambiaron (también alimentan el README del backend generado). Quedan otros mensajes del backend en inglés fuera de esta lista (p. ej. "Resource was not found.", "Generation run was not found.", los de invitaciones).
+- **L7 (2026-10-29, pedido del usuario):** "Contina papu". Quedaban unos 100 mensajes del backend en inglés; el usuario eligió "Mapa por código en web (Recommended)".
+- **L8 (2026-10-29, T3):** `web/src/api/errorMessages.ts` traduce en el constructor de `ApiTransportError` (el texto original queda en `serverMessage`) y en los rechazos de comandos del editor. `NO_PROPOSAL` pasa intacto porque es la pregunta de aclaración de la IA. El login decide con el texto original para conservar sus mensajes propios. Google Doc: actualizadas las excepciones de actualización sin campos y de adjuntos inválidos.
+

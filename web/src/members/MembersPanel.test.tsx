@@ -122,7 +122,7 @@ describe('project members panel', () => {
     ));
     const markup = render({ userId: owner.userId, inviteError });
 
-    expect(markup).toContain('No account was found for that username.');
+    expect(markup).toContain('No se encontró la cuenta de usuario.');
     expect(markup).not.toContain('USER_NOT_FOUND');
     expect(markup).not.toMatch(UUID_PATTERN);
   });

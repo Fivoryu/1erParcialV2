@@ -45,6 +45,7 @@ import type {
 } from './types';
 import type { EditingLeaseEnvelope, EditingLeaseRequest } from './types';
 import { clearSession, getAuthorizationHeaderValue } from './session';
+import { localizedErrorMessage } from './errorMessages';
 
 export interface AskAiResponse {
   state: 'QUEUED';
@@ -52,6 +53,8 @@ export interface AskAiResponse {
 
 export class ApiTransportError extends Error {
   readonly kind = 'transport';
+  /** The server's own text, kept for diagnosis; `message` holds the Spanish text the UI shows. */
+  readonly serverMessage: string;
 
   constructor(
     readonly code: string,
@@ -61,8 +64,9 @@ export class ApiTransportError extends Error {
     readonly status: number | null,
     options?: ErrorOptions,
   ) {
-    super(message, options);
+    super(localizedErrorMessage(code, message), options);
     this.name = 'ApiTransportError';
+    this.serverMessage = message;
   }
 }
 
