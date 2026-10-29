@@ -158,6 +158,7 @@ export interface ApiClient {
   listProjectInvitations(projectId: Uuid): Promise<InvitationResource[]>;
   createProjectInvitation(projectId: Uuid, request: CreateInvitationRequest): Promise<InvitationResource>;
   acceptProjectInvitation(projectId: Uuid, invitationId: Uuid): Promise<MemberResource>;
+  declineProjectInvitation(projectId: Uuid, invitationId: Uuid): Promise<InvitationResource>;
   revokeProjectInvitation(projectId: Uuid, invitationId: Uuid): Promise<InvitationResource>;
   updateProjectMemberRole(
     projectId: Uuid,
@@ -481,6 +482,12 @@ export function createApiClient(
     acceptProjectInvitation(projectId, invitationId) {
       return requestJson<MemberResource>(
         `/projects/${encodeURIComponent(projectId)}/invitations/${encodeURIComponent(invitationId)}/accept`,
+        { method: 'POST' },
+      );
+    },
+    declineProjectInvitation(projectId, invitationId) {
+      return requestJson<InvitationResource>(
+        `/projects/${encodeURIComponent(projectId)}/invitations/${encodeURIComponent(invitationId)}/decline`,
         { method: 'POST' },
       );
     },

@@ -261,7 +261,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertEnumLabels("multiplicity_kind", MultiplicityKind.class, 5);
         assertEnumLabels("navigation_kind", NavigationKind.class, 3);
         assertEnumLabels("project_member_role", ProjectMemberRole.class, 3);
-        assertEnumLabels("invitation_status", InvitationStatus.class, 4);
+        assertEnumLabels("invitation_status", InvitationStatus.class, 5);
         assertEnumLabels("relationship_kind", RelationshipKind.class, 6);
         assertEnumLabels("severity_kind", SeverityKind.class, 3);
         assertEnumLabels("target_type", TargetType.class, 8);

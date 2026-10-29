@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { Children, createElement, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiTransportError } from '../api/client';
@@ -32,7 +32,9 @@ function renderView(overrides: Partial<Parameters<typeof InvitationsSectionView>
     loading: false,
     error: null,
     acceptingInvitationId: null,
+    decliningInvitationId: null,
     onAccept: vi.fn(),
+    onDecline: vi.fn(),
     ...overrides,
   }));
 }
@@ -51,6 +53,29 @@ describe('project invitations section', () => {
     expect(markup).toContain('>Aceptar</button>');
     expect(markup).not.toContain('44444444-4444-4444-8444-444444444444');
     expect(markup).not.toMatch(UUID_PATTERN);
+  });
+
+  it('offers a Spanish rejection control for pending invitations', () => {
+    expect(renderView()).toContain('>Rechazar</button>');
+  });
+
+  it('invokes rejection with the selected invitation when its control is clicked', () => {
+    const onDecline = vi.fn();
+    const tree = InvitationsSectionView({ invitations: [invitation], loading: false, error: null,
+      acceptingInvitationId: null, decliningInvitationId: null, onAccept: vi.fn(), onDecline });
+    function findReject(node: ReactNode): (() => void) | undefined {
+      if (!isValidElement<{ children?: ReactNode; onClick?: () => void }>(node)) return undefined;
+      if (node.type === 'button' && node.props.children === 'Rechazar') return node.props.onClick;
+      for (const child of Children.toArray(node.props.children)) {
+        const click = findReject(child);
+        if (click) return click;
+      }
+      return undefined;
+    }
+    const click = findReject(tree);
+    expect(click).toBeDefined();
+    click?.();
+    expect(onDecline).toHaveBeenCalledWith(invitation);
   });
 
   it('accepts the invitation and refreshes the projects list', async () => {

@@ -22,6 +22,8 @@ export interface InvitationsSectionViewProps {
   error: string | null;
   acceptingInvitationId: string | null;
   onAccept: (invitation: InvitationResource) => void;
+  decliningInvitationId: string | null;
+  onDecline: (invitation: InvitationResource) => void;
 }
 
 export function InvitationsSectionView({
@@ -30,6 +32,8 @@ export function InvitationsSectionView({
   error,
   acceptingInvitationId,
   onAccept,
+  decliningInvitationId,
+  onDecline,
 }: InvitationsSectionViewProps) {
   const pendingInvitations = invitations.filter((invitation) => invitation.status === 'PENDING');
 
@@ -58,11 +62,19 @@ export function InvitationsSectionView({
               </div>
               <button
                 className="button button-primary button-compact"
-                disabled={acceptingInvitationId !== null}
+                disabled={acceptingInvitationId !== null || decliningInvitationId !== null}
                 onClick={() => onAccept(invitation)}
                 type="button"
               >
                 {acceptingInvitationId === invitation.id ? 'Aceptando…' : 'Aceptar'}
+              </button>
+              <button
+                className="button button-compact"
+                disabled={acceptingInvitationId !== null || decliningInvitationId !== null}
+                onClick={() => onDecline(invitation)}
+                type="button"
+              >
+                {decliningInvitationId === invitation.id ? 'Rechazando…' : 'Rechazar'}
               </button>
             </li>
           ))}
@@ -90,6 +102,7 @@ export default function InvitationsSection({ onProjectAccepted }: InvitationsSec
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acceptingInvitationId, setAcceptingInvitationId] = useState<string | null>(null);
+  const [decliningInvitationId, setDecliningInvitationId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -117,7 +130,7 @@ export default function InvitationsSection({ onProjectAccepted }: InvitationsSec
   }, []);
 
   async function handleAccept(invitation: InvitationResource): Promise<void> {
-    if (acceptingInvitationId !== null) {
+    if (acceptingInvitationId !== null || decliningInvitationId !== null) {
       return;
     }
 
@@ -133,9 +146,25 @@ export default function InvitationsSection({ onProjectAccepted }: InvitationsSec
     }
   }
 
+  async function handleDecline(invitation: InvitationResource): Promise<void> {
+    if (acceptingInvitationId !== null || decliningInvitationId !== null) return;
+    setDecliningInvitationId(invitation.id);
+    setError(null);
+    try {
+      await api.declineProjectInvitation(invitation.projectId, invitation.id);
+      setInvitations((current) => current.filter((item) => item.id !== invitation.id));
+    } catch (cause: unknown) {
+      setError(loginErrorMessage(cause));
+    } finally {
+      setDecliningInvitationId(null);
+    }
+  }
+
   return (
     <InvitationsSectionView
       acceptingInvitationId={acceptingInvitationId}
+      decliningInvitationId={decliningInvitationId}
+      onDecline={(invitation) => void handleDecline(invitation)}
       error={error}
       invitations={invitations}
       loading={loading}

@@ -142,6 +142,22 @@ public class InvitationApiService {
     }
 
     @Transactional
+    public InvitationResource declineInvitation(UUID projectId, UUID invitationId) {
+        requireProject(projectId);
+        Invitation invitation = requireInvitation(projectId, invitationId);
+        UUID requesterId = currentUserContext.require().userId();
+        if (invitation.getInvitee() == null || !requesterId.equals(invitation.getInvitee().getId())) {
+            throw error(HttpStatus.FORBIDDEN, "FORBIDDEN", "Only the invited user may decline this invitation.");
+        }
+        if (invitation.getStatus() != InvitationStatus.PENDING) {
+            throw error(HttpStatus.CONFLICT, "INVITATION_NOT_PENDING", "The invitation is no longer pending.");
+        }
+        invitation.setStatus(InvitationStatus.DECLINED);
+        invitation.setUpdatedAt(OffsetDateTime.now());
+        return invitationResource(invitationRepository.save(invitation));
+    }
+
+    @Transactional
     public InvitationResource revokeInvitation(UUID projectId, UUID invitationId) {
         requireProject(projectId);
         projectAuthorizationService.requireOwner(projectId);
@@ -194,7 +210,7 @@ public class InvitationApiService {
     }
 
     private Invitation requireInvitation(UUID projectId, UUID invitationId) {
-        return invitationRepository.findByProject_IdAndId(projectId, invitationId)
+        return invitationRepository.findForTransition(projectId, invitationId)
                 .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND",
                         "The invitation was not found for this project."));
     }

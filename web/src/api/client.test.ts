@@ -271,6 +271,16 @@ describe('model review API client', () => {
 });
 
 describe('project member and invitation API client', () => {
+  it('posts a decline without a body and returns the persisted invitation', async () => {
+    const result = { id: 'invitation/1', status: 'DECLINED' };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(result), { status: 200 }));
+    const client = createApiClient('https://diagram.test', fetcher);
+    await expect(client.declineProjectInvitation('project/1', 'invitation/1')).resolves.toEqual(result);
+    expect(fetcher).toHaveBeenCalledWith('https://diagram.test/projects/project%2F1/invitations/invitation%2F1/decline',
+      expect.objectContaining({ method: 'POST' }));
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+
   it('calls all member and invitation routes with contract methods, bodies, and the session bearer', async () => {
     const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const userId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
