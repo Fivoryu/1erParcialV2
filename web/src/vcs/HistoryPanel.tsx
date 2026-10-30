@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { commitChangeLabel, commitKindLabel, commitOriginLabel, relativeTimeLabel } from './presentation';
 import Modal from '../ui/Modal';
 import { AuthorsList, DiffView } from './DiffView';
-import type { Uuid } from '../api/types';
+import { ApiTransportError, createApiClient } from '../api/client';
+import type { ModelResource, Uuid } from '../api/types';
 import {
   createVcsApiClient,
   vcsErrorMessage,
@@ -14,6 +15,27 @@ import {
 } from './api';
 
 const api = createVcsApiClient();
+const modelApi = createApiClient();
+
+export type CommitRestoreAttempt =
+  | { kind: 'restored'; commit: VcsCommit; model: ModelResource }
+  | { kind: 'error'; message: string };
+
+/** Restores a commit, then reads the model the restore left in the editor; failures become a readable message. */
+export async function attemptCommitRestore(
+  restore: () => Promise<VcsCommit>,
+  loadModel: () => Promise<ModelResource>,
+): Promise<CommitRestoreAttempt> {
+  try {
+    const commit = await restore();
+    return { kind: 'restored', commit, model: await loadModel() };
+  } catch (cause: unknown) {
+    if (cause instanceof ApiTransportError && cause.code === 'WORKING_COPY_CLEAN') {
+      return { kind: 'error', message: 'La rama ya tiene el diagrama de esta versión; no hay nada que restaurar.' };
+    }
+    return { kind: 'error', message: vcsErrorMessage(cause, 'No se pudo restaurar la versión.') };
+  }
+}
 
 export { relativeTimeLabel } from './presentation';
 
@@ -44,6 +66,11 @@ export interface HistoryPanelViewProps {
   onCloseComparison?(): void;
   onCloseDetail(): void;
   onDismissError(): void;
+  /** Whether the restore confirmation of the open commit is showing. */
+  restoreConfirming?: boolean;
+  onRequestRestore?(): void;
+  onCancelRestore?(): void;
+  onConfirmRestore?(commitId: Uuid): void;
 }
 
 export function HistoryPanelView({
@@ -65,6 +92,10 @@ export function HistoryPanelView({
   onCloseComparison,
   onCloseDetail,
   onDismissError,
+  restoreConfirming = false,
+  onRequestRestore,
+  onCancelRestore,
+  onConfirmRestore,
 }: HistoryPanelViewProps) {
   const [message, setMessage] = useState('');
   const [compareFrom, setCompareFrom] = useState('');
@@ -249,6 +280,33 @@ export function HistoryPanelView({
                 ))}
               </ul>
             )}
+            {restoreConfirming ? (
+              <div className="vcs-restore-confirm" role="alertdialog" aria-label="Confirmar restauración">
+                <p>
+                  Se creará una confirmación nueva en {status?.branch ?? 'la rama actual'} con el diagrama de esta
+                  versión. El historial no se modifica.
+                </p>
+                <div className="vcs-restore-actions">
+                  <button
+                    className="button button-primary"
+                    disabled={busy}
+                    type="button"
+                    onClick={() => onConfirmRestore?.(commitDetail.commitId)}
+                  >
+                    {busy ? 'Restaurando…' : 'Confirmar restauración'}
+                  </button>
+                  <button className="button button-secondary" disabled={busy} type="button" onClick={() => onCancelRestore?.()}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="vcs-restore-actions">
+                <button className="button button-secondary" disabled={busy} type="button" onClick={() => onRequestRestore?.()}>
+                  Restaurar esta versión
+                </button>
+              </div>
+            )}
           </div>
         )}
       </Modal>
@@ -260,9 +318,16 @@ export interface HistoryPanelProps {
   projectId: Uuid;
   onStatusChanged?(): void;
   onDetailOpenChange?(open: boolean): void;
+  /** Receives the editor model after a commit was restored, like a branch checkout does. */
+  onModelRestored?(model: ModelResource): void;
 }
 
-export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenChange }: HistoryPanelProps) {
+export default function HistoryPanel({
+  projectId,
+  onStatusChanged,
+  onDetailOpenChange,
+  onModelRestored,
+}: HistoryPanelProps) {
   const [branches, setBranches] = useState<VcsBranch[]>([]);
   const [status, setStatus] = useState<VcsStatus | null>(null);
   const [selectedBranch, setSelectedBranch] = useState('');
@@ -274,6 +339,7 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [restoreConfirming, setRestoreConfirming] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -360,6 +426,43 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
     }
   }
 
+  async function handleRestore(commitId: Uuid): Promise<void> {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const outcome = await attemptCommitRestore(
+      () => api.restoreCommit(projectId, commitId),
+      () => modelApi.getModel(projectId),
+    );
+    if (outcome.kind === 'error') {
+      setError(outcome.message);
+      setRestoreConfirming(false);
+      setCommitDetail(null);
+      onDetailOpenChange?.(false);
+      setBusy(false);
+      return;
+    }
+    try {
+      const [nextStatus, nextBranches] = await Promise.all([
+        api.getStatus(projectId),
+        api.listBranches(projectId),
+      ]);
+      setStatus(nextStatus);
+      setBranches(nextBranches);
+      setSelectedBranch(nextStatus.branch);
+      setCommits(await api.listCommits(projectId, nextStatus.branch));
+    } catch (cause: unknown) {
+      setError(vcsErrorMessage(cause, 'No se pudo actualizar el historial de versiones.'));
+    }
+    onModelRestored?.(outcome.model);
+    onStatusChanged?.();
+    setRestoreConfirming(false);
+    setCommitDetail(null);
+    onDetailOpenChange?.(false);
+    setNotice('Se restauró la versión como una confirmación nueva en el historial.');
+    setBusy(false);
+  }
+
   async function handleCompare(fromCommitId: Uuid, toCommitId: Uuid): Promise<void> {
     setComparison({ loading: true, error: null, result: null });
     onDetailOpenChange?.(true);
@@ -381,6 +484,7 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
   }
 
   async function handleOpenCommit(commitId: Uuid): Promise<void> {
+    setRestoreConfirming(false);
     setCommitDetail(null);
     setDetailLoading(true);
     onDetailOpenChange?.(true);
@@ -418,11 +522,16 @@ export default function HistoryPanel({ projectId, onStatusChanged, onDetailOpenC
       onCompare={(fromCommitId, toCommitId) => void handleCompare(fromCommitId, toCommitId)}
       onCloseComparison={handleCloseComparison}
       onCloseDetail={() => {
+        setRestoreConfirming(false);
         setCommitDetail(null);
         setDetailLoading(false);
         onDetailOpenChange?.(false);
       }}
       onDismissError={() => setError(null)}
+      restoreConfirming={restoreConfirming}
+      onRequestRestore={() => setRestoreConfirming(true)}
+      onCancelRestore={() => setRestoreConfirming(false)}
+      onConfirmRestore={(commitId) => void handleRestore(commitId)}
     />
   );
 }

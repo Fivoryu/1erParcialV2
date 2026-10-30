@@ -41,7 +41,7 @@ void main() {
     'unknown write outcome blocks a second confirmation until inspection',
     () async {
       final api = _AmbiguousPlatform();
-      final controller = WorkspaceController(service: api, store: _Store())
+      final controller = WorkspaceController(selectedRuntime: LocalRuntime.qwen, service: api, store: _Store())
         ..project = const PlatformProject(id: 'p', name: 'Project')
         ..backend = const GeneratedBackend(
           deploymentId: 'd',

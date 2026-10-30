@@ -24,7 +24,7 @@ class DetectedMnn extends f.SwitchMnn implements MnnModelDiscovery {
 void main() {
   test('installed model is detected and loaded without manual path', () async {
     final mnn = DetectedMnn();
-    final c = WorkspaceController(mnn: mnn);
+    final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: mnn);
     await c.discoverModel();
     expect(c.detectedModelDirectory, mnn.directory);
     expect(mnn.loads, 0);
@@ -34,7 +34,7 @@ void main() {
   });
   test('missing installed model is actionable and does not load', () async {
     final mnn = DetectedMnn()..directory = null;
-    final c = WorkspaceController(mnn: mnn);
+    final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: mnn);
     await c.discoverModel();
     await c.loadDetectedModel();
     expect(mnn.loads, 0);
@@ -43,7 +43,7 @@ void main() {
   });
   test('logout fences delayed model load and releases ownership', () async {
     final mnn = DetectedMnn()..loading = Completer<MnnStatus>();
-    final c = WorkspaceController(mnn: mnn);
+    final c = WorkspaceController(selectedRuntime: LocalRuntime.qwen, mnn: mnn);
     await c.discoverModel();
     final load = c.loadDetectedModel();
     await Future<void>.delayed(Duration.zero);

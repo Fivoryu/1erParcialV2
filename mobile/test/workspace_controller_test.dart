@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('discard makes zero write calls', () {
-    final controller = WorkspaceController();
+    final controller = WorkspaceController(selectedRuntime: LocalRuntime.qwen);
     controller.setProposal(
       const OperationProposal(method: 'GET', path: '/tasks', body: null),
     );

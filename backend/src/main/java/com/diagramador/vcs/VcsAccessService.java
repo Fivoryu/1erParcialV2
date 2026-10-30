@@ -85,6 +85,32 @@ public class VcsAccessService {
         requireAction(projectId, VcsAction.MERGE);
     }
 
+    /** Reviewing a merge request needs an active EDITOR or OWNER; a viewer only reads. */
+    public void requireReviewer(UUID projectId, UUID userId) {
+        ProjectMember member = requireActiveMember(projectId, userId);
+        if (!isReviewerRole(member.getRole())) {
+            throw forbidden("Solo un editor o el propietario puede aprobar una solicitud de fusión.");
+        }
+    }
+
+    /** Whether some active EDITOR or OWNER other than {@code excludedUserId} could approve. */
+    public boolean hasReviewerOtherThan(UUID projectId, UUID excludedUserId) {
+        return activeReviewerIds(projectId).stream().anyMatch(userId -> !userId.equals(excludedUserId));
+    }
+
+    /** The users who are, right now, active EDITOR or OWNER members of the project. */
+    public Set<UUID> activeReviewerIds(UUID projectId) {
+        return projectMemberRepository.findByProjectId(projectId).stream()
+                .filter(member -> ACTIVE_STATUS.equals(member.getStatus()))
+                .filter(member -> isReviewerRole(member.getRole()))
+                .map(member -> member.getId().getUserId())
+                .collect(Collectors.toSet());
+    }
+
+    private static boolean isReviewerRole(ProjectMemberRole role) {
+        return role == ProjectMemberRole.EDITOR || role == ProjectMemberRole.OWNER;
+    }
+
     /** Branch-protection changes are permission management, not protected-branch commits. */
     public void requireProtection(UUID projectId) {
         requireAction(projectId, VcsAction.MANAGE_PERMISSIONS);

@@ -37,12 +37,15 @@ describe('version-control API contract', () => {
     await api.compareCommits(projectId, commitId, 'commit-2');
     await api.compareCommits(projectId, null, 'commit-2');
     await api.createCommit(projectId, { message: 'Add a class' });
+    await api.restoreCommit(projectId, commitId);
+    await api.restoreCommit(projectId, commitId, 'Volver');
     await api.listMergeRequests(projectId);
     await api.createMergeRequest(projectId, {
       sourceBranch: 'feature', targetBranch: 'main', title: 'Review the change',
     });
     await api.getMergeRequest(projectId, mergeRequestId);
     await api.getMergeRequestDiff(projectId, mergeRequestId);
+    await api.approveMergeRequest(projectId, mergeRequestId);
     await api.mergeMergeRequest(projectId, mergeRequestId);
     await api.closeMergeRequest(projectId, mergeRequestId);
     await api.listPermissions(projectId);
@@ -75,6 +78,11 @@ describe('version-control API contract', () => {
         url: '/api/projects/project-1/vcs/commits', method: 'POST',
         body: JSON.stringify({ message: 'Add a class' }),
       },
+      { url: '/api/projects/project-1/vcs/commits/commit-1/restore', method: 'POST', body: '{}' },
+      {
+        url: '/api/projects/project-1/vcs/commits/commit-1/restore', method: 'POST',
+        body: JSON.stringify({ message: 'Volver' }),
+      },
       { url: '/api/projects/project-1/vcs/merge-requests', method: 'GET', body: null },
       {
         url: '/api/projects/project-1/vcs/merge-requests', method: 'POST',
@@ -82,6 +90,9 @@ describe('version-control API contract', () => {
       },
       { url: '/api/projects/project-1/vcs/merge-requests/merge-request-1', method: 'GET', body: null },
       { url: '/api/projects/project-1/vcs/merge-requests/merge-request-1/diff', method: 'GET', body: null },
+      {
+        url: '/api/projects/project-1/vcs/merge-requests/merge-request-1/approve', method: 'POST', body: '{}',
+      },
       {
         url: '/api/projects/project-1/vcs/merge-requests/merge-request-1/merge', method: 'POST', body: '{}',
       },

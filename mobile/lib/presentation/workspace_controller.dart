@@ -19,12 +19,14 @@ class WorkspaceController extends ChangeNotifier {
     this._mnn,
     this.litert,
     this._validator = const OpenApiValidator(),
+    this.selectedRuntime = LocalRuntime.gemma,
   });
   final PlatformService? _service;
   final SecureStore? _store;
   final MnnService? _mnn;
   final LiteRtAgentService? litert;
-  LocalRuntime selectedRuntime = LocalRuntime.qwen;
+  // Gemma is the default local model; Qwen stays available from the runtime selector.
+  LocalRuntime selectedRuntime;
   int get modelEpoch => _modelEpoch;
   // Selection is user intent; ownership survives failed native cleanup.
   LocalRuntime? _runtimeOwner;

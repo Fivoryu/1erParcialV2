@@ -172,7 +172,7 @@ WorkspaceController switchController(
   SwitchPlatform api,
   SwitchStore store, [
   SwitchMnn? mnn,
-]) => WorkspaceController(service: api, store: store, mnn: mnn ?? SwitchMnn())
+]) => WorkspaceController(selectedRuntime: LocalRuntime.qwen, service: api, store: store, mnn: mnn ?? SwitchMnn())
   ..projects = [switchProject, otherProject]
   ..project = switchProject
   ..backends = [switchA, switchB]

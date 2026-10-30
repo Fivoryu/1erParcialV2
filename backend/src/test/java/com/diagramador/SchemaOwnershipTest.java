@@ -125,6 +125,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
                     "target_branch_id", "source_commit_id", "target_commit_id", "merge_base_commit_id",
                     "merged_commit_id", "state", "has_conflicts", "conflicts", "title", "opened_by_user_id",
                     "decided_by_user_id", "created_at", "updated_at")),
+            Map.entry("vcs_merge_request_approval", Set.of("merge_request_id", "user_id", "approved_at")),
             Map.entry("vcs_permission", Set.of("permission_id", "model_id", "user_id", "action",
                     "granted_by_user_id", "created_at")));
 
@@ -181,6 +182,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("vcs_commit", Set.of("idx_vcs_commit_model", "idx_vcs_commit_author")),
             Map.entry("vcs_branch", Set.of("idx_vcs_branch_model")),
             Map.entry("vcs_merge_request", Set.of("idx_vcs_merge_request_model", "idx_vcs_merge_request_source")),
+            Map.entry("vcs_merge_request_approval", Set.of()),
             Map.entry("vcs_permission", Set.of("idx_vcs_permission_model_user")));
 
     private final JdbcTemplate jdbcTemplate;

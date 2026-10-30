@@ -24,7 +24,7 @@ void main() {
     tester,
   ) async {
     final api = fixture.FakePlatform();
-    final controller = WorkspaceController()
+    final controller = WorkspaceController(selectedRuntime: LocalRuntime.qwen)
       ..latestResult = const GatewayResult(
         status: 201,
         body: {'created': true},
@@ -45,7 +45,7 @@ void main() {
   test('known gateway failure retains result without unknown guard', () async {
     final api = KnownFailure();
     final controller =
-        WorkspaceController(service: api, store: fixture.MemoryStore())
+        WorkspaceController(selectedRuntime: LocalRuntime.qwen, service: api, store: fixture.MemoryStore())
           ..project = fixture.project
           ..backend = fixture.backend
           ..contract = await api.contract('t', 'p', 'd')
@@ -62,7 +62,7 @@ void main() {
     () async {
       final api = fixture.FakePlatform()..failWrites = true;
       final controller =
-          WorkspaceController(service: api, store: fixture.MemoryStore())
+          WorkspaceController(selectedRuntime: LocalRuntime.qwen, service: api, store: fixture.MemoryStore())
             ..project = fixture.project
             ..backend = fixture.backend
             ..contract = await api.contract('t', 'p', 'd')

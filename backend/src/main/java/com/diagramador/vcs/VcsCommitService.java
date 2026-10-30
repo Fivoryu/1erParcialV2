@@ -103,6 +103,40 @@ public class VcsCommitService {
         return commitResource(commit);
     }
 
+    /**
+     * Restores the diagram of any commit of this model as a new commit on the active branch; history is never
+     * rewritten. Requires a clean working copy, like a branch checkout.
+     */
+    @Transactional
+    public VcsResources.Commit restore(UmlModel model, UUID commitId, String message, UserAccount author) {
+        UmlModel managedModel = requireModel(model.getId());
+        accessService.requireCommit(managedModel.getProject().getId());
+        VcsCommit target = commitRepository.findByModel_IdAndId(managedModel.getId(), commitId)
+                .orElseThrow(() -> notFound("Commit was not found."));
+        branchService.ensureMain(managedModel, author);
+        VcsBranch active = branchService.activeBranch(managedModel);
+        String activeHeadHash = active.getHeadCommit().getSnapshot().getStateHash();
+        if (!Objects.equals(stateHasher.hash(managedModel), activeHeadHash)) {
+            throw new ApiException(HttpStatus.CONFLICT, "WORKING_COPY_DIRTY",
+                    "Commit or discard working-copy changes before restoring a commit.", List.of(), null);
+        }
+        if (Objects.equals(target.getSnapshot().getStateHash(), activeHeadHash)) {
+            throw new ApiException(HttpStatus.CONFLICT, "WORKING_COPY_CLEAN",
+                    "The branch already has the diagram of that commit.", List.of(), null);
+        }
+
+        String restoreMessage = message == null || message.isBlank()
+                ? defaultRestoreMessage(target.getMessage())
+                : message;
+        UmlModel materialized = branchService.materializeCommit(managedModel, target, null, author);
+        return commit(materialized, restoreMessage, author, VcsCommitOrigin.MANUAL);
+    }
+
+    private static String defaultRestoreMessage(String originalMessage) {
+        String message = "Restaurar versión: " + originalMessage;
+        return message.length() > 500 ? message.substring(0, 500) : message;
+    }
+
     @Transactional(readOnly = true)
     public List<VcsResources.Commit> history(UmlModel model, String branchName, Integer requestedLimit) {
         UmlModel managedModel = requireModel(model.getId());

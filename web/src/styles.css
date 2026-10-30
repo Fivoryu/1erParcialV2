@@ -3637,6 +3637,22 @@ h3 {
   font-size: 13px;
 }
 
+.vcs-restore-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vcs-restore-confirm {
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+.vcs-restore-confirm p {
+  margin: 0;
+}
+
 .vcs-change-list {
   margin: 0;
   padding: 0;
