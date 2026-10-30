@@ -9,7 +9,7 @@ const STATE_LABELS: Record<ProposalPreviewState, { sign: string; label: string }
   modified: { sign: '~', label: 'Modificado' },
 };
 
-const CARD_WIDTH = 200;
+const CARD_WIDTH = 220;
 const GAP = 48;
 const PADDING = 24;
 
@@ -22,8 +22,9 @@ interface Box {
 
 /** Height the read-only card needs, so new members never overflow a stored geometry. */
 function estimatedHeight(classifier: ClassifierResource): number {
-  const rows = classifier.attributes.length + classifier.operations.length;
-  return 44 + rows * 22 + (classifier.attributes.length > 0 ? 10 : 0) + (classifier.operations.length > 0 ? 10 : 0);
+  // Heading with a badge, then each compartment's padding plus one 22px row per member.
+  const compartment = (rows: number) => (rows > 0 ? 16 + rows * 22 : 0);
+  return 78 + compartment(classifier.attributes.length) + compartment(classifier.operations.length);
 }
 
 /** Places each class where the default view has it; classes without a position go in a row below. */
@@ -35,7 +36,8 @@ function layout(model: ModelResource): Map<string, Box> {
     const geometry = view?.element_geometry.find((item) => item.targetType === 'CLASSIFIER' && item.targetId === classifier.id);
     if (geometry) {
       boxes.set(classifier.id, {
-        x: geometry.x, y: geometry.y, w: geometry.w || CARD_WIDTH, h: Math.max(geometry.h, estimatedHeight(classifier)),
+        // Labels need a little more room than the editor's card, so the width never shrinks below the default.
+        x: geometry.x, y: geometry.y, w: Math.max(geometry.w, CARD_WIDTH), h: Math.max(geometry.h, estimatedHeight(classifier)),
       });
     } else {
       unplaced.push(classifier);
@@ -123,10 +125,12 @@ function relationshipLabel(relationship: RelationshipResource): string {
   return formatRelationshipName(relationship.name, relationship.stereotype) || relationship.kind.toLowerCase();
 }
 
-function PreviewEdge({ relationship, boxes, state }: {
+/** Lines go under the cards; labels go in a later layer above them, so a card never hides a label. */
+function PreviewEdge({ relationship, boxes, state, layer }: {
   relationship: RelationshipResource;
   boxes: Map<string, Box>;
   state: ProposalPreviewState | undefined;
+  layer: 'line' | 'label';
 }) {
   const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
   const from = ends[0] && boxes.get(ends[0].classifierId);
@@ -139,10 +143,21 @@ function PreviewEdge({ relationship, boxes, state }: {
   const label = relationshipLabel(relationship);
   const text = state ? `${STATE_LABELS[state].sign} ${label} (${STATE_LABELS[state].label.toLowerCase()})` : label;
   const props = stateProps(relationship.name ?? label, state);
+  if (layer === 'label') {
+    return (
+      <text
+        className={`proposal-preview-edge-label ${props.className}`}
+        x={(start.x + end.x) / 2}
+        y={(start.y + end.y) / 2 - 6}
+        textAnchor="middle"
+      >
+        {text}
+      </text>
+    );
+  }
   return (
     <g {...props} className={`proposal-preview-edge ${props.className}`}>
       <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
-      <text x={(start.x + end.x) / 2} y={(start.y + end.y) / 2 - 6} textAnchor="middle">{text}</text>
     </g>
   );
 }
@@ -201,6 +216,7 @@ export function ProposalDiagramPreview({ proposal, model, diagramNames }: Propos
               relationship={relationship}
               boxes={boxes}
               state={preview.states[relationship.id]}
+              layer="line"
             />
           ))}
           {preview.model.classifiers.map((classifier) => {
@@ -211,6 +227,15 @@ export function ProposalDiagramPreview({ proposal, model, diagramNames }: Propos
               </foreignObject>
             );
           })}
+          {preview.model.relationships.map((relationship) => (
+            <PreviewEdge
+              key={`${relationship.id}-label`}
+              relationship={relationship}
+              boxes={boxes}
+              state={preview.states[relationship.id]}
+              layer="label"
+            />
+          ))}
         </svg>
       </div>
     </div>

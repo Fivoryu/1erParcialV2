@@ -4253,6 +4253,18 @@ h3 {
 .proposal-preview-canvas .uml-class-card {
   height: 100%;
   box-sizing: border-box;
+  overflow: hidden;
+}
+
+.proposal-preview-canvas .uml-member-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.proposal-preview-canvas .uml-member-text {
+  flex: 1;
+  cursor: default;
 }
 
 .proposal-preview-badge {
@@ -4287,17 +4299,22 @@ h3 {
   stroke-width: 1.5;
 }
 
-.proposal-preview-edge text {
+/* Labels sit above the cards; the white halo keeps them readable over any card or line. */
+.proposal-preview-edge-label {
   fill: var(--ink);
   font-size: 12px;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 4px;
+  stroke-linejoin: round;
 }
 
 .proposal-preview-edge.proposal-preview-item--added line { stroke: var(--preview-added); stroke-width: 2.5; }
 .proposal-preview-edge.proposal-preview-item--removed line { stroke: var(--preview-removed); stroke-width: 2.5; stroke-dasharray: 6 4; }
 .proposal-preview-edge.proposal-preview-item--modified line { stroke: var(--preview-modified); stroke-width: 2.5; }
-.proposal-preview-edge.proposal-preview-item--added text { fill: var(--preview-added); }
-.proposal-preview-edge.proposal-preview-item--removed text { fill: var(--preview-removed); }
-.proposal-preview-edge.proposal-preview-item--modified text { fill: var(--preview-modified); }
+.proposal-preview-edge-label.proposal-preview-item--added { fill: var(--preview-added); }
+.proposal-preview-edge-label.proposal-preview-item--removed { fill: var(--preview-removed); }
+.proposal-preview-edge-label.proposal-preview-item--modified { fill: var(--preview-modified); }
 
 .chat-proposal-actions {
   display: flex;
