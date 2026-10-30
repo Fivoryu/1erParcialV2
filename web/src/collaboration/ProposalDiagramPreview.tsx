@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import type { ChatProposalResource, ClassifierResource, ModelResource, RelationshipResource } from '../api/types';
 import { describeAssistantOperation, type DiagramNames } from '../assistant/assistantNames';
 import { formatAttribute, formatOperation, formatRelationshipName, orderedAttributes, orderedOperations } from '../diagram/uml-format';
+import { labelPoint, routeEdge, type Box, type Point } from './previewRouting';
 import { projectProposalPreview, type ProposalPreviewState } from './proposalProjectionPreview';
 
 const STATE_LABELS: Record<ProposalPreviewState, { sign: string; label: string }> = {
@@ -12,13 +14,6 @@ const STATE_LABELS: Record<ProposalPreviewState, { sign: string; label: string }
 const CARD_WIDTH = 220;
 const GAP = 48;
 const PADDING = 24;
-
-interface Box {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
 
 /** Height the read-only card needs, so new members never overflow a stored geometry. */
 function estimatedHeight(classifier: ClassifierResource): number {
@@ -50,10 +45,6 @@ function layout(model: ModelResource): Map<string, Box> {
     boxes.set(classifier.id, { x: left + index * (CARD_WIDTH + GAP), y: top, w: CARD_WIDTH, h: estimatedHeight(classifier) });
   });
   return boxes;
-}
-
-function center(box: Box) {
-  return { x: box.x + box.w / 2, y: box.y + box.h / 2 };
 }
 
 function StateBadge({ state }: { state: ProposalPreviewState | undefined }) {
@@ -126,38 +117,51 @@ function relationshipLabel(relationship: RelationshipResource): string {
 }
 
 /** Lines go under the cards; labels go in a later layer above them, so a card never hides a label. */
-function PreviewEdge({ relationship, boxes, state, layer }: {
+interface PreviewRoute {
+  points: Point[];
+  label: string;
+  text: string;
+  /** Box the label occupies, so the canvas can grow to show it whole. */
+  labelBox: Box;
+}
+
+/** Approximate width of 12px label text, enough to size the canvas around it. */
+const LABEL_CHAR_WIDTH = 7;
+
+function previewRoute(relationship: RelationshipResource, points: Point[], state: ProposalPreviewState | undefined): PreviewRoute {
+  const label = relationshipLabel(relationship);
+  const text = state ? `${STATE_LABELS[state].sign} ${label} (${STATE_LABELS[state].label.toLowerCase()})` : label;
+  const anchor = labelPoint(points);
+  const width = text.length * LABEL_CHAR_WIDTH;
+  return { points, label, text, labelBox: { x: anchor.x - width / 2, y: anchor.y - 20, w: width, h: 16 } };
+}
+
+/** Lines go under the cards; labels go in a later layer above them, so a card never hides a label. */
+function PreviewEdge({ relationship, route, state, layer }: {
   relationship: RelationshipResource;
-  boxes: Map<string, Box>;
+  route: PreviewRoute | undefined;
   state: ProposalPreviewState | undefined;
   layer: 'line' | 'label';
 }) {
-  const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
-  const from = ends[0] && boxes.get(ends[0].classifierId);
-  const to = ends[1] && boxes.get(ends[1].classifierId);
-  if (!from || !to) {
+  if (!route) {
     return null;
   }
-  const start = center(from);
-  const end = center(to);
-  const label = relationshipLabel(relationship);
-  const text = state ? `${STATE_LABELS[state].sign} ${label} (${STATE_LABELS[state].label.toLowerCase()})` : label;
-  const props = stateProps(relationship.name ?? label, state);
+  const props = stateProps(relationship.name ?? route.label, state);
   if (layer === 'label') {
     return (
       <text
         className={`proposal-preview-edge-label ${props.className}`}
-        x={(start.x + end.x) / 2}
-        y={(start.y + end.y) / 2 - 6}
+        x={route.labelBox.x + route.labelBox.w / 2}
+        y={route.labelBox.y + 14}
         textAnchor="middle"
       >
-        {text}
+        {route.text}
       </text>
     );
   }
   return (
     <g {...props} className={`proposal-preview-edge ${props.className}`}>
-      <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} />
+      <polyline points={route.points.map((point) => `${point.x},${point.y}`).join(' ')} />
     </g>
   );
 }
@@ -172,14 +176,37 @@ export interface ProposalDiagramPreviewProps {
  * Read-only picture of how the diagram would look if the proposal were accepted. It is computed
  * from a copy of the current model and never changes it, dispatches commands or persists layout.
  */
-export function ProposalDiagramPreview({ proposal, model, diagramNames }: ProposalDiagramPreviewProps) {
-  const preview = projectProposalPreview(model, proposal.operations);
+function buildPreview(model: ModelResource, operations: ChatProposalResource['operations']) {
+  const preview = projectProposalPreview(model, operations);
   const boxes = layout(preview.model);
-  const all = [...boxes.values()];
+  const routes = new Map<string, PreviewRoute>();
+  for (const relationship of preview.model.relationships) {
+    const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
+    const from = ends[0] && boxes.get(ends[0].classifierId);
+    const to = ends[1] && boxes.get(ends[1].classifierId);
+    if (from && to) {
+      const points = routeEdge(from, to, [...boxes.values()].filter((box) => box !== from && box !== to));
+      routes.set(relationship.id, previewRoute(relationship, points, preview.states[relationship.id]));
+    }
+  }
+  // The canvas covers every card, every detour a route takes around them, and every label.
+  const all = [
+    ...boxes.values(),
+    ...[...routes.values()].flatMap((route) => [route.labelBox, ...route.points.map((point) => ({ ...point, w: 0, h: 0 }))]),
+  ];
   const minX = Math.min(0, ...all.map((box) => box.x)) - PADDING;
   const minY = Math.min(0, ...all.map((box) => box.y)) - PADDING;
   const width = Math.max(CARD_WIDTH, ...all.map((box) => box.x + box.w)) - minX + PADDING;
   const height = Math.max(80, ...all.map((box) => box.y + box.h)) - minY + PADDING;
+  return { preview, boxes, routes, minX, minY, width, height };
+}
+
+export function ProposalDiagramPreview({ proposal, model, diagramNames }: ProposalDiagramPreviewProps) {
+  // Routing is the costly part; the chat re-renders on every keystroke, so it reruns only on new input.
+  const { preview, boxes, routes, minX, minY, width, height } = useMemo(
+    () => buildPreview(model, proposal.operations),
+    [model, proposal.operations],
+  );
   const stopped = preview.stoppedAt === null ? null : proposal.operations[preview.stoppedAt];
 
   return (
@@ -214,7 +241,7 @@ export function ProposalDiagramPreview({ proposal, model, diagramNames }: Propos
             <PreviewEdge
               key={relationship.id}
               relationship={relationship}
-              boxes={boxes}
+              route={routes.get(relationship.id)}
               state={preview.states[relationship.id]}
               layer="line"
             />
@@ -231,7 +258,7 @@ export function ProposalDiagramPreview({ proposal, model, diagramNames }: Propos
             <PreviewEdge
               key={`${relationship.id}-label`}
               relationship={relationship}
-              boxes={boxes}
+              route={routes.get(relationship.id)}
               state={preview.states[relationship.id]}
               layer="label"
             />

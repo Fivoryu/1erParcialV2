@@ -4294,7 +4294,8 @@ h3 {
   text-decoration: line-through;
 }
 
-.proposal-preview-edge line {
+.proposal-preview-edge polyline {
+  fill: none;
   stroke: var(--muted);
   stroke-width: 1.5;
 }
@@ -4309,9 +4310,9 @@ h3 {
   stroke-linejoin: round;
 }
 
-.proposal-preview-edge.proposal-preview-item--added line { stroke: var(--preview-added); stroke-width: 2.5; }
-.proposal-preview-edge.proposal-preview-item--removed line { stroke: var(--preview-removed); stroke-width: 2.5; stroke-dasharray: 6 4; }
-.proposal-preview-edge.proposal-preview-item--modified line { stroke: var(--preview-modified); stroke-width: 2.5; }
+.proposal-preview-edge.proposal-preview-item--added polyline { stroke: var(--preview-added); stroke-width: 2.5; }
+.proposal-preview-edge.proposal-preview-item--removed polyline { stroke: var(--preview-removed); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.proposal-preview-edge.proposal-preview-item--modified polyline { stroke: var(--preview-modified); stroke-width: 2.5; }
 .proposal-preview-edge-label.proposal-preview-item--added { fill: var(--preview-added); }
 .proposal-preview-edge-label.proposal-preview-item--removed { fill: var(--preview-removed); }
 .proposal-preview-edge-label.proposal-preview-item--modified { fill: var(--preview-modified); }

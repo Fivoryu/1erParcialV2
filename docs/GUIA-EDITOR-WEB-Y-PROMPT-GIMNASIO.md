@@ -229,8 +229,9 @@ La vista avisa cuando no puede ser exacta:
   clase repetido); ni ese paso ni los siguientes se muestran, igual que al aplicar, donde un paso rechazado
   detiene los siguientes.
 
-Las clases sin posición guardada aparecen en una fila debajo del diagrama, y las relaciones se dibujan como
-líneas rectas entre clases. Solo una persona editora o propietaria puede pulsar **`Aceptar y aplicar`**.
+Las clases sin posición guardada aparecen en una fila debajo del diagrama. Una relación va en línea recta
+cuando el camino está libre y, si otra clase está en medio, la rodea con tramos en ángulo recto; su nombre
+siempre se dibuja por encima de las clases. Solo una persona editora o propietaria puede pulsar **`Aceptar y aplicar`**.
 
 ## 6. Después del diagrama
 
