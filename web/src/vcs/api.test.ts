@@ -45,6 +45,7 @@ describe('version-control API contract', () => {
     });
     await api.getMergeRequest(projectId, mergeRequestId);
     await api.getMergeRequestDiff(projectId, mergeRequestId);
+    await api.approveMergeRequest(projectId, mergeRequestId);
     await api.mergeMergeRequest(projectId, mergeRequestId);
     await api.closeMergeRequest(projectId, mergeRequestId);
     await api.listPermissions(projectId);
@@ -89,6 +90,9 @@ describe('version-control API contract', () => {
       },
       { url: '/api/projects/project-1/vcs/merge-requests/merge-request-1', method: 'GET', body: null },
       { url: '/api/projects/project-1/vcs/merge-requests/merge-request-1/diff', method: 'GET', body: null },
+      {
+        url: '/api/projects/project-1/vcs/merge-requests/merge-request-1/approve', method: 'POST', body: '{}',
+      },
       {
         url: '/api/projects/project-1/vcs/merge-requests/merge-request-1/merge', method: 'POST', body: '{}',
       },

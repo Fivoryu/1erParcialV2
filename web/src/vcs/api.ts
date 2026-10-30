@@ -36,6 +36,8 @@ export const VCS_ERROR_CODES = [
   'WORKING_COPY_CLEAN',
   'MERGE_CONFLICTS',
   'MERGE_REQUEST_EXISTS',
+  'MERGE_REQUEST_NOT_OPEN',
+  'APPROVAL_REQUIRED',
 ] as const;
 
 export type VcsErrorCode = (typeof VCS_ERROR_CODES)[number];
@@ -120,6 +122,13 @@ export interface VcsMergeConflict {
   message: string;
 }
 
+/** One reviewer's approval of a merge request. */
+export interface VcsMergeRequestApproval {
+  userId: Uuid;
+  displayName: string;
+  approvedAt: string;
+}
+
 export interface VcsMergeRequest {
   mergeRequestId: Uuid;
   title: string;
@@ -134,6 +143,10 @@ export interface VcsMergeRequest {
   openedByDisplayName: string;
   decidedByDisplayName: string | null;
   createdAt: string;
+  approvals: VcsMergeRequestApproval[];
+  /** True while the request still needs an approval from someone other than its opener before it can merge. */
+  approvalRequired: boolean;
+  openedByUserId: Uuid | null;
 }
 
 /** Two commits compared: field-level changes, the commits the target has that the start lacks, and their authors. */
@@ -200,6 +213,7 @@ export interface VcsApiClient {
   createMergeRequest(projectId: Uuid, request: CreateVcsMergeRequestRequest): Promise<VcsMergeRequest>;
   getMergeRequest(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequest>;
   getMergeRequestDiff(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequestDiff>;
+  approveMergeRequest(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequest>;
   mergeMergeRequest(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequest>;
   closeMergeRequest(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequest>;
   listPermissions(projectId: Uuid): Promise<VcsProjectPermission[]>;
@@ -397,6 +411,12 @@ export function createVcsApiClient(
     getMergeRequestDiff(projectId, mergeRequestId) {
       return requestJson<VcsMergeRequestDiff>(
         `${projectPath(projectId)}/merge-requests/${encodeURIComponent(mergeRequestId)}/diff`,
+      );
+    },
+    approveMergeRequest(projectId, mergeRequestId) {
+      return postJson<VcsMergeRequest>(
+        `${projectPath(projectId)}/merge-requests/${encodeURIComponent(mergeRequestId)}/approve`,
+        {},
       );
     },
     mergeMergeRequest(projectId, mergeRequestId) {

@@ -12,6 +12,7 @@ import com.diagramador.domain.VcsCommit;
 import com.diagramador.domain.VcsCommitKind;
 import com.diagramador.domain.VcsCommitOrigin;
 import com.diagramador.domain.VcsMergeRequest;
+import com.diagramador.domain.VcsMergeRequestApproval;
 import com.diagramador.domain.VcsMergeState;
 import com.diagramador.domain.VcsSnapshot;
 import com.diagramador.persistence.ModelVersionRepository;
@@ -20,6 +21,7 @@ import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.UserAccountRepository;
 import com.diagramador.persistence.VcsBranchRepository;
 import com.diagramador.persistence.VcsCommitRepository;
+import com.diagramador.persistence.VcsMergeRequestApprovalRepository;
 import com.diagramador.persistence.VcsMergeRequestRepository;
 import com.diagramador.persistence.VcsSnapshotRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -47,6 +49,7 @@ public class VcsMergeRequestService {
     private final VcsCommitRepository commitRepository;
     private final VcsSnapshotRepository snapshotRepository;
     private final VcsMergeRequestRepository mergeRequestRepository;
+    private final VcsMergeRequestApprovalRepository approvalRepository;
     private final UmlModelRepository modelRepository;
     private final ModelVersionRepository versionRepository;
     private final ProjectRepository projectRepository;
@@ -59,7 +62,8 @@ public class VcsMergeRequestService {
     public VcsMergeRequestService(VcsAccessService accessService, VcsBranchService branchService,
             ModelStateHasher stateHasher, ModelSnapshotService snapshotService, VcsBranchRepository branchRepository,
             VcsCommitRepository commitRepository, VcsSnapshotRepository snapshotRepository,
-            VcsMergeRequestRepository mergeRequestRepository, UmlModelRepository modelRepository,
+            VcsMergeRequestRepository mergeRequestRepository,
+            VcsMergeRequestApprovalRepository approvalRepository, UmlModelRepository modelRepository,
             ModelVersionRepository versionRepository, ProjectRepository projectRepository,
             UserAccountRepository userRepository, ObjectMapper objectMapper) {
         this.accessService = accessService;
@@ -70,6 +74,7 @@ public class VcsMergeRequestService {
         this.commitRepository = commitRepository;
         this.snapshotRepository = snapshotRepository;
         this.mergeRequestRepository = mergeRequestRepository;
+        this.approvalRepository = approvalRepository;
         this.modelRepository = modelRepository;
         this.versionRepository = versionRepository;
         this.projectRepository = projectRepository;
@@ -178,6 +183,12 @@ public class VcsMergeRequestService {
         accessService.requireMerge(managedModel.getProject().getId());
         VcsMergeRequest request = requireMergeRequest(managedModel.getId(), mergeRequestId);
         requireOpen(request);
+        if (approvalRequired(request, approvalRepository.findByMergeRequest_IdOrderByApprovedAtAscUser_IdAsc(
+                request.getId()))) {
+            throw new ApiException(HttpStatus.CONFLICT, "APPROVAL_REQUIRED",
+                    "Another editor or owner must approve this merge request before it can be merged.",
+                    List.of(), null);
+        }
         if (request.hasConflicts()) {
             throw new ApiException(HttpStatus.CONFLICT, "MERGE_CONFLICTS",
                     "This merge request has conflicts and cannot be merged.", List.of(), null);
@@ -244,6 +255,30 @@ public class VcsMergeRequestService {
         return resource(requireMergeRequest(modelId, mergeRequestId));
     }
 
+    /** Records the caller's approval; idempotent, and never by the person who opened the request. */
+    @Transactional
+    public VcsResources.MergeRequest approve(UmlModel model, UUID mergeRequestId, UserAccount approver) {
+        UmlModel managedModel = requireModel(model.getId());
+        UUID projectId = managedModel.getProject().getId();
+        if (approver == null) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN",
+                    "Only a project member can approve a merge request.", List.of(), null);
+        }
+        accessService.requireReviewer(projectId, approver.getId());
+        VcsMergeRequest request = requireMergeRequest(managedModel.getId(), mergeRequestId);
+        if (request.getState() != VcsMergeState.OPEN) {
+            throw new ApiException(HttpStatus.CONFLICT, "MERGE_REQUEST_NOT_OPEN",
+                    "Only an OPEN merge request can be approved.", List.of(), null);
+        }
+        UserAccount opener = request.getOpenedByUser();
+        if (opener != null && opener.getId().equals(approver.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN",
+                    "No puedes aprobar una solicitud de fusión que abriste tú.", List.of(), null);
+        }
+        approvalRepository.insertIfAbsent(request.getId(), approver.getId());
+        return resource(request);
+    }
+
     @Transactional
     public VcsResources.MergeRequest close(UmlModel model, UUID mergeRequestId, UserAccount author) {
         UmlModel managedModel = requireModel(model.getId());
@@ -288,13 +323,39 @@ public class VcsMergeRequestService {
         if (conflicts == null || conflicts.isNull()) {
             conflicts = objectMapper.createArrayNode();
         }
+        List<VcsMergeRequestApproval> approvals = approvalRepository
+                .findByMergeRequest_IdOrderByApprovedAtAscUser_IdAsc(request.getId());
         return new VcsResources.MergeRequest(request.getId(), request.getTitle(), request.getState(),
                 request.getSourceBranch().getName(), request.getTargetBranch().getName(),
                 request.getSourceCommit().getId(), request.getTargetCommit().getId(),
                 request.getMergeBaseCommit() == null ? null : request.getMergeBaseCommit().getId(),
                 request.hasConflicts(), conflicts,
                 openedBy == null ? null : openedBy.getDisplayName(),
-                decidedBy == null ? null : decidedBy.getDisplayName(), request.getCreatedAt());
+                decidedBy == null ? null : decidedBy.getDisplayName(), request.getCreatedAt(),
+                approvals.stream()
+                        .map(approval -> new VcsResources.Approval(approval.getUser().getId(),
+                                approval.getUser().getDisplayName(), approval.getApprovedAt()))
+                        .toList(),
+                approvalRequired(request, approvals), openedBy == null ? null : openedBy.getId());
+    }
+
+    /**
+     * An open request still needs an approval while some other active editor or owner could give one and nobody but
+     * the opener has. A project with no such member merges without approval.
+     */
+    private boolean approvalRequired(VcsMergeRequest request, List<VcsMergeRequestApproval> approvals) {
+        if (request.getState() != VcsMergeState.OPEN) {
+            return false;
+        }
+        UUID openerId = request.getOpenedByUser() == null ? null : request.getOpenedByUser().getId();
+        // Only approvals from people who are still active editors/owners count; a demoted or removed approver's
+        // approval is stale.
+        Set<UUID> reviewers = accessService.activeReviewerIds(request.getModel().getProject().getId());
+        if (reviewers.stream().allMatch(userId -> userId.equals(openerId))) {
+            return false;
+        }
+        return approvals.stream().map(approval -> approval.getUser().getId())
+                .noneMatch(userId -> !userId.equals(openerId) && reviewers.contains(userId));
     }
 
     private static String normalizeBranchName(String name) {

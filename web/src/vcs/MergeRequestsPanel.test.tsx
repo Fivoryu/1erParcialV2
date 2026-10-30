@@ -68,6 +68,9 @@ const openRequest: VcsMergeRequest = {
   openedByDisplayName: 'Avery Rivera',
   decidedByDisplayName: null,
   createdAt: '2026-10-22T12:00:00Z',
+  approvals: [],
+  approvalRequired: false,
+  openedByUserId: 'user-opener',
 };
 
 function props(overrides: Partial<MergeRequestsPanelViewProps> = {}): MergeRequestsPanelViewProps {
@@ -148,6 +151,67 @@ describe('merge requests panel', () => {
 
     expect(markup).toMatch(/<button[^>]*>Fusionar<\/button>/);
     expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Fusionar<\/button>/);
+  });
+
+  it('lists who approved, or says nobody has', () => {
+    const none = render({ mergeRequests: [{ ...openRequest, hasConflicts: false, conflicts: [] }] });
+    expect(none).toContain('Sin aprobaciones');
+
+    const approved = render({
+      mergeRequests: [{
+        ...openRequest,
+        hasConflicts: false,
+        conflicts: [],
+        approvals: [
+          { userId: 'user-a', displayName: 'Blair Chen', approvedAt: '2026-10-22T13:00:00Z' },
+          { userId: 'user-b', displayName: 'Casey Ortiz', approvedAt: '2026-10-22T14:00:00Z' },
+        ],
+      }],
+    });
+    expect(approved).toContain('Aprobada por Blair Chen, Casey Ortiz');
+    expect(approved).not.toContain('Sin aprobaciones');
+  });
+
+  it('keeps merge disabled with the hint while an approval is still required', () => {
+    const markup = render({
+      mergeRequests: [{ ...openRequest, hasConflicts: false, conflicts: [], approvalRequired: true }],
+      currentUserId: 'user-opener',
+    });
+
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Fusionar<\/button>/);
+    expect(markup).toContain('Necesita la aprobación de otro integrante antes de fusionarse.');
+    expect(markup).toMatch(/<button[^>]*>Cerrar solicitud<\/button>/);
+  });
+
+  it('hides the approval hint and enables merge once nobody else needs to approve', () => {
+    const markup = render({
+      mergeRequests: [{ ...openRequest, hasConflicts: false, conflicts: [] }],
+    });
+
+    expect(markup).not.toContain('Necesita la aprobación');
+    expect(markup).not.toMatch(/<button[^>]*disabled=""[^>]*>Fusionar<\/button>/);
+  });
+
+  it('offers Aprobar to a reviewer who is not the opener', () => {
+    const request = { ...openRequest, hasConflicts: false, conflicts: [], approvalRequired: true };
+    const markup = render({ mergeRequests: [request], currentUserId: 'user-reviewer' });
+
+    expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*>Aprobar<\/button>/);
+  });
+
+  it('does not offer Aprobar to the opener, disables it after approving, and hides it when not open', () => {
+    const request = { ...openRequest, hasConflicts: false, conflicts: [], approvalRequired: true };
+    expect(render({ mergeRequests: [request], currentUserId: 'user-opener' })).not.toContain('>Aprobar<');
+
+    const approved = {
+      ...request,
+      approvals: [{ userId: 'user-reviewer', displayName: 'Blair Chen', approvedAt: '2026-10-22T13:00:00Z' }],
+    };
+    expect(render({ mergeRequests: [approved], currentUserId: 'user-reviewer' }))
+      .toMatch(/<button[^>]*disabled=""[^>]*>Aprobar<\/button>/);
+
+    expect(render({ mergeRequests: [{ ...request, state: 'MERGED' }], currentUserId: 'user-reviewer' }))
+      .not.toContain('>Aprobar<');
   });
 
   it('says a server-reported conflict did not merge and shows the refreshed request conflicts', () => {

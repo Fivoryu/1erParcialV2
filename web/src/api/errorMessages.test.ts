@@ -15,6 +15,13 @@ describe('localizedErrorMessage', () => {
       .toBe('Confirma o descarta los cambios pendientes antes de cambiar de rama.');
   });
 
+  it('translates the merge approval codes', () => {
+    expect(localizedErrorMessage('APPROVAL_REQUIRED', 'Another editor or owner must approve this merge request before it can be merged.'))
+      .toBe('Necesita la aprobación de otro integrante antes de fusionarse.');
+    expect(localizedErrorMessage('MERGE_REQUEST_NOT_OPEN', 'Only an OPEN merge request can be approved.'))
+      .toBe('La solicitud de fusión ya no está abierta.');
+  });
+
   it('falls back to a Spanish text for a generic code with an English message', () => {
     expect(localizedErrorMessage('INVALID_PAYLOAD', 'Branch name must contain 1 to 120 characters.'))
       .toBe('Revisa los datos ingresados e inténtalo de nuevo.');

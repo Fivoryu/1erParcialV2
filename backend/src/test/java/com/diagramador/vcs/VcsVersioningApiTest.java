@@ -258,6 +258,8 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
                 Map.of("message", "Editor commit"), 201);
         postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "main");
         JsonNode request = openMergeRequest(owner, projectId, "feature", "main", "Two contributors", 201);
+        postActionJson(editor, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/approve", 200,
+                projectId, request.path("mergeRequestId").asText());
         postActionJson(owner, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200,
                 projectId, request.path("mergeRequestId").asText());
         UUID mergeHead = branchHead(getJson(owner, "/projects/{projectId}/vcs/branches", projectId), "main");
@@ -1059,6 +1061,9 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
         JsonNode forbidden = postActionJson(editor,
                 "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 403, projectId, requestId);
         assertThat(forbidden.path("code").asText()).isEqualTo("FORBIDDEN");
+        // A second editor/owner exists, so the owner needs that editor's approval before merging.
+        postActionJson(editor, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/approve", 200,
+                projectId, requestId);
 
         JsonNode merged = postActionJson(owner,
                 "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200, projectId, requestId);
@@ -1495,6 +1500,8 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
 
         JsonNode operatorStatus = getOperatorJson("/projects/{projectId}/vcs/status", projectId);
         assertThat(operatorStatus.path("branch").asText()).isEqualTo("main");
+        postActionJson(editor, "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/approve", 200,
+                projectId, request.path("mergeRequestId").asText());
         JsonNode merged = postOperatorActionJson(
                 "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/merge", 200,
                 projectId, request.path("mergeRequestId").asText());

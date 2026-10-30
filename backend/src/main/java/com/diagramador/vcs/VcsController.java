@@ -176,6 +176,12 @@ public class VcsController {
         return mergeRequestService.diff(readableModel(projectId), mergeRequestId);
     }
 
+    @PostMapping("/merge-requests/{mergeRequestId}/approve")
+    public VcsResources.MergeRequest approveMergeRequest(@PathVariable UUID projectId,
+            @PathVariable UUID mergeRequestId) {
+        return mergeRequestService.approve(requiredModel(projectId), mergeRequestId, author());
+    }
+
     @PostMapping("/merge-requests/{mergeRequestId}/merge")
     public VcsResources.MergeRequest merge(@PathVariable UUID projectId, @PathVariable UUID mergeRequestId) {
         return mergeRequestService.merge(requiredModel(projectId), mergeRequestId, author());

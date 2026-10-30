@@ -64,7 +64,15 @@ public final class VcsResources {
     public record MergeRequest(UUID mergeRequestId, String title, VcsMergeState state,
             String sourceBranch, String targetBranch, UUID sourceCommitId, UUID targetCommitId,
             UUID mergeBaseCommitId, boolean hasConflicts, JsonNode conflicts, String openedByDisplayName,
-            String decidedByDisplayName, OffsetDateTime createdAt) {
+            String decidedByDisplayName, OffsetDateTime createdAt, List<Approval> approvals,
+            boolean approvalRequired, UUID openedByUserId) {
+        public MergeRequest {
+            approvals = approvals == null ? List.of() : List.copyOf(approvals);
+        }
+    }
+
+    /** One reviewer's approval of a merge request. */
+    public record Approval(UUID userId, String displayName, OffsetDateTime approvedAt) {
     }
 
     /** Two commits compared: field-level changes, the commits the target has that the start lacks, and their authors. */

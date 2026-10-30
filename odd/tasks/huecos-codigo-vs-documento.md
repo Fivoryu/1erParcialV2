@@ -34,7 +34,7 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
 | T3 | S3 | inline | hecho (Vitest verde) | 064fa94 |
 | T4 | S4 | worker + verificador | hecho (28 JUnit, suite web, verificación independiente) | ver L33 |
 | T5 | S5 | delegada (writer; ruta secuencial porque comparte VcsController, VcsVersioningApiTest y web/src/vcs/api.ts con T6; respaldo de contexto) | hecho (VcsVersioningApiTest 51, web 823) | ver L39 |
-| T6 | S6 | delegada después de T5 (writer + verificador independiente: migración, riesgo 1) | pendiente | — |
+| T6 | S6 | delegada después de T5 (writer + verificador independiente: migración, riesgo 1) | hecho (VcsMergeApprovalApiTest 8, VcsVersioningApiTest 51, SchemaOwnershipTest 9; verificación independiente PASS) | ver L42 |
 | T7 | S7 | worker + verificador | hecho (pruebas web y navegador con respuestas simuladas) | ecbde55 |
 | T8 | S8 | por decidir | pendiente | — |
 | T9 | S9 | inline | hecho (201 pruebas Flutter; APK release 41,9 MB con LiteRT) | ver L36 |
@@ -87,3 +87,6 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
 - **L38 (2026-10-29, decisión del usuario, T6):** "1 aprobación si hay otro integrante (Recommended)".
 
 - **L39 (T5):** Writer: `POST /projects/{projectId}/vcs/commits/{commitId}/restore` crea un commit MANUAL en la rama activa con el diagrama del commit elegido; checkout y restauración comparten `VcsBranchService.materializeCommit`. RED backend: 5 pruebas fallaban con 404; GREEN: `VcsVersioningApiTest` (51) y la suite web (823), `tsc -b` y lint en verde. La web no tuvo RED (pruebas escritas después). Verificación del padre: `npx vitest run src/vcs` 48 aprobadas.
+- **L40 (T6, writer):** `POST .../merge-requests/{id}/approve`, tabla `vcs_merge_request_approval` (V31), regla `APPROVAL_REQUIRED` (409) y panel con "Aprobar". RED: 5 de 7 fallaban; GREEN: `VcsMergeApprovalApiTest` 7, `VcsVersioningApiTest` 51, `SchemaOwnershipTest` 9; web 829. Desvío: un pedido no abierto devuelve 409 `MERGE_REQUEST_NOT_OPEN`. Google Doc CU-14 actualizado (restaurar, aprobar y excepciones).
+- **L41 (T5+T6, verificación independiente):** S5 PASS, S6 PASS, sin bloqueantes. Avisos que se corrigen: (1) una aprobación de alguien luego degradado o removido seguía contando; (2) doble aprobación concurrente podía dar 500 por la clave primaria. Avisos aceptados: la aprobación se valida antes que los conflictos; autor con cuenta borrada.
+- **L42 (T6, correcciones):** Las aprobaciones cuentan solo si quien aprobó sigue siendo Editor o Propietario activo (`VcsAccessService.activeReviewerIds`); la inserción usa `ON CONFLICT DO NOTHING`. RED: `anApprovalFromAReviewerWhoLostTheRoleNoLongerCounts` fallaba; GREEN: 8/51/9. Comprobación del padre: `mvn -q test -Dtest=VcsMergeApprovalApiTest` 8 aprobadas.

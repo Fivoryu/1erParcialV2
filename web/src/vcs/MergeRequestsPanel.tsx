@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiTransportError } from '../api/client';
+import { loadSession } from '../api/session';
 import type { Uuid } from '../api/types';
 import {
   createVcsApiClient,
@@ -124,9 +125,12 @@ export interface MergeRequestsPanelViewProps {
   busyMergeRequestId: Uuid | null;
   error: string | null;
   notice: string | null;
+  /** The signed-in user, to hide the approval of one's own request and show one already given. */
+  currentUserId?: Uuid | null;
   /** Expanded requests by id; a request is expanded while it has an entry here. */
   diffs?: Record<Uuid, MergeRequestDiffEntry>;
   onOpen(sourceBranch: string, targetBranch: string, title: string): void;
+  onApprove?(mergeRequest: VcsMergeRequest): void;
   onMerge(mergeRequest: VcsMergeRequest): void;
   onClose(mergeRequest: VcsMergeRequest): void;
   onToggleDiff?(mergeRequest: VcsMergeRequest): void;
@@ -141,8 +145,10 @@ export function MergeRequestsPanelView({
   busyMergeRequestId,
   error,
   notice,
+  currentUserId = null,
   diffs = {},
   onOpen,
+  onApprove,
   onMerge,
   onClose,
   onToggleDiff,
@@ -233,6 +239,9 @@ export function MergeRequestsPanelView({
             {mergeRequests.map((mergeRequest) => {
               const requestBusy = busyMergeRequestId === mergeRequest.mergeRequestId;
               const isOpen = mergeRequest.state === 'OPEN';
+              const isOpener = currentUserId !== null && mergeRequest.openedByUserId === currentUserId;
+              const approvedByMe = currentUserId !== null
+                && mergeRequest.approvals.some((approval) => approval.userId === currentUserId);
               const diffEntry = diffs[mergeRequest.mergeRequestId];
               // The frozen conflicts go stale when the target moves; the diff reports the current ones.
               const hasCurrentConflicts = mergeRequest.hasConflicts || Boolean(diffEntry?.diff?.hasConflicts);
@@ -248,6 +257,16 @@ export function MergeRequestsPanelView({
                       Abierta por {mergeRequest.openedByDisplayName}
                       {mergeRequest.decidedByDisplayName ? ` · decidida por ${mergeRequest.decidedByDisplayName}` : ''}
                     </p>
+                    <p className="property-hint vcs-merge-request-approvals">
+                      {mergeRequest.approvals.length === 0
+                        ? 'Sin aprobaciones'
+                        : `Aprobada por ${mergeRequest.approvals.map((approval) => approval.displayName).join(', ')}`}
+                    </p>
+                    {isOpen && mergeRequest.approvalRequired && (
+                      <p className="property-hint vcs-merge-request-approval-hint">
+                        Necesita la aprobación de otro integrante antes de fusionarse.
+                      </p>
+                    )}
                     {mergeRequest.hasConflicts && mergeRequest.conflicts.length === 0 && (
                       <p className="notice notice-error" role="status">
                         El servidor informa de conflictos sin resolver, pero no hay detalles disponibles.
@@ -274,9 +293,19 @@ export function MergeRequestsPanelView({
                     >
                       {diffEntry ? 'Ocultar cambios' : 'Ver cambios'}
                     </button>
+                    {isOpen && !isOpener && (
+                      <button
+                        className="button button-secondary button-compact"
+                        disabled={busy || approvedByMe}
+                        onClick={() => onApprove?.(mergeRequest)}
+                        type="button"
+                      >
+                        {requestBusy ? 'Procesando…' : 'Aprobar'}
+                      </button>
+                    )}
                     <button
                       className="button button-primary button-compact"
-                      disabled={busy || !isOpen || hasCurrentConflicts}
+                      disabled={busy || !isOpen || hasCurrentConflicts || mergeRequest.approvalRequired}
                       onClick={() => onMerge(mergeRequest)}
                       type="button"
                     >
@@ -388,6 +417,23 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
     }
   }
 
+  async function handleApprove(mergeRequest: VcsMergeRequest): Promise<void> {
+    setBusy(true);
+    setBusyMergeRequestId(mergeRequest.mergeRequestId);
+    setError(null);
+    setNotice(null);
+    try {
+      const approved = await api.approveMergeRequest(projectId, mergeRequest.mergeRequestId);
+      replaceMergeRequest(approved);
+      setNotice(`Aprobaste la solicitud “${mergeRequest.title}”.`);
+    } catch (cause: unknown) {
+      setError(mergeRequestErrorMessage(cause));
+    } finally {
+      setBusy(false);
+      setBusyMergeRequestId(null);
+    }
+  }
+
   async function handleMerge(mergeRequest: VcsMergeRequest): Promise<void> {
     setBusy(true);
     setBusyMergeRequestId(mergeRequest.mergeRequestId);
@@ -442,7 +488,9 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
       busyMergeRequestId={busyMergeRequestId}
       error={error}
       notice={notice}
+      currentUserId={loadSession()?.userId ?? null}
       diffs={diffs}
+      onApprove={(mergeRequest) => void handleApprove(mergeRequest)}
       onOpen={(sourceBranch, targetBranch, title) => void handleOpen(sourceBranch, targetBranch, title)}
       onMerge={(mergeRequest) => void handleMerge(mergeRequest)}
       onClose={(mergeRequest) => void handleClose(mergeRequest)}
