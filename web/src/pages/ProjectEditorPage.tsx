@@ -1366,6 +1366,7 @@ export default function ProjectEditorPage() {
                 canDecideProposals={currentUserRole === 'OWNER' || currentUserRole === 'EDITOR'}
                 canDeleteHistory={currentUserRole === 'OWNER'}
                 diagramNames={diagramNames}
+                model={model}
                 canManageMemory={currentUserRole === 'OWNER'}
                 compactBusy={compactBusy}
                 compactMessage={compactMessage}

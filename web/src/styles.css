@@ -4207,6 +4207,116 @@ h3 {
   margin: 0;
 }
 
+/* Read-only proposal preview: GitHub-like diff colors, always paired with a text label. */
+.proposal-preview {
+  --preview-added: #1a7f37;
+  --preview-added-wash: #dafbe1;
+  --preview-removed: #cf222e;
+  --preview-removed-wash: #ffebe9;
+  --preview-modified: #9a6700;
+  --preview-modified-wash: #fff8c5;
+  display: grid;
+  gap: 6px;
+}
+
+.proposal-preview-note,
+.proposal-preview-warning {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.proposal-preview-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.proposal-preview-scroll {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+}
+
+.proposal-preview-canvas {
+  display: block;
+}
+
+.proposal-preview-canvas foreignObject {
+  overflow: visible;
+}
+
+.proposal-preview-canvas .uml-class-card {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.proposal-preview-canvas .uml-member-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.proposal-preview-canvas .uml-member-text {
+  flex: 1;
+  cursor: default;
+}
+
+.proposal-preview-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.proposal-preview-badge--added { color: var(--preview-added); background: var(--preview-added-wash); }
+.proposal-preview-badge--removed { color: var(--preview-removed); background: var(--preview-removed-wash); }
+.proposal-preview-badge--modified { color: var(--preview-modified); background: var(--preview-modified-wash); }
+
+.uml-class-card.proposal-preview-item--added { border-color: var(--preview-added); background: var(--preview-added-wash); }
+.uml-class-card.proposal-preview-item--removed { border-color: var(--preview-removed); background: var(--preview-removed-wash); opacity: 0.75; }
+.uml-class-card.proposal-preview-item--modified { border-color: var(--preview-modified); background: var(--preview-modified-wash); }
+
+.uml-member-row.proposal-preview-item--added { color: var(--preview-added); background: var(--preview-added-wash); }
+.uml-member-row.proposal-preview-item--removed { color: var(--preview-removed); background: var(--preview-removed-wash); }
+.uml-member-row.proposal-preview-item--modified { color: var(--preview-modified); background: var(--preview-modified-wash); }
+
+.proposal-preview-item--removed .uml-member-text,
+.uml-class-card.proposal-preview-item--removed .uml-class-name {
+  text-decoration: line-through;
+}
+
+.proposal-preview-edge polyline {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+
+/* Labels sit above the cards; the white halo keeps them readable over any card or line. */
+.proposal-preview-edge-label {
+  fill: var(--ink);
+  font-size: 12px;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.proposal-preview-edge.proposal-preview-item--added polyline { stroke: var(--preview-added); stroke-width: 2.5; }
+.proposal-preview-edge.proposal-preview-item--removed polyline { stroke: var(--preview-removed); stroke-width: 2.5; stroke-dasharray: 6 4; }
+.proposal-preview-edge.proposal-preview-item--modified polyline { stroke: var(--preview-modified); stroke-width: 2.5; }
+.proposal-preview-edge-label.proposal-preview-item--added { fill: var(--preview-added); }
+.proposal-preview-edge-label.proposal-preview-item--removed { fill: var(--preview-removed); }
+.proposal-preview-edge-label.proposal-preview-item--modified { fill: var(--preview-modified); }
+
 .chat-proposal-actions {
   display: flex;
   flex-wrap: wrap;
