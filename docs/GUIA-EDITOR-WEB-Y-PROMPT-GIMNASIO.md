@@ -210,6 +210,28 @@ Socio ──1──0..*── Membresia ──1──0..*── Pago
 
 Pégalo en dos mensajes: el del vocabulario, aplicas, y después el de las relaciones.
 
+### Vista previa de un cambio sugerido en el chat
+
+En el chat de colaboración, cada **`Cambio sugerido`** pendiente muestra, debajo de la lista de operaciones,
+una **vista previa tentativa** del diagrama tal como quedaría si se acepta. Se dibuja sobre una copia del
+diagrama actual: no lo modifica, no envía comandos y no guarda posiciones.
+
+| Color | Etiqueta | Qué significa |
+| --- | --- | --- |
+| Verde | `+ Añadido` | Clase, atributo, operación o relación nueva |
+| Rojo | `− Eliminado` | Elemento que se borraría; queda visible tachado, como fantasma |
+| Amarillo | `~ Modificado` | Elemento renombrado o con campos cambiados |
+
+La vista avisa cuando no puede ser exacta:
+
+- **Revisión distinta**: el diagrama cambió desde que se generó la sugerencia; la vista usa el diagrama actual.
+- **Vista previa parcial**: un paso no se puede previsualizar (o el servidor lo rechazaría, como un nombre de
+  clase repetido); ni ese paso ni los siguientes se muestran, igual que al aplicar, donde un paso rechazado
+  detiene los siguientes.
+
+Las clases sin posición guardada aparecen en una fila debajo del diagrama, y las relaciones se dibujan como
+líneas rectas entre clases. Solo una persona editora o propietaria puede pulsar **`Aceptar y aplicar`**.
+
 ## 6. Después del diagrama
 
 Con el modelo en el lienzo ya puedes generar el backend desde la plataforma y desplegarlo detrás del mismo

@@ -5,6 +5,7 @@ import type {
   ChatSessionResource,
   ContextMeterResource,
   DiagramMemoryResource,
+  ModelResource,
   Uuid,
 } from '../api/types';
 import { describeAssistantOperation, type DiagramNames } from '../assistant/assistantNames';
@@ -15,6 +16,7 @@ import MarkdownText from './MarkdownText';
 import { formatMessageTime } from './messageTime';
 import { proposalStatusLabel } from './chatProposals';
 import { limitChatAttachments, type SessionAiStatus } from './chatState';
+import { ProposalDiagramPreview } from './ProposalDiagramPreview';
 
 /**
  * T7/L47: what speech recognition actually is — the browser's Web Speech API, whose audio is
@@ -64,6 +66,8 @@ export interface ChatPanelProps {
   proposals?: ChatProposalResource[];
   /** Names of the live diagram, so a suggestion's preview reads in terms of the user's own classes. */
   diagramNames?: DiagramNames | null;
+  /** The live diagram; a pending suggestion is previewed on a copy of it, never on the diagram itself. */
+  model?: ModelResource | null;
   /** Editors and owners may ask for, accept and reject suggestions; viewers only read them. */
   canDecideProposals?: boolean;
   proposalBusyId?: Uuid | null;
@@ -84,6 +88,7 @@ const EMPTY_NAMES: DiagramNames = {
 interface ProposalCardProps {
   proposal: ChatProposalResource;
   diagramNames: DiagramNames;
+  model: ModelResource | null;
   canDecide: boolean;
   busy: boolean;
   onAccept: (proposalId: Uuid) => void;
@@ -91,7 +96,7 @@ interface ProposalCardProps {
 }
 
 /** The suggestion every member sees: what would change, and who decided what. */
-function ProposalCard({ proposal, diagramNames, canDecide, busy, onAccept, onReject }: ProposalCardProps) {
+function ProposalCard({ proposal, diagramNames, model, canDecide, busy, onAccept, onReject }: ProposalCardProps) {
   const pending = proposal.status === 'PENDING';
   return (
     <section
@@ -107,6 +112,7 @@ function ProposalCard({ proposal, diagramNames, canDecide, busy, onAccept, onRej
           <li key={`${operation.type}-${index}`}>{describeAssistantOperation(operation, diagramNames)}</li>
         ))}
       </ul>
+      {pending && model && <ProposalDiagramPreview proposal={proposal} model={model} diagramNames={diagramNames} />}
       {proposal.resultSummary && (
         <p className="quiet-state chat-proposal-result" role="status">
           {proposal.decidedByDisplayName ? `${proposal.decidedByDisplayName}: ` : ''}{proposal.resultSummary}
@@ -207,6 +213,7 @@ export default function ChatPanel({
   attachmentUrls,
   proposals = [],
   diagramNames = null,
+  model = null,
   canDecideProposals = false,
   proposalBusyId = null,
   suggestBusy = false,
@@ -410,6 +417,7 @@ export default function ChatPanel({
                         <ProposalCard
                           proposal={proposal}
                           diagramNames={diagramNames ?? EMPTY_NAMES}
+                          model={model}
                           canDecide={canDecideProposals}
                           busy={proposalBusyId !== null}
                           onAccept={(proposalId) => onAcceptProposal?.(proposalId)}
