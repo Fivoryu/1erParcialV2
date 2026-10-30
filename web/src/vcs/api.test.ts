@@ -37,6 +37,8 @@ describe('version-control API contract', () => {
     await api.compareCommits(projectId, commitId, 'commit-2');
     await api.compareCommits(projectId, null, 'commit-2');
     await api.createCommit(projectId, { message: 'Add a class' });
+    await api.restoreCommit(projectId, commitId);
+    await api.restoreCommit(projectId, commitId, 'Volver');
     await api.listMergeRequests(projectId);
     await api.createMergeRequest(projectId, {
       sourceBranch: 'feature', targetBranch: 'main', title: 'Review the change',
@@ -74,6 +76,11 @@ describe('version-control API contract', () => {
       {
         url: '/api/projects/project-1/vcs/commits', method: 'POST',
         body: JSON.stringify({ message: 'Add a class' }),
+      },
+      { url: '/api/projects/project-1/vcs/commits/commit-1/restore', method: 'POST', body: '{}' },
+      {
+        url: '/api/projects/project-1/vcs/commits/commit-1/restore', method: 'POST',
+        body: JSON.stringify({ message: 'Volver' }),
       },
       { url: '/api/projects/project-1/vcs/merge-requests', method: 'GET', body: null },
       {

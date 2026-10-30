@@ -19,8 +19,8 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
   - Al corregirlos, actualizar las excepciones de los CU-01, CU-02, CU-13, CU-19 y CU-25 en el documento, que hoy citan los textos en inglés.
 - **S3. Resto de los mensajes de error en inglés.** Pedido: "Contina papu"; decisión del usuario (2026-10-29): "Mapa por código en web (Recommended)". La web traduce por código de error en un solo lugar; si el servidor ya respondió en español, se conserva su texto.
 - **S4.** "No se puede rechazar una invitación; solo aceptarla, o que el propietario la revoque".
-- **S5.** "No se puede restaurar un commit puntual; solo cambiar de rama".
-- **S6.** "Las solicitudes de fusión no tienen aprobación de revisores; solo el propietario fusiona".
+- **S5.** "No se puede restaurar un commit puntual; solo cambiar de rama". Pedido del usuario (2026-10-29): "Continua con T5 y 6". Criterio acordado: restaurar un commit crea un commit nuevo en la rama actual cuyo diagrama es igual al del commit elegido; el historial no se reescribe. Requiere la acción COMMIT y una copia de trabajo sin cambios pendientes (igual que cambiar de rama). En el panel de historial, cada commit tiene "Restaurar esta versión". Actualizar CU-14 en el Google Doc.
+- **S6.** "Las solicitudes de fusión no tienen aprobación de revisores; solo el propietario fusiona". Pedido del usuario (2026-10-29): "Continua con T5 y 6". Decisión del usuario: "1 aprobación si hay otro integrante (Recommended)": un Editor o Propietario distinto de quien abrió la solicitud debe aprobarla; si el proyecto no tiene otro integrante activo con rol Editor o Propietario, se puede fusionar sin aprobación. Fusionar sigue siendo del propietario. Actualizar CU-14 en el Google Doc.
 - **S7.** "La verificación de una generación (`POST /projects/{projectId}/generations/{runId}/verification`, `api/GenerationController.java:103-107`) no tiene botón en `web/src/generation/GenerationPanel.tsx`; solo se invoca por API."
 - **S8.** "La pasarela móvil está apagada por defecto (`diagrammer.mobile-gateway.enabled`, `backend/src/main/resources/application.yml:30`); los CU-28 y CU-29 no funcionan hasta habilitarla."
 - **S9.** "El teléfono usa Qwen3.5-0.8B, pero la evaluación recomendó Qwen3.5-2B (`docs/puds/verificacion/03-evaluacion-modelos-ia4-01.md:51`)." Decisión del usuario (2026-10-29): "Se correrá gemma por defecto en el teléfono ya que qwen no es muy inteligente".
@@ -33,8 +33,8 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
 | T2 | S2 | inline | hecho (Vitest y JUnit verdes) | 91144fa |
 | T3 | S3 | inline | hecho (Vitest verde) | 064fa94 |
 | T4 | S4 | worker + verificador | hecho (28 JUnit, suite web, verificación independiente) | ver L33 |
-| T5 | S5 | por decidir | pendiente | — |
-| T6 | S6 | por decidir | pendiente | — |
+| T5 | S5 | delegada (writer; ruta secuencial porque comparte VcsController, VcsVersioningApiTest y web/src/vcs/api.ts con T6; respaldo de contexto) | hecho (VcsVersioningApiTest 51, web 823) | ver L39 |
+| T6 | S6 | delegada después de T5 (writer + verificador independiente: migración, riesgo 1) | pendiente | — |
 | T7 | S7 | worker + verificador | hecho (pruebas web y navegador con respuestas simuladas) | ecbde55 |
 | T8 | S8 | por decidir | pendiente | — |
 | T9 | S9 | inline | hecho (201 pruebas Flutter; APK release 41,9 MB con LiteRT) | ver L36 |
@@ -83,4 +83,7 @@ Rama: `fix/doc-code-gaps`. Estrategia de entrega: ask-on-risk. Pruebas: Vitest (
 - **L34 (2026-10-29, pedido del usuario):** "Vamos con todo papu :D". Revisión: T5, T6, T8 y T9 coincidían con el Google Doc (cambiar de rama, solo el propietario fusiona, pasarela habilitada como precondición con `MOBILE_GATEWAY_DISABLED (503)`, Qwen se mantiene en el teléfono). T5, T6 y T8 quedan sin cambios hasta que el usuario decida.
 - **L35 (2026-10-29, decisión del usuario):** "Se correrá gemma por defecto en el teléfono ya que qwen no es muy inteligente".
 - **L36 (T9):** `WorkspaceController.selectedRuntime` arranca en `LocalRuntime.gemma`; los 26 tests que prueban flujos de Qwen lo fijan explícitamente. LiteRT se compila por defecto (`-PlitertTrial=false` lo excluye). La página del agente usa `ChatPanel`, que funciona con ambos modelos, así que la restricción de `propose` con Gemma no afecta a la app real. Google Doc: decisión del modelo, tecnologías y manual de usuario actualizados; se conservan las mediciones de Gemma (43,8 s, cierre inesperado). Riesgo conocido: en la prueba previa Gemma usó unos 3,2 GB de memoria del proceso.
+- **L37 (2026-10-29, pedido del usuario):** "Continua con T5 y 6". Rama `feat/vcs-restore-approvals`, apilada sobre `feat/gemma-default-mobile`.
+- **L38 (2026-10-29, decisión del usuario, T6):** "1 aprobación si hay otro integrante (Recommended)".
 
+- **L39 (T5):** Writer: `POST /projects/{projectId}/vcs/commits/{commitId}/restore` crea un commit MANUAL en la rama activa con el diagrama del commit elegido; checkout y restauración comparten `VcsBranchService.materializeCommit`. RED backend: 5 pruebas fallaban con 404; GREEN: `VcsVersioningApiTest` (51) y la suite web (823), `tsc -b` y lint en verde. La web no tuvo RED (pruebas escritas después). Verificación del padre: `npx vitest run src/vcs` 48 aprobadas.

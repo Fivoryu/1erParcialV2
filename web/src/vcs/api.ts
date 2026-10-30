@@ -194,6 +194,8 @@ export interface VcsApiClient {
   /** Compares `toCommitId` with `fromCommitId`, or with its own parent when no start is given. */
   compareCommits(projectId: Uuid, fromCommitId: Uuid | null, toCommitId: Uuid): Promise<VcsCommitComparison>;
   createCommit(projectId: Uuid, request: CreateVcsCommitRequest): Promise<VcsCommit>;
+  /** Creates a new commit on the active branch whose diagram equals the chosen commit's. */
+  restoreCommit(projectId: Uuid, commitId: Uuid, message?: string): Promise<VcsCommit>;
   listMergeRequests(projectId: Uuid): Promise<VcsMergeRequest[]>;
   createMergeRequest(projectId: Uuid, request: CreateVcsMergeRequestRequest): Promise<VcsMergeRequest>;
   getMergeRequest(projectId: Uuid, mergeRequestId: Uuid): Promise<VcsMergeRequest>;
@@ -374,6 +376,12 @@ export function createVcsApiClient(
     },
     createCommit(projectId, request) {
       return postJson<VcsCommit>(`${projectPath(projectId)}/commits`, request);
+    },
+    restoreCommit(projectId, commitId, message) {
+      return postJson<VcsCommit>(
+        `${projectPath(projectId)}/commits/${encodeURIComponent(commitId)}/restore`,
+        message === undefined ? {} : { message },
+      );
     },
     listMergeRequests(projectId) {
       return requestJson<VcsMergeRequest[]>(`${projectPath(projectId)}/merge-requests`);

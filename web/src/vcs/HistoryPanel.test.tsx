@@ -8,7 +8,9 @@ import type {
   VcsCommitDetail,
   VcsStatus,
 } from './api';
-import { HistoryPanelView, type HistoryPanelViewProps } from './HistoryPanel';
+import { ApiTransportError } from '../api/client';
+import type { ModelResource } from '../api/types';
+import { attemptCommitRestore, HistoryPanelView, type HistoryPanelViewProps } from './HistoryPanel';
 
 const branch: VcsBranch = {
   name: 'main',
@@ -133,6 +135,61 @@ describe('version history panel', () => {
   it('distinguishes loading and empty histories', () => {
     expect(render({ loading: true, commits: [] })).toContain('Cargando el historial…');
     expect(render({ loading: false, commits: [] })).toContain('Aún no hay confirmaciones. Haz un cambio y guárdalo para iniciar el historial.');
+  });
+});
+
+describe('restoring a commit from the history', () => {
+  it('offers "Restaurar esta versión" in the commit detail', () => {
+    const markup = render({ commitDetail });
+
+    expect(markup).toContain('Restaurar esta versión');
+    expect(markup).not.toContain('Confirmar restauración');
+  });
+
+  it('asks for confirmation before restoring and explains that history is kept', () => {
+    const markup = render({ commitDetail, restoreConfirming: true });
+
+    expect(markup).toContain('Confirmar restauración');
+    expect(markup).toContain('Cancelar');
+    expect(markup).toContain('El historial no se modifica');
+    expect(markup).not.toContain('>Restaurar esta versión<');
+  });
+
+  it('restores the commit and then loads the model for the editor', async () => {
+    const restored = { ...commit, commitId: 'new-commit' };
+    const model = { id: 'model-1', revision: 5 } as unknown as ModelResource;
+    const restore = vi.fn(async () => restored);
+    const loadModel = vi.fn(async () => model);
+
+    const outcome = await attemptCommitRestore(restore, loadModel);
+
+    expect(outcome).toEqual({ kind: 'restored', commit: restored, model });
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(loadModel).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a readable error and does not read the model when the restore is rejected', async () => {
+    const loadModel = vi.fn();
+    const dirty = new ApiTransportError(
+      'WORKING_COPY_DIRTY', 'Confirma o descarta los cambios pendientes.', [], null, 409,
+    );
+
+    const outcome = await attemptCommitRestore(async () => { throw dirty; }, loadModel);
+
+    expect(outcome.kind).toBe('error');
+    expect(outcome.kind === 'error' ? outcome.message.length : 0).toBeGreaterThan(0);
+    expect(loadModel).not.toHaveBeenCalled();
+  });
+
+  it('explains that there is nothing to restore when the branch already has that diagram', async () => {
+    const clean = new ApiTransportError('WORKING_COPY_CLEAN', 'x', [], null, 409);
+
+    const outcome = await attemptCommitRestore(async () => { throw clean; }, vi.fn());
+
+    expect(outcome).toEqual({
+      kind: 'error',
+      message: 'La rama ya tiene el diagrama de esta versión; no hay nada que restaurar.',
+    });
   });
 });
 

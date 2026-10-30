@@ -198,6 +198,15 @@ public class VcsController {
         return ResponseEntity.status(HttpStatus.CREATED).body(commit);
     }
 
+    @PostMapping("/commits/{commitId}/restore")
+    public ResponseEntity<VcsResources.Commit> restoreCommit(@PathVariable UUID projectId,
+            @PathVariable UUID commitId, @RequestBody(required = false) RestoreRequest request) {
+        UmlModel model = requiredModel(projectId);
+        VcsResources.Commit commit = commitService.restore(model, commitId,
+                request == null ? null : request.message(), author());
+        return ResponseEntity.status(HttpStatus.CREATED).body(commit);
+    }
+
     @GetMapping("/permissions")
     public List<VcsResources.Permission> permissions(@PathVariable UUID projectId) {
         UmlModel model = readableModel(projectId);
@@ -248,6 +257,9 @@ public class VcsController {
     }
 
     public record CommitRequest(String message) {
+    }
+
+    public record RestoreRequest(String message) {
     }
 
     public record PermissionsRequest(List<String> actions) {

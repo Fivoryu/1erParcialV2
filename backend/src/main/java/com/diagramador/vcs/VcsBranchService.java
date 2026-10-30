@@ -151,9 +151,18 @@ public class VcsBranchService {
                     "Commit or discard working-copy changes before checking out another branch.", List.of(), null);
         }
 
-        VcsCommit targetHead = target.getHeadCommit();
+        return materializeCommit(managedModel, target.getHeadCommit(), target.getId(), author);
+    }
+
+    /**
+     * Materializes the commit's snapshot into the live model and records that as a new model revision. When
+     * {@code newActiveBranchId} is not null that branch becomes the active one; otherwise the active branch is kept.
+     */
+    UmlModel materializeCommit(UmlModel managedModel, VcsCommit targetHead, UUID newActiveBranchId,
+            UserAccount author) {
+        UUID modelId = managedModel.getId();
+        UUID projectId = managedModel.getProject().getId();
         SnapshotModel restored = snapshotService.fromJson(targetHead.getSnapshot().getPayload());
-        UUID targetBranchId = target.getId();
         String targetStateHash = targetHead.getSnapshot().getStateHash();
         long expectedRevision = managedModel.getCurrentRevision();
         snapshotService.materialize(managedModel, restored);
@@ -164,10 +173,12 @@ public class VcsBranchService {
         UmlModel refreshedModel = requireModel(modelId);
         long nextRevision = expectedRevision + 1;
         if (modelRepository.bumpRevisionIfCurrent(modelId, expectedRevision, nextRevision) != 1) {
-            throw new IllegalStateException("Model revision changed during branch checkout");
+            throw new IllegalStateException("Model revision changed during snapshot materialization");
         }
         refreshedModel.setCurrentRevision(nextRevision);
-        setActiveBranch(modelId, targetBranchId);
+        if (newActiveBranchId != null) {
+            setActiveBranch(modelId, newActiveBranchId);
+        }
         UserAccount refreshedAuthor = author == null ? null
                 : userRepository.findById(author.getId()).orElse(null);
         versionRepository.saveAndFlush(ModelVersion.create(refreshedModel, nextRevision, expectedRevision,

@@ -220,6 +220,7 @@ export function VersioningPanelView({
               projectId={projectId}
               onStatusChanged={onStatusChanged}
               onDetailOpenChange={onHistoryDetailOpenChange}
+              onModelRestored={onModelCheckout}
             />
           )}
           {tab.id === 'reviews' && <MergeRequestsPanel projectId={projectId} />}

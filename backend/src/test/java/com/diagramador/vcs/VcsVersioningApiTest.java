@@ -1520,6 +1520,137 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
         }
     }
 
+    @Test
+    void restoringACommitCreatesANewCommitOnTheActiveBranchWithTheOldDiagram() throws Exception {
+        String owner = username("restore-ok");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        applyClassifier(owner, projectId, firstId, "First");
+        JsonNode first = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add first"), 201);
+        applyClassifier(owner, projectId, secondId, "Second");
+        JsonNode second = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add second"), 201);
+
+        JsonNode restored = restoreCommit(owner, projectId, first.path("commitId").asText(), null, 201);
+
+        assertThat(restored.path("message").asText()).isEqualTo("Restaurar versión: Add first");
+        assertThat(restored.path("branchName").asText()).isEqualTo("main");
+        assertThat(restored.path("kind").asText()).isEqualTo("MANUAL");
+        assertThat(restored.path("parentCommitId").asText()).isEqualTo(second.path("commitId").asText());
+        assertThat(restored.path("stateHash").asText()).isEqualTo(first.path("stateHash").asText());
+        JsonNode model = getJson(owner, "/projects/{projectId}/model", projectId);
+        assertThat(findById(model.path("classifiers"), firstId.toString())).isNotNull();
+        assertThat(findById(model.path("classifiers"), secondId.toString())).isNull();
+        JsonNode status = getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        assertThat(status.path("branch").asText()).isEqualTo("main");
+        assertThat(status.path("dirty").asBoolean()).isFalse();
+        assertThat(status.path("headCommitId").asText()).isEqualTo(restored.path("commitId").asText());
+        JsonNode history = getJson(owner, get("/projects/{projectId}/vcs/commits", projectId)
+                .param("branch", "main"));
+        assertThat(history).hasSize(4);
+        assertThat(history.findValuesAsText("commitId")).contains(first.path("commitId").asText(),
+                second.path("commitId").asText(), restored.path("commitId").asText());
+    }
+
+    @Test
+    void restoreUsesAnExplicitMessageWhenGiven() throws Exception {
+        String owner = username("restore-msg");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "One");
+        JsonNode first = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add one"), 201);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Two");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Add two"), 201);
+
+        JsonNode restored = restoreCommit(owner, projectId, first.path("commitId").asText(),
+                Map.of("message", "Volver a uno"), 201);
+
+        assertThat(restored.path("message").asText()).isEqualTo("Volver a uno");
+    }
+
+    @Test
+    void restoreWithDirtyWorkingCopyIsRejectedWithoutChangingAnything() throws Exception {
+        String owner = username("restore-dirty");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Committed");
+        JsonNode first = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add committed"), 201);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Second");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Add second"), 201);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Uncommitted");
+        JsonNode before = getJson(owner, "/projects/{projectId}/model", projectId);
+        JsonNode statusBefore = getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+
+        JsonNode error = restoreCommit(owner, projectId, first.path("commitId").asText(), null, 409);
+
+        assertThat(error.path("code").asText()).isEqualTo("WORKING_COPY_DIRTY");
+        assertThat(getJson(owner, "/projects/{projectId}/model", projectId)).isEqualTo(before);
+        assertThat(getJson(owner, "/projects/{projectId}/vcs/status", projectId)).isEqualTo(statusBefore);
+        assertThat(getJson(owner, get("/projects/{projectId}/vcs/commits", projectId)
+                .param("branch", "main"))).hasSize(3);
+    }
+
+    @Test
+    void restoringTheCommitThatIsAlreadyTheHeadIsRejectedAsClean() throws Exception {
+        String owner = username("restore-clean");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Only");
+        JsonNode head = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add only"), 201);
+        JsonNode before = getJson(owner, "/projects/{projectId}/model", projectId);
+
+        JsonNode error = restoreCommit(owner, projectId, head.path("commitId").asText(), null, 409);
+
+        assertThat(error.path("code").asText()).isEqualTo("WORKING_COPY_CLEAN");
+        assertThat(getJson(owner, "/projects/{projectId}/model", projectId)).isEqualTo(before);
+        assertThat(getJson(owner, get("/projects/{projectId}/vcs/commits", projectId)
+                .param("branch", "main"))).hasSize(2);
+    }
+
+    @Test
+    void restoreIsRejectedForAViewerAndForAnUnknownCommit() throws Exception {
+        String owner = username("restore-denied");
+        UUID projectId = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "One");
+        JsonNode first = postJson(owner, "/projects/{projectId}/vcs/commits", projectId,
+                Map.of("message", "Add one"), 201);
+        applyClassifier(owner, projectId, UUID.randomUUID(), "Two");
+        postJson(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Add two"), 201);
+        String viewer = username("restore-viewer");
+        bearer(viewer);
+        addMembership(viewer, projectId, ProjectMemberRole.VIEWER);
+        JsonNode before = getJson(owner, "/projects/{projectId}/model", projectId);
+
+        JsonNode denied = restoreCommit(viewer, projectId, first.path("commitId").asText(), null, 403);
+        JsonNode missing = restoreCommit(owner, projectId, UUID.randomUUID().toString(), null, 404);
+
+        assertThat(denied.path("code").asText()).isEqualTo("FORBIDDEN");
+        assertThat(missing.path("code").asText()).isEqualTo("NOT_FOUND");
+        assertThat(getJson(owner, "/projects/{projectId}/model", projectId)).isEqualTo(before);
+        assertThat(getJson(owner, get("/projects/{projectId}/vcs/commits", projectId)
+                .param("branch", "main"))).hasSize(3);
+    }
+
+    private JsonNode restoreCommit(String username, UUID projectId, String commitId, Map<String, Object> body,
+            int expectedStatus) throws Exception {
+        MockHttpServletRequestBuilder request = post("/projects/{projectId}/vcs/commits/{commitId}/restore",
+                projectId, commitId);
+        if (body != null) {
+            request = request.contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(body));
+        }
+        MvcResult result = mockMvc.perform(authorizedAs(username, request))
+                .andExpect(status().is(expectedStatus))
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
     private String username(String prefix) {
         return "vcs-" + prefix + "-" + UUID.randomUUID();
     }
