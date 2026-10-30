@@ -183,12 +183,6 @@ public class VcsMergeRequestService {
         accessService.requireMerge(managedModel.getProject().getId());
         VcsMergeRequest request = requireMergeRequest(managedModel.getId(), mergeRequestId);
         requireOpen(request);
-        if (approvalRequired(request, approvalRepository.findByMergeRequest_IdOrderByApprovedAtAscUser_IdAsc(
-                request.getId()))) {
-            throw new ApiException(HttpStatus.CONFLICT, "APPROVAL_REQUIRED",
-                    "Another editor or owner must approve this merge request before it can be merged.",
-                    List.of(), null);
-        }
         if (request.hasConflicts()) {
             throw new ApiException(HttpStatus.CONFLICT, "MERGE_CONFLICTS",
                     "This merge request has conflicts and cannot be merged.", List.of(), null);
@@ -212,6 +206,13 @@ public class VcsMergeRequestService {
             throw new ApiException(HttpStatus.CONFLICT, "MERGE_CONFLICTS", targetMoved
                     ? "The target branch changed after this merge request was opened and it now has conflicts."
                     : "The frozen merge request no longer has a conflict-free comparison.", List.of(), null);
+        }
+        // Conflicts are reported first: the opener has to resolve them before an approval matters.
+        if (approvalRequired(request, approvalRepository.findByMergeRequest_IdOrderByApprovedAtAscUser_IdAsc(
+                request.getId()))) {
+            throw new ApiException(HttpStatus.CONFLICT, "APPROVAL_REQUIRED",
+                    "Another editor or owner must approve this merge request before it can be merged.",
+                    List.of(), null);
         }
 
         SnapshotModel mergedSnapshot = comparison.mergedSnapshot();

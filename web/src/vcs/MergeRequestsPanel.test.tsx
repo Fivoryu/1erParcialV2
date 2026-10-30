@@ -183,6 +183,17 @@ describe('merge requests panel', () => {
     expect(markup).toMatch(/<button[^>]*>Cerrar solicitud<\/button>/);
   });
 
+  it('shows the conflicts instead of the approval hint while the request has conflicts', () => {
+    const markup = render({
+      mergeRequests: [{ ...openRequest, approvalRequired: true }],
+      currentUserId: 'user-opener',
+    });
+
+    expect(markup).toContain(`Conflictos (${openRequest.conflicts.length})`);
+    expect(markup).not.toContain('Necesita la aprobación');
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Fusionar<\/button>/);
+  });
+
   it('hides the approval hint and enables merge once nobody else needs to approve', () => {
     const markup = render({
       mergeRequests: [{ ...openRequest, hasConflicts: false, conflicts: [] }],

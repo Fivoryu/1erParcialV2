@@ -262,7 +262,8 @@ export function MergeRequestsPanelView({
                         ? 'Sin aprobaciones'
                         : `Aprobada por ${mergeRequest.approvals.map((approval) => approval.displayName).join(', ')}`}
                     </p>
-                    {isOpen && mergeRequest.approvalRequired && (
+                    {/* Conflicts come first: an approval only matters once they are resolved. */}
+                    {isOpen && !hasCurrentConflicts && mergeRequest.approvalRequired && (
                       <p className="property-hint vcs-merge-request-approval-hint">
                         Necesita la aprobación de otro integrante antes de fusionarse.
                       </p>

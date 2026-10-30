@@ -77,6 +77,40 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void conflictsAreReportedBeforeAMissingApproval() throws Exception {
+        String owner = username("conflict");
+        UUID projectId = createProject(owner);
+        String editor = username("conflict-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        UUID classifierId = UUID.randomUUID();
+        applyClassifier(owner, projectId, classifierId, "Base name");
+        postBody(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Base"), 201);
+        postBody(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        postAction(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "feature");
+        renameClassifier(owner, projectId, classifierId, "Source name");
+        postBody(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Rename on source"), 201);
+        postAction(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, projectId, "main");
+        renameClassifier(owner, projectId, classifierId, "Target name");
+        postBody(owner, "/projects/{projectId}/vcs/commits", projectId, Map.of("message", "Rename on target"), 201);
+        String requestId = postBody(owner, "/projects/{projectId}/vcs/merge-requests", projectId,
+                Map.of("sourceBranch", "feature", "targetBranch", "main", "title", "Conflicting"), 201)
+                .path("mergeRequestId").asText();
+        JsonNode opened = getJson(owner, DETAIL, projectId, requestId);
+        assertThat(opened.path("hasConflicts").asBoolean()).isTrue();
+        assertThat(opened.path("approvalRequired").asBoolean()).isTrue();
+        UUID mainHeadBefore = mainHead(projectId);
+
+        JsonNode error = postAction(owner, MERGE, 409, projectId, requestId);
+
+        assertThat(error.path("code").asText()).isEqualTo("MERGE_CONFLICTS");
+        assertThat(getJson(owner, DETAIL, projectId, requestId).path("state").asText()).isEqualTo("OPEN");
+        assertThat(mainHead(projectId)).isEqualTo(mainHeadBefore);
+    }
+
+    @Test
     void theOpenerCannotApproveTheirOwnRequest() throws Exception {
         String owner = username("owner");
         UUID projectId = createProject(owner);
@@ -213,6 +247,28 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
         return postBody(owner, "/projects/{projectId}/vcs/merge-requests", projectId,
                 Map.of("sourceBranch", "feature", "targetBranch", "main", "title", "Needs a reviewer"), 201)
                 .path("mergeRequestId").asText();
+    }
+
+    private void renameClassifier(String owner, UUID projectId, UUID classifierId, String newName)
+            throws Exception {
+        JsonNode model = getJson(owner, "/projects/{projectId}/model", projectId);
+        Map<String, Object> envelope = new HashMap<>();
+        envelope.put("operationId", UUID.randomUUID());
+        envelope.put("type", "classifier.rename");
+        envelope.put("projectId", projectId);
+        envelope.put("modelId", UUID.fromString(model.path("id").asText()));
+        envelope.put("baseRevision", model.path("revision").asLong());
+        envelope.put("targets", List.of(Map.of("scope", "classifier", "id", classifierId)));
+        envelope.put("preconditions", List.of());
+        envelope.put("payload", Map.of("name", newName));
+        envelope.put("origin", "MANUAL");
+        envelope.put("idempotencyKey", UUID.randomUUID().toString());
+        MvcResult result = mockMvc.perform(authorizedAs(owner, post("/projects/{projectId}/commands", projectId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(envelope))))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(read(result).path("status").asText()).isEqualTo("ACCEPTED");
     }
 
     private UUID mainHead(UUID projectId) {
