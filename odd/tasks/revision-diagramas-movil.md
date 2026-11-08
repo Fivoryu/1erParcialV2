@@ -40,7 +40,7 @@
 - [ ] **T4** — S3–S4 — `delegated` — Permitir seleccionar y conservar revisores por solicitud en web y backend, con pruebas de permisos. Estado: pendiente; commit: pendiente; riesgo: ítems 1, 2 y 4 (persistencia/migración, permisos y concurrencia).
 - [ ] **T5** — S4–S5 — `inline` — Entregar avisos push Android a participantes para los eventos elegidos mediante el servicio elegido. Estado: pendiente; commit: pendiente; riesgo: ítems 2, 4 y 5 (datos de dispositivo, concurrencia y dependencias/servicio).
 - [ ] **T6** — S1–S5 — `inline` — Ejecutar suites aplicables y verificación funcional/visual en el entorno disponible; actualizar el handoff solo al terminar. Estado: pendiente; commit: pendiente; riesgo: según los cambios integrados.
-- [ ] **T8** — S6 — `inline` — Preparar y entregar a main solo las tres maquetas, su manifiesto, el sistema de diseño y este plan, preservando los cambios previos. Estado: `in_progress`, alcance confirmado; commit: pendiente; riesgo: ítem 5 (publicación).
+- [ ] **T8** — S6 — `inline` — Preparar y entregar a main solo las tres maquetas, su manifiesto, el sistema de diseño y este plan, preservando los cambios previos. Estado: `in_progress`, verificación previa al push; commit: `343aba6`; riesgo: ítem 5 (publicación).
 
 ## Log
 
@@ -97,4 +97,12 @@
 
 **L25 — Preparación de entrega.** `job-6` terminó con código 0 y comparó las seis fuentes de diseño copiadas con sus originales, sin sobrescribir destinos. `job-7` terminó con código 0: el manifiesto referencia las tres maquetas existentes, están los dos archivos del sistema y no había cambios preparados en el worktree aislado. No se ejecutaron pruebas de implementación porque no se implementó código.
 
-**L26 — Commit pendiente.** `job-8` preparó exactamente los siete archivos autorizados y mostró 339 líneas añadidas, pero el commit falló con código 1 porque Windows interpretó incorrectamente las comillas del mensaje. No se hizo commit ni push; los archivos siguen preparados en el worktree aislado. `job-9` confirmó `receipt-driven development: on`. Se corrige el mensaje sin alterar el índice del árbol principal.
+**L26 — Commit pendiente.** `job-8` preparó exactamente los siete archivos autorizados y mostró 339 líneas añadidas, pero el commit falló con código 1 porque Windows interpretó incorrectamente las comillas del mensaje. No se hizo commit ni push en ese intento; los archivos quedaron preparados en el worktree aislado. `job-9` confirmó `receipt-driven development: on`.
+
+**L27 — Commit y evaluación.** La corrección `job-10` terminó con código 0 y creó `343aba6` (`docs: add mobile review design handoff`), con los siete archivos aprobados y 341 líneas añadidas. El análisis del rango desde `2e1f8d71f0a760eae5c3989404ad831f935a5ada` devolvió riesgo nativo medio, escalado al ítem 5 por la entrega a main; `reviewDue: false` y verificación independiente requerida. No se hizo push todavía.
+
+**L28 — Verificación independiente.** El agente `mw78igh4-4-xx0j` confirmó los siete archivos autorizados, el manifiesto y la ausencia de indicadores de credenciales en el alcance revisado. Señaló como bloqueante que la versión del plan incluida en `343aba6` todavía decía `commit: pendiente`; esa actualización existía solo en el árbol de trabajo.
+
+**L29 — Destino remoto.** `job-11` terminó con código 0: `origin/main` apunta a `2e1f8d71f0a760eae5c3989404ad831f935a5ada`, la base exacta del commit de entrega. La consulta no cambió refs locales.
+
+**L30 — Corrección del plan.** Este documento registra el commit `343aba6` de maquetas y plan para que la entrega no aparezca como no comprometida en la otra PC. Al preparar esta corrección todavía no se había hecho push; el estado remoto definitivo debe comprobarse con Git.
