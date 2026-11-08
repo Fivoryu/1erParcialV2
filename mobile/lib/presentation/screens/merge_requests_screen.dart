@@ -91,6 +91,7 @@ class _MergeRequestsScreenState extends State<MergeRequestsScreen> {
       else for (final request in _requests!) Card(child: ListTile(
         title: Text(request.title),
         subtitle: Text('${request.sourceBranch} → ${request.targetBranch} · ${request.state}'),
+        onTap: () => context.push('/merge-requests/${Uri.encodeComponent(request.id)}'),
       )),
     ])),
   );

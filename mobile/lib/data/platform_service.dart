@@ -73,6 +73,12 @@ class PlatformService {
     );
   }).toList(growable: false);
 
+  Future<Map<String, dynamic>> mergeRequestDetail(String token, String projectId, String requestId, {bool diff = false}) async => _object(await _send(
+    'GET',
+    '/projects/${Uri.encodeComponent(projectId)}/vcs/merge-requests/${Uri.encodeComponent(requestId)}${diff ? '/diff' : ''}',
+    headers: _authHeaders(token),
+  ));
+
   Future<List<GeneratedBackend>> backends(
     String token,
     String projectId,

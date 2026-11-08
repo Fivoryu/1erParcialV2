@@ -14,7 +14,7 @@ Provide a HTTPS platform URL with `--dart-define=PLATFORM_URL=https://host`. HTT
 
 ## Merge requests
 
-After login, select a project and choose **Solicitudes de fusión** to view its diagrammer merge requests. The list is read-only and does not require a generated backend. It shows the title, state, and source and target branches; comparison, activity, and review actions are not included yet. The app uses the current authenticated session and the project's merge-request list endpoint. Access errors do not sign out the user except for HTTP 401. Returning to project selection does not change the selected backend.
+After login, select a project and choose **Solicitudes de fusión** to view its diagrammer merge requests. The list is read-only and does not require a generated backend. It shows the title, state, and source and target branches. Open a request for its read-only semantic comparison of changed fields (before and after), and partial activity from its opener, commits and approvals. This is not a complete timeline or a full UML snapshot; review actions are not included. The app uses the current authenticated session and the project's merge-request list endpoint. Access errors do not sign out the user except for HTTP 401. Returning to project selection does not change the selected backend.
 
 ## Backend switching
 

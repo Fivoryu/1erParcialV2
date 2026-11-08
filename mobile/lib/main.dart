@@ -12,6 +12,7 @@ import 'data/platform_service.dart';
 import 'data/secure_store.dart';
 import 'presentation/screens/login_screen.dart';
 import 'presentation/screens/merge_requests_screen.dart';
+import 'presentation/screens/merge_request_detail_screen.dart';
 import 'presentation/screens/workspace_screen.dart';
 import 'presentation/session_controller.dart';
 import 'presentation/workspace_controller.dart';
@@ -116,7 +117,7 @@ class _DiagrammerAppState extends State<DiagrammerApp> {
         ].contains(state.matchedLocation)) {
           return '/backends';
         }
-        if (state.matchedLocation == '/merge-requests' &&
+        if (state.matchedLocation.startsWith('/merge-requests') &&
             widget.workspace.project == null) {
           return '/backends';
         }
@@ -144,6 +145,15 @@ class _DiagrammerAppState extends State<DiagrammerApp> {
             workspace: widget.workspace,
             service: widget.platformService ?? PlatformService(baseUri: Uri.parse(_platformUrl)),
           ),
+          routes: [GoRoute(
+            path: ':id',
+            builder: (_, state) => MergeRequestDetailScreen(
+              session: widget.session,
+              workspace: widget.workspace,
+              service: widget.platformService ?? PlatformService(baseUri: Uri.parse(_platformUrl)),
+              requestId: state.pathParameters['id']!,
+            ),
+          )],
         ),
         for (final entry in const {
           '/backends': WorkspacePage.backends,

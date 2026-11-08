@@ -56,6 +56,8 @@ void main() {
     final calls = <http.Request>[];
     final api = PlatformService(baseUri: Uri.parse('https://example.test'), client: MockClient((request) async {
       calls.add(request);
+      if (request.url.path.endsWith('/mr/diff')) return http.Response(jsonEncode({'changes': [], 'commits': []}), 200);
+      if (request.url.path.endsWith('/mr')) return http.Response(jsonEncode({'title': 'Detalle', 'state': 'OPEN', 'sourceBranch': 'feature', 'targetBranch': 'main', 'approvals': []}), 200);
       return http.Response(jsonEncode([{'mergeRequestId': 'mr', 'title': 'Cambio', 'state': 'OPEN', 'sourceBranch': 'feature', 'targetBranch': 'main'}]), 200);
     }));
     final sessionApi = SessionApi();
@@ -74,6 +76,14 @@ void main() {
     expect(calls.single.method, 'GET');
     expect(calls.single.url.path, '/projects/p/vcs/merge-requests');
     expect(calls.single.headers['authorization'], 'Bearer fixture-token');
+    await tester.tap(find.text('Cambio'));
+    await tester.pumpAndSettle();
+    expect(find.text('Detalle'), findsOneWidget);
+    expect(calls.length, 3);
+    expect(calls.every((r) => r.method == 'GET' && r.headers['authorization'] == 'Bearer fixture-token'), isTrue);
+    await tester.tap(find.byTooltip('Volver'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cambio'), findsOneWidget);
     await tester.tap(find.byTooltip('Volver'));
     await tester.pumpAndSettle();
     expect(find.text('Contrato hash-a'), findsOneWidget);

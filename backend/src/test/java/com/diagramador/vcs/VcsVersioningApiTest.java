@@ -93,6 +93,32 @@ class VcsVersioningApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void independentDetailDiffRoleMatrix() throws Exception {
+        String owner = username("matrix-owner");
+        UUID project = createProject(owner);
+        getJson(owner, "/projects/{projectId}/vcs/status", project);
+        postJson(owner, "/projects/{projectId}/vcs/branches", project, Map.of("name", "feature"), 201);
+        postJson(owner, "/projects/{projectId}/vcs/branches/{name}/checkout", 200, project, "feature");
+        applyClassifier(owner, project, UUID.randomUUID(), "Matrix classifier");
+        postJson(owner, "/projects/{projectId}/vcs/commits", project, Map.of("message", "Matrix commit"), 201);
+        JsonNode mr = openMergeRequest(owner, project, "feature", "main", "Matrix request", 201);
+        String id = mr.path("mergeRequestId").asText();
+        String viewer = username("matrix-viewer"); bearer(viewer); addMembership(viewer, project, ProjectMemberRole.VIEWER);
+        String outsider = username("matrix-outsider"); bearer(outsider);
+        for (String suffix : List.of("", "/diff")) {
+            String path = "/projects/" + project + "/vcs/merge-requests/" + id + suffix;
+            JsonNode ownerData = getJson(owner, get(path));
+            JsonNode viewerData = getJson(viewer, get(path));
+            assertThat(viewerData).isEqualTo(ownerData);
+            if (suffix.isEmpty()) assertThat(ownerData.path("title").asText()).isEqualTo("Matrix request");
+            else assertThat(ownerData.path("changes")).anySatisfy(c -> assertThat(c.path("targetName").asText()).isEqualTo("Matrix classifier"));
+            assertError(outsider, get(path), 403, "FORBIDDEN");
+            MvcResult anon = mockMvc.perform(get(path)).andExpect(status().isUnauthorized()).andReturn();
+            assertThat(objectMapper.readTree(anon.getResponse().getContentAsString()).path("code").asText()).isEqualTo("UNAUTHENTICATED");
+        }
+    }
+
+    @Test
     void freshProjectLazilyGetsProtectedMainAndInitialCommit() throws Exception {
         String owner = username("fresh");
         UUID projectId = createProject(owner);
