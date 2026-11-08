@@ -36,6 +36,21 @@ class PlatformProject {
   final String name;
 }
 
+class MergeRequestSummary {
+  const MergeRequestSummary({
+    required this.id,
+    required this.title,
+    required this.state,
+    required this.sourceBranch,
+    required this.targetBranch,
+  });
+  final String id;
+  final String title;
+  final String state;
+  final String sourceBranch;
+  final String targetBranch;
+}
+
 class GeneratedBackend {
   const GeneratedBackend({
     required this.deploymentId,

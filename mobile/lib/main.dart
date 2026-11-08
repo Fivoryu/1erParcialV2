@@ -11,6 +11,7 @@ import 'data/litert_agent_service.dart';
 import 'data/platform_service.dart';
 import 'data/secure_store.dart';
 import 'presentation/screens/login_screen.dart';
+import 'presentation/screens/merge_requests_screen.dart';
 import 'presentation/screens/workspace_screen.dart';
 import 'presentation/session_controller.dart';
 import 'presentation/workspace_controller.dart';
@@ -53,7 +54,9 @@ class DiagrammerApp extends StatefulWidget {
     required this.session,
     required this.workspace,
     this.chat,
+    this.platformService,
   });
+  final PlatformService? platformService;
   final SessionController session;
   final WorkspaceController workspace;
   final ChatController? chat;
@@ -113,6 +116,10 @@ class _DiagrammerAppState extends State<DiagrammerApp> {
         ].contains(state.matchedLocation)) {
           return '/backends';
         }
+        if (state.matchedLocation == '/merge-requests' &&
+            widget.workspace.project == null) {
+          return '/backends';
+        }
         if (state.matchedLocation == '/agent' &&
             widget.workspace.contract == null) {
           return '/backends';
@@ -130,6 +137,14 @@ class _DiagrammerAppState extends State<DiagrammerApp> {
           builder: (_, _) => LoginScreen(controller: widget.session),
         ),
         GoRoute(path: '/workspace', redirect: (_, _) => '/backends'),
+        GoRoute(
+          path: '/merge-requests',
+          builder: (_, _) => MergeRequestsScreen(
+            session: widget.session,
+            workspace: widget.workspace,
+            service: widget.platformService ?? PlatformService(baseUri: Uri.parse(_platformUrl)),
+          ),
+        ),
         for (final entry in const {
           '/backends': WorkspacePage.backends,
           '/agent': WorkspacePage.agent,

@@ -12,6 +12,10 @@ The local generator receives a constrained prompt and returns a bounded JSON obj
 
 Provide a HTTPS platform URL with `--dart-define=PLATFORM_URL=https://host`. HTTP is rejected unless the explicit development-only `--dart-define=ALLOW_INSECURE_HTTP=true` is also set. Real-device MNN load and inference have been verified using an arm64 release AOT probe without INTERNET permission. The isolated probe also parsed and OpenAPI-validated its proposal with zero gateway calls. End-to-end login/backend selection/gateway CRUD remain pending.
 
+## Merge requests
+
+After login, select a project and choose **Solicitudes de fusión** to view its diagrammer merge requests. The list is read-only and does not require a generated backend. It shows the title, state, and source and target branches; comparison, activity, and review actions are not included yet. The app uses the current authenticated session and the project's merge-request list endpoint. Access errors do not sign out the user except for HTTP 401. Returning to project selection does not change the selected backend.
+
 ## Backend switching
 
 Only one generated backend is selected at a time. **Desconectar backend** clears its active contract, proposal, result and error, while keeping the platform login, project list and loaded local model. Selecting another backend loads its own frozen contract and pending proposal.

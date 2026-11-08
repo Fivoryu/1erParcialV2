@@ -53,6 +53,26 @@ class PlatformService {
             );
           })
           .toList(growable: false);
+  Future<List<MergeRequestSummary>> mergeRequests(
+    String token,
+    String projectId,
+  ) async => _array(
+    await _send(
+      'GET',
+      '/projects/${Uri.encodeComponent(projectId)}/vcs/merge-requests',
+      headers: _authHeaders(token),
+    ),
+  ).map((value) {
+    final item = Map<String, dynamic>.from(value as Map);
+    return MergeRequestSummary(
+      id: item['mergeRequestId'] as String,
+      title: item['title'] as String,
+      state: item['state'] as String,
+      sourceBranch: item['sourceBranch'] as String,
+      targetBranch: item['targetBranch'] as String,
+    );
+  }).toList(growable: false);
+
   Future<List<GeneratedBackend>> backends(
     String token,
     String projectId,

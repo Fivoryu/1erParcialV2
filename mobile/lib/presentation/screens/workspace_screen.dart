@@ -281,6 +281,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                         }
                       },
               ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: session == null || c.project == null
+                    ? null
+                    : () => context.push('/merge-requests'),
+                icon: const Icon(Icons.merge_type),
+                label: const Text('Solicitudes de fusión'),
+              ),
               const SizedBox(height: 16),
               DropdownButtonFormField<GeneratedBackend>(
                 key: ValueKey(
