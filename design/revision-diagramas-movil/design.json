@@ -1,0 +1,27 @@
+{
+  "title": "Revisión móvil de diagramas",
+  "brief": "Tres direcciones para consultar actividad, commits, solicitudes y diferencias UML y proponer una revisión desde la app móvil existente. Todo es simulado, sin implementación ni conexión.",
+  "artboards": [
+    {
+      "file": "01-actividad.html",
+      "title": "Actividad primero",
+      "tradeoff": "Hace visible la secuencia de cambios; llegar a una revisión requiere abrir el evento.",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "file": "02-bandeja.html",
+      "title": "Bandeja de revisión",
+      "tradeoff": "Prioriza solicitudes pendientes; el historial completo queda en otra vista.",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "file": "03-comparacion.html",
+      "title": "Comparación primero",
+      "tradeoff": "Destaca diferencias del modelo desde el inicio; muestra menos actividad simultáneamente.",
+      "width": 390,
+      "height": 844
+    }
+  ]
+}
