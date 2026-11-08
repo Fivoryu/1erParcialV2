@@ -9,6 +9,7 @@ import {
   type VcsMergeConflict,
   type VcsMergeRequest,
   type VcsMergeRequestDiff,
+  type VcsProjectPermission,
 } from './api';
 import { AuthorsList, DiffView } from './DiffView';
 import { mergeRequestStateLabel, relativeTimeLabel } from './presentation';
@@ -119,6 +120,7 @@ function MergeRequestDiffSection({ entry }: { entry: MergeRequestDiffEntry }) {
 
 export interface MergeRequestsPanelViewProps {
   branches: VcsBranch[];
+  members?: VcsProjectPermission[];
   mergeRequests: VcsMergeRequest[];
   loading: boolean;
   busy: boolean;
@@ -129,7 +131,7 @@ export interface MergeRequestsPanelViewProps {
   currentUserId?: Uuid | null;
   /** Expanded requests by id; a request is expanded while it has an entry here. */
   diffs?: Record<Uuid, MergeRequestDiffEntry>;
-  onOpen(sourceBranch: string, targetBranch: string, title: string): void;
+  onOpen(sourceBranch: string, targetBranch: string, title: string, reviewerIds: Uuid[]): void;
   onApprove?(mergeRequest: VcsMergeRequest): void;
   onMerge(mergeRequest: VcsMergeRequest): void;
   onClose(mergeRequest: VcsMergeRequest): void;
@@ -139,6 +141,7 @@ export interface MergeRequestsPanelViewProps {
 
 export function MergeRequestsPanelView({
   branches,
+  members = [],
   mergeRequests,
   loading,
   busy,
@@ -157,12 +160,13 @@ export function MergeRequestsPanelView({
   const [sourceBranch, setSourceBranch] = useState('');
   const [targetBranch, setTargetBranch] = useState('');
   const [title, setTitle] = useState('');
+  const [reviewerIds, setReviewerIds] = useState<Uuid[]>([]);
 
   function submitMergeRequest(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const trimmedTitle = title.trim();
     if (sourceBranch && targetBranch && sourceBranch !== targetBranch && trimmedTitle && !busy) {
-      onOpen(sourceBranch, targetBranch, trimmedTitle);
+      onOpen(sourceBranch, targetBranch, trimmedTitle, reviewerIds);
     }
   }
 
@@ -219,6 +223,18 @@ export function MergeRequestsPanelView({
             value={title}
           />
         </label>
+        <fieldset disabled={busy || loading}>
+          <legend>Revisores para avisos</legend>
+          <p className="property-hint">La selección no cambia quién puede aprobar ni las reglas de fusión. Los avisos aún no están disponibles.</p>
+          {members.map((member) => (
+            <label className="field-label" key={member.userId}>
+              <input type="checkbox" checked={reviewerIds.includes(member.userId)}
+                onChange={(event) => setReviewerIds((current) => event.target.checked
+                  ? [...current, member.userId] : current.filter((id) => id !== member.userId))} />
+              {member.displayName} ({member.username})
+            </label>
+          ))}
+        </fieldset>
         <button
           className="button button-primary"
           disabled={busy || loading || branches.length < 2 || sourceBranch === targetBranch}
@@ -257,6 +273,9 @@ export function MergeRequestsPanelView({
                       Abierta por {mergeRequest.openedByDisplayName}
                       {mergeRequest.decidedByDisplayName ? ` · decidida por ${mergeRequest.decidedByDisplayName}` : ''}
                     </p>
+                    {(mergeRequest.reviewers?.length ?? 0) > 0 && (
+                      <p className="property-hint">Revisores para avisos: {mergeRequest.reviewers?.map((reviewer) => reviewer.displayName).join(', ')}</p>
+                    )}
                     <p className="property-hint vcs-merge-request-approvals">
                       {mergeRequest.approvals.length === 0
                         ? 'Sin aprobaciones'
@@ -337,6 +356,7 @@ export interface MergeRequestsPanelProps {
 
 export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProps) {
   const [branches, setBranches] = useState<VcsBranch[]>([]);
+  const [members, setMembers] = useState<VcsProjectPermission[]>([]);
   const [mergeRequests, setMergeRequests] = useState<VcsMergeRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -350,12 +370,14 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
     setLoading(true);
     setError(null);
     setBranches([]);
+    setMembers([]);
     setMergeRequests([]);
     setDiffs({});
-    void Promise.all([api.listBranches(projectId), api.listMergeRequests(projectId)])
-      .then(([loadedBranches, loadedRequests]) => {
+    void Promise.all([api.listBranches(projectId), api.listMergeRequests(projectId), api.listPermissions(projectId)])
+      .then(([loadedBranches, loadedRequests, loadedMembers]) => {
         if (active) {
           setBranches(loadedBranches);
+          setMembers(loadedMembers);
           setMergeRequests(loadedRequests);
         }
       })
@@ -403,12 +425,12 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
     void loadDiff(mergeRequest);
   }
 
-  async function handleOpen(sourceBranch: string, targetBranch: string, title: string): Promise<void> {
+  async function handleOpen(sourceBranch: string, targetBranch: string, title: string, reviewerIds: Uuid[]): Promise<void> {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const opened = await api.createMergeRequest(projectId, { sourceBranch, targetBranch, title });
+      const opened = await api.createMergeRequest(projectId, { sourceBranch, targetBranch, title, reviewerIds });
       replaceMergeRequest(opened);
       setNotice('Se abrió la solicitud de fusión.');
     } catch (cause: unknown) {
@@ -482,7 +504,9 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
 
   return (
     <MergeRequestsPanelView
+      key={projectId}
       branches={branches}
+      members={members}
       mergeRequests={mergeRequests}
       loading={loading}
       busy={busy}
@@ -492,7 +516,7 @@ export default function MergeRequestsPanel({ projectId }: MergeRequestsPanelProp
       currentUserId={loadSession()?.userId ?? null}
       diffs={diffs}
       onApprove={(mergeRequest) => void handleApprove(mergeRequest)}
-      onOpen={(sourceBranch, targetBranch, title) => void handleOpen(sourceBranch, targetBranch, title)}
+      onOpen={(sourceBranch, targetBranch, title, reviewerIds) => void handleOpen(sourceBranch, targetBranch, title, reviewerIds)}
       onMerge={(mergeRequest) => void handleMerge(mergeRequest)}
       onClose={(mergeRequest) => void handleClose(mergeRequest)}
       onToggleDiff={handleToggleDiff}

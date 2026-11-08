@@ -95,6 +95,16 @@ function render(overrides: Partial<MergeRequestsPanelViewProps> = {}): string {
 }
 
 describe('merge requests panel', () => {
+  it('offers notification recipients and displays saved selections without changing merge eligibility', () => {
+    const markup = render({
+      members: [{ userId: 'user-1', username: 'blair', displayName: 'Blair Chen', actions: ['VIEW'] }],
+      mergeRequests: [{ ...openRequest, hasConflicts: false, conflicts: [], reviewers: [{ userId: 'user-1', displayName: 'Blair Chen' }] }],
+    });
+    expect(markup).toContain('Revisores para avisos');
+    expect(markup).toContain('Blair Chen');
+    expect(markup).toMatch(/<button(?![^>]*disabled)[^>]*>Fusionar<\/button>/);
+  });
+
   it('renders source, target, title form fields and merge-request state', () => {
     const markup = render({
       mergeRequests: [

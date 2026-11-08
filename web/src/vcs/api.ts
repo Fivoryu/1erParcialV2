@@ -147,6 +147,8 @@ export interface VcsMergeRequest {
   /** True while the request still needs an approval from someone other than its opener before it can merge. */
   approvalRequired: boolean;
   openedByUserId: Uuid | null;
+  /** Optional on older servers; selected recipients do not affect merge approval. */
+  reviewers?: { userId: Uuid; displayName: string }[];
 }
 
 /** Two commits compared: field-level changes, the commits the target has that the start lacks, and their authors. */
@@ -185,6 +187,8 @@ export interface CreateVcsMergeRequestRequest {
   sourceBranch: string;
   targetBranch: string;
   title: string;
+  /** Active project members selected as notification recipients; omitted for legacy behavior. */
+  reviewerIds?: Uuid[];
 }
 
 export interface UpdateVcsPermissionsRequest {

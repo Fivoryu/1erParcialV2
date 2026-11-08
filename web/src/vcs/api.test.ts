@@ -107,6 +107,17 @@ describe('version-control API contract', () => {
     ]);
   });
 
+  it('sends selected notification recipients when opening a merge request', async () => {
+    const fetcher = mockFetch();
+    const api = createVcsApiClient('/api', fetcher);
+    await api.createMergeRequest(projectId, {
+      sourceBranch: 'feature', targetBranch: 'main', title: 'Review', reviewerIds: ['user-1', 'user-2'],
+    });
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({
+      sourceBranch: 'feature', targetBranch: 'main', title: 'Review', reviewerIds: ['user-1', 'user-2'],
+    }));
+  });
+
   it('builds permission updates only from checked actions in contract order', () => {
     const checkedActions: VcsPermissionAction[] = ['MERGE', 'VIEW', 'VIEW', 'MANAGE_PERMISSIONS'];
 

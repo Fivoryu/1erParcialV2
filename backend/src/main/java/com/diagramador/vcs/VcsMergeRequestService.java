@@ -23,6 +23,7 @@ import com.diagramador.persistence.VcsBranchRepository;
 import com.diagramador.persistence.VcsCommitRepository;
 import com.diagramador.persistence.VcsMergeRequestApprovalRepository;
 import com.diagramador.persistence.VcsMergeRequestRepository;
+import com.diagramador.persistence.VcsMergeRequestReviewerRepository;
 import com.diagramador.persistence.VcsSnapshotRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -50,6 +51,8 @@ public class VcsMergeRequestService {
     private final VcsSnapshotRepository snapshotRepository;
     private final VcsMergeRequestRepository mergeRequestRepository;
     private final VcsMergeRequestApprovalRepository approvalRepository;
+    private final VcsMergeRequestReviewerRepository reviewerRepository;
+    private final VcsPermissionService permissionService;
     private final UmlModelRepository modelRepository;
     private final ModelVersionRepository versionRepository;
     private final ProjectRepository projectRepository;
@@ -63,7 +66,8 @@ public class VcsMergeRequestService {
             ModelStateHasher stateHasher, ModelSnapshotService snapshotService, VcsBranchRepository branchRepository,
             VcsCommitRepository commitRepository, VcsSnapshotRepository snapshotRepository,
             VcsMergeRequestRepository mergeRequestRepository,
-            VcsMergeRequestApprovalRepository approvalRepository, UmlModelRepository modelRepository,
+            VcsMergeRequestApprovalRepository approvalRepository, VcsMergeRequestReviewerRepository reviewerRepository,
+            VcsPermissionService permissionService, UmlModelRepository modelRepository,
             ModelVersionRepository versionRepository, ProjectRepository projectRepository,
             UserAccountRepository userRepository, ObjectMapper objectMapper) {
         this.accessService = accessService;
@@ -75,6 +79,8 @@ public class VcsMergeRequestService {
         this.snapshotRepository = snapshotRepository;
         this.mergeRequestRepository = mergeRequestRepository;
         this.approvalRepository = approvalRepository;
+        this.reviewerRepository = reviewerRepository;
+        this.permissionService = permissionService;
         this.modelRepository = modelRepository;
         this.versionRepository = versionRepository;
         this.projectRepository = projectRepository;
@@ -138,10 +144,16 @@ public class VcsMergeRequestService {
 
     @Transactional
     public VcsResources.MergeRequest open(UmlModel model, String sourceName, String targetName, String title,
-            UserAccount author) {
+            List<UUID> reviewerIds, UserAccount author) {
         UmlModel managedModel = requireModel(model.getId());
         // Opening a merge request is an editor/branch operation, not a direct commit to the active branch.
         accessService.requireBranch(managedModel.getProject().getId());
+        List<UUID> selected = reviewerIds == null ? List.of() : reviewerIds;
+        Set<UUID> members = permissionService.list(managedModel, author).stream()
+                .map(VcsResources.Permission::userId).collect(java.util.stream.Collectors.toSet());
+        if (selected.stream().anyMatch(id -> id == null || !members.contains(id))) {
+            throw invalidPayload("Each reviewer must be an active project member.");
+        }
         String normalizedSource = normalizeBranchName(sourceName);
         String normalizedTarget = normalizeBranchName(targetName);
         if (normalizedSource.isEmpty() || normalizedTarget.isEmpty()) {
@@ -174,6 +186,7 @@ public class VcsMergeRequestService {
                 sourceHead, targetHead, mergeBase, normalizedTitle, comparison.hasConflicts(), conflicts, author);
         VcsMergeRequest saved = mergeRequestRepository.saveAndFlush(request);
         entityManager.refresh(saved);
+        selected.stream().distinct().forEach(id -> reviewerRepository.insertIfAbsent(saved.getId(), id));
         return resource(saved);
     }
 
@@ -337,7 +350,11 @@ public class VcsMergeRequestService {
                         .map(approval -> new VcsResources.Approval(approval.getUser().getId(),
                                 approval.getUser().getDisplayName(), approval.getApprovedAt()))
                         .toList(),
-                approvalRequired(request, approvals), openedBy == null ? null : openedBy.getId());
+                approvalRequired(request, approvals), openedBy == null ? null : openedBy.getId(),
+                reviewerRepository.findByMergeRequest_IdOrderByUser_IdAsc(request.getId()).stream()
+                        .map(reviewer -> new VcsResources.Reviewer(reviewer.getUser().getId(),
+                                reviewer.getUser().getDisplayName()))
+                        .toList());
     }
 
     /**

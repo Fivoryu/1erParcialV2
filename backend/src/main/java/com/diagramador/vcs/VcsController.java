@@ -160,7 +160,7 @@ public class VcsController {
             throw invalidPayload("Merge request body is required.");
         }
         VcsResources.MergeRequest created = mergeRequestService.open(model, request.sourceBranch(),
-                request.targetBranch(), request.title(), author());
+                request.targetBranch(), request.title(), request.reviewerIds(), author());
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
@@ -271,6 +271,7 @@ public class VcsController {
     public record PermissionsRequest(List<String> actions) {
     }
 
-    public record MergeRequestBody(String sourceBranch, String targetBranch, String title) {
+    /** reviewerIds is optional for older clients; selected members are notification recipients only. */
+    public record MergeRequestBody(String sourceBranch, String targetBranch, String title, List<UUID> reviewerIds) {
     }
 }

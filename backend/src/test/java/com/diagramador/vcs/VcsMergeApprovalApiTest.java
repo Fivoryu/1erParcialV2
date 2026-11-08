@@ -13,6 +13,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -74,6 +79,167 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
         assertThat(merged.path("state").asText()).isEqualTo("MERGED");
         assertThat(merged.path("approvalRequired").asBoolean()).isFalse();
         assertThat(mainHead(projectId)).isNotEqualTo(mainHeadBefore);
+    }
+
+    @Test
+    void selectedRecipientsPersistAndAnotherEditorMayApprove() throws Exception {
+        String owner = username("recipients-owner");
+        UUID projectId = createProject(owner);
+        String selected = username("selected");
+        bearer(selected);
+        addMembership(selected, projectId, ProjectMemberRole.EDITOR);
+        String other = username("other");
+        bearer(other);
+        addMembership(other, projectId, ProjectMemberRole.EDITOR);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        postBody(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        JsonNode opened = postBody(owner, "/projects/{projectId}/vcs/merge-requests", projectId,
+                Map.of("sourceBranch", "feature", "targetBranch", "main", "title", "Review",
+                        "reviewerIds", List.of(userIdFor(selected))), 201);
+        String id = opened.path("mergeRequestId").asText();
+        assertThat(opened.path("reviewers")).hasSize(1);
+        assertThat(getJson(owner, DETAIL, projectId, id).path("reviewers").get(0).path("userId").asText())
+                .isEqualTo(userIdFor(selected).toString());
+        assertThat(postAction(other, APPROVE, 200, projectId, id).path("approvalRequired").asBoolean()).isFalse();
+        assertThat(postAction(owner, MERGE, 200, projectId, id).path("state").asText()).isEqualTo("MERGED");
+    }
+
+    @Test
+    void rejectsNonMembersAndUnauthorizedOpenWithoutCreatingRequests() throws Exception {
+        String owner = username("selection-owner");
+        UUID projectId = createProject(owner);
+        String viewer = username("selection-viewer");
+        bearer(viewer);
+        addMembership(viewer, projectId, ProjectMemberRole.VIEWER);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        postBody(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        String path = "/projects/{projectId}/vcs/merge-requests";
+        Map<String, Object> invalid = Map.of("sourceBranch", "feature", "targetBranch", "main",
+                "title", "Review", "reviewerIds", List.of(UUID.randomUUID()));
+        assertThat(postBody(owner, path, projectId, invalid, 400).path("code").asText())
+                .isEqualTo("INVALID_PAYLOAD");
+        Map<String, Object> unauthorized = Map.of("sourceBranch", "feature", "targetBranch", "main",
+                "title", "Review", "reviewerIds", List.of(userIdFor(viewer)));
+        assertThat(postBody(viewer, path, projectId, unauthorized, 403).path("code").asText())
+                .isEqualTo("FORBIDDEN");
+        assertThat(getJson(owner, path, projectId)).isEmpty();
+    }
+
+    @Test
+    void rejectedOpenRequestsLeavePublicProjectStateUnchanged() throws Exception {
+        String owner = username("atomic-owner");
+        UUID projectId = createProject(owner);
+        String editor = username("atomic-editor");
+        String viewer = username("atomic-viewer");
+        String outsider = username("atomic-outsider");
+        bearer(editor);
+        bearer(viewer);
+        bearer(outsider);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        addMembership(viewer, projectId, ProjectMemberRole.VIEWER);
+        initializeBranches(owner, projectId, "feature");
+        String path = "/projects/{projectId}/vcs/merge-requests";
+        Map<String, Object> valid = reviewerPayload("feature", List.of(userIdFor(viewer)));
+        Map<String, Object> mixed = reviewerPayload("feature", List.of(userIdFor(viewer), userIdFor(outsider)));
+        List<JsonNode> before = publicProjectState(owner, projectId);
+
+        mockMvc.perform(post(path, projectId).contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(valid))).andExpect(status().isUnauthorized());
+        assertThat(publicProjectState(owner, projectId)).isEqualTo(before);
+        assertThat(postBody(outsider, path, projectId, valid, 403).path("code").asText()).isEqualTo("FORBIDDEN");
+        assertThat(publicProjectState(owner, projectId)).isEqualTo(before);
+        assertThat(postBody(viewer, path, projectId, valid, 403).path("code").asText()).isEqualTo("FORBIDDEN");
+        assertThat(publicProjectState(owner, projectId)).isEqualTo(before);
+        JsonNode rejected = postBody(editor, path, projectId, mixed, 400);
+        assertThat(rejected.path("code").asText()).isEqualTo("INVALID_PAYLOAD");
+        assertThat(rejected.path("message").asText()).isEqualTo("Each reviewer must be an active project member.");
+        assertThat(publicProjectState(owner, projectId)).isEqualTo(before);
+    }
+
+    @Test
+    void repeatedRecipientIsStoredOnlyOnce() throws Exception {
+        String owner = username("duplicate-owner");
+        UUID projectId = createProject(owner);
+        String viewer = username("duplicate-viewer");
+        bearer(viewer);
+        addMembership(viewer, projectId, ProjectMemberRole.VIEWER);
+        initializeBranches(owner, projectId, "feature");
+        UUID viewerId = userIdFor(viewer);
+        JsonNode opened = postBody(owner, "/projects/{projectId}/vcs/merge-requests", projectId,
+                reviewerPayload("feature", List.of(viewerId, viewerId)), 201);
+        assertThat(opened.path("reviewers")).hasSize(1);
+        assertThat(opened.path("reviewers").get(0).path("userId").asText()).isEqualTo(viewerId.toString());
+        assertThat(getJson(owner, DETAIL, projectId, opened.path("mergeRequestId").asText()).path("reviewers"))
+                .isEqualTo(opened.path("reviewers"));
+    }
+
+    @Test
+    void concurrentDifferentRequestsKeepTheirOwnRecipients() throws Exception {
+        String owner = username("parallel-owner");
+        UUID projectId = createProject(owner);
+        String first = username("parallel-first");
+        String second = username("parallel-second");
+        bearer(first);
+        bearer(second);
+        addMembership(first, projectId, ProjectMemberRole.VIEWER);
+        addMembership(second, projectId, ProjectMemberRole.EDITOR);
+        initializeBranches(owner, projectId, "first", "second");
+        UUID firstId = userIdFor(first);
+        UUID secondId = userIdFor(second);
+        String path = "/projects/{projectId}/vcs/merge-requests";
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<JsonNode> left = pool.submit(() -> {
+                ready.countDown();
+                if (!start.await(30, TimeUnit.SECONDS)) throw new AssertionError("start timed out");
+                return postBody(owner, path, projectId, reviewerPayload("first", List.of(firstId)), 201);
+            });
+            Future<JsonNode> right = pool.submit(() -> {
+                ready.countDown();
+                if (!start.await(30, TimeUnit.SECONDS)) throw new AssertionError("start timed out");
+                return postBody(owner, path, projectId, reviewerPayload("second", List.of(secondId)), 201);
+            });
+            assertThat(ready.await(30, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            JsonNode firstRequest = left.get(30, TimeUnit.SECONDS);
+            JsonNode secondRequest = right.get(30, TimeUnit.SECONDS);
+            assertThat(firstRequest.path("reviewers")).hasSize(1);
+            assertThat(secondRequest.path("reviewers")).hasSize(1);
+            assertThat(firstRequest.path("reviewers").get(0).path("userId").asText()).isEqualTo(firstId.toString());
+            assertThat(secondRequest.path("reviewers").get(0).path("userId").asText()).isEqualTo(secondId.toString());
+            assertThat(getJson(owner, DETAIL, projectId, firstRequest.path("mergeRequestId").asText())
+                    .path("reviewers")).isEqualTo(firstRequest.path("reviewers"));
+            assertThat(getJson(owner, DETAIL, projectId, secondRequest.path("mergeRequestId").asText())
+                    .path("reviewers")).isEqualTo(secondRequest.path("reviewers"));
+        } finally {
+            start.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void rejectsRemovedMembersWithoutCreatingARequest() throws Exception {
+        String owner = username("inactive-owner");
+        UUID projectId = createProject(owner);
+        String removed = username("removed");
+        bearer(removed);
+        addMembership(removed, projectId, ProjectMemberRole.EDITOR);
+        UUID removedId = userIdFor(removed);
+        jdbcTemplate.update("UPDATE diagrammer.project_member SET status = 'REMOVED' WHERE project_id = ? AND user_id = ?",
+                projectId, removedId);
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        postBody(owner, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        String path = "/projects/{projectId}/vcs/merge-requests";
+        JsonNode result = postBody(owner, path, projectId, Map.of("sourceBranch", "feature",
+                "targetBranch", "main", "title", "Review", "reviewerIds", List.of(removedId)), 400);
+        assertThat(result.path("code").asText()).isEqualTo("INVALID_PAYLOAD");
+        assertThat(result.path("message").asText()).isEqualTo("Each reviewer must be an active project member.");
+        assertThat(getJson(owner, path, projectId)).isEmpty();
     }
 
     @Test
@@ -234,6 +400,26 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
         assertThat(approved.path("approvalRequired").asBoolean()).isFalse();
         assertThat(postAction(owner, MERGE, 200, projectId, requestId).path("state").asText())
                 .isEqualTo("MERGED");
+    }
+
+    private void initializeBranches(String owner, UUID projectId, String... branches) throws Exception {
+        getJson(owner, "/projects/{projectId}/vcs/status", projectId);
+        for (String branch : branches) {
+            postBody(owner, "/projects/{projectId}/vcs/branches", projectId,
+                    Map.of("name", branch, "fromBranch", "main"), 201);
+        }
+    }
+
+    private Map<String, Object> reviewerPayload(String branch, List<UUID> recipients) {
+        return Map.of("sourceBranch", branch, "targetBranch", "main", "title", "Synthetic review",
+                "reviewerIds", recipients);
+    }
+
+    private List<JsonNode> publicProjectState(String owner, UUID projectId) throws Exception {
+        return List.of(getJson(owner, "/projects/{projectId}/vcs/merge-requests", projectId),
+                getJson(owner, "/projects/{projectId}/vcs/branches", projectId),
+                getJson(owner, "/projects/{projectId}/vcs/status", projectId),
+                getJson(owner, "/projects/{projectId}/model", projectId));
     }
 
     private String openFeatureRequest(String owner, UUID projectId) throws Exception {
