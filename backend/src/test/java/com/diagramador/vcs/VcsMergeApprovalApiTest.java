@@ -220,6 +220,8 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
                 Map.of("sourceBranch", "feature", "targetBranch", "main", "title", "Review",
                         "reviewerIds", List.of(userIdFor(selected))), 201);
         String id = opened.path("mergeRequestId").asText();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from diagrammer.push_outbox where merge_request_id = ? and recipient_id = ? and event_type = 'REQUEST_OPENED'", Long.class, UUID.fromString(id), userIdFor(selected))).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from diagrammer.push_outbox where merge_request_id = ? and recipient_id = ?", Long.class, UUID.fromString(id), userIdFor(other))).isZero();
         assertThat(opened.path("reviewers")).hasSize(1);
         assertThat(getJson(owner, DETAIL, projectId, id).path("reviewers").get(0).path("userId").asText())
                 .isEqualTo(userIdFor(selected).toString());

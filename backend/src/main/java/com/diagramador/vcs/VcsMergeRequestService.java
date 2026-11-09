@@ -190,7 +190,17 @@ public class VcsMergeRequestService {
                 sourceHead, targetHead, mergeBase, normalizedTitle, comparison.hasConflicts(), conflicts, author);
         VcsMergeRequest saved = mergeRequestRepository.saveAndFlush(request);
         entityManager.refresh(saved);
-        selected.stream().distinct().forEach(id -> reviewerRepository.insertIfAbsent(saved.getId(), id));
+        selected.stream().distinct().forEach(id -> {
+            reviewerRepository.insertIfAbsent(saved.getId(), id);
+            entityManager.createNativeQuery("""
+                    INSERT INTO diagrammer.push_outbox (project_id, merge_request_id, recipient_id, event_type)
+                    VALUES (:project, :request, :recipient, 'REQUEST_OPENED')
+                    """)
+                    .setParameter("project", managedModel.getProject().getId())
+                    .setParameter("request", saved.getId())
+                    .setParameter("recipient", id)
+                    .executeUpdate();
+        });
         return resource(saved);
     }
 
