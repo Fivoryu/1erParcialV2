@@ -27,6 +27,120 @@ Map<String, dynamic> diff([List<dynamic> changes = const []]) => {
 };
 
 void main() {
+  testWidgets('close requires confirmation and shows the closed result', (tester) async {
+    final calls = <http.Request>[];
+    final api = PlatformService(baseUri: Uri.parse('https://example.test'), client: MockClient((r) async {
+      calls.add(r);
+      if (r.url.path.endsWith('/permissions')) return http.Response(jsonEncode([{'userId': 'u', 'actions': ['VIEW', 'MERGE']}]), 200);
+      if (r.method == 'POST') return http.Response(jsonEncode({...detail(), 'state': 'CLOSED', 'openedByUserId': 'other'}), 200);
+      return http.Response(jsonEncode(r.url.path.endsWith('/diff') ? diff() : {...detail(), 'openedByUserId': 'other'}), 200);
+    }));
+    final session = SessionController(f.SwitchStore(savedSession: f.switchSession), f.SwitchPlatform());
+    await session.restore();
+    await tester.pumpWidget(MaterialApp(home: MergeRequestDetailScreen(session: session, workspace: f.switchController(f.SwitchPlatform(), f.SwitchStore()), service: api, requestId: 'mr')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cerrar sin fusionar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancelar'));
+    await tester.pumpAndSettle();
+    expect(calls.where((r) => r.method == 'POST'), isEmpty);
+    await tester.tap(find.text('Cerrar sin fusionar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cerrar solicitud'));
+    await tester.pumpAndSettle();
+    expect(calls.where((r) => r.method == 'POST').single.url.path, endsWith('/close'));
+    expect(find.text('CLOSED'), findsOneWidget);
+    expect(find.text('Solicitud cerrada sin fusionar.'), findsOneWidget);
+    expect(find.text('Cerrar sin fusionar'), findsNothing);
+  });
+
+  testWidgets('late close response cannot populate a different project', (tester) async {
+    final pending = Completer<http.Response>();
+    final api = PlatformService(baseUri: Uri.parse('https://example.test'), client: MockClient((r) {
+      if (r.url.path.endsWith('/permissions')) return Future.value(http.Response(jsonEncode([{'userId': 'u', 'actions': ['VIEW', 'MERGE']}]), 200));
+      if (r.method == 'POST') return pending.future;
+      return Future.value(http.Response(jsonEncode(r.url.path.endsWith('/diff') ? diff() : {...detail(), 'openedByUserId': 'other'}), 200));
+    }));
+    final session = SessionController(f.SwitchStore(savedSession: f.switchSession), f.SwitchPlatform());
+    await session.restore();
+    final workspace = f.switchController(f.SwitchPlatform(), f.SwitchStore());
+    await tester.pumpWidget(MaterialApp(home: MergeRequestDetailScreen(session: session, workspace: workspace, service: api, requestId: 'mr')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cerrar sin fusionar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cerrar solicitud'));
+    await tester.pump();
+    workspace.project = const PlatformProject(id: 'other', name: 'Other');
+    workspace.notifyListeners();
+    pending.complete(http.Response(jsonEncode({...detail(), 'state': 'CLOSED'}), 200));
+    await tester.pumpAndSettle();
+    expect(find.text('El proyecto o la sesión cambiaron. Vuelve a la lista.'), findsOneWidget);
+    expect(find.text('Solicitud cerrada sin fusionar.'), findsNothing);
+    expect(find.text('CLOSED'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('malformed close response never claims success or crashes', (tester) async {
+    final api = PlatformService(baseUri: Uri.parse('https://example.test'), client: MockClient((r) async {
+      if (r.url.path.endsWith('/permissions')) return http.Response(jsonEncode([{'userId': 'u', 'actions': ['VIEW', 'MERGE']}]), 200);
+      if (r.method == 'POST') return http.Response('{}', 200);
+      return http.Response(jsonEncode(r.url.path.endsWith('/diff') ? diff() : {...detail(), 'openedByUserId': 'other'}), 200);
+    }));
+    final session = SessionController(f.SwitchStore(savedSession: f.switchSession), f.SwitchPlatform());
+    await session.restore();
+    await tester.pumpWidget(MaterialApp(home: MergeRequestDetailScreen(session: session, workspace: f.switchController(f.SwitchPlatform(), f.SwitchStore()), service: api, requestId: 'mr')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cerrar sin fusionar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cerrar solicitud'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Solicitud cerrada sin fusionar.'), findsNothing);
+    expect(find.textContaining('No se pudo confirmar el resultado'), findsOneWidget);
+  });
+
+  testWidgets('viewer cannot see review or close actions', (tester) async {
+    final calls = <http.Request>[];
+    final api = PlatformService(baseUri: Uri.parse('https://example.test'), client: MockClient((r) async {
+      calls.add(r);
+      if (r.url.path.endsWith('/permissions')) return http.Response(jsonEncode([{'userId': 'u', 'actions': ['VIEW']}]), 200);
+      return http.Response(jsonEncode(r.url.path.endsWith('/diff') ? diff() : {...detail(), 'openedByUserId': 'other'}), 200);
+    }));
+    final session = SessionController(f.SwitchStore(savedSession: f.switchSession), f.SwitchPlatform());
+    await session.restore();
+    await tester.pumpWidget(MaterialApp(home: MergeRequestDetailScreen(session: session, workspace: f.switchController(f.SwitchPlatform(), f.SwitchStore()), service: api, requestId: 'mr')));
+    await tester.pumpAndSettle();
+    expect(find.text('Pedir cambios'), findsNothing);
+    expect(find.text('Cerrar sin fusionar'), findsNothing);
+    expect(calls.where((r) => r.method == 'POST'), isEmpty);
+  });
+
+  testWidgets('eligible reviewer can request changes without claiming notification delivery', (tester) async {
+    final calls = <http.Request>[];
+    final api = PlatformService(baseUri: Uri.parse('https://example.test'), client: MockClient((r) async {
+      calls.add(r);
+      if (r.url.path.endsWith('/permissions')) {
+        return http.Response(jsonEncode([{'userId': 'u', 'actions': ['VIEW', 'BRANCH']}]), 200);
+      }
+      if (r.method == 'POST') {
+        return http.Response(jsonEncode({...detail(), 'openedByUserId': 'other', 'reviews': [{'message': 'Revisar', 'displayName': 'Reviewer'}]}), 200);
+      }
+      return http.Response(jsonEncode(r.url.path.endsWith('/diff') ? diff() : {...detail(), 'openedByUserId': 'other', 'reviews': []}), 200);
+    }));
+    final session = SessionController(f.SwitchStore(savedSession: f.switchSession), f.SwitchPlatform());
+    await session.restore();
+    await tester.pumpWidget(MaterialApp(home: MergeRequestDetailScreen(session: session,
+      workspace: f.switchController(f.SwitchPlatform(), f.SwitchStore()), service: api, requestId: 'mr')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Pedir cambios'), 200);
+    await tester.tap(find.text('Pedir cambios'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Revisar');
+    await tester.tap(find.text('Enviar revisión'));
+    await tester.pumpAndSettle();
+    expect(calls.where((r) => r.method == 'POST').single.url.path, endsWith('/request-changes'));
+    expect(find.textContaining('notificación pendiente'), findsOneWidget);
+  });
   for (final badDiff in [false, true]) {
     testWidgets(
       'malformed ${badDiff ? 'diff' : 'detail'} gives a controlled error',

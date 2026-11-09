@@ -13,6 +13,7 @@ import com.diagramador.domain.VcsCommitKind;
 import com.diagramador.domain.VcsCommitOrigin;
 import com.diagramador.domain.VcsMergeRequest;
 import com.diagramador.domain.VcsMergeRequestApproval;
+import com.diagramador.domain.VcsMergeRequestReview;
 import com.diagramador.domain.VcsMergeState;
 import com.diagramador.domain.VcsSnapshot;
 import com.diagramador.persistence.ModelVersionRepository;
@@ -24,6 +25,7 @@ import com.diagramador.persistence.VcsCommitRepository;
 import com.diagramador.persistence.VcsMergeRequestApprovalRepository;
 import com.diagramador.persistence.VcsMergeRequestRepository;
 import com.diagramador.persistence.VcsMergeRequestReviewerRepository;
+import com.diagramador.persistence.VcsMergeRequestReviewRepository;
 import com.diagramador.persistence.VcsSnapshotRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,6 +54,7 @@ public class VcsMergeRequestService {
     private final VcsMergeRequestRepository mergeRequestRepository;
     private final VcsMergeRequestApprovalRepository approvalRepository;
     private final VcsMergeRequestReviewerRepository reviewerRepository;
+    private final VcsMergeRequestReviewRepository reviewRepository;
     private final VcsPermissionService permissionService;
     private final UmlModelRepository modelRepository;
     private final ModelVersionRepository versionRepository;
@@ -67,7 +70,7 @@ public class VcsMergeRequestService {
             VcsCommitRepository commitRepository, VcsSnapshotRepository snapshotRepository,
             VcsMergeRequestRepository mergeRequestRepository,
             VcsMergeRequestApprovalRepository approvalRepository, VcsMergeRequestReviewerRepository reviewerRepository,
-            VcsPermissionService permissionService, UmlModelRepository modelRepository,
+            VcsMergeRequestReviewRepository reviewRepository, VcsPermissionService permissionService, UmlModelRepository modelRepository,
             ModelVersionRepository versionRepository, ProjectRepository projectRepository,
             UserAccountRepository userRepository, ObjectMapper objectMapper) {
         this.accessService = accessService;
@@ -80,6 +83,7 @@ public class VcsMergeRequestService {
         this.mergeRequestRepository = mergeRequestRepository;
         this.approvalRepository = approvalRepository;
         this.reviewerRepository = reviewerRepository;
+        this.reviewRepository = reviewRepository;
         this.permissionService = permissionService;
         this.modelRepository = modelRepository;
         this.versionRepository = versionRepository;
@@ -194,7 +198,7 @@ public class VcsMergeRequestService {
     public VcsResources.MergeRequest merge(UmlModel model, UUID mergeRequestId, UserAccount author) {
         UmlModel managedModel = requireModel(model.getId());
         accessService.requireMerge(managedModel.getProject().getId());
-        VcsMergeRequest request = requireMergeRequest(managedModel.getId(), mergeRequestId);
+        VcsMergeRequest request = requireMergeRequestForUpdate(managedModel.getId(), mergeRequestId);
         requireOpen(request);
         if (request.hasConflicts()) {
             throw new ApiException(HttpStatus.CONFLICT, "MERGE_CONFLICTS",
@@ -294,10 +298,32 @@ public class VcsMergeRequestService {
     }
 
     @Transactional
+    public VcsResources.MergeRequest requestChanges(UmlModel model, UUID mergeRequestId, String message, UserAccount reviewer) {
+        UmlModel managedModel = requireModel(model.getId());
+        if (reviewer == null) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Only a project member can review a merge request.", List.of(), null);
+        }
+        accessService.requireReviewer(managedModel.getProject().getId(), reviewer.getId());
+        VcsMergeRequest request = requireMergeRequestForUpdate(managedModel.getId(), mergeRequestId);
+        if (request.getState() != VcsMergeState.OPEN) {
+            throw new ApiException(HttpStatus.CONFLICT, "MERGE_REQUEST_NOT_OPEN", "Only an OPEN merge request can be reviewed.", List.of(), null);
+        }
+        if (request.getOpenedByUser() != null && request.getOpenedByUser().getId().equals(reviewer.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "You cannot review your own merge request.", List.of(), null);
+        }
+        String normalized = message == null ? "" : message.trim();
+        if (normalized.isEmpty() || normalized.length() > 2000) {
+            throw invalidPayload("message must contain 1 to 2000 characters.");
+        }
+        reviewRepository.saveAndFlush(VcsMergeRequestReview.create(request, reviewer, normalized));
+        return resource(request);
+    }
+
+    @Transactional
     public VcsResources.MergeRequest close(UmlModel model, UUID mergeRequestId, UserAccount author) {
         UmlModel managedModel = requireModel(model.getId());
         accessService.requireMerge(managedModel.getProject().getId());
-        VcsMergeRequest request = requireMergeRequest(managedModel.getId(), mergeRequestId);
+        VcsMergeRequest request = requireMergeRequestForUpdate(managedModel.getId(), mergeRequestId);
         requireOpen(request);
         request.markClosed(author);
         return resource(mergeRequestRepository.saveAndFlush(request));
@@ -317,6 +343,11 @@ public class VcsMergeRequestService {
 
     private VcsMergeRequest requireMergeRequest(UUID modelId, UUID mergeRequestId) {
         return mergeRequestRepository.findByModel_IdAndId(modelId, mergeRequestId)
+                .orElseThrow(() -> notFound("Merge request was not found."));
+    }
+
+    private VcsMergeRequest requireMergeRequestForUpdate(UUID modelId, UUID mergeRequestId) {
+        return mergeRequestRepository.findForUpdate(modelId, mergeRequestId)
                 .orElseThrow(() -> notFound("Merge request was not found."));
     }
 
@@ -354,6 +385,10 @@ public class VcsMergeRequestService {
                 reviewerRepository.findByMergeRequest_IdOrderByUser_IdAsc(request.getId()).stream()
                         .map(reviewer -> new VcsResources.Reviewer(reviewer.getUser().getId(),
                                 reviewer.getUser().getDisplayName()))
+                        .toList(),
+                reviewRepository.findByMergeRequest_IdOrderByCreatedAtAscIdAsc(request.getId()).stream()
+                        .map(review -> new VcsResources.Review(review.getId(), review.getUser().getId(),
+                                review.getUser().getDisplayName(), review.getMessage(), review.getCreatedAt()))
                         .toList());
     }
 

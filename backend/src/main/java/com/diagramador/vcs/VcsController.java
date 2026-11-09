@@ -182,6 +182,13 @@ public class VcsController {
         return mergeRequestService.approve(requiredModel(projectId), mergeRequestId, author());
     }
 
+    @PostMapping(path = "/merge-requests/{mergeRequestId}/request-changes", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public VcsResources.MergeRequest requestChanges(@PathVariable UUID projectId, @PathVariable UUID mergeRequestId,
+            @RequestBody(required = false) ReviewBody body) {
+        return mergeRequestService.requestChanges(requiredModel(projectId), mergeRequestId,
+                body == null ? null : body.message(), author());
+    }
+
     @PostMapping("/merge-requests/{mergeRequestId}/merge")
     public VcsResources.MergeRequest merge(@PathVariable UUID projectId, @PathVariable UUID mergeRequestId) {
         return mergeRequestService.merge(requiredModel(projectId), mergeRequestId, author());
@@ -266,6 +273,9 @@ public class VcsController {
     }
 
     public record RestoreRequest(String message) {
+    }
+
+    public record ReviewBody(String message) {
     }
 
     public record PermissionsRequest(List<String> actions) {

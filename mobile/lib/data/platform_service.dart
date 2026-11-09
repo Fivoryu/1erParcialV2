@@ -79,6 +79,13 @@ class PlatformService {
     headers: _authHeaders(token),
   ));
 
+  Future<List<dynamic>> vcsPermissions(String token, String projectId) async => _array(await _send(
+    'GET', '/projects/${Uri.encodeComponent(projectId)}/vcs/permissions', headers: _authHeaders(token)));
+
+  Future<Map<String, dynamic>> reviewAction(String token, String projectId, String requestId, String action, {String? message}) async => _object(await _send(
+    'POST', '/projects/${Uri.encodeComponent(projectId)}/vcs/merge-requests/${Uri.encodeComponent(requestId)}/$action',
+    headers: _authHeaders(token), body: message == null ? null : jsonEncode({'message': message})));
+
   Future<List<GeneratedBackend>> backends(
     String token,
     String projectId,

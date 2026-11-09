@@ -36,16 +36,22 @@ class VcsReviewerMigrationUpgradeTest {
                 sql.execute("INSERT INTO diagrammer.vcs_merge_request_approval (merge_request_id, user_id) VALUES "
                         + "('60000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001')");
                 Flyway.configure().dataSource(db.getJdbcUrl(), db.getUsername(), db.getPassword())
-                        .schemas("diagrammer").load().migrate();
+                        .schemas("diagrammer").target("32").load().migrate();
+                sql.execute("INSERT INTO diagrammer.vcs_merge_request_reviewer (merge_request_id, user_id) VALUES "
+                        + "('60000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001')");
+                Flyway.configure().dataSource(db.getJdbcUrl(), db.getUsername(), db.getPassword())
+                        .schemas("diagrammer").target("33").load().migrate();
                 try (ResultSet rows = sql.executeQuery("SELECT r.title, r.state::text, "
                         + "(SELECT count(*) FROM diagrammer.vcs_merge_request_approval), "
-                        + "(SELECT count(*) FROM diagrammer.vcs_merge_request_reviewer) "
+                        + "(SELECT count(*) FROM diagrammer.vcs_merge_request_reviewer), "
+                        + "(SELECT count(*) FROM diagrammer.vcs_merge_request_review) "
                         + "FROM diagrammer.vcs_merge_request r WHERE r.merge_request_id = '60000000-0000-0000-0000-000000000001'")) {
                     assertThat(rows.next()).isTrue();
                     assertThat(rows.getString(1)).isEqualTo("synthetic review");
                     assertThat(rows.getString(2)).isEqualTo("OPEN");
                     assertThat(rows.getLong(3)).isEqualTo(1);
-                    assertThat(rows.getLong(4)).isZero();
+                    assertThat(rows.getLong(4)).isEqualTo(1);
+                    assertThat(rows.getLong(5)).isZero();
                     assertThat(rows.next()).isFalse();
                 }
             }

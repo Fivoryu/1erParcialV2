@@ -7,6 +7,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.diagramador.domain.ProjectMemberRole;
+import com.diagramador.persistence.VcsMergeRequestReviewRepository;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.reset;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
@@ -22,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -45,6 +50,121 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @SpyBean
+    private VcsMergeRequestReviewRepository reviewRepository;
+
+    @Test
+    void concurrentReviewAndDecisionRemainConsistent() throws Exception {
+        for (String decision : List.of("close", "merge")) {
+            String owner = username("race-owner");
+            UUID project = createProject(owner);
+            String editor = username("race-editor");
+            bearer(editor);
+            addMembership(editor, project, ProjectMemberRole.EDITOR);
+            String id = openFeatureRequest(owner, project);
+            if (decision.equals("merge")) postAction(editor, APPROVE, 200, project, id);
+            CountDownLatch reviewReachedWrite = new CountDownLatch(1);
+            CountDownLatch allowReview = new CountDownLatch(1);
+            doAnswer(invocation -> {
+                reviewReachedWrite.countDown();
+                if (!allowReview.await(30, TimeUnit.SECONDS)) throw new AssertionError("review timed out");
+                var saved = reviewRepository.save(invocation.getArgument(0));
+                reviewRepository.flush();
+                return saved;
+            }).when(reviewRepository).saveAndFlush(any());
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                Future<MvcResult> reviewing = pool.submit(() -> mockMvc.perform(authorizedAs(editor,
+                        post("/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/request-changes", project, id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of("message", "race review"))))).andReturn());
+                assertThat(reviewReachedWrite.await(30, TimeUnit.SECONDS)).isTrue();
+                Future<MvcResult> deciding = pool.submit(() -> mockMvc.perform(authorizedAs(owner,
+                        post(decision.equals("close") ? CLOSE : MERGE, project, id))).andReturn());
+                MvcResult earlyDecision = null;
+                try { earlyDecision = deciding.get(2, TimeUnit.SECONDS); }
+                catch (java.util.concurrent.TimeoutException expected) { /* Decision may wait for the review. */ }
+                allowReview.countDown();
+                MvcResult reviewResult = reviewing.get(30, TimeUnit.SECONDS);
+                MvcResult decisionResult = earlyDecision == null ? deciding.get(30, TimeUnit.SECONDS) : earlyDecision;
+                assertThat(decisionResult.getResponse().getStatus()).isEqualTo(200);
+                JsonNode finalState = getJson(owner, DETAIL, project, id);
+                assertThat(finalState.path("state").asText()).isEqualTo(decision.equals("close") ? "CLOSED" : "MERGED");
+                if (read(decisionResult).path("reviews").isEmpty()) {
+                    assertThat(reviewResult.getResponse().getStatus()).isEqualTo(409);
+                    assertThat(finalState.path("reviews")).isEmpty();
+                } else {
+                    assertThat(reviewResult.getResponse().getStatus()).isEqualTo(200);
+                    assertThat(finalState.path("reviews")).hasSize(1);
+                }
+            } finally {
+                allowReview.countDown();
+                pool.shutdownNow();
+                reset(reviewRepository);
+            }
+        }
+    }
+
+    @Test
+    void requestChangesPersistsWithoutChangingApprovalOrMergePolicy() throws Exception {
+        String owner = username("changes-owner");
+        UUID projectId = createProject(owner);
+        String editor = username("changes-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        String id = openFeatureRequest(owner, projectId);
+        String path = "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/request-changes";
+        MvcResult result = mockMvc.perform(authorizedAs(editor, post(path, projectId, id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("message", "Please revise")))))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode response = read(result);
+        assertThat(response.path("state").asText()).isEqualTo("OPEN");
+        assertThat(response.path("approvalRequired").asBoolean()).isTrue();
+        assertThat(response.path("reviews")).hasSize(1);
+        assertThat(response.path("reviews").get(0).path("message").asText()).isEqualTo("Please revise");
+        JsonNode storedReview = getJson(owner, DETAIL, projectId, id).path("reviews").get(0);
+        assertThat(storedReview.path("reviewId")).isEqualTo(response.path("reviews").get(0).path("reviewId"));
+        assertThat(storedReview.path("userId")).isEqualTo(response.path("reviews").get(0).path("userId"));
+        assertThat(storedReview.path("message").asText()).isEqualTo("Please revise");
+        assertThat(storedReview.path("createdAt").asText()).isNotBlank();
+        postAction(editor, APPROVE, 200, projectId, id);
+        assertThat(postAction(owner, MERGE, 200, projectId, id).path("state").asText()).isEqualTo("MERGED");
+    }
+
+    @Test
+    void requestChangesRejectsUnauthorizedAndInvalidInputsWithoutChangingHistory() throws Exception {
+        String owner = username("review-owner");
+        UUID project = createProject(owner);
+        String editor = username("review-editor");
+        String viewer = username("review-viewer");
+        String outsider = username("review-outsider");
+        bearer(editor); bearer(viewer); bearer(outsider);
+        addMembership(editor, project, ProjectMemberRole.EDITOR);
+        addMembership(viewer, project, ProjectMemberRole.VIEWER);
+        String id = openFeatureRequest(owner, project);
+        String path = "/projects/{projectId}/vcs/merge-requests/{mergeRequestId}/request-changes";
+        JsonNode before = getJson(owner, DETAIL, project, id);
+        for (String user : List.of(owner, viewer, outsider)) {
+            mockMvc.perform(authorizedAs(user, post(path, project, id).contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsBytes(Map.of("message", "revise")))))
+                    .andExpect(status().isForbidden());
+            assertThat(getJson(owner, DETAIL, project, id)).isEqualTo(before);
+        }
+        for (String message : List.of(" ", "x".repeat(2001))) {
+            mockMvc.perform(authorizedAs(editor, post(path, project, id).contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsBytes(Map.of("message", message)))))
+                    .andExpect(status().isBadRequest());
+            assertThat(getJson(owner, DETAIL, project, id)).isEqualTo(before);
+        }
+        postAction(owner, CLOSE, 200, project, id);
+        JsonNode closed = getJson(owner, DETAIL, project, id);
+        mockMvc.perform(authorizedAs(editor, post(path, project, id).contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("message", "revise")))))
+                .andExpect(status().isConflict());
+        assertThat(getJson(owner, DETAIL, project, id)).isEqualTo(closed);
+    }
 
     @Test
     void withAnotherEditorTheOwnerCannotMergeUntilTheEditorApproves() throws Exception {

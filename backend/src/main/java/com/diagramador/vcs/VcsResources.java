@@ -65,11 +65,15 @@ public final class VcsResources {
             String sourceBranch, String targetBranch, UUID sourceCommitId, UUID targetCommitId,
             UUID mergeBaseCommitId, boolean hasConflicts, JsonNode conflicts, String openedByDisplayName,
             String decidedByDisplayName, OffsetDateTime createdAt, List<Approval> approvals,
-            boolean approvalRequired, UUID openedByUserId, List<Reviewer> reviewers) {
+            boolean approvalRequired, UUID openedByUserId, List<Reviewer> reviewers, List<Review> reviews) {
         public MergeRequest {
             approvals = approvals == null ? List.of() : List.copyOf(approvals);
             reviewers = reviewers == null ? List.of() : List.copyOf(reviewers);
+            reviews = reviews == null ? List.of() : List.copyOf(reviews);
         }
+    }
+
+    public record Review(UUID reviewId, UUID userId, String displayName, String message, OffsetDateTime createdAt) {
     }
 
     /** Selected notification recipient; selection does not require that person's approval. */
