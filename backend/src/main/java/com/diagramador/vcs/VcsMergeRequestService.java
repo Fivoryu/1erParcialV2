@@ -316,6 +316,16 @@ public class VcsMergeRequestService {
             throw invalidPayload("message must contain 1 to 2000 characters.");
         }
         reviewRepository.saveAndFlush(VcsMergeRequestReview.create(request, reviewer, normalized));
+        if (request.getOpenedByUser() != null) {
+            entityManager.createNativeQuery("""
+                    INSERT INTO diagrammer.push_outbox (project_id, merge_request_id, recipient_id, event_type)
+                    VALUES (:project, :request, :recipient, 'REVIEW_CHANGES')
+                    """)
+                    .setParameter("project", managedModel.getProject().getId())
+                    .setParameter("request", request.getId())
+                    .setParameter("recipient", request.getOpenedByUser().getId())
+                    .executeUpdate();
+        }
         return resource(request);
     }
 

@@ -120,6 +120,8 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
                 .content(objectMapper.writeValueAsBytes(Map.of("message", "Please revise")))))
                 .andExpect(status().isOk()).andReturn();
         JsonNode response = read(result);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from diagrammer.push_outbox where recipient_id = ? and merge_request_id = ? and event_type = 'REVIEW_CHANGES'",
+                Long.class, userIdFor(owner), UUID.fromString(id))).isEqualTo(1L);
         assertThat(response.path("state").asText()).isEqualTo("OPEN");
         assertThat(response.path("approvalRequired").asBoolean()).isTrue();
         assertThat(response.path("reviews")).hasSize(1);
