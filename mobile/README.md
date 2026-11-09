@@ -18,6 +18,8 @@ After login, select a project and choose **Solicitudes de fusión** to view its 
 
 The backend also exposes `POST /projects/{projectId}/vcs/merge-requests/{mergeRequestId}/request-changes` with JSON `{"message":"..."}` (1–2000 trimmed characters). Active editors and owners other than the opener can record a review on an open request; reviews appear in the detail's `reviews` array. Reviews do not alter approval or merge policy. This endpoint does not send notifications; push delivery remains future work. Flutter displays that notification delivery remains pending.
 
+The backend also provides authenticated `POST /push/devices` with JSON `{"token":"..."}` to register a device token for the signed-in user. It returns 204 without the token; repeat registration by the same user is idempotent, and registration of a token belonging to another user returns 409. Token rotation, unregistering, Android integration and delivery are not implemented yet.
+
 ## Backend switching
 
 Only one generated backend is selected at a time. **Desconectar backend** clears its active contract, proposal, result and error, while keeping the platform login, project list and loaded local model. Selecting another backend loads its own frozen contract and pending proposal.
