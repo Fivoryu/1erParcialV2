@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 // Gemma (LiteRT-LM) is the default phone model, so it is compiled in unless -PlitertTrial=false.

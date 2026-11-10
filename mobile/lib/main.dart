@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'data/mnn_service.dart';
 import 'data/litert_agent_service.dart';
 import 'data/platform_service.dart';
+import 'data/push_registrar.dart';
 import 'data/secure_store.dart';
 import 'presentation/screens/login_screen.dart';
 import 'presentation/screens/merge_requests_screen.dart';
@@ -24,9 +25,11 @@ const _platformUrl = String.fromEnvironment(
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  final platform = PlatformService(baseUri: Uri.parse(_platformUrl));
   final session = SessionController(
     FlutterSecureStore(),
-    PlatformService(baseUri: Uri.parse(_platformUrl)),
+    platform,
+    push: PushRegistrar(FirebasePushTokenSource(), platform),
   );
   final workspace = WorkspaceController(
     service: PlatformService(baseUri: Uri.parse(_platformUrl)),

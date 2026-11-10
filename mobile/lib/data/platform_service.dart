@@ -39,6 +39,16 @@ class PlatformService {
   Future<AppUser> me(String token) async => _user(
     _object(await _send('GET', '/auth/me', headers: _authHeaders(token))),
   );
+  Future<void> registerPushDevice(String token, String deviceToken) async {
+    await _send('POST', '/push/devices',
+        headers: _authHeaders(token), body: jsonEncode({'token': deviceToken}));
+  }
+
+  Future<void> unregisterPushDevice(String token, String deviceToken) async {
+    await _send('DELETE', '/push/devices',
+        headers: _authHeaders(token), body: jsonEncode({'token': deviceToken}));
+  }
+
   Future<void> logout(String token) async {
     _object(await _send('POST', '/auth/logout', headers: _authHeaders(token)));
   }
