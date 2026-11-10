@@ -70,7 +70,7 @@ public class ContextBudgetService {
 
     /** Everything the ask flow needs: the counted report, the context turn and the live turns. */
     public record LiveContext(ContextReport report, String contextTurn, List<ChatAssistantProvider.Turn> liveTurns,
-            ChatAssistantProvider.Turn questionTurn) {
+            ChatAssistantProvider.Turn questionTurn, String questionSpeaker) {
     }
 
     public ContextBudgetService(ChatService chatService,
@@ -203,6 +203,11 @@ public class ContextBudgetService {
                 (int) (totalUsed * 100 / Math.max(1, promptBudget)));
     }
 
+    private static String speaker(DiagramMessage message) {
+        var author = message.getAuthor();
+        return author == null ? null : SpeakerLabel.label(author.getDisplayName(), author.getUsername());
+    }
+
     private LiveContext buildLiveContext(ChatSession session, UUID projectId, ContextReport report,
             UUID questionMessageId) {
         ChatSessionCompaction compaction = compactionRepository.findBySession_Id(session.getId()).orElse(null);
@@ -218,18 +223,21 @@ public class ContextBudgetService {
         }
         List<ChatAssistantProvider.Turn> liveTurns = new ArrayList<>();
         ChatAssistantProvider.Turn questionTurn = null;
+        String questionSpeaker = null;
         for (DiagramMessage message : live) {
             if (message.getId().equals(questionMessageId)) {
                 // The asked question is always the provider's final turn (T3.6 contract), so it
                 // travels separately from the live history.
+                // The raw body stays here (memory lookup uses it); the speaker is attached when turns are built.
                 questionTurn = new ChatAssistantProvider.Turn("user", message.getBody());
+                questionSpeaker = speaker(message);
                 continue;
             }
-            liveTurns.add(new ChatAssistantProvider.Turn(
-                    "AI".equalsIgnoreCase(message.getKind().name()) ? "assistant" : "user",
-                    message.getBody()));
+            boolean ai = "AI".equalsIgnoreCase(message.getKind().name());
+            liveTurns.add(new ChatAssistantProvider.Turn(ai ? "assistant" : "user",
+                    ai ? message.getBody() : SpeakerLabel.attribute(speaker(message), message.getBody())));
         }
-        return new LiveContext(report, contextTurn.toString(), List.copyOf(liveTurns), questionTurn);
+        return new LiveContext(report, contextTurn.toString(), List.copyOf(liveTurns), questionTurn, questionSpeaker);
     }
 
     private List<DiagramMessage> liveMessages(ChatSession session) {

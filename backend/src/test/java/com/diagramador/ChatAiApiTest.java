@@ -340,10 +340,38 @@ class ChatAiApiTest extends AuthenticatedApiTest {
         verify(chatAssistantProvider, timeout(5_000).times(2)).chat(turns.capture());
         List<ChatAssistantProvider.Turn> sent = turns.getAllValues().get(1);
         assertThat(sent).isNotEmpty();
-        assertThat(sent.get(sent.size() - 1).content()).isEqualTo("mensaje 2");
+        // Every human turn is attributed to its author (all test users share the display name below).
+        assertThat(sent.get(sent.size() - 1).content()).isEqualTo("[Integration Test]: mensaje 2");
         // The recent history stays, excluding the question to avoid sending it twice.
-        assertThat(sent.stream().map(ChatAssistantProvider.Turn::content)).contains("mensaje 12");
-        assertThat(sent.stream().map(ChatAssistantProvider.Turn::content).filter("mensaje 2"::equals)).hasSize(1);
+        assertThat(sent.stream().map(ChatAssistantProvider.Turn::content)).contains("[Integration Test]: mensaje 12");
+        assertThat(sent.stream().map(ChatAssistantProvider.Turn::content)
+                .filter("[Integration Test]: mensaje 2"::equals)).hasSize(1);
+    }
+
+    @Test
+    void theModelIsToldWhoWroteEachMessageSoItCanAddressTheAsker() throws Exception {
+        String carlos = username("carlos");
+        UUID projectId = createProject(carlos);
+        UUID viewId = defaultViewId(projectId);
+        String lucia = username("lucia");
+        bearer(lucia);
+        addMembership(lucia, projectId, ProjectMemberRole.EDITOR);
+        jdbcTemplate.update("update diagrammer.user_account set display_name = 'Carlos' where username = ?", carlos);
+        jdbcTemplate.update("update diagrammer.user_account set display_name = 'Lucía' where username = ?", lucia);
+        UUID sessionId = createSession(carlos, projectId, viewId, "Equipo");
+        postMessage(carlos, projectId, sessionId, "¿qué es una entidad débil?");
+        String question = postMessage(lucia, projectId, sessionId, "¿y un atributo derivado?");
+
+        when(chatAssistantProvider.chat(anyList())).thenReturn("respuesta");
+        mockMvc.perform(ask(lucia, projectId, sessionId, question)).andExpect(status().isAccepted());
+        awaitAiAnswer(lucia, projectId, sessionId, question);
+
+        ArgumentCaptor<List<ChatAssistantProvider.Turn>> turns = ArgumentCaptor.captor();
+        verify(chatAssistantProvider, timeout(5_000).times(2)).chat(turns.capture());
+        List<ChatAssistantProvider.Turn> sent = turns.getAllValues().get(1);
+        assertThat(sent.get(sent.size() - 1).content()).isEqualTo("[Lucía]: ¿y un atributo derivado?");
+        assertThat(sent.stream().map(ChatAssistantProvider.Turn::content))
+                .contains("[Carlos]: ¿qué es una entidad débil?");
     }
 
     @Test

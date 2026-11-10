@@ -2,6 +2,7 @@ package com.diagramador.collaboration;
 
 import com.diagramador.assistant.ChatAssistantProvider;
 import com.diagramador.context.ContextBudgetService;
+import com.diagramador.context.SpeakerLabel;
 import com.diagramador.api.ApiException;
 import com.diagramador.api.ChatResources.MessageResource;
 import com.diagramador.domain.ChatSession;
@@ -274,12 +275,14 @@ public class ChatAiService {
             var questionAttachments = chatAttachmentRepository
                     .findByMessage_IdOrderByCreatedAtAscIdAsc(questionMessageId);
             if (questionAttachments.isEmpty()) {
-                turns.add(live.questionTurn());
+                turns.add(new ChatAssistantProvider.Turn("user",
+                        SpeakerLabel.attribute(live.questionSpeaker(), live.questionTurn().content())));
             } else {
                 var image = questionAttachments.get(0);
                 // Only the copy sent to the model is reduced; the stored attachment stays as uploaded.
                 var fitted = ImageDownscaler.fit(image.getData(), image.getContentType(), imageMaxSide);
-                turns.add(new ChatAssistantProvider.Turn("user", live.questionTurn().content(),
+                turns.add(new ChatAssistantProvider.Turn("user",
+                        SpeakerLabel.attribute(live.questionSpeaker(), live.questionTurn().content()),
                         java.util.Base64.getEncoder().encodeToString(fitted.data()),
                         fitted.mime()));
             }
