@@ -26,10 +26,12 @@ public class FcmPushSender implements PushSender {
     @Override
     public Result send(String token, String title, String body, Map<String, String> data) {
         try {
+            String bearer = accessToken.get();
+            if (bearer == null || bearer.isBlank()) return Result.RETRY;
             var message = Map.of("message", Map.of("token", token, "data", data,
                     "notification", Map.of("title", title, "body", body)));
             var request = HttpRequest.newBuilder(endpoint).timeout(TIMEOUT)
-                    .header("Authorization", "Bearer " + accessToken.get())
+                    .header("Authorization", "Bearer " + bearer)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(message))).build();
             var response = client.send(request, HttpResponse.BodyHandlers.ofString());
