@@ -159,7 +159,8 @@ public class ProjectApiService {
     @Transactional(readOnly = true)
     public List<ProjectResource> listProjects() {
         Sort stableOrder = Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"));
-        if (currentUserContext.isOperator()) {
+        if (currentUserContext.isOperator()
+                || projectMemberRepository.isPlatformAdmin(currentUserContext.require().userId())) {
             return projectRepository.findAll(stableOrder).stream()
                     .map(ProjectApiService::projectResource)
                     .toList();
@@ -179,7 +180,7 @@ public class ProjectApiService {
     @Transactional(readOnly = true)
     public ProjectResource getProject(UUID projectId) {
         Project project = requireProject(projectId);
-        projectAuthorizationService.requireMember(projectId);
+        projectAuthorizationService.requireProjectRead(projectId);
         return projectResource(project);
     }
 
@@ -220,7 +221,7 @@ public class ProjectApiService {
     @Transactional(readOnly = true)
     public List<ModelChangeResource> modelChanges(UUID projectId, Long sinceRevision, Integer limit) {
         requireProject(projectId);
-        projectAuthorizationService.requireMember(projectId);
+        projectAuthorizationService.requireProjectRead(projectId);
         UUID modelId = modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> notFound("No se encontró el modelo.")).getId();
         int cappedLimit = limit == null ? 50 : Math.max(0, Math.min(limit, 200));
@@ -235,7 +236,7 @@ public class ProjectApiService {
     @Transactional(readOnly = true)
     public Map<String, Long> pendingChangeCount(UUID projectId) {
         requireProject(projectId);
-        projectAuthorizationService.requireMember(projectId);
+        projectAuthorizationService.requireProjectRead(projectId);
         UUID modelId = modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> notFound("No se encontró el modelo.")).getId();
         return Map.of("pendingChanges", modelCommandRepository.countByModelIdAndKnowledgePendingTrue(modelId));
@@ -255,7 +256,7 @@ public class ProjectApiService {
     @Transactional(readOnly = true)
     public ModelResource getModel(UUID projectId) {
         requireProject(projectId);
-        projectAuthorizationService.requireMember(projectId);        UmlModel model = modelRepository.findByProjectId(projectId)
+        projectAuthorizationService.requireProjectRead(projectId);        UmlModel model = modelRepository.findByProjectId(projectId)
                 .orElseThrow(() -> notFound("No se encontró el modelo."));
 
         List<UmlConstraint> modelConstraints = constraintRepository.findByModelId(model.getId());

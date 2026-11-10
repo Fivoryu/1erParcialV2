@@ -34,6 +34,17 @@ public class ProjectAuthorizationService {
         requireActiveMember(projectId);
     }
 
+    /** Read-only access: members, the operator and platform administrators. Never use it for writes. */
+    public void requireProjectRead(UUID projectId) {
+        if (currentUserContext.isOperator()) {
+            return;
+        }
+        if (projectMemberRepository.isPlatformAdmin(currentUserContext.require().userId())) {
+            return;
+        }
+        requireActiveMember(projectId);
+    }
+
     public void requireEditor(UUID projectId) {
         if (currentUserContext.isOperator()) {
             return;
