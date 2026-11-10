@@ -9,6 +9,12 @@ import 'platform_service.dart';
 abstract class PushTokenSource {
   Future<String?> token();
   Stream<String> get refreshes;
+
+  /// Data payload of the notification that launched the app from a terminated state, if any.
+  Future<Map<String, String>?> initialOpen();
+
+  /// Data payloads of notifications tapped while the app was in the background.
+  Stream<Map<String, String>> get opened;
 }
 
 /// Firebase Cloud Messaging token source. Any failure (no Play services, permission denied, missing
@@ -33,6 +39,31 @@ class FirebasePushTokenSource implements PushTokenSource {
   Stream<String> get refreshes => Firebase.apps.isEmpty
       ? const Stream.empty()
       : FirebaseMessaging.instance.onTokenRefresh;
+
+  static Map<String, String> _data(RemoteMessage message) => {
+    for (final entry in message.data.entries) entry.key: '${entry.value}',
+  };
+
+  @override
+  Future<Map<String, String>?> initialOpen() async {
+    try {
+      if (Firebase.apps.isEmpty) await Firebase.initializeApp();
+      final message = await FirebaseMessaging.instance.getInitialMessage();
+      return message == null ? null : _data(message);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Stream<Map<String, String>> get opened async* {
+    try {
+      if (Firebase.apps.isEmpty) await Firebase.initializeApp();
+    } catch (_) {
+      return;
+    }
+    yield* FirebaseMessaging.onMessageOpenedApp.map(_data);
+  }
 }
 
 /// Registers the device token for the signed-in user, follows token rotation and removes it on sign-out.
@@ -42,6 +73,15 @@ class PushRegistrar {
   final PlatformService _service;
   String? _registered;
   StreamSubscription<String>? _refresh;
+  StreamSubscription<Map<String, String>>? _opens;
+
+  /// Reports taps on notifications, including the one that launched the app.
+  Future<void> listenForOpens(void Function(Map<String, String> data) onOpen) async {
+    final initial = await _source.initialOpen();
+    if (initial != null) onOpen(initial);
+    _opens?.cancel();
+    _opens = _source.opened.listen(onOpen);
+  }
 
   Future<void> register(String sessionToken) async {
     try {

@@ -11,10 +11,16 @@ class _Source implements PushTokenSource {
   _Source(this.value);
   final String? value;
   final controller = StreamController<String>.broadcast();
+  final opens = StreamController<Map<String, String>>.broadcast();
+  Map<String, String>? initial;
   @override
   Future<String?> token() async => value;
   @override
   Stream<String> get refreshes => controller.stream;
+  @override
+  Future<Map<String, String>?> initialOpen() async => initial;
+  @override
+  Stream<Map<String, String>> get opened => opens.stream;
 }
 
 void main() {
@@ -62,6 +68,15 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(calls.map((c) => '${c.method} ${body(c)}'),
         ['POST old', 'POST new', 'DELETE old']);
+  });
+
+  test('reports the launching notification and later taps', () async {
+    final source = _Source('dev')..initial = {'mergeRequestId': 'a'};
+    final seen = <String>[];
+    await PushRegistrar(source, api).listenForOpens((d) => seen.add(d['mergeRequestId']!));
+    source.opens.add({'mergeRequestId': 'b'});
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, ['a', 'b']);
   });
 
   test('transport failures never escape', () async {
