@@ -33,7 +33,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 /** One approval from another editor/owner is required to merge, unless nobody else could approve. */
-@SpringBootTest
+@SpringBootTest(properties = "diagrammer.push.poll-millis=3600000")
 @AutoConfigureMockMvc
 class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
 
@@ -649,6 +649,49 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
                 .andExpect(status().is(expectedStatus))
                 .andReturn();
         return read(result);
+    }
+
+    @Test
+    void outboxProcessorDeliversRetriesAndDropsDeadTokens() throws Exception {
+        String owner = username("push-owner");
+        UUID projectId = createProject(owner);
+        String editor = username("push-editor");
+        bearer(editor);
+        addMembership(editor, projectId, ProjectMemberRole.EDITOR);
+        String id = openFeatureRequest(owner, projectId);
+        mockMvc.perform(authorizedAs(editor, post("/projects/{projectId}/vcs/merge-requests/{id}/request-changes", projectId, id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(Map.of("message", "Please revise"))))).andExpect(status().isOk());
+        UUID ownerId = userIdFor(owner);
+        UUID request = UUID.fromString(id);
+        jdbcTemplate.update("insert into diagrammer.push_device (user_id, token, token_hash) values (?, 'tok-live', repeat('a', 64))", ownerId);
+        String pending = "select count(*) from diagrammer.push_outbox where merge_request_id = ? and recipient_id = ? and delivered_at is null";
+
+        var retry = new com.diagramador.notifications.PushOutboxProcessor(jdbcTemplate,
+                (t, title, body, data) -> com.diagramador.notifications.PushSender.Result.RETRY);
+        assertThat(retry.process()).isGreaterThanOrEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select attempts from diagrammer.push_outbox where merge_request_id = ? and recipient_id = ?",
+                Integer.class, request, ownerId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(pending, Long.class, request, ownerId)).isEqualTo(1L);
+        assertThat(retry.process()).isZero(); // backoff keeps it out of the next poll
+
+        jdbcTemplate.update("update diagrammer.push_outbox set next_attempt_at = now() where merge_request_id = ? and recipient_id = ?", request, ownerId);
+        var sent = new java.util.ArrayList<Map<String, String>>();
+        var ok = new com.diagramador.notifications.PushOutboxProcessor(jdbcTemplate, (t, title, body, data) -> {
+            sent.add(data);
+            return com.diagramador.notifications.PushSender.Result.SENT;
+        });
+        ok.process();
+        assertThat(jdbcTemplate.queryForObject(pending, Long.class, request, ownerId)).isZero();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0)).containsEntry("mergeRequestId", id).containsEntry("type", "REVIEW_CHANGES")
+                .doesNotContainKey("message");
+
+        jdbcTemplate.update("update diagrammer.push_outbox set delivered_at = null, next_attempt_at = now() where merge_request_id = ? and recipient_id = ?", request, ownerId);
+        new com.diagramador.notifications.PushOutboxProcessor(jdbcTemplate,
+                (t, title, body, data) -> com.diagramador.notifications.PushSender.Result.INVALID_TOKEN).process();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from diagrammer.push_device where user_id = ?", Long.class, ownerId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(pending, Long.class, request, ownerId)).isZero();
     }
 
     private JsonNode read(MvcResult result) throws Exception {

@@ -29,6 +29,23 @@ class PushDeviceApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void unregisterRemovesOnlyTheCallersOwnDevice() throws Exception {
+        String user = "push-" + UUID.randomUUID();
+        String other = "push-" + UUID.randomUUID();
+        byte[] body = json.writeValueAsBytes(Map.of("token", "synthetic-" + UUID.randomUUID()));
+        mvc.perform(authorizedAs(user, post("/push/devices").contentType(MediaType.APPLICATION_JSON).content(body)))
+                .andExpect(status().isNoContent());
+        mvc.perform(authorizedAs(other, org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/push/devices")
+                .contentType(MediaType.APPLICATION_JSON).content(body))).andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("select count(*) from diagrammer.push_device where user_id = ?",
+                Long.class, userIdFor(user))).isEqualTo(1L);
+        mvc.perform(authorizedAs(user, org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/push/devices")
+                .contentType(MediaType.APPLICATION_JSON).content(body))).andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("select count(*) from diagrammer.push_device where user_id = ?",
+                Long.class, userIdFor(user))).isZero();
+    }
+
+    @Test
     void registrationRequiresUserAndPersistsOnlyValidToken() throws Exception {
         String user = "push-" + UUID.randomUUID();
         String token = "synthetic-" + UUID.randomUUID();
