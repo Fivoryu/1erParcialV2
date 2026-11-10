@@ -201,6 +201,23 @@ public class VcsMergeRequestService {
                     .setParameter("recipient", id)
                     .executeUpdate();
         });
+        // By default the project creator and its owners are also told, except whoever opened the request.
+        entityManager.createNativeQuery("""
+                INSERT INTO diagrammer.push_outbox (project_id, merge_request_id, recipient_id, event_type)
+                SELECT :project, :request, d.recipient, 'REQUEST_OPENED' FROM (
+                    SELECT owner_user_id AS recipient FROM diagrammer.project WHERE project_id = :project
+                    UNION
+                    SELECT user_id FROM diagrammer.project_member
+                     WHERE project_id = :project AND status = 'ACTIVE' AND role = 'OWNER'
+                ) d
+                WHERE d.recipient <> :author
+                  AND d.recipient NOT IN (SELECT recipient_id FROM diagrammer.push_outbox
+                                           WHERE merge_request_id = :request AND event_type = 'REQUEST_OPENED')
+                """)
+                .setParameter("project", managedModel.getProject().getId())
+                .setParameter("request", saved.getId())
+                .setParameter("author", author.getId())
+                .executeUpdate();
         return resource(saved);
     }
 

@@ -204,6 +204,37 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void openedRequestAlsoNotifiesProjectCreatorAndOwnersButNotTheOpener() throws Exception {
+        String creator = username("default-creator");
+        UUID projectId = createProject(creator);
+        String admin = username("default-admin");
+        bearer(admin);
+        addMembership(admin, projectId, ProjectMemberRole.OWNER);
+        String opener = username("default-opener");
+        bearer(opener);
+        addMembership(opener, projectId, ProjectMemberRole.EDITOR);
+        String reviewer = username("default-reviewer");
+        bearer(reviewer);
+        addMembership(reviewer, projectId, ProjectMemberRole.EDITOR);
+        String bystander = username("default-bystander");
+        bearer(bystander);
+        addMembership(bystander, projectId, ProjectMemberRole.EDITOR);
+        getJson(creator, "/projects/{projectId}/vcs/status", projectId);
+        postBody(creator, "/projects/{projectId}/vcs/branches", projectId,
+                Map.of("name", "feature", "fromBranch", "main"), 201);
+        JsonNode opened = postBody(opener, "/projects/{projectId}/vcs/merge-requests", projectId,
+                Map.of("sourceBranch", "feature", "targetBranch", "main", "title", "Review",
+                        "reviewerIds", List.of(userIdFor(reviewer))), 201);
+        UUID request = UUID.fromString(opened.path("mergeRequestId").asText());
+        String count = "select count(*) from diagrammer.push_outbox where merge_request_id = ? and recipient_id = ? and event_type = 'REQUEST_OPENED'";
+        assertThat(jdbcTemplate.queryForObject(count, Long.class, request, userIdFor(reviewer))).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(count, Long.class, request, userIdFor(creator))).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(count, Long.class, request, userIdFor(admin))).isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(count, Long.class, request, userIdFor(opener))).isZero();
+        assertThat(jdbcTemplate.queryForObject(count, Long.class, request, userIdFor(bystander))).isZero();
+    }
+
+    @Test
     void selectedRecipientsPersistAndAnotherEditorMayApprove() throws Exception {
         String owner = username("recipients-owner");
         UUID projectId = createProject(owner);
@@ -664,6 +695,8 @@ class VcsMergeApprovalApiTest extends AuthenticatedApiTest {
                 .content(objectMapper.writeValueAsBytes(Map.of("message", "Please revise"))))).andExpect(status().isOk());
         UUID ownerId = userIdFor(owner);
         UUID request = UUID.fromString(id);
+        // Other tests leave pending events in the shared outbox; keep this batch to our own request.
+        jdbcTemplate.update("update diagrammer.push_outbox set delivered_at = now() where merge_request_id <> ? and delivered_at is null", request);
         jdbcTemplate.update("insert into diagrammer.push_device (user_id, token, token_hash) values (?, 'tok-live', repeat('a', 64))", ownerId);
         String pending = "select count(*) from diagrammer.push_outbox where merge_request_id = ? and recipient_id = ? and delivered_at is null";
 
