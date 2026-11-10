@@ -70,6 +70,17 @@ class LlamaCppAssistantProviderPromptTest {
     }
 
     @Test
+    void theChatPromptAddressesTheAskerByNameAndAllowsGeneralTheory() {
+        String prompt = LlamaCppAssistantProvider.CHAT_SYSTEM_PROMPT;
+        // Who wrote each message travels as "[Name]: ..." and the model must answer to that person by name.
+        assertThat(prompt).contains("[Nombre]:", "dirigite por su nombre", "Atendiendo a tu consulta");
+        // Conceptual course questions are answered from general knowledge, not refused for lack of context.
+        assertThat(prompt).contains("conocimiento general", "entidad débil", "atributo derivado");
+        // Facts about the diagram itself still come only from the provided context.
+        assertThat(prompt).contains("solo en el contexto provisto");
+    }
+
+    @Test
     void theChatPromptKnowsRelationshipsMayCarryAStereotype() {
         assertThat(LlamaCppAssistantProvider.CHAT_SYSTEM_PROMPT).contains("\"stereotype\"", "DEPENDENCY");
     }
