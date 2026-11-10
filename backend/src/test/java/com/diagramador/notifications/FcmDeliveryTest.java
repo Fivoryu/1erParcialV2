@@ -53,7 +53,10 @@ class FcmDeliveryTest {
         server.start();
         try {
             String base = "http://127.0.0.1:" + server.getAddress().getPort();
-            var sender = new FcmPushSender(base, "sw1", new ServiceAccountTokenProvider(key, base + "/token"));
+            var sender = new FcmPushSender(base, "sw1",
+                    new ServiceAccountTokenProvider(() -> {
+                        try { return Files.readString(key); } catch (java.io.IOException e) { throw new java.io.UncheckedIOException(e); }
+                    }, base + "/token"));
             assertThat(sender.send("live", "t", "b", Map.of("k", "v"))).isEqualTo(PushSender.Result.SENT);
             assertThat(sender.send("dead", "t", "b", Map.of("k", "v"))).isEqualTo(PushSender.Result.INVALID_TOKEN);
             assertThat(tokenCalls.get()).isEqualTo(1);

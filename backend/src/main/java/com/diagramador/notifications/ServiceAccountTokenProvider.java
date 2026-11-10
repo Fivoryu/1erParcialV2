@@ -28,13 +28,24 @@ public class ServiceAccountTokenProvider implements Supplier<String> {
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
-    private final Path file;
+    private final Supplier<String> keyJson;
     private final String tokenUriOverride;
     private String cached;
     private Instant expiresAt = Instant.EPOCH;
 
     public ServiceAccountTokenProvider(Path file, String tokenUriOverride) {
-        this.file = file;
+        this((Supplier<String>) () -> {
+            try {
+                return Files.readString(file);
+            } catch (java.io.IOException exception) {
+                throw new java.io.UncheckedIOException(exception);
+            }
+        }, tokenUriOverride);
+    }
+
+    /** The key content comes from an environment variable or secret store instead of a file. */
+    public ServiceAccountTokenProvider(Supplier<String> keyJson, String tokenUriOverride) {
+        this.keyJson = keyJson;
         this.tokenUriOverride = tokenUriOverride;
     }
 
@@ -43,7 +54,7 @@ public class ServiceAccountTokenProvider implements Supplier<String> {
     public synchronized String get() {
         if (cached != null && Instant.now().isBefore(expiresAt.minusSeconds(60))) return cached;
         try {
-            JsonNode key = json.readTree(Files.readString(file));
+            JsonNode key = json.readTree(keyJson.get());
             String tokenUri = tokenUriOverride == null || tokenUriOverride.isBlank()
                     ? key.path("token_uri").asText() : tokenUriOverride;
             String assertion = assertion(key, tokenUri);
