@@ -821,6 +821,8 @@ function AttributeProperties({
         <select id="attribute-visibility" onChange={(event) => setVisibility(event.target.value)} value={visibility}>
           <option value="PUBLIC">Público (+)</option>
           <option value="PRIVATE">Privado (-)</option>
+          <option value="PROTECTED">Protegido (#)</option>
+          <option value="PACKAGE">Paquete (~)</option>
         </select>
 
         <label className="field-label" htmlFor="attribute-multiplicity">Multiplicidad</label>
@@ -990,6 +992,8 @@ function OperationProperties({
         <select id="operation-visibility" onChange={(event) => setVisibility(event.target.value)} value={visibility}>
           <option value="PUBLIC">Público (+)</option>
           <option value="PRIVATE">Privado (-)</option>
+          <option value="PROTECTED">Protegido (#)</option>
+          <option value="PACKAGE">Paquete (~)</option>
         </select>
 
         <label className="property-check">

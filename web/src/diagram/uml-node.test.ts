@@ -362,7 +362,7 @@ describe('UML class node presentation', () => {
     expect(markup).toContain('Información');
   });
 
-  it('does not offer attribute values the backend rejects', () => {
+  it('offers only attribute values the backend accepts', () => {
     const selected = modelFixture.classifiers[0]!;
     const markup = renderToStaticMarkup(createElement(PropertiesPanel, {
       model: modelFixture,
@@ -375,8 +375,8 @@ describe('UML class node presentation', () => {
     expect(markup).toContain('Público (+)');
     expect(markup).toContain('Privado (-)');
     expect(markup).toContain('0..1');
-    expect(markup).not.toContain('Protegido');
-    expect(markup).not.toContain('Paquete');
+    expect(markup).toContain('Protegido (#)');
+    expect(markup).toContain('Paquete (~)');
     expect(markup).not.toContain('RANGE');
     expect(markup).not.toContain('Atributo estático');
     expect(markup).not.toContain('Atributo abstracto');

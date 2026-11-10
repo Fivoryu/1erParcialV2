@@ -218,17 +218,30 @@ class T3aCommandHandlersTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void acceptsAllFourUmlVisibilityLevelsOnAttributes() {
+        Fixture fixture = fixture();
+        UUID classifierId = UUID.randomUUID();
+        assertAccepted(command(fixture, "classifier.create", 0,
+                Map.of("id", classifierId, "name", "C", "kind", "CLASS"), List.of()));
+
+        long revision = 1;
+        for (String visibility : List.of("PUBLIC", "PRIVATE", "PROTECTED", "PACKAGE")) {
+            assertAccepted(command(fixture, "attribute.add", revision, Map.of("id", UUID.randomUUID(),
+                    "name", "a" + visibility.toLowerCase(), "type", Map.of("primitiveName", "String"),
+                    "visibility", visibility), target("classifier", classifierId)));
+            revision++;
+        }
+    }
+
+    @Test
     void rejectedCasesNameTheBaselineConstructs() {
         Fixture fixture = fixture();
         UUID classifierId = UUID.randomUUID();
         assertAccepted(command(fixture, "classifier.create", 0, Map.of("id", classifierId, "name", "C", "kind", "CLASS"), List.of()));
 
         assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
-                "type", Map.of("primitiveName", "String"), "visibility", "PROTECTED"), target("classifier", classifierId)),
-                ErrorCode.PRECONDITION_FAILED, "BL-VIS-03");
-        assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
-                "type", Map.of("primitiveName", "String"), "visibility", "PACKAGE"), target("classifier", classifierId)),
-                ErrorCode.PRECONDITION_FAILED, "BL-VIS-04");
+                "type", Map.of("primitiveName", "String"), "visibility", "SECRET"), target("classifier", classifierId)),
+                ErrorCode.INVALID_PAYLOAD, "SECRET");
         assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
                 "type", Map.of("primitiveName", "String"), "multiplicity", "RANGE"), target("classifier", classifierId)),
                 ErrorCode.PRECONDITION_FAILED, "BL-REL-07", "GAP-05");

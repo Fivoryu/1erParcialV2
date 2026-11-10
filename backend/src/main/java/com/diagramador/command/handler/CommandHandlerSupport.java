@@ -184,13 +184,8 @@ public class CommandHandlerSupport {
         String value = payload.has(field) && !payload.get(field).isNull()
                 ? text(payload, field).toUpperCase(Locale.ROOT)
                 : defaultValue;
-        if (value.equals("PROTECTED")) {
-            precondition("Visibility PROTECTED is unsupported: BL-VIS-03 and GAP-06");
-        }
-        if (value.equals("PACKAGE")) {
-            precondition("Visibility PACKAGE is unsupported: BL-VIS-04 and GAP-06");
-        }
-        if (!value.equals("PUBLIC") && !value.equals("PRIVATE")) {
+        if (!value.equals("PUBLIC") && !value.equals("PRIVATE")
+                && !value.equals("PROTECTED") && !value.equals("PACKAGE")) {
             invalid("Unsupported visibility '" + value + "'");
         }
         return value;

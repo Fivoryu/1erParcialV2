@@ -65,6 +65,10 @@ export function formatVisibility(visibility: string): string {
       return '+';
     case 'PRIVATE':
       return '-';
+    case 'PROTECTED':
+      return '#';
+    case 'PACKAGE':
+      return '~';
     default:
       return '';
   }
