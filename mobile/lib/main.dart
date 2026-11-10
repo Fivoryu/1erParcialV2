@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'data/mnn_service.dart';
 import 'data/litert_agent_service.dart';
 import 'data/platform_service.dart';
+import 'data/push_registrar.dart';
 import 'data/secure_store.dart';
 import 'presentation/screens/login_screen.dart';
 import 'presentation/screens/merge_requests_screen.dart';
@@ -24,10 +25,9 @@ const _platformUrl = String.fromEnvironment(
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  final session = SessionController(
-    FlutterSecureStore(),
-    PlatformService(baseUri: Uri.parse(_platformUrl)),
-  );
+  final platform = PlatformService(baseUri: Uri.parse(_platformUrl));
+  final push = PushRegistrar(FirebasePushTokenSource(), platform);
+  final session = SessionController(FlutterSecureStore(), platform, push: push);
   final workspace = WorkspaceController(
     service: PlatformService(baseUri: Uri.parse(_platformUrl)),
     store: FlutterSecureStore(),
@@ -37,6 +37,7 @@ void main() {
   session.restore();
   runApp(
     DiagrammerApp(
+      push: push,
       session: session,
       workspace: workspace,
       chat: ChatController(
@@ -56,7 +57,9 @@ class DiagrammerApp extends StatefulWidget {
     required this.workspace,
     this.chat,
     this.platformService,
+    this.push,
   });
+  final PushRegistrar? push;
   final PlatformService? platformService;
   final SessionController session;
   final WorkspaceController workspace;
@@ -68,9 +71,42 @@ class DiagrammerApp extends StatefulWidget {
 class _DiagrammerAppState extends State<DiagrammerApp> {
   late final GoRouter _router;
   int? _boundModelEpoch;
+  Map<String, String>? _pendingPush;
+
   void _sessionChanged() {
     if (!widget.session.authenticated) widget.workspace.clear();
     _bindChat();
+    _drainPush();
+  }
+
+  /// Opens the merge request named by a tapped notification once the session is ready.
+  void _pushOpened(Map<String, String> data) {
+    if (!['REQUEST_OPENED', 'REVIEW_CHANGES'].contains(data['type'])) return;
+    if ((data['projectId'] ?? '').isEmpty || (data['mergeRequestId'] ?? '').isEmpty) return;
+    _pendingPush = data;
+    _drainPush();
+  }
+
+  Future<void> _drainPush() async {
+    final data = _pendingPush;
+    if (data == null || !widget.session.ready) return;
+    final session = widget.session.session;
+    if (session == null || session.isExpired) {
+      _pendingPush = null;
+      return;
+    }
+    _pendingPush = null;
+    try {
+      final workspace = widget.workspace;
+      if (workspace.project?.id != data['projectId']) {
+        if (workspace.projects.isEmpty) await workspace.loadProjects(session);
+        final matches = workspace.projects.where((p) => p.id == data['projectId']);
+        if (matches.isEmpty) return;
+        await workspace.selectProject(session, matches.first);
+      }
+      if (workspace.project?.id != data['projectId']) return;
+      _router.go('/merge-requests/${Uri.encodeComponent(data['mergeRequestId']!)}');
+    } catch (_) {}
   }
 
   void _bindChat() {
@@ -102,6 +138,7 @@ class _DiagrammerAppState extends State<DiagrammerApp> {
     widget.session.addListener(_sessionChanged);
     widget.workspace.addListener(_bindChat);
     _bindChat();
+    widget.push?.listenForOpens(_pushOpened);
     _router = GoRouter(
       initialLocation: '/backends',
       refreshListenable: Listenable.merge([widget.session, widget.workspace]),

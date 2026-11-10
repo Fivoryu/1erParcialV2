@@ -1,11 +1,14 @@
 import 'package:flutter/foundation.dart';
 
 import '../data/platform_service.dart';
+import '../data/push_registrar.dart';
 import '../data/secure_store.dart';
 import '../domain/models.dart';
 
 class SessionController extends ChangeNotifier {
-  SessionController(this._store, this._service);
+  SessionController(this._store, this._service, {PushRegistrar? push})
+      : _push = push;
+  final PushRegistrar? _push;
   final SecureStore _store;
   final PlatformService _service;
   UserSession? _session;
@@ -21,6 +24,7 @@ class SessionController extends ChangeNotifier {
     final saved = await _store.readSession();
     if (saved != null && !saved.isExpired) {
       _session = saved;
+      _push?.register(saved.token);
     } else if (saved != null) {
       await _store.clearAll();
     }
@@ -38,6 +42,7 @@ class SessionController extends ChangeNotifier {
       _session = result;
       await _store.saveSession(result);
       if (epoch != _epoch) return;
+      _push?.register(result.token);
     } on PlatformException catch (error) {
       if (epoch != _epoch) return;
       _error = error.message;
@@ -54,6 +59,7 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
     await _store.clearAll();
     if (current != null) {
+      await _push?.unregister(current.token);
       try {
         await _service.logout(current.token);
       } catch (_) {}

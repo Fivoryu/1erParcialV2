@@ -70,6 +70,10 @@ public class VcsAccessService {
     }
 
     public void requireRead(UUID projectId) {
+        if (!currentUserContext.isOperator()
+                && projectMemberRepository.isPlatformAdmin(currentUserContext.require().userId())) {
+            return;
+        }
         requireAction(projectId, VcsAction.VIEW);
     }
 

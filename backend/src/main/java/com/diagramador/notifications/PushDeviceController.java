@@ -13,6 +13,7 @@ import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -42,6 +43,15 @@ public class PushDeviceController {
             throw new ApiException(HttpStatus.CONFLICT, "DEVICE_ALREADY_REGISTERED",
                     "The device is already registered.", List.of(), null);
         }
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Removes only the caller's own registration; an unknown or foreign token is a silent no-op. */
+    @DeleteMapping("/push/devices")
+    public ResponseEntity<Void> unregister(@Valid @RequestBody Registration request) {
+        var user = currentUser.require();
+        jdbc.update("DELETE FROM diagrammer.push_device WHERE token_hash = ? AND user_id = ? AND token = ?",
+                tokenHash(request.token()), user.userId(), request.token());
         return ResponseEntity.noContent().build();
     }
 
