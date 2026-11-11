@@ -30,6 +30,11 @@ function upper(value: unknown, fallback: string): string {
   return text(value)?.toUpperCase() ?? fallback;
 }
 
+/** A RANGE bound from a proposal argument: only a whole number counts, anything else is unset. */
+function bound(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) ? value : null;
+}
+
 /**
  * Projects the supported prefix of a proposal without changing the live model, mirroring how the
  * backend applies a plan: steps run in order, a member that already exists is skipped, and the
@@ -171,6 +176,7 @@ export function projectProposalPreview(model: ModelResource, operations: readonl
         if (operation.type === 'attribute.add') {
           owner.attributes.push({
             id, name, kind: 'ATTRIBUTE', visibility, multiplicity: upper(args['multiplicity'], 'ONE'),
+            lowerBound: bound(args['lowerBound']), upperBound: bound(args['upperBound']),
             defaultValue: text(args['defaultValue']), typeReferenceId: null,
             type: typeName(args['type']) ?? 'String', ordinal: owner.attributes.length,
           });
@@ -190,6 +196,8 @@ export function projectProposalPreview(model: ModelResource, operations: readonl
         if (typeName(args['type'])) changes.type = typeName(args['type']);
         if (text(args['visibility'])) changes.visibility = upper(args['visibility'], '');
         if (text(args['multiplicity'])) changes.multiplicity = upper(args['multiplicity'], '');
+        if (args['lowerBound'] !== undefined) changes.lowerBound = bound(args['lowerBound']);
+        if (args['upperBound'] !== undefined) changes.upperBound = bound(args['upperBound']);
         if (text(args['defaultValue'])) changes.defaultValue = text(args['defaultValue']);
         if (!attribute || Object.keys(changes).length === 0) {
           return false;
@@ -254,8 +262,11 @@ export function projectProposalPreview(model: ModelResource, operations: readonl
           const values = update as Record<string, unknown>;
           if (values['role'] != null) end.role = String(values['role']);
           if (values['multiplicity'] != null) end.multiplicity = String(values['multiplicity']).toUpperCase();
+          if (values['lowerBound'] !== undefined) end.lowerBound = bound(values['lowerBound']);
+          if (values['upperBound'] !== undefined) end.upperBound = bound(values['upperBound']);
           if (values['navigability'] != null) end.navigability = String(values['navigability']).toUpperCase();
-          changed = changed || ['role', 'multiplicity', 'navigability'].some((field) => values[field] != null);
+          changed = changed
+            || ['role', 'multiplicity', 'navigability', 'lowerBound', 'upperBound'].some((field) => values[field] != null);
         }
         if (!changed) {
           return false;
