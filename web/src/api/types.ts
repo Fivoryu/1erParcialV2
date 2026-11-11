@@ -398,6 +398,8 @@ export interface ClassifierResource {
   /** The effective store and why; absent for kinds that are not persisted (interfaces, enumerations, packages). */
   store?: PersistenceStore;
   storeReason?: string;
+  /** One stereotype name from the fixed list (e.g. ENTITY); null or absent when none. */
+  stereotype?: string | null;
 }
 
 export interface AttributeResource {
@@ -413,6 +415,7 @@ export interface AttributeResource {
   typeReferenceId: Uuid | null;
   type: string | null;
   ordinal: number;
+  stereotype?: string | null;
 }
 
 export interface OperationResource {
@@ -425,6 +428,7 @@ export interface OperationResource {
   returnType: string | null;
   ordinal: number;
   parameters: ParameterResource[];
+  stereotype?: string | null;
 }
 
 export interface ParameterResource {

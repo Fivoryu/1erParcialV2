@@ -138,6 +138,7 @@ export function pasteClipboard(
         name: copyName(original.name, takenNames),
         kind: original.kind,
         namespaceId: keepsNamespace ? original.namespaceId : null,
+        ...(original.stereotype ? { stereotype: original.stereotype } : {}),
       },
     }));
     if (id) {
@@ -194,6 +195,7 @@ export function pasteClipboard(
             ...rangeBounds(attribute),
             defaultValue: attribute.defaultValue,
             ordinal: attribute.ordinal,
+            ...(attribute.stereotype ? { stereotype: attribute.stereotype } : {}),
           },
       });
     }
@@ -208,6 +210,7 @@ export function pasteClipboard(
           isAbstract: operation.isAbstract,
           isStatic: operation.isStatic,
           ordinal: operation.ordinal,
+          ...(operation.stereotype ? { stereotype: operation.stereotype } : {}),
         },
       }));
       if (!operationId) {

@@ -146,6 +146,11 @@ export function orderedOperations(classifier: ClassifierResource): OperationReso
   return [...classifier.operations].sort((left, right) => left.ordinal - right.ordinal);
 }
 
+/** A member's stereotype goes before the visibility symbol; nothing at all when it has none. */
+function memberStereotypePrefix(stereotype: string | null | undefined): string {
+  return stereotype ? `${formatStereotype(stereotype)} ` : '';
+}
+
 function formatType(type: string | null): string {
   return type ? `: ${type}` : '';
 }
@@ -154,7 +159,7 @@ export function formatAttribute(attribute: AttributeResource): string {
   const type = formatType(attribute.type);
   const bounds = formatBounds(attribute.multiplicity, ' [', attribute);
   const defaultValue = attribute.defaultValue === null ? '' : ` = ${attribute.defaultValue}`;
-  return `${formatVisibility(attribute.visibility)} ${attribute.name}${type}${bounds}${defaultValue}`;
+  return `${memberStereotypePrefix(attribute.stereotype)}${formatVisibility(attribute.visibility)} ${attribute.name}${type}${bounds}${defaultValue}`;
 }
 
 function formatParameter(parameter: ParameterResource): string {
@@ -168,7 +173,7 @@ export function formatOperation(operation: OperationResource): string {
     .map(formatParameter)
     .join(', ');
   const returnType = formatType(operation.returnType);
-  return `${formatVisibility(operation.visibility)} ${operation.name}(${parameters})${returnType}`;
+  return `${memberStereotypePrefix(operation.stereotype)}${formatVisibility(operation.visibility)} ${operation.name}(${parameters})${returnType}`;
 }
 
 export function operationNameIsAbstract(operation: OperationResource): boolean {

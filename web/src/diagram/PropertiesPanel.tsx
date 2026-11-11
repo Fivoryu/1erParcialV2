@@ -22,7 +22,13 @@ import {
   buildRelationshipUpdateRequest,
   buildStyleSetRequest,
   DEFAULT_ROUTING,
+  ATTRIBUTE_STEREOTYPES,
+  buildClassifierSetStereotypeRequest,
+  CLASSIFIER_STEREOTYPES,
+  classifierAcceptsStereotype,
   DEPENDENCY_STEREOTYPES,
+  OPERATION_STEREOTYPES,
+  STEREOTYPE_LABELS,
   mergeViewStyleUpdate,
   RELATIONSHIP_KINDS,
   type ConstraintOwnerType,
@@ -192,6 +198,45 @@ export function dispatchStoreSelection(
     classifierId,
     selectedStore === 'SQL' || selectedStore === 'DOCUMENT' ? selectedStore : null,
   ));
+}
+
+/** A select over a fixed stereotype list; users never type stereotype syntax. Empty value means none. */
+function StereotypeSelect({
+  id,
+  options,
+  value,
+  onChange,
+}: {
+  id: string;
+  options: readonly string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <>
+      <label className="field-label" htmlFor={id}>Estereotipo</label>
+      <select id={id} onChange={(event) => onChange(event.target.value)} value={value}>
+        <option value="">(ninguno)</option>
+        {options.map((name) => (
+          <option key={name} value={name}>{STEREOTYPE_LABELS[name] ?? name}</option>
+        ))}
+      </select>
+    </>
+  );
+}
+
+/** The payload fragment of a member save: only a changed stereotype is sent, and none is an explicit null. */
+export function stereotypeChange(stored: string | null | undefined, selected: string): { stereotype?: string | null } {
+  const next = selected || null;
+  return next === (stored ?? null) ? {} : { stereotype: next };
+}
+
+export function dispatchStereotypeSelection(
+  onCommand: PropertiesPanelProps['onCommand'],
+  classifierId: string,
+  selected: string,
+): void {
+  onCommand(buildClassifierSetStereotypeRequest(classifierId, selected || null));
 }
 
 /** Lets the user fix where a class is stored, or hand the choice back to the automatic classifier. */
@@ -517,6 +562,14 @@ function ClassifierProperties({
             />
             <span>Clase abstracta</span>
           </label>
+        )}
+        {classifierAcceptsStereotype(classifier.kind) && (
+          <StereotypeSelect
+            id="classifier-stereotype"
+            onChange={(value) => dispatchStereotypeSelection(onCommand, classifier.id, value)}
+            options={CLASSIFIER_STEREOTYPES}
+            value={classifier.stereotype ?? ''}
+          />
         )}
         {canBeAbstract && <StoreField classifier={classifier} onCommand={onCommand} />}
       </section>
@@ -849,13 +902,15 @@ function AttributeProperties({
   const [visibility, setVisibility] = useState(attribute.visibility);
   const [multiplicity, setMultiplicity] = useState(multiplicityDraft(attribute));
   const [defaultValue, setDefaultValue] = useState(attribute.defaultValue ?? '');
+  const [stereotype, setStereotype] = useState(attribute.stereotype ?? '');
 
   useEffect(() => {
     setType(attribute.type ?? '');
     setVisibility(attribute.visibility);
     setMultiplicity(multiplicityDraft(attribute));
     setDefaultValue(attribute.defaultValue ?? '');
-  }, [attribute.id, attribute.type, attribute.visibility, attribute.multiplicity,
+    setStereotype(attribute.stereotype ?? '');
+  }, [attribute.stereotype, attribute.id, attribute.type, attribute.visibility, attribute.multiplicity,
     attribute.lowerBound, attribute.upperBound, attribute.defaultValue]);
 
   const multiplicityInvalid = multiplicityError(multiplicity) !== null;
@@ -875,6 +930,7 @@ function AttributeProperties({
         multiplicity: multiplicity.kind,
         ...rangeBoundsPayload(multiplicity.kind, multiplicity.lower, multiplicity.upper),
         defaultValue: defaultValue === '' ? null : defaultValue,
+        ...stereotypeChange(attribute.stereotype, stereotype),
       },
     });
   }
@@ -913,6 +969,8 @@ function AttributeProperties({
           <option value="PROTECTED">Protegido (#)</option>
           <option value="PACKAGE">Paquete (~)</option>
         </select>
+
+        <StereotypeSelect id="attribute-stereotype" onChange={setStereotype} options={ATTRIBUTE_STEREOTYPES} value={stereotype} />
 
         <MultiplicityFields draft={multiplicity} onChange={setMultiplicity} prefix="attribute" />
 
@@ -1030,13 +1088,15 @@ function OperationProperties({
   const [visibility, setVisibility] = useState(operation.visibility);
   const [isAbstract, setIsAbstract] = useState(operation.isAbstract);
   const [isStatic, setIsStatic] = useState(operation.isStatic);
+  const [stereotype, setStereotype] = useState(operation.stereotype ?? '');
 
   useEffect(() => {
     setReturnType(operation.returnType ?? '');
     setVisibility(operation.visibility);
     setIsAbstract(operation.isAbstract);
     setIsStatic(operation.isStatic);
-  }, [operation.id, operation.returnType, operation.visibility, operation.isAbstract, operation.isStatic]);
+    setStereotype(operation.stereotype ?? '');
+  }, [operation.stereotype, operation.id, operation.returnType, operation.visibility, operation.isAbstract, operation.isStatic]);
 
   function addParameter() {
     onCommand(buildParameterAddRequest(operation.id, {
@@ -1057,6 +1117,7 @@ function OperationProperties({
         visibility,
         isAbstract,
         isStatic,
+        ...stereotypeChange(operation.stereotype, stereotype),
       },
     });
   }
@@ -1081,6 +1142,8 @@ function OperationProperties({
           <option value="PROTECTED">Protegido (#)</option>
           <option value="PACKAGE">Paquete (~)</option>
         </select>
+
+        <StereotypeSelect id="operation-stereotype" onChange={setStereotype} options={OPERATION_STEREOTYPES} value={stereotype} />
 
         <label className="property-check">
           <input checked={isAbstract} onChange={(event) => setIsAbstract(event.target.checked)} type="checkbox" />

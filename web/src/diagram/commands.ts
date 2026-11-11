@@ -52,6 +52,58 @@ export const DEPENDENCY_STEREOTYPES = [
 ] as const;
 export type DependencyStereotype = (typeof DEPENDENCY_STEREOTYPES)[number];
 
+/** Stereotypes a class or abstract class may carry; interfaces, enumerations and packages offer none. */
+export const CLASSIFIER_STEREOTYPES = [
+  'ENTITY',
+  'BOUNDARY',
+  'CONTROL',
+  'SERVICE',
+  'UTILITY',
+  'TYPE',
+  'AUXILIARY',
+  'FOCUS',
+  'IMPLEMENTATION_CLASS',
+  'METACLASS',
+  'SIGNAL',
+] as const;
+export const OPERATION_STEREOTYPES = ['CREATE', 'DESTROY', 'QUERY'] as const;
+/** Attribute stereotypes are modeling conventions, not UML-standard ones. */
+export const ATTRIBUTE_STEREOTYPES = ['ID', 'UNIQUE', 'READONLY'] as const;
+
+/** Spanish label plus the UML term, as the select shows it. */
+export const STEREOTYPE_LABELS: Record<string, string> = {
+  ENTITY: 'Entidad «entity»',
+  BOUNDARY: 'Frontera «boundary»',
+  CONTROL: 'Control «control»',
+  SERVICE: 'Servicio «service»',
+  UTILITY: 'Utilidad «utility»',
+  TYPE: 'Tipo «type»',
+  AUXILIARY: 'Auxiliar «auxiliary»',
+  FOCUS: 'Foco «focus»',
+  IMPLEMENTATION_CLASS: 'Clase de implementación «implementation_class»',
+  METACLASS: 'Metaclase «metaclass»',
+  SIGNAL: 'Señal «signal»',
+  CREATE: 'Crear «create»',
+  DESTROY: 'Destruir «destroy»',
+  QUERY: 'Consulta «query»',
+  ID: 'Identificador «id»',
+  UNIQUE: 'Único «unique»',
+  READONLY: 'Solo lectura «readonly»',
+};
+
+export function classifierAcceptsStereotype(kind: string): boolean {
+  return kind === 'CLASS' || kind === 'ABSTRACT_CLASS';
+}
+
+/** A null stereotype clears the one the classifier has. */
+export function buildClassifierSetStereotypeRequest(classifierId: string, stereotype: string | null): ModelCommandRequest {
+  return {
+    type: 'classifier.stereotype.set',
+    targets: [{ scope: 'classifier', id: classifierId }],
+    payload: { stereotype },
+  };
+}
+
 export interface ModelCommandRequest {
   type: string;
   targets?: CommandTarget[];
@@ -165,6 +217,7 @@ export function buildClassifierCreateEnvelope(
   model: ModelResource,
   kind: ClassifierKind,
   uuidFactory?: UuidFactory,
+  stereotype?: string | null,
 ): OperationEnvelope {
   return buildOperationEnvelope({
     type: 'classifier.create',
@@ -175,6 +228,7 @@ export function buildClassifierCreateEnvelope(
       name: nextClassifierName(model, kind),
       kind,
       namespaceId: null,
+      ...(stereotype ? { stereotype } : {}),
     },
   }, uuidFactory);
 }
@@ -411,6 +465,24 @@ function boundsUpdate(payload: Record<string, unknown>): { lowerBound?: number |
   };
 }
 
+/** A stereotype in a payload: a name, an explicit null (clears), or undefined when the key is absent. */
+function payloadStereotype(payload: Record<string, unknown>): string | null | undefined {
+  const value = payload.stereotype;
+  return typeof value === 'string' ? value : value === null ? null : undefined;
+}
+
+/** A created element carries a stereotype only when one was chosen. */
+function newStereotype(payload: Record<string, unknown>): { stereotype?: string } {
+  const stereotype = payloadStereotype(payload);
+  return stereotype ? { stereotype } : {};
+}
+
+/** The stereotype an update carries: absent keeps the stored one, an explicit null clears it. */
+function stereotypeUpdate(payload: Record<string, unknown>): { stereotype?: string | null } {
+  const stereotype = payloadStereotype(payload);
+  return stereotype !== undefined ? { stereotype } : {};
+}
+
 function payloadBoolean(envelope: OperationEnvelope, key: string): boolean | null {
   const value = envelope.payload[key];
   return typeof value === 'boolean' ? value : null;
@@ -504,6 +576,7 @@ function addAttribute(model: ModelResource, envelope: OperationEnvelope, classif
     typeReferenceId: null,
     type: resolveTypeName(model, envelope.payload.type),
     ordinal: typeof envelope.payload.ordinal === 'number' ? envelope.payload.ordinal : 0,
+    ...newStereotype(envelope.payload),
   };
   return updateClassifier(model, classifierId, (classifier) => ({
     ...classifier,
@@ -527,6 +600,7 @@ function addOperation(model: ModelResource, envelope: OperationEnvelope, classif
     returnType: resolveTypeName(model, envelope.payload.returnType),
     ordinal: typeof envelope.payload.ordinal === 'number' ? envelope.payload.ordinal : 0,
     parameters: [],
+    ...newStereotype(envelope.payload),
   };
   return updateClassifier(model, classifierId, (classifier) => ({
     ...classifier,
@@ -686,8 +760,16 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
           attributes: [],
           operations: [],
           constraints: [],
+          ...newStereotype(envelope.payload),
         }],
       };
+    }
+    case 'classifier.stereotype.set': {
+      const stereotype = payloadStereotype(envelope.payload);
+      if (!classifierId || stereotype === undefined) {
+        return model;
+      }
+      return updateClassifier(model, classifierId, (classifier) => ({ ...classifier, stereotype }));
     }
     case 'classifier.rename': {
       if (!classifierId) {
@@ -759,6 +841,7 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             visibility: payloadString(envelope, 'visibility') ?? attribute.visibility,
             multiplicity: payloadString(envelope, 'multiplicity') ?? attribute.multiplicity,
             ...boundsUpdate(envelope.payload),
+            ...stereotypeUpdate(envelope.payload),
             defaultValue: Object.hasOwn(envelope.payload, 'defaultValue')
               ? payloadString(envelope, 'defaultValue')
               : attribute.defaultValue,
@@ -790,6 +873,7 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             visibility: payloadString(envelope, 'visibility') ?? operation.visibility,
             isAbstract: payloadBoolean(envelope, 'isAbstract') ?? operation.isAbstract,
             isStatic: payloadBoolean(envelope, 'isStatic') ?? operation.isStatic,
+            ...stereotypeUpdate(envelope.payload),
             returnType,
           };
         }),
