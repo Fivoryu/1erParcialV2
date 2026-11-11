@@ -95,6 +95,35 @@ class XmiExportApiTest extends AuthenticatedApiTest {
     }
 
     @Test
+    void anExportedDocumentImportedIntoAnotherProjectKeepsTheClassDiagram() throws Exception {
+        UUID source = createProject();
+        importFixture(source, Files.readAllBytes(FIXTURE));
+        ModelResource original = objectMapper.treeToValue(
+                getJson("/projects/{projectId}/model", source), ModelResource.class);
+        JsonNode exported = objectMapper.readTree(export(source));
+        byte[] document = Base64.getDecoder().decode(exported.path("fileBase64").asText());
+
+        UUID target = createProject();
+        importFixture(target, document);
+        ModelResource roundTrip = objectMapper.treeToValue(
+                getJson("/projects/{projectId}/model", target), ModelResource.class);
+
+        assertThat(original.classifiers()).isNotEmpty();
+        assertThat(roundTrip.classifiers()).extracting(c -> c.name() + ":" + c.kind() + ":" + c.isAbstract())
+                .containsExactlyInAnyOrderElementsOf(original.classifiers().stream()
+                        .map(c -> c.name() + ":" + c.kind() + ":" + c.isAbstract()).toList());
+        assertThat(roundTrip.classifiers().stream()
+                .flatMap(c -> c.attributes().stream().map(a -> c.name() + "." + a.name() + ":" + a.type()
+                        + ":" + a.multiplicity())).toList())
+                .containsExactlyInAnyOrderElementsOf(original.classifiers().stream()
+                        .flatMap(c -> c.attributes().stream().map(a -> c.name() + "." + a.name() + ":" + a.type()
+                                + ":" + a.multiplicity())).toList());
+        assertThat(roundTrip.relationships()).extracting(r -> r.kind() + ":" + r.name())
+                .containsExactlyInAnyOrderElementsOf(original.relationships().stream()
+                        .map(r -> r.kind() + ":" + r.name()).toList());
+    }
+
+    @Test
     void exportsAnEmptyModelWithAnEmptyMandatoryDiagram() throws Exception {
         UUID projectId = createProject();
         ModelResource source = objectMapper.treeToValue(
