@@ -42,8 +42,7 @@ public final class ModelResourceValidationAdapter {
                 MultiplicityKind multiplicity = multiplicity(attribute.multiplicity());
                 attributes.add(new AttributeElement(attribute.id(), classifier.id(),
                         reference(model, classifiersById, references, attribute.typeReferenceId(), attribute.type()),
-                        attribute.name(), multiplicity, attribute.ordinal(),
-                        lower(multiplicity, attribute.lowerBound()), upper(multiplicity, attribute.upperBound())));
+                        attribute.name(), multiplicity, attribute.ordinal()));
             }
             for (ModelResource.OperationResource operation : classifier.operations()) {
                 operations.add(new OperationElement(operation.id(), classifier.id(),
@@ -69,8 +68,7 @@ public final class ModelResourceValidationAdapter {
             for (ModelResource.RelationshipEndResource end : relationship.ends()) {
                 MultiplicityKind multiplicity = multiplicity(end.multiplicity());
                 ends.add(new RelationshipEndElement(end.id(), relationship.id(), end.classifierId(), end.ordinal(),
-                        end.role(), multiplicity, lower(multiplicity, end.lowerBound()),
-                        upper(multiplicity, end.upperBound())));
+                        end.role(), multiplicity));
             }
         }
         return new ModelValidationReadModel(classifiers, relationships, ends, attributes, operations, parameters,
@@ -103,11 +101,4 @@ public final class ModelResourceValidationAdapter {
     }
 
     /** Bounds persist only for RANGE, and a RANGE without a lower bound reads as 0..*, as the handler stores it. */
-    private static Integer lower(MultiplicityKind multiplicity, Integer lowerBound) {
-        return multiplicity == MultiplicityKind.RANGE ? (lowerBound == null ? 0 : lowerBound) : null;
-    }
-
-    private static Integer upper(MultiplicityKind multiplicity, Integer upperBound) {
-        return multiplicity == MultiplicityKind.RANGE ? upperBound : null;
-    }
 }
