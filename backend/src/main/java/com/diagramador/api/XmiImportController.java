@@ -10,6 +10,7 @@ import com.diagramador.xmi.XmiImportIssue;
 import com.diagramador.xmi.XmiImportMode;
 import com.diagramador.xmi.XmiRepair;
 import com.diagramador.xmi.XmiResolution;
+import com.diagramador.xmi.XmiResolutionSuggester;
 import com.diagramador.xmi.XmiImportService;
 import com.diagramador.xmi.XmiReadingResult;
 import com.diagramador.xmi.XmiReader;
@@ -41,15 +42,17 @@ public class XmiImportController {
     private final ProjectAuthorizationService authorizationService;
     private final CurrentUserContext currentUserContext;
     private final XmiImportService importService;
+    private final XmiResolutionSuggester suggester;
     private final XmiReader reader = new XmiReader();
 
     public XmiImportController(ProjectRepository projectRepository,
             ProjectAuthorizationService authorizationService, CurrentUserContext currentUserContext,
-            XmiImportService importService) {
+            XmiImportService importService, XmiResolutionSuggester suggester) {
         this.projectRepository = projectRepository;
         this.authorizationService = authorizationService;
         this.currentUserContext = currentUserContext;
         this.importService = importService;
+        this.suggester = suggester;
     }
 
     @PostMapping(path = "/preview", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -86,6 +89,31 @@ public class XmiImportController {
                     request.idempotencyKey(), request.resolutions());
             return new XmiImportResource(result.command().status().name(), result.command(), result.exchangeId(),
                     result.losses(), result.disagreements());
+        } catch (IllegalArgumentException exception) {
+            throw invalidPayload(exception.getMessage());
+        }
+    }
+
+    /**
+     * Proposes the RENAME / SKIP resolutions for the file's name collisions (local AI with a deterministic
+     * fallback). Read-only: nothing is written and the person confirms before sending them to the import.
+     */
+    @PostMapping(path = "/suggest-resolutions", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public XmiResolutionSuggester.Suggestion suggestResolutions(@PathVariable("projectId") UUID projectId,
+            @Valid @RequestBody XmiSuggestRequest request) {
+        requireProject(projectId);
+        authorizationService.requireEditor(projectId);
+        byte[] rawBytes = decode(request.fileBase64());
+        if (request.checksum() != null && !request.checksum().isBlank()
+                && !checksum(rawBytes).equalsIgnoreCase(request.checksum().strip())) {
+            throw invalidPayload("The supplied checksum does not match the uploaded bytes.");
+        }
+        try {
+            XmiImportService.XmiPreview base = importService.preview(projectId, rawBytes, request.mode(), List.of());
+            return suggester.suggest(base.parsed(), base.assessment().issues(),
+                    importService.existingModel(projectId, request.mode()),
+                    resolutions -> importService.preview(projectId, rawBytes, request.mode(), resolutions)
+                            .assessment().issues());
         } catch (IllegalArgumentException exception) {
             throw invalidPayload(exception.getMessage());
         }
@@ -145,6 +173,10 @@ public class XmiImportController {
         public XmiFileRequest {
             resolutions = resolutions == null ? List.of() : List.copyOf(resolutions);
         }
+    }
+
+    /** {@code checksum} is optional here (the preview computes it); when present it must match the bytes. */
+    public record XmiSuggestRequest(@NotBlank String fileBase64, String checksum, XmiImportMode mode) {
     }
 
     public record XmiImportRequest(

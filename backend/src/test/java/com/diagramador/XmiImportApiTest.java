@@ -1,6 +1,8 @@
 package com.diagramador;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,6 +12,7 @@ import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.ProjectMemberRole;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.persistence.ClassifierRepository;
+import com.diagramador.assistant.LlamaCppAssistantProvider;
 import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.xmi.XmiImportMode;
 import com.diagramador.xmi.XmiReader;
@@ -29,6 +32,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -45,6 +49,7 @@ class XmiImportApiTest extends AuthenticatedApiTest {
     @Autowired private ClassifierRepository classifierRepository;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @MockitoBean private LlamaCppAssistantProvider assistantProvider;
 
     @Test
     void previewReturnsMeasuredCountsAndLossesWithoutPersistingOrChangingTheModel() throws Exception {
@@ -299,6 +304,85 @@ class XmiImportApiTest extends AuthenticatedApiTest {
                 .contains("La importación no quedaría limpia", "DUPLICATE_MEMBER_NAME");
         assertThat(getJson("/projects/{projectId}/model", projectId)).isEqualTo(before);
         assertThat(exchangeCount(modelId)).isEqualTo(exchangesBefore);
+    }
+
+    @Test
+    void suggestResolutionsUsesAValidAiChoiceAndTheResultImportsClean() throws Exception {
+        UUID projectId = createProject();
+        byte[] bytes = fixtureBytes();
+        var collision = firstRootClassifier(bytes);
+        seedClassifier(projectId, collision.kind(), collision.name());
+        when(assistantProvider.chat(anyList())).thenReturn("[{\"subject\":\"" + collision.id()
+                + "\",\"action\":\"RENAME\",\"newName\":\"Nombre sugerido\"}]\nRazón: evita el nombre repetido.");
+
+        JsonNode suggestion = suggest(projectId, bytes, XmiImportMode.AGREGAR);
+
+        assertThat(suggestion.path("source").asText()).isEqualTo("AI");
+        assertThat(suggestion.path("resolutions")).hasSize(1);
+        assertThat(suggestion.at("/resolutions/0/newName").asText()).isEqualTo("Nombre sugerido");
+        List<Map<String, Object>> resolutions = List.of(Map.of("subject", suggestion.at("/resolutions/0/subject")
+                .asText(), "action", suggestion.at("/resolutions/0/action").asText(),
+                "newName", suggestion.at("/resolutions/0/newName").asText()));
+        JsonNode response = importFile(projectId, XmiImportMode.AGREGAR, bytes, sha256(bytes), resolutions);
+        assertThat(response.path("outcome").asText()).as("response: %s", response).isEqualTo("ACCEPTED");
+    }
+
+    @Test
+    void suggestResolutionsFallsBackToRulesWhenTheAiReturnsGarbageAndStillImportsClean() throws Exception {
+        UUID projectId = createProject();
+        byte[] bytes = fixtureBytes();
+        var collision = firstRootClassifier(bytes);
+        seedClassifier(projectId, collision.kind(), collision.name());
+        when(assistantProvider.chat(anyList())).thenReturn("no sé");
+
+        JsonNode suggestion = suggest(projectId, bytes, XmiImportMode.AGREGAR);
+
+        assertThat(suggestion.path("source").asText()).isEqualTo("RULES");
+        assertThat(suggestion.at("/resolutions/0/newName").asText()).isEqualTo(collision.name() + " (2)");
+        JsonNode preview = preview(projectId, bytes, XmiImportMode.AGREGAR, List.of(Map.of("subject",
+                suggestion.at("/resolutions/0/subject").asText(), "action", "RENAME",
+                "newName", suggestion.at("/resolutions/0/newName").asText())));
+        assertThat(preview.path("clean").asBoolean()).isTrue();
+    }
+
+    @Test
+    void suggestResolutionsWithoutCollisionsReturnsNothingFromRules() throws Exception {
+        UUID projectId = createProject();
+
+        JsonNode suggestion = suggest(projectId, fixtureBytes(), XmiImportMode.AGREGAR);
+
+        assertThat(suggestion.path("resolutions")).isEmpty();
+        assertThat(suggestion.path("source").asText()).isEqualTo("RULES");
+    }
+
+    @Test
+    void suggestResolutionsIsForbiddenForAViewerAndRejectsAWrongChecksum() throws Exception {
+        UUID projectId = createProject();
+        String viewer = "viewer-" + UUID.randomUUID();
+        bearer(viewer);
+        addMembership(viewer, projectId, ProjectMemberRole.VIEWER);
+        byte[] bytes = fixtureBytes();
+        Map<String, Object> request = Map.of("fileBase64", Base64.getEncoder().encodeToString(bytes),
+                "mode", XmiImportMode.AGREGAR);
+
+        mockMvc.perform(authorizedAs(viewer, post("/projects/{projectId}/xmi/suggest-resolutions", projectId)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(request))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(authorized(post("/projects/{projectId}/xmi/suggest-resolutions", projectId)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(Map.of(
+                        "fileBase64", Base64.getEncoder().encodeToString(bytes), "checksum", "0".repeat(64),
+                        "mode", XmiImportMode.AGREGAR)))))
+                .andExpect(status().isBadRequest());
+    }
+
+    private JsonNode suggest(UUID projectId, byte[] bytes, XmiImportMode mode) throws Exception {
+        MvcResult result = mockMvc.perform(authorized(post("/projects/{projectId}/xmi/suggest-resolutions",
+                projectId).contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(Map.of(
+                        "fileBase64", Base64.getEncoder().encodeToString(bytes), "checksum", sha256(bytes),
+                        "mode", mode)))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
     }
 
     private JsonNode preview(UUID projectId, byte[] bytes, XmiImportMode mode, List<Map<String, Object>> resolutions)

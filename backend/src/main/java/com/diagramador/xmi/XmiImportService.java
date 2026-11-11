@@ -141,6 +141,13 @@ public class XmiImportService {
         return new XmiPreview(parsed, assess(model, parsed, mode, resolutions));
     }
 
+    /** What AGREGAR would collide with in the stored model; empty for any other mode. */
+    public XmiImportValidator.ExistingModel existingModel(UUID projectId, XmiImportMode mode) {
+        UmlModel model = modelRepository.findByProjectId(projectId).orElse(null);
+        return mode == XmiImportMode.AGREGAR && model != null ? importHandler.existingModel(model)
+                : XmiImportValidator.ExistingModel.EMPTY;
+    }
+
     private Assessment assess(UmlModel model, XmiReadingResult parsed, XmiImportMode mode,
             List<XmiResolution> resolutions) {
         XmiRepair.Result resolved = resolutionApplier.apply(parsed, resolutions);
