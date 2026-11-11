@@ -88,7 +88,7 @@ export function findTarget(
   if (selector) {
     return document.querySelector<HTMLElement>(selector);
   }
-  if (!selection || selection.kind === 'relationship') {
+  if (!selection || selection.kind === 'relationship' || selection.kind === 'note') {
     return null;
   }
   // React Flow already exposes each node's id. Compare it as data, not as a CSS selector.

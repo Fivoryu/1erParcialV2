@@ -183,3 +183,12 @@ export function operationNameIsAbstract(operation: OperationResource): boolean {
 export function operationIsStatic(operation: OperationResource): boolean {
   return operation.isStatic;
 }
+
+/** First line of a note, shortened, so lists and labels can name it without the whole body. */
+export function noteSummary(body: string, maxLength = 40): string {
+  const firstLine = body.trim().split(/\r?\n/)[0] ?? '';
+  if (firstLine === '') {
+    return '(nota vacía)';
+  }
+  return firstLine.length > maxLength ? `${firstLine.slice(0, maxLength - 1)}…` : firstLine;
+}

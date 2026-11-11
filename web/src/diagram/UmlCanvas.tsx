@@ -12,10 +12,11 @@ import {
   useReactFlow,
   useViewport,
   type Connection,
+  type Edge,
   type EdgeTypes,
   type NodeTypes,
 } from '@xyflow/react';
-import type { ClassifierResource, ModelResource, OperationEnvelope } from '../api/types';
+import type { ClassifierResource, ModelResource, NoteResource, NoteTargetType, OperationEnvelope } from '../api/types';
 import type { GeometryUpdate, ModelCommandRequest, ClassifierKind, ViewStyleUpdate } from './commands';
 import {
   buildAnchorStyleRequest,
@@ -29,6 +30,12 @@ import { createGeometryCoalescer } from './geometry-coalescer';
 import { buildUnplacedGeometryRequests, type UnplacedGeometryAttempt } from './unplaced-geometry';
 import { autoAnchorSide, sideLanes, type AnchorSide, type RelationshipAnchor } from './orthogonal-routing';
 import { UmlClassNode, type ClassFlowNode, type ClassNodeData } from './UmlClassNode';
+import {
+  UmlNoteAnchorNode,
+  UmlNoteNode,
+  type NoteAnchorFlowNode,
+  type NoteFlowNode,
+} from './UmlNoteNode';
 import UmlRelationshipEdge, { type EdgePoint, type RelationshipEdgeData, type RelationshipFlowEdge } from './UmlRelationshipEdge';
 import type { CanvasSelection } from './selection';
 import ContextMenu from './ContextMenu';
@@ -91,7 +98,7 @@ const GRID_SIZE = 24;
 // loop can never spin forever: past the limit the fit is abandoned instead of yanking
 // the viewport at an arbitrary time.
 const MAX_FIT_FRAMES = 120;
-const nodeTypes: NodeTypes = { umlClass: UmlClassNode };
+const nodeTypes: NodeTypes = { umlClass: UmlClassNode, umlNote: UmlNoteNode, umlNoteAnchor: UmlNoteAnchorNode };
 const edgeTypes: EdgeTypes = { umlRelationship: UmlRelationshipEdge };
 
 interface UmlCanvasProps {
@@ -171,13 +178,19 @@ export function isNodeMeasured(
   return Boolean(node?.measured?.width && node.measured?.height);
 }
 
-function geometryPayload(model: ModelResource, classifierId: string, rectangle: NodeRectangle, zOrder = 0): GeometryUpdate | null {
+function geometryPayload(
+  model: ModelResource,
+  classifierId: string,
+  rectangle: NodeRectangle,
+  zOrder = 0,
+  targetType: 'CLASSIFIER' | 'NOTE' = 'CLASSIFIER',
+): GeometryUpdate | null {
   const view = defaultView(model);
   if (!view) {
     return null;
   }
   return {
-    targetType: 'CLASSIFIER',
+    targetType,
     viewId: view.id,
     targetId: classifierId,
     x: Math.round(rectangle.x),
@@ -425,8 +438,201 @@ export function buildFlowEdges(
   });
 }
 
+/** Every node the canvas can hold: classes, notes and the invisible anchors note links can end on. */
+export type CanvasNode = ClassFlowNode | NoteFlowNode | NoteAnchorFlowNode;
+
+export interface NoteLinkData extends Record<string, unknown> {
+  noteId: string;
+  targetType: NoteTargetType;
+  targetId: string;
+}
+
+/** The dashed edge from a note to one element it annotates. */
+export type NoteLinkEdge = Edge<NoteLinkData, 'straight'>;
+export type CanvasEdge = RelationshipFlowEdge | NoteLinkEdge;
+
+export function isClassNode(node: { type?: string | undefined }): node is ClassFlowNode {
+  return node.type === 'umlClass';
+}
+
+export function isNoteNode(node: { type?: string | undefined }): node is NoteFlowNode {
+  return node.type === 'umlNote';
+}
+
+const DEFAULT_NOTE_WIDTH = 200;
+const DEFAULT_NOTE_HEIGHT = 96;
+const NOTE_ANCHOR_PREFIX = 'note-anchor:';
+
+function noteGeometryFor(model: ModelResource, noteId: string) {
+  return defaultView(model)?.element_geometry.find((geometry) =>
+    geometry.targetType === 'NOTE' && geometry.targetId === noteId);
+}
+
+function noteRectangles(model: ModelResource): Map<string, NodeRectangle> {
+  const rectangles = new Map<string, NodeRectangle>();
+  (model.notes ?? []).forEach((note, index) => {
+    const geometry = noteGeometryFor(model, note.id);
+    rectangles.set(note.id, {
+      // Notes without saved geometry queue up in a column right of the class grid.
+      x: geometry?.x ?? 56 + 3 * 340,
+      y: geometry?.y ?? 56 + index * 168,
+      width: geometry?.w ?? DEFAULT_NOTE_WIDTH,
+      height: geometry?.h ?? DEFAULT_NOTE_HEIGHT,
+    });
+  });
+  return rectangles;
+}
+
+/** Where a note link ends: the class itself, or the middle of the line between a relationship's ends. */
+function noteLinkTargets(model: ModelResource): Map<string, { nodeId: string; rectangle: NodeRectangle }> {
+  const classes = classifierRectangles(model);
+  const targets = new Map<string, { nodeId: string; rectangle: NodeRectangle }>();
+  for (const [classifierId, rectangle] of classes) {
+    targets.set(`CLASSIFIER:${classifierId}`, { nodeId: classifierId, rectangle });
+  }
+  for (const relationship of model.relationships) {
+    const [first, second] = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal);
+    const from = first && classes.get(first.classifierId);
+    const to = second && classes.get(second.classifierId);
+    if (from && to) {
+      targets.set(`RELATIONSHIP:${relationship.id}`, {
+        nodeId: `${NOTE_ANCHOR_PREFIX}${relationship.id}`,
+        rectangle: {
+          x: (from.x + from.width / 2 + to.x + to.width / 2) / 2,
+          y: (from.y + from.height / 2 + to.y + to.height / 2) / 2,
+          width: 1,
+          height: 1,
+        },
+      });
+    }
+  }
+  return targets;
+}
+
+/** The note nodes, plus one anchor node for each relationship a note is attached to. */
+export function buildNoteNodes(
+  model: ModelResource,
+  existing: readonly CanvasNode[],
+  onSelectNote?: (noteId: string) => void,
+  onResizeGeometry?: (noteId: string, rectangle: NodeRectangle, zOrder: number) => void,
+): Array<NoteFlowNode | NoteAnchorFlowNode> {
+  const existingById = new Map(existing.map((node) => [node.id, node]));
+  const rectangles = noteRectangles(model);
+  const nodes: Array<NoteFlowNode | NoteAnchorFlowNode> = (model.notes ?? []).map((note) => {
+    const previous = existingById.get(note.id);
+    const geometry = noteGeometryFor(model, note.id);
+    const rectangle = rectangles.get(note.id)!;
+    const zIndex = geometry?.zOrder ?? previous?.zIndex;
+    return {
+      id: note.id,
+      type: 'umlNote' as const,
+      position: geometry ? { x: geometry.x, y: geometry.y } : previous?.position ?? { x: rectangle.x, y: rectangle.y },
+      width: rectangle.width,
+      style: { minHeight: rectangle.height },
+      ...(zIndex !== undefined ? { zIndex } : {}),
+      data: {
+        note,
+        ...(onSelectNote ? { onSelectNote } : {}),
+        ...(onResizeGeometry ? {
+          onResizeGeometry: (noteId: string, resized: NodeRectangle) =>
+            onResizeGeometry(noteId, resized, previous?.zIndex ?? geometry?.zOrder ?? 0),
+        } : {}),
+      },
+      ...(previous?.selected !== undefined ? { selected: previous.selected } : {}),
+      draggable: true,
+      deletable: false,
+    };
+  });
+  const targets = noteLinkTargets(model);
+  const anchored = new Set<string>();
+  for (const note of model.notes ?? []) {
+    for (const element of note.annotatedElements) {
+      const target = targets.get(`${element.targetType}:${element.targetId}`);
+      if (element.targetType === 'RELATIONSHIP' && target && !anchored.has(target.nodeId)) {
+        anchored.add(target.nodeId);
+        nodes.push({
+          id: target.nodeId,
+          type: 'umlNoteAnchor' as const,
+          position: { x: target.rectangle.x, y: target.rectangle.y },
+          width: 1,
+          height: 1,
+          data: { relationshipId: element.targetId },
+          draggable: false,
+          selectable: false,
+          connectable: false,
+          deletable: false,
+          focusable: false,
+        });
+      }
+    }
+  }
+  return nodes;
+}
+
+/** One dashed edge per note link whose element is still on the diagram. */
+export function buildNoteLinkEdges(model: ModelResource): NoteLinkEdge[] {
+  const rectangles = noteRectangles(model);
+  const targets = noteLinkTargets(model);
+  return (model.notes ?? []).flatMap((note: NoteResource) => note.annotatedElements.flatMap((element) => {
+    const target = targets.get(`${element.targetType}:${element.targetId}`);
+    const noteRectangle = rectangles.get(note.id);
+    if (!target || !noteRectangle) {
+      return [];
+    }
+    const handles = chooseHandles(noteRectangle, target.rectangle);
+    return [{
+      id: `note-link:${note.id}:${element.targetType}:${element.targetId}`,
+      source: note.id,
+      target: target.nodeId,
+      sourceHandle: handles.sourceHandle,
+      targetHandle: handles.targetHandle,
+      type: 'straight' as const,
+      data: { noteId: note.id, targetType: element.targetType, targetId: element.targetId },
+      style: { stroke: '#8b3c86', strokeWidth: 1.5, strokeDasharray: '6 4' },
+      className: 'uml-note-link',
+      selectable: true,
+      deletable: false,
+    }];
+  }));
+}
+
+/**
+ * Geometry for notes the canvas shows without saved geometry (they sit in the fallback column), once
+ * per note: what the user sees must reach the model, like it does for classes. A note whose node is
+ * not measured yet waits for the next run.
+ */
+export function buildNoteGeometryRequests(
+  model: ModelResource,
+  nodes: readonly CanvasNode[],
+  requested: ReadonlySet<string>,
+): GeometryUpdate[] {
+  const view = defaultView(model);
+  if (!view) {
+    return [];
+  }
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  return (model.notes ?? []).flatMap((note) => {
+    const node = nodesById.get(note.id);
+    const width = node?.measured?.width ?? node?.width;
+    const height = node?.measured?.height ?? node?.height;
+    if (noteGeometryFor(model, note.id) || requested.has(note.id) || !node || width === undefined || height === undefined) {
+      return [];
+    }
+    return [{
+      targetType: 'NOTE' as const,
+      viewId: view.id,
+      targetId: note.id,
+      x: Math.round(node.position.x),
+      y: Math.round(node.position.y),
+      w: Math.max(1, Math.round(width)),
+      h: Math.max(1, Math.round(height)),
+      zOrder: Math.round(node.zIndex ?? 0),
+    }];
+  });
+}
+
 function CanvasFrame(props: UmlCanvasProps) {
-  const { fitView, screenToFlowPosition } = useReactFlow<ClassFlowNode>();
+  const { fitView, screenToFlowPosition } = useReactFlow<CanvasNode>();
   const viewport = useViewport();
   const screenCursors = useMemo(() => (props.remoteCursors ?? []).map((marker) => ({
     ...marker,
@@ -448,13 +654,19 @@ function CanvasFrame(props: UmlCanvasProps) {
   // render; only the edge component knows the resolved sourceX/Y and targetX/Y.
   const connectStartNodeRef = useRef<string | null>(null);
   const edgeEndpointsRef = useRef(new Map<string, { source: EdgePoint; target: EdgePoint }>());
-  const initialNodes = useMemo(
-    () => buildFlowNodes(props.model, [], props.onCommand, props.onSelect, undefined, props.touchedElements),
+  const selectNote = useCallback((noteId: string) => props.onSelect({ kind: 'note', noteId }), [props.onSelect]);
+  const initialNodes = useMemo<CanvasNode[]>(
+    () => [
+      ...buildFlowNodes(props.model, [], props.onCommand, props.onSelect, undefined, props.touchedElements),
+      ...buildNoteNodes(props.model, [], selectNote),
+    ],
     [],
   );
-  const [nodes, setNodes, onNodesChange] = useNodesState<ClassFlowNode>(initialNodes);
-  const initialEdges = useMemo(() => buildFlowEdges(props.model), []);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<RelationshipFlowEdge>(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialNodes);
+  const initialEdges = useMemo<CanvasEdge[]>(() => [...buildFlowEdges(props.model), ...buildNoteLinkEdges(props.model)], []);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>(initialEdges);
+  // Notes whose first geometry was already requested in this mount; see buildNoteGeometryRequests.
+  const notesPlacedRef = useRef(new Set<string>());
   // Latest committed edges, read by the settled route-adjustment callback to build the
   // style.set from the edge's own stored style values (same pattern as nodesRef).
   const edgesRef = useRef(edges);
@@ -504,12 +716,21 @@ function CanvasFrame(props: UmlCanvasProps) {
     }
   }, [coalescer, props.model]);
 
+  const persistNoteResize = useCallback((noteId: string, rectangle: NodeRectangle, zOrder: number) => {
+    const payload = geometryPayload(props.model, noteId, rectangle, zOrder, 'NOTE');
+    const key = `note:${noteId}`;
+    if (payload) {
+      coalescer.schedule(key, payload);
+      coalescer.flush(key);
+    }
+  }, [coalescer, props.model]);
+
   const updateWaypoints = useCallback((relationshipId: string, waypoints: Array<{ x: number; y: number }>, settled: boolean) => {
     if (!viewId) {
       return;
     }
     const key = `relationship:${relationshipId}`;
-    setEdges((current) => current.map((edge) => edge.id === relationshipId && edge.data
+    setEdges((current) => current.map((edge) => edge.type === 'umlRelationship' && edge.id === relationshipId && edge.data
       ? { ...edge, data: { ...edge.data, waypoints } }
       : edge));
     if (settled) {
@@ -522,14 +743,14 @@ function CanvasFrame(props: UmlCanvasProps) {
     (relationshipId, adjustment, settled) => {
       // Optimistic: the stored edge style follows the drag so the render never waits for
       // the command round trip; the settle then persists the whole style row.
-      setEdges((current) => current.map((edge) => edge.id === relationshipId && edge.data?.style
+      setEdges((current) => current.map((edge) => edge.type === 'umlRelationship' && edge.id === relationshipId && edge.data?.style
         ? { ...edge, data: { ...edge.data, style: { ...edge.data.style, routeAdjustment: adjustment } } }
         : edge));
       if (!settled || !viewId) {
         return;
       }
-      const edge = edgesRef.current.find((candidate) => candidate.id === relationshipId);
-      const style = edge?.data?.style;
+      const edge = edgesRef.current.find((candidate) => candidate.type === 'umlRelationship' && candidate.id === relationshipId);
+      const style = edge?.type === 'umlRelationship' ? edge.data?.style : undefined;
       if (!style) {
         return;
       }
@@ -564,26 +785,31 @@ function CanvasFrame(props: UmlCanvasProps) {
   useEffect(() => {
     // nodesRef holds the nodes committed before this model update, i.e. exactly the
     // elements already on screen; the new classifier is not among them.
-    const unplaced = unplacedClassifierIds(props.model, nodesRef.current);
+    const unplaced = unplacedClassifierIds(props.model, nodesRef.current.filter(isClassNode));
     const pasted = pastedIdsRef.current;
     pastedIdsRef.current = null;
     setNodes((current) => {
-      const next = buildFlowNodes(
+      const next: CanvasNode[] = buildFlowNodes(
         props.model,
-        current,
+        current.filter(isClassNode),
         props.onCommand,
         props.onSelect,
         persistResize,
         props.touchedElements,
       );
-      return pasted ? next.map((node) => ({ ...node, selected: pasted.has(node.id) })) : next;
+      const withNotes: CanvasNode[] = [
+        ...next,
+        ...buildNoteNodes(props.model, current, selectNote, persistNoteResize),
+      ];
+      return pasted ? withNotes.map((node) => ({ ...node, selected: pasted.has(node.id) })) : withNotes;
     });
     const nextEdges = buildFlowEdges(props.model, updateWaypoints, {
       onRelationshipContextMenu: openRelationshipEndContextMenu,
       onEdgeEndpointsChange: rememberEdgeEndpoints,
       onRouteAdjustmentChange: updateRouteAdjustment,
-    }, edgesRef.current);
-    setEdges(pasted ? nextEdges.map((edge) => ({ ...edge, selected: false })) : nextEdges);
+    }, edgesRef.current.filter((edge): edge is RelationshipFlowEdge => edge.type === 'umlRelationship'));
+    const allEdges: CanvasEdge[] = [...nextEdges, ...buildNoteLinkEdges(props.model)];
+    setEdges(pasted ? allEdges.map((edge) => ({ ...edge, selected: false })) : allEdges);
     if (unplaced.length > 0 && pendingFitRef.current === null) {
       // A node handed over in this render is not yet measured by React Flow, so a
       // synchronous fitView would silently drop it from the fit bounds. Record the
@@ -592,7 +818,7 @@ function CanvasFrame(props: UmlCanvasProps) {
       pendingFitRef.current = unplaced[0]!;
       setPendingFitId(pendingFitRef.current);
     }
-  }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, updateWaypoints, setNodes, setEdges, fitView, openRelationshipEndContextMenu, rememberEdgeEndpoints, updateRouteAdjustment]);
+  }, [props.model, props.onCommand, props.onSelect, props.touchedElements, persistResize, persistNoteResize, selectNote, updateWaypoints, setNodes, setEdges, fitView, openRelationshipEndContextMenu, rememberEdgeEndpoints, updateRouteAdjustment]);
 
   // Persist the position the canvas is already showing for classifiers that arrive
   // without saved geometry (they sit on the fallback grid). A position that exists only
@@ -606,12 +832,18 @@ function CanvasFrame(props: UmlCanvasProps) {
   useEffect(() => {
     const decision = buildUnplacedGeometryRequests(
       props.model,
-      nodesRef.current,
+      nodesRef.current.filter(isClassNode),
       unplacedAttemptsRef.current,
     );
     unplacedAttemptsRef.current = decision.attempts;
     for (const request of decision.requests) {
       const key = `classifier:${request.targetId}`;
+      coalescer.schedule(key, request);
+      coalescer.flush(key);
+    }
+    for (const request of buildNoteGeometryRequests(props.model, nodesRef.current, notesPlacedRef.current)) {
+      notesPlacedRef.current.add(request.targetId);
+      const key = `note:${request.targetId}`;
       coalescer.schedule(key, request);
       coalescer.flush(key);
     }
@@ -681,9 +913,21 @@ function CanvasFrame(props: UmlCanvasProps) {
     };
   }
 
-  function settleNodeGeometry(node: ClassFlowNode): void {
-    const key = `classifier:${node.id}`;
-    const payload = geometryPayload(props.model, node.id, rectangleForNode(node), node.zIndex ?? 0);
+  function settleNodeGeometry(node: CanvasNode): void {
+    if (node.type === 'umlNoteAnchor') {
+      return;
+    }
+    const isNote = isNoteNode(node);
+    const key = `${isNote ? 'note' : 'classifier'}:${node.id}`;
+    const rectangle = isNote
+      ? {
+        x: node.position.x,
+        y: node.position.y,
+        width: node.measured?.width ?? node.width ?? DEFAULT_NOTE_WIDTH,
+        height: node.measured?.height ?? node.height ?? DEFAULT_NOTE_HEIGHT,
+      }
+      : rectangleForNode(node as ClassFlowNode);
+    const payload = geometryPayload(props.model, node.id, rectangle, node.zIndex ?? 0, isNote ? 'NOTE' : 'CLASSIFIER');
     if (payload) {
       coalescer.schedule(key, payload);
       coalescer.flush(key);
@@ -746,8 +990,8 @@ function CanvasFrame(props: UmlCanvasProps) {
     if (!relationshipId || !viewId || !draft.sides || draft.sourceId === draft.targetId) {
       return;
     }
-    const sourceNode = nodesRef.current.find((node) => node.id === draft.sourceId);
-    const targetNode = nodesRef.current.find((node) => node.id === draft.targetId);
+    const sourceNode = nodesRef.current.filter(isClassNode).find((node) => node.id === draft.sourceId);
+    const targetNode = nodesRef.current.filter(isClassNode).find((node) => node.id === draft.targetId);
     const kept = sourceNode && targetNode
       ? differingSides(draft.sides, rectangleForNode(sourceNode), rectangleForNode(targetNode))
       : draft.sides;
@@ -758,7 +1002,7 @@ function CanvasFrame(props: UmlCanvasProps) {
 
   /** The classes of the canvas multi-selection; without one, the single selection of the page. */
   function selectedClassifierIds(): string[] {
-    const classifierIds = nodesRef.current.filter((node) => node.selected).map((node) => node.id);
+    const classifierIds = nodesRef.current.filter(isClassNode).filter((node) => node.selected).map((node) => node.id);
     if (classifierIds.length === 0 && props.selection?.kind === 'classifier') {
       classifierIds.push(props.selection.classifierId);
     }
@@ -914,7 +1158,7 @@ function CanvasFrame(props: UmlCanvasProps) {
         }}
         tabIndex={0}
       >
-        <ReactFlow<ClassFlowNode, RelationshipFlowEdge>
+        <ReactFlow<CanvasNode, CanvasEdge>
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -922,22 +1166,47 @@ function CanvasFrame(props: UmlCanvasProps) {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={(_, node) => {
+            if (node.type === 'umlNote') {
+              props.onSelect({ kind: 'note', noteId: node.id });
+              return;
+            }
+            if (!isClassNode(node)) {
+              return;
+            }
             props.onSelect({ kind: 'classifier', classifierId: node.id });
             // A package is not a relationship end; the setup lists only classes too.
             if (props.relationActive && node.data.classifier.kind !== 'PACKAGE') {
               props.onRelationEndPicked?.(node.id);
             }
           }}
-          onNodeContextMenu={(event, node) => openContextMenu(event, { kind: 'classifier', classifierId: node.id })}
+          onNodeContextMenu={(event, node) => {
+            if (!isClassNode(node)) {
+              // Notes have no canvas menu of their own: the properties panel edits and deletes them.
+              event.preventDefault();
+              if (isNoteNode(node)) {
+                props.onSelect({ kind: 'note', noteId: node.id });
+              }
+              return;
+            }
+            openContextMenu(event, { kind: 'classifier', classifierId: node.id });
+          }}
           onNodeDragStop={(_, node) => settleNodeGeometry(node)}
           onConnectStart={(_, params) => { connectStartNodeRef.current = params.nodeId; }}
           onConnect={handleConnect}
-          onEdgeClick={(_, edge) => props.onSelect({ kind: 'relationship', relationshipId: edge.id })}
-          onEdgeContextMenu={(event, edge) => openContextMenu(event, {
-            kind: 'relationship',
-            relationshipId: edge.id,
-            endOrdinal: nearestEndOrdinalForEdge(edge.id, event),
-          })}
+          onEdgeClick={(_, edge) => props.onSelect(edge.type === 'straight' && edge.data && 'noteId' in edge.data
+            ? { kind: 'note', noteId: String(edge.data.noteId) }
+            : { kind: 'relationship', relationshipId: edge.id })}
+          onEdgeContextMenu={(event, edge) => {
+            if (edge.type !== 'umlRelationship') {
+              event.preventDefault();
+              return;
+            }
+            openContextMenu(event, {
+              kind: 'relationship',
+              relationshipId: edge.id,
+              endOrdinal: nearestEndOrdinalForEdge(edge.id, event),
+            });
+          }}
           onPaneClick={() => props.onSelect(null)}
           onPaneContextMenu={(event) => openContextMenu(event, { kind: 'pane' })}
           snapToGrid

@@ -5,6 +5,8 @@ import type {
   ConstraintResource,
   ConstraintSeverity,
   ModelResource,
+  NoteResource,
+  NoteTargetType,
   OperationEnvelope,
   OperationResource,
   RelationshipResource,
@@ -16,6 +18,10 @@ import {
   buildConstraintRemoveRequest,
   buildConstraintUpdateRequest,
   buildGeometrySetRequest,
+  buildNoteLinkRequest,
+  buildNoteUnlinkRequest,
+  buildNoteUpdateRequest,
+  NOTE_BODY_MAX,
   buildParameterAddRequest,
   buildParameterRemoveRequest,
   buildParameterUpdateRequest,
@@ -456,6 +462,137 @@ function typeReference(model: ModelResource, name: string): TypeReferenceInput {
 
 function nextOrdinal(items: Array<{ ordinal: number }>): number {
   return items.reduce((maximum, item) => Math.max(maximum, item.ordinal), -1) + 1;
+}
+
+/** How a relationship is named where the user picks it: its name, or its kind and the classes it joins. */
+export function relationshipLabel(model: ModelResource, relationship: RelationshipResource): string {
+  const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal)
+    .map((end) => model.classifiers.find((candidate) => candidate.id === end.classifierId)?.name ?? '?');
+  const joined = ends.join(' – ');
+  return relationship.name ? `${relationship.name} (${joined})` : `${relationship.kind} (${joined})`;
+}
+
+/** Saves the body of a note only when it is not blank and actually changed; returns whether it sent. */
+export function dispatchNoteBody(onCommand: PropertiesPanelProps['onCommand'], note: NoteResource, body: string): boolean {
+  if (!body.trim() || body === note.body) {
+    return false;
+  }
+  onCommand(buildNoteUpdateRequest(note.id, body));
+  return true;
+}
+
+/** Links a note to the element chosen in the select, whose value is `TYPE:id`; returns whether it sent. */
+export function dispatchNoteLink(onCommand: PropertiesPanelProps['onCommand'], noteId: string, choice: string): boolean {
+  const [targetType, targetId] = choice.split(':');
+  if ((targetType === 'CLASSIFIER' || targetType === 'RELATIONSHIP') && targetId) {
+    onCommand(buildNoteLinkRequest(noteId, targetType, targetId));
+    return true;
+  }
+  return false;
+}
+
+function NoteProperties({
+  note,
+  model,
+  onCommand,
+  onDelete,
+}: {
+  note: NoteResource;
+  model: ModelResource;
+  onCommand: PropertiesPanelProps['onCommand'];
+  onDelete: () => void;
+}) {
+  const [body, setBody] = useState(note.body);
+  const [pending, setPending] = useState('');
+
+  useEffect(() => {
+    setBody(note.body);
+  }, [note.id, note.body]);
+
+  const linked = note.annotatedElements.flatMap((element) => {
+    if (element.targetType === 'CLASSIFIER') {
+      const classifier = model.classifiers.find((candidate) => candidate.id === element.targetId);
+      return classifier ? [{ ...element, label: classifier.name }] : [];
+    }
+    const relationship = model.relationships.find((candidate) => candidate.id === element.targetId);
+    return relationship ? [{ ...element, label: relationshipLabel(model, relationship) }] : [];
+  });
+  const isLinked = (targetType: NoteTargetType, targetId: string) =>
+    note.annotatedElements.some((element) => element.targetType === targetType && element.targetId === targetId);
+  const candidates = [
+    ...model.classifiers
+      .filter((classifier) => !isLinked('CLASSIFIER', classifier.id))
+      .map((classifier) => ({ key: `CLASSIFIER:${classifier.id}`, label: `Clase: ${classifier.name}` })),
+    ...model.relationships
+      .filter((relationship) => !isLinked('RELATIONSHIP', relationship.id))
+      .map((relationship) => ({ key: `RELATIONSHIP:${relationship.id}`, label: `Relación: ${relationshipLabel(model, relationship)}` })),
+  ];
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    dispatchNoteBody(onCommand, note, body);
+  }
+
+  function link() {
+    if (dispatchNoteLink(onCommand, note.id, pending)) {
+      setPending('');
+    }
+  }
+
+  return (
+    <>
+      <div className="property-section">
+        <div className="property-section-heading">
+          <h3>Nota</h3>
+        </div>
+        <form className="property-constraint-form" onSubmit={save}>
+          <label className="field-label">
+            Texto de la nota
+            <textarea aria-label="Texto de la nota" maxLength={NOTE_BODY_MAX} onChange={(event) => setBody(event.target.value)}
+              rows={5} value={body} />
+          </label>
+          <div className="property-constraint-actions">
+            <button className="button button-secondary button-compact"
+              disabled={!body.trim() || body === note.body} type="submit">
+              Guardar nota
+            </button>
+            <button className="text-button danger-button" onClick={onDelete} type="button">Eliminar nota</button>
+          </div>
+        </form>
+      </div>
+      <section className="property-section" aria-label="Elementos anotados">
+        <div className="property-section-heading">
+          <h3>Anota a</h3>
+        </div>
+        {linked.length > 0 ? (
+          <ul className="property-constraint-list">
+            {linked.map((element) => (
+              <li key={`${element.targetType}:${element.targetId}`}>
+                <span>{element.targetType === 'CLASSIFIER' ? 'Clase' : 'Relación'}: {element.label}</span>
+                <button aria-label={`Quitar vínculo con ${element.label}`} className="text-button danger-button"
+                  onClick={() => onCommand(buildNoteUnlinkRequest(note.id, element.targetType, element.targetId))} type="button">
+                  Quitar
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="property-hint">La nota no está vinculada a ningún elemento.</p>}
+        {candidates.length > 0 && (
+          <div className="property-constraint-actions">
+            <select aria-label="Vincular la nota a" onChange={(event) => setPending(event.target.value)} value={pending}>
+              <option value="">Vincular a…</option>
+              {candidates.map((candidate) => (
+                <option key={candidate.key} value={candidate.key}>{candidate.label}</option>
+              ))}
+            </select>
+            <button className="button button-secondary button-compact" disabled={!pending} onClick={link} type="button">
+              Vincular
+            </button>
+          </div>
+        )}
+      </section>
+    </>
+  );
 }
 
 function ClassifierProperties({
@@ -1190,6 +1327,24 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
         <p className="eyebrow">Detalles</p>
         <h2 id="properties-title">Propiedades</h2>
         <p className="property-hint">Selecciona una clase o uno de sus elementos para verlo y editarlo.</p>
+      </aside>
+    );
+  }
+
+  if (selection.kind === 'note') {
+    const note = (model.notes ?? []).find((candidate) => candidate.id === selection.noteId);
+    return (
+      <aside className="surface properties-panel" aria-labelledby="properties-title">
+        <p className="eyebrow">Detalles</p>
+        <h2 id="properties-title">Propiedades</h2>
+        {note ? (
+          <NoteProperties
+            note={note}
+            model={model}
+            onCommand={onCommand}
+            onDelete={() => onDelete(selection)}
+          />
+        ) : <p className="property-hint">Esta nota ya no está en el modelo.</p>}
       </aside>
     );
   }

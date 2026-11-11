@@ -42,6 +42,8 @@ export interface ToolRailProps {
   relationActive: boolean;
   onSelectTool: () => void;
   onAddClassifier: (kind: ClassifierKind) => void;
+  /** Adds a UML note, attached to the selected class or relationship when there is one. */
+  onAddNote?: () => void;
   onToggleRelation: () => void;
   onRelationKindChange: (kind: RelationToolKind) => void;
 }
@@ -79,6 +81,12 @@ export default function ToolRail(props: ToolRailProps): ReactElement {
           {tool.label}
         </button>
       ))}
+      {props.onAddNote && (
+        <button className="tool-button" onClick={props.onAddNote} title="Agregar una nota UML" type="button">
+          <b aria-hidden="true">🗒</b>
+          Nota
+        </button>
+      )}
       <div className="relation-anchor">
         <button
           aria-controls="relation-setup"

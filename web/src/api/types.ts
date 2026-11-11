@@ -232,6 +232,22 @@ export interface ModelResource {
   relationships: RelationshipResource[];
   /** IA4-07: per-view relationship style rows (additive; absent in older payloads). */
   view_style?: ViewStyleResource[];
+  /** UML notes (additive; absent in older payloads, which read as no notes). */
+  notes?: NoteResource[];
+}
+
+/** What a note can be attached to: UML `Comment.annotatedElement`. */
+export type NoteTargetType = 'CLASSIFIER' | 'RELATIONSHIP';
+
+export interface NoteAnnotatedElementResource {
+  targetType: NoteTargetType;
+  targetId: Uuid;
+}
+
+export interface NoteResource {
+  id: Uuid;
+  body: string;
+  annotatedElements: NoteAnnotatedElementResource[];
 }
 
 export type ValidationSeverity = 'ERROR' | 'WARNING';

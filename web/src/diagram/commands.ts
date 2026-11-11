@@ -9,6 +9,8 @@ import type {
   ConstraintResource,
   ConstraintSeverity,
   ModelResource,
+  NoteResource,
+  NoteTargetType,
   OperationEnvelope,
   OperationResource,
   ParameterResource,
@@ -233,6 +235,45 @@ export function buildClassifierCreateEnvelope(
   }, uuidFactory);
 }
 
+/** Longest note body the backend accepts. */
+export const NOTE_BODY_MAX = 2000;
+
+/** A new note; `annotatedElementIds` are the elements it starts attached to (may be empty). */
+export function buildNoteCreateRequest(body: string, annotatedElementIds: readonly string[] = []): ModelCommandRequest {
+  return {
+    type: 'note.create',
+    payload: { body, annotatedElementIds: [...annotatedElementIds] },
+  };
+}
+
+export function buildNoteUpdateRequest(noteId: string, body: string): ModelCommandRequest {
+  return {
+    type: 'note.update',
+    targets: [{ scope: 'note', id: noteId }],
+    payload: { body },
+  };
+}
+
+export function buildNoteDeleteRequest(noteId: string): ModelCommandRequest {
+  return { type: 'note.delete', targets: [{ scope: 'note', id: noteId }], payload: {} };
+}
+
+export function buildNoteLinkRequest(noteId: string, targetType: NoteTargetType, targetId: string): ModelCommandRequest {
+  return {
+    type: 'note.link',
+    targets: [{ scope: 'note', id: noteId }],
+    payload: { targetType, targetId },
+  };
+}
+
+export function buildNoteUnlinkRequest(noteId: string, targetType: NoteTargetType, targetId: string): ModelCommandRequest {
+  return {
+    type: 'note.unlink',
+    targets: [{ scope: 'note', id: noteId }],
+    payload: { targetType, targetId },
+  };
+}
+
 export function buildRelationshipCreateRequest(
   sourceClassifierId: string,
   targetClassifierId: string,
@@ -327,7 +368,12 @@ export interface RelationshipWaypointsUpdate {
   waypoints: Array<{ x: number; y: number }>;
 }
 
-export type GeometryUpdate = ClassifierGeometryUpdate | RelationshipWaypointsUpdate;
+/** A note has a rectangle in the view, exactly like a classifier. */
+export interface NoteGeometryUpdate extends Omit<ClassifierGeometryUpdate, 'targetType'> {
+  targetType: 'NOTE';
+}
+
+export type GeometryUpdate = ClassifierGeometryUpdate | NoteGeometryUpdate | RelationshipWaypointsUpdate;
 
 export function buildGeometrySetRequest(payload: GeometryUpdate): ModelCommandRequest {
   return { type: 'geometry.set', payload: { ...payload } };
@@ -520,6 +566,17 @@ function ownerClassifierId(model: ModelResource, scope: 'attribute' | 'operation
     return classifier.operations.some((operation) => operation.id === elementId);
   });
   return owner?.id ?? null;
+}
+
+function updateNote(model: ModelResource, noteId: string, update: (note: NoteResource) => NoteResource): ModelResource {
+  return { ...model, notes: (model.notes ?? []).map((note) => (note.id === noteId ? update(note) : note)) };
+}
+
+function noteTarget(payload: Record<string, unknown>): { targetType: NoteTargetType; targetId: string } | null {
+  const { targetType, targetId: id } = payload;
+  return (targetType === 'CLASSIFIER' || targetType === 'RELATIONSHIP') && typeof id === 'string'
+    ? { targetType, targetId: id }
+    : null;
 }
 
 function updateClassifier(
@@ -953,6 +1010,56 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         })),
       };
     }
+    case 'note.create': {
+      const id = payloadString(envelope, 'id');
+      const body = payloadString(envelope, 'body');
+      if (!id || body === null) {
+        return model;
+      }
+      const ids = Array.isArray(envelope.payload.annotatedElementIds) ? envelope.payload.annotatedElementIds : [];
+      const classifierIds = new Set(model.classifiers.map((classifier) => classifier.id));
+      const relationshipIds = new Set(model.relationships.map((relationship) => relationship.id));
+      const annotatedElements: NoteResource['annotatedElements'] = [...new Set(ids.filter((value): value is string => typeof value === 'string'))]
+        .flatMap((elementId): NoteResource['annotatedElements'] => classifierIds.has(elementId)
+          ? [{ targetType: 'CLASSIFIER' as const, targetId: elementId }]
+          : relationshipIds.has(elementId) ? [{ targetType: 'RELATIONSHIP' as const, targetId: elementId }] : []);
+      return { ...model, notes: [...(model.notes ?? []), { id, body, annotatedElements }] };
+    }
+    case 'note.update': {
+      const noteId = targetId(envelope, 'note');
+      const body = payloadString(envelope, 'body');
+      if (!noteId || body === null) {
+        return model;
+      }
+      return updateNote(model, noteId, (note) => ({ ...note, body }));
+    }
+    case 'note.delete': {
+      const noteId = targetId(envelope, 'note');
+      return noteId ? { ...model, notes: (model.notes ?? []).filter((note) => note.id !== noteId) } : model;
+    }
+    case 'note.link': {
+      const noteId = targetId(envelope, 'note');
+      const link = noteTarget(envelope.payload);
+      if (!noteId || !link) {
+        return model;
+      }
+      return updateNote(model, noteId, (note) => note.annotatedElements.some((element) =>
+        element.targetType === link.targetType && element.targetId === link.targetId)
+        ? note
+        : { ...note, annotatedElements: [...note.annotatedElements, link] });
+    }
+    case 'note.unlink': {
+      const noteId = targetId(envelope, 'note');
+      const link = noteTarget(envelope.payload);
+      if (!noteId || !link) {
+        return model;
+      }
+      return updateNote(model, noteId, (note) => ({
+        ...note,
+        annotatedElements: note.annotatedElements.filter((element) =>
+          !(element.targetType === link.targetType && element.targetId === link.targetId)),
+      }));
+    }
     case 'classifier.delete': {
       if (!classifierId) {
         return model;
@@ -962,6 +1069,15 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         .map((relationship) => relationship.id));
       return {
         ...model,
+        // A deleted element loses its note links; the notes themselves stay.
+        ...(model.notes ? {
+          notes: model.notes.map((note) => ({
+            ...note,
+            annotatedElements: note.annotatedElements.filter((element) =>
+              !((element.targetType === 'CLASSIFIER' && element.targetId === classifierId)
+                || (element.targetType === 'RELATIONSHIP' && removedRelationships.has(element.targetId)))),
+          })),
+        } : {}),
         classifiers: model.classifiers.filter((classifier) => classifier.id !== classifierId),
         // The server releases the link of an association whose class is deleted and keeps the association.
         relationships: model.relationships
@@ -995,7 +1111,8 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
       const viewId = payloadString(envelope, 'viewId');
       const geometryTargetId = payloadString(envelope, 'targetId');
       const [x, y, w, h] = ['x', 'y', 'w', 'h'].map((key) => payloadNumber(envelope, key));
-      if (payloadString(envelope, 'targetType') !== 'CLASSIFIER' || !viewId || !geometryTargetId
+      const geometryType = payloadString(envelope, 'targetType');
+      if ((geometryType !== 'CLASSIFIER' && geometryType !== 'NOTE') || !viewId || !geometryTargetId
           || x == null || y == null || w == null || h == null) {
         return model;
       }
@@ -1007,8 +1124,8 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             return view;
           }
           const existing = view.element_geometry.find((candidate) =>
-            candidate.targetType === 'CLASSIFIER' && candidate.targetId === geometryTargetId);
-          const row = { id: existing?.id ?? geometryTargetId, targetType: 'CLASSIFIER', targetId: geometryTargetId, x, y, w, h, zOrder };
+            candidate.targetType === geometryType && candidate.targetId === geometryTargetId);
+          const row = { id: existing?.id ?? geometryTargetId, targetType: geometryType, targetId: geometryTargetId, x, y, w, h, zOrder };
           return {
             ...view,
             element_geometry: existing
