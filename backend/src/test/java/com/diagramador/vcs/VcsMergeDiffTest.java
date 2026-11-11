@@ -226,6 +226,66 @@ class VcsMergeDiffTest {
     }
 
     @Test
+    void attributeFlagsAndEndPropertiesSurviveAMergeAndDivergentOnesConflict() {
+        UUID attributeId = UUID.fromString("40000000-0000-0000-0000-000000000021");
+        UUID relationshipId = UUID.fromString("60000000-0000-0000-0000-000000000021");
+        UUID otherId = UUID.fromString("40000000-0000-0000-0000-000000000022");
+        ClassifierResource base = classifierWith(attributeId, false, false);
+        ClassifierResource flagged = classifierWith(attributeId, true, true);
+
+        MergeDiff.Result merged = MergeDiff.merge(model(base), model(flagged), model(base));
+        assertThat(merged.conflicts()).isEmpty();
+        assertThat(merged.mergedSnapshot().classifiers().get(0).attributes()).singleElement()
+                .satisfies(attribute -> {
+                    assertThat(attribute.isStatic()).isTrue();
+                    assertThat(attribute.isDerived()).isTrue();
+                });
+        assertThat(base.attributes().get(0).isStatic()).as("an old snapshot reads false").isFalse();
+
+        ClassifierResource staticOnly = classifierWith(attributeId, true, false);
+        ClassifierResource derivedOnly = classifierWith(attributeId, false, true);
+        MergeDiff.Result both = MergeDiff.merge(model(base), model(staticOnly), model(derivedOnly));
+        assertThat(both.conflicts()).as("independent flags merge").isEmpty();
+        assertThat(both.mergedSnapshot().classifiers().get(0).attributes()).singleElement()
+                .satisfies(attribute -> {
+                    assertThat(attribute.isStatic()).isTrue();
+                    assertThat(attribute.isDerived()).isTrue();
+                });
+
+        com.diagramador.api.ModelResource.RelationshipEndResource plainEnd =
+                new com.diagramador.api.ModelResource.RelationshipEndResource(otherId, CLASSIFIER_ID, "r",
+                        com.diagramador.domain.MultiplicityKind.EXACTLY_ONE,
+                        com.diagramador.domain.NavigationKind.UNSPECIFIED, "none", (short) 1);
+        com.diagramador.api.ModelResource.RelationshipEndResource markedEnd =
+                new com.diagramador.api.ModelResource.RelationshipEndResource(otherId, CLASSIFIER_ID, "r",
+                        com.diagramador.domain.MultiplicityKind.EXACTLY_ONE,
+                        com.diagramador.domain.NavigationKind.UNSPECIFIED, "none", (short) 1, null, null, true, true);
+        MergeDiff.Result endMerge = MergeDiff.merge(
+                relationshipModel(withEnd(relationshipId, plainEnd)), relationshipModel(withEnd(relationshipId, markedEnd)),
+                relationshipModel(withEnd(relationshipId, plainEnd)));
+        assertThat(endMerge.conflicts()).isEmpty();
+        assertThat(endMerge.mergedSnapshot().relationships().get(0).ends()).singleElement()
+                .satisfies(end -> {
+                    assertThat(end.isOrdered()).isTrue();
+                    assertThat(end.isUnique()).isTrue();
+                });
+    }
+
+    private static RelationshipResource withEnd(UUID relationshipId,
+            com.diagramador.api.ModelResource.RelationshipEndResource end) {
+        return new RelationshipResource(relationshipId, "ASSOCIATION", "r", List.of(end), List.of());
+    }
+
+    private static ClassifierResource classifierWith(UUID attributeId, boolean isStatic, boolean isDerived) {
+        com.diagramador.api.ModelResource.AttributeResource attribute =
+                new com.diagramador.api.ModelResource.AttributeResource(attributeId, "counter", "ATTRIBUTE", "PUBLIC",
+                        com.diagramador.domain.MultiplicityKind.EXACTLY_ONE, null, null, "String", 0, null, null, null,
+                        isStatic, isDerived);
+        return new ClassifierResource(CLASSIFIER_ID, "Order", ClassifierKind.CLASS, false, null, List.of(attribute),
+                List.of(), List.of());
+    }
+
+    @Test
     void divergentStereotypesOfTheSameClassifierAreAFieldConflict() {
         ClassifierResource base = new ClassifierResource(CLASSIFIER_ID, "Order", ClassifierKind.CLASS, false, null,
                 List.of(), List.of(), List.of());

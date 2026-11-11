@@ -20,7 +20,7 @@ public class RelationshipUpdateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("name", "kind", "stereotype", "associationClassId", "source", "target");
     private static final Set<String> END_FIELDS = Set.of("role", "multiplicity", "lowerBound", "upperBound",
-            "navigability");
+            "navigability", "isOrdered", "isUnique");
 
     private final CommandHandlerSupport support;
     private final RelationshipEndRepository endRepository;
@@ -108,6 +108,12 @@ public class RelationshipUpdateHandler implements CommandHandler.AddAction {
             end.setMultiplicity(multiplicity.kind());
             end.setLowerBound(multiplicity.lowerBound());
             end.setUpperBound(multiplicity.upperBound());
+        }
+        if (update.has("isOrdered")) {
+            end.setOrdered(support.bool(update, "isOrdered"));
+        }
+        if (update.has("isUnique")) {
+            end.setUnique(support.bool(update, "isUnique"));
         }
         if (update.has("navigability")) {
             end.setNavigability(navigability(update, "navigability", end.getNavigability()));

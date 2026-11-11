@@ -220,7 +220,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                     new ModelResource.AttributeResource(mapped(attributeIds, attribute.id()), attribute.name(),
                             attribute.kind(), attribute.visibility(), attribute.multiplicity(), attribute.defaultValue(),
                             mapped(classifierIds, attribute.typeReferenceId()), attribute.type(), attribute.ordinal(),
-                            attribute.lowerBound(), attribute.upperBound(), attribute.stereotype()))
+                            attribute.lowerBound(), attribute.upperBound(), attribute.stereotype(),
+                            attribute.isStatic(), attribute.isDerived()))
                     .toList();
             List<ModelResource.OperationResource> operations = classifier.operations().stream().map(operation -> {
                 List<ModelResource.ParameterResource> parameters = operation.parameters().stream().map(parameter ->
@@ -244,7 +245,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                     new ModelResource.RelationshipEndResource(mapped(endIds, end.id()),
                             mapped(classifierIds, end.classifierId()), end.role(), end.multiplicity(),
                             end.navigability(), end.aggregationKind(), end.ordinal(),
-                            end.lowerBound(), end.upperBound())).toList();
+                            end.lowerBound(), end.upperBound(), end.isOrdered(), end.isUnique())).toList();
             List<ModelResource.ConstraintResource> constraints = relationship.constraints().stream().map(constraint ->
                     new ModelResource.ConstraintResource(mapped(constraintIds, constraint.id()),
                             constraint.expression(), constraint.severity())).toList();
@@ -636,10 +637,11 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 entityManager.createNativeQuery("""
                         INSERT INTO diagrammer.uml_attribute
                             (attribute_id, classifier_id, type_reference_id, name, kind, visibility,
-                             multiplicity, lower_bound, upper_bound, default_value, ordinal, stereotype)
+                             multiplicity, lower_bound, upper_bound, default_value, ordinal, stereotype,
+                             is_static, is_derived)
                         VALUES (:id, :classifierId, :typeId, :name, :kind, :visibility,
                                 CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
-                                :defaultValue, :ordinal, :stereotype)
+                                :defaultValue, :ordinal, :stereotype, :isStatic, :isDerived)
                         """)
                         .setParameter("id", resource.id())
                         .setParameter("classifierId", classifier.getId())
@@ -654,6 +656,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         .setParameter("ordinal", resource.ordinal())
                         .setParameter("stereotype", Stereotypes.canonical(AttributeStereotype.class,
                                 resource.stereotype()))
+                        .setParameter("isStatic", resource.isStatic())
+                        .setParameter("isDerived", resource.isDerived())
                         .executeUpdate();
             }
             for (ModelResource.OperationResource resource : classifierResource.operations()) {
@@ -796,10 +800,10 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.relationship_end
                     (relationship_end_id, relationship_id, classifier_id, ordinal, role, multiplicity,
-                     lower_bound, upper_bound, navigability, aggregation_kind)
+                     lower_bound, upper_bound, navigability, aggregation_kind, is_ordered, is_unique)
                 VALUES (:id, :relationshipId, :classifierId, :ordinal, :role,
                         CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
-                        CAST(:navigability AS diagrammer.navigation_kind), :aggregation)
+                        CAST(:navigability AS diagrammer.navigation_kind), :aggregation, :isOrdered, :isUnique)
                 """)
                 .setParameter("id", end.id())
                 .setParameter("relationshipId", relationshipId)
@@ -814,6 +818,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         ? NavigationKind.UNSPECIFIED : end.navigability()).name())
                 .setParameter("aggregation", end.aggregationKind() == null ? "NONE"
                         : end.aggregationKind().toUpperCase(Locale.ROOT))
+                .setParameter("isOrdered", end.isOrdered())
+                .setParameter("isUnique", end.isUnique())
                 .executeUpdate();
     }
 

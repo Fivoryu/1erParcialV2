@@ -334,7 +334,8 @@ public final class MergeDiff {
                         "defaultValue", attribute.defaultValue(), "typeReferenceId", attribute.typeReferenceId(),
                         "type", attribute.type(), "ordinal", attribute.ordinal(),
                         "lowerBound", attribute.lowerBound(), "upperBound", attribute.upperBound(),
-                        "stereotype", attribute.stereotype());
+                        "stereotype", attribute.stereotype(), "isStatic", attribute.isStatic(),
+                        "isDerived", attribute.isDerived());
                 add(elements, element("ATTRIBUTE", attribute.id(), attribute.name(), classifier.id(), childFields));
             }
             for (OperationResource operation : classifier.operations()) {
@@ -370,7 +371,8 @@ public final class MergeDiff {
                         "relationshipId", relationship.id(), "classifierId", end.classifierId(),
                         "role", end.role(), "multiplicity", end.multiplicity(), "navigability", end.navigability(),
                         "aggregationKind", end.aggregationKind(), "ordinal", end.ordinal(),
-                        "lowerBound", end.lowerBound(), "upperBound", end.upperBound());
+                        "lowerBound", end.lowerBound(), "upperBound", end.upperBound(),
+                        "isOrdered", end.isOrdered(), "isUnique", end.isUnique());
                 add(elements, element("RELATIONSHIP_END", end.id(), end.role(), relationship.id(), endFields));
             }
             for (ConstraintResource constraint : relationship.constraints()) {
@@ -546,7 +548,7 @@ public final class MergeDiff {
                 string(fields, "visibility"), (com.diagramador.domain.MultiplicityKind) fields.get("multiplicity"),
                 string(fields, "defaultValue"), uuid(fields, "typeReferenceId"), string(fields, "type"),
                 number(fields, "ordinal"), nullableNumber(fields, "lowerBound"), nullableNumber(fields, "upperBound"),
-                string(fields, "stereotype"));
+                string(fields, "stereotype"), bool(fields, "isStatic"), bool(fields, "isDerived"));
     }
 
     private static OperationResource operationResource(Element element, Map<ElementKey, Element> elements) {
@@ -576,7 +578,8 @@ public final class MergeDiff {
                 string(fields, "role"), (com.diagramador.domain.MultiplicityKind) fields.get("multiplicity"),
                 (com.diagramador.domain.NavigationKind) fields.get("navigability"),
                 string(fields, "aggregationKind"), (short) number(fields, "ordinal"),
-                nullableNumber(fields, "lowerBound"), nullableNumber(fields, "upperBound"));
+                nullableNumber(fields, "lowerBound"), nullableNumber(fields, "upperBound"),
+                bool(fields, "isOrdered"), bool(fields, "isUnique"));
     }
 
     private static GeometryResource geometryResource(Element element) {

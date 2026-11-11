@@ -165,12 +165,22 @@ public record ModelResource(
             int ordinal,
             Integer lowerBound,
             Integer upperBound,
-            String stereotype) {
+            String stereotype,
+            @JsonProperty("isStatic") boolean isStatic,
+            @JsonProperty("isDerived") boolean isDerived) {
         /** Pre-RANGE shape: bounds absent (null), as old snapshots without the fields read. */
         public AttributeResource(UUID id, String name, String kind, String visibility, MultiplicityKind multiplicity,
                 String defaultValue, UUID typeReferenceId, String type, int ordinal) {
             this(id, name, kind, visibility, multiplicity, defaultValue, typeReferenceId, type, ordinal, null, null,
                     null);
+        }
+
+        /** Pre-static/derived shape: both flags false, as old snapshots without the fields read. */
+        public AttributeResource(UUID id, String name, String kind, String visibility, MultiplicityKind multiplicity,
+                String defaultValue, UUID typeReferenceId, String type, int ordinal, Integer lowerBound,
+                Integer upperBound, String stereotype) {
+            this(id, name, kind, visibility, multiplicity, defaultValue, typeReferenceId, type, ordinal, lowerBound,
+                    upperBound, stereotype, false, false);
         }
 
         /** Pre-stereotype shape: no stereotype (null), as old snapshots without the field read. */
@@ -254,11 +264,22 @@ public record ModelResource(
             String aggregationKind,
             short ordinal,
             Integer lowerBound,
-            Integer upperBound) {
+            Integer upperBound,
+            @JsonProperty("isOrdered") boolean isOrdered,
+            @JsonProperty("isUnique") boolean isUnique) {
         /** Pre-RANGE shape: bounds absent (null), as old snapshots without the fields read. */
         public RelationshipEndResource(UUID id, UUID classifierId, String role, MultiplicityKind multiplicity,
                 NavigationKind navigability, String aggregationKind, short ordinal) {
-            this(id, classifierId, role, multiplicity, navigability, aggregationKind, ordinal, null, null);
+            this(id, classifierId, role, multiplicity, navigability, aggregationKind, ordinal, null, null, false,
+                    false);
+        }
+
+        /** Pre-ordered/unique shape: both flags false, as old snapshots without the fields read. */
+        public RelationshipEndResource(UUID id, UUID classifierId, String role, MultiplicityKind multiplicity,
+                NavigationKind navigability, String aggregationKind, short ordinal, Integer lowerBound,
+                Integer upperBound) {
+            this(id, classifierId, role, multiplicity, navigability, aggregationKind, ordinal, lowerBound, upperBound,
+                    false, false);
         }
     }
 }

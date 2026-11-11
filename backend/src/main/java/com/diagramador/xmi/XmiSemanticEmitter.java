@@ -165,9 +165,9 @@ public final class XmiSemanticEmitter {
         }
         // The property flags EA's own export writes (docs/fixtures/xmi/Prueba3.xml): without them EA reads the
         // property as non-unique and renders every imported attribute as {bag}.
-        element.setAttribute("isStatic", "false");
+        element.setAttribute("isStatic", Boolean.toString(attribute.isStatic()));
         element.setAttribute("isReadOnly", "false");
-        element.setAttribute("isDerived", "false");
+        element.setAttribute("isDerived", Boolean.toString(attribute.isDerived()));
         element.setAttribute("isOrdered", "false");
         element.setAttribute("isUnique", "true");
         element.setAttribute("isDerivedUnion", "false");
@@ -382,6 +382,13 @@ public final class XmiSemanticEmitter {
             setOptionalAttribute(ownedEnd, "name", end.role());
             ownedEnd.setAttribute("visibility", "public");
             ownedEnd.setAttribute("association", associationId);
+            // Written only when set: an unmarked end carries neither property, as before they existed.
+            if (end.isOrdered()) {
+                ownedEnd.setAttribute("isOrdered", "true");
+            }
+            if (end.isUnique()) {
+                ownedEnd.setAttribute("isUnique", "true");
+            }
             String aggregation = aggregation(end.aggregationKind(), context);
             if (aggregation != null) {
                 ownedEnd.setAttribute("aggregation", aggregation);

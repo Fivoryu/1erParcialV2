@@ -257,7 +257,9 @@ public final class XmiReader {
                         multiplicity.kind(), defaultValue == null ? null : defaultValue.getAttribute("value"),
                         type.id(), type.name(), ordinal++, multiplicity.lowerBound(), multiplicity.upperBound(),
                         memberStereotype(stereotypes.get(xmi(attribute, "id")), AttributeStereotype.class,
-                                "unsupported_attribute_stereotype")));
+                                "unsupported_attribute_stereotype"),
+                        Boolean.parseBoolean(attribute.getAttribute("isStatic")),
+                        Boolean.parseBoolean(attribute.getAttribute("isDerived"))));
             }
             return result;
         }
@@ -514,7 +516,9 @@ public final class XmiReader {
                         endMultiplicity == null ? null : endMultiplicity.kind(),
                         bound(end, "lowerValue"), bound(end, "upperValue"), end.getAttribute("aggregation"),
                         endMultiplicity == null ? null : endMultiplicity.lowerBound(),
-                        endMultiplicity == null ? null : endMultiplicity.upperBound()));
+                        endMultiplicity == null ? null : endMultiplicity.upperBound(),
+                        Boolean.parseBoolean(end.getAttribute("isOrdered")),
+                        Boolean.parseBoolean(end.getAttribute("isUnique"))));
             }
             List<RelationshipEndResource> result = new ArrayList<>();
             Set<SemanticEnd> used = new LinkedHashSet<>();
@@ -604,7 +608,8 @@ public final class XmiReader {
             UUID endId = semantic != null && !semantic.id().isEmpty() ? uuid(semantic.id())
                     : namedUuid("end:" + relationshipId + ":" + ordinal);
             return new RelationshipEndResource(endId, uuid(classifierRef), role, multiplicity,
-                    navigation, aggregation, (short) ordinal, lowerBound, upperBound);
+                    navigation, aggregation, (short) ordinal, lowerBound, upperBound,
+                    semantic != null && semantic.isOrdered(), semantic != null && semantic.isUnique());
         }
 
         private List<XmiReadingResult.Diagram> readDiagrams() {
@@ -1127,7 +1132,7 @@ public final class XmiReader {
 
     private record SemanticEnd(String id, String classifierRef, String role,
             MultiplicityKind multiplicity, String lower, String upper, String aggregation, Integer lowerBound,
-            Integer upperBound) {
+            Integer upperBound, boolean isOrdered, boolean isUnique) {
     }
 
     private record ExtensionEnd(String classifierRef, String role, String visibility,

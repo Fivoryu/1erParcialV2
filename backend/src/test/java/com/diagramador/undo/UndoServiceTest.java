@@ -276,6 +276,71 @@ class UndoServiceTest {
     }
 
     @Test
+    void undoRestoresTheFlagsOfAnUpdatedAndOfARemovedAttribute() {
+        Fixture fixture = fixture("undo-attribute-flags");
+        UUID classifierId = createClassifier(fixture, 0, "Order");
+        UUID attributeId = UUID.randomUUID();
+        assertAccepted(command(fixture, "attribute.add", 1,
+                Map.of("id", attributeId, "name", "code", "type", Map.of("primitiveName", "String"),
+                        "isStatic", true),
+                List.of(new Target("classifier", classifierId))));
+        assertAccepted(command(fixture, "attribute.update", 2, Map.of("isDerived", true, "isStatic", false),
+                List.of(new Target("attribute", attributeId))));
+        assertAccepted(command(fixture, "attribute.update", 3, Map.of("name", "renamed"),
+                List.of(new Target("attribute", attributeId))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.getName()).isEqualTo("code");
+            assertThat(attribute.isStatic()).isFalse();
+            assertThat(attribute.isDerived()).isTrue();
+        });
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.isStatic()).isTrue();
+            assertThat(attribute.isDerived()).isFalse();
+        });
+
+        assertAccepted(command(fixture, "attribute.update", 6, Map.of("isDerived", true),
+                List.of(new Target("attribute", attributeId))));
+        assertAccepted(command(fixture, "attribute.remove", 7, Map.of(),
+                List.of(new Target("attribute", attributeId))));
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.isStatic()).isTrue();
+            assertThat(attribute.isDerived()).isTrue();
+        });
+    }
+
+    @Test
+    void undoOfARelationshipDeleteRestoresTheEndProperties() {
+        Fixture fixture = fixture("undo-end-properties");
+        UUID source = createClassifier(fixture, 0, "Order");
+        UUID target = createClassifier(fixture, 1, "Customer");
+        UUID relationshipId = UUID.randomUUID();
+        assertAccepted(command(fixture, "relationship.create", 2, Map.of("id", relationshipId, "kind", "ASSOCIATION",
+                "source", Map.of("classifierId", source, "isOrdered", true),
+                "target", Map.of("classifierId", target, "isUnique", true)),
+                List.of(new Target("classifier", source), new Target("classifier", target))));
+        assertAccepted(command(fixture, "relationship.delete", 3, Map.of(),
+                List.of(new Target("relationship", relationshipId)),
+                List.of(new Precondition("cascade_count", 3, null))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+
+        var ends = relationshipEndRepository.findByRelationshipId(relationshipId);
+        assertThat(ends).hasSize(2);
+        assertThat(ends).filteredOn(end -> end.getOrdinal() == 1).singleElement().satisfies(end -> {
+            assertThat(end.isOrdered()).isTrue();
+            assertThat(end.isUnique()).isFalse();
+        });
+        assertThat(ends).filteredOn(end -> end.getOrdinal() == 2).singleElement().satisfies(end -> {
+            assertThat(end.isOrdered()).isFalse();
+            assertThat(end.isUnique()).isTrue();
+        });
+    }
+
+    @Test
     void undoRestoresTheStereotypeOfAnUpdatedAndOfARemovedAttribute() {
         Fixture fixture = fixture("undo-attribute-stereotype");
         UUID classifierId = createClassifier(fixture, 0, "Order");

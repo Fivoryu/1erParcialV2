@@ -624,15 +624,16 @@ public class CommandHandlerSupport {
 
     public void insertAttribute(CommandHandler.Context context, UUID id, Classifier classifier,
             TypeReference type, String name, String visibility, Multiplicity multiplicity, String defaultValue,
-            int ordinal, String stereotype) {
+            int ordinal, String stereotype, boolean isStatic, boolean isDerived) {
         String kind = classifier.getKind() == ClassifierKind.ENUMERATION ? "LITERAL" : "ATTRIBUTE";
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.uml_attribute
                     (attribute_id, classifier_id, type_reference_id, name, kind, visibility, multiplicity,
-                     lower_bound, upper_bound, default_value, ordinal, stereotype, created_at)
+                     lower_bound, upper_bound, default_value, ordinal, stereotype, is_static, is_derived,
+                     created_at)
                 VALUES (CAST(:id AS uuid), CAST(:classifierId AS uuid), CAST(:typeReferenceId AS uuid), :name,
                     :kind, :visibility, CAST(:multiplicity AS diagrammer.multiplicity_kind),
-                    :lowerBound, :upperBound, :defaultValue, :ordinal, :stereotype, now())
+                    :lowerBound, :upperBound, :defaultValue, :ordinal, :stereotype, :isStatic, :isDerived, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("classifierId", classifier.getId())
@@ -646,6 +647,8 @@ public class CommandHandlerSupport {
                 .setParameter("defaultValue", defaultValue)
                 .setParameter("ordinal", ordinal)
                 .setParameter("stereotype", stereotype)
+                .setParameter("isStatic", isStatic)
+                .setParameter("isDerived", isDerived)
                 .executeUpdate();
     }
 

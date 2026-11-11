@@ -282,6 +282,52 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
         assertThat(snapshotService.capture(fixture.model()).notes()).isEmpty();
     }
 
+    @Test
+    void attributeFlagsAndEndPropertiesChangeTheStateHashOnlyWhenTrueAndRoundTripThroughASnapshot() {
+        Fixture fixture = createRichModel();
+        String plain = snapshotService.stateHash(fixture.model());
+
+        setFlags(fixture, true);
+        String flagged = snapshotService.stateHash(fixture.model());
+        SnapshotModel snapshot = snapshotService.capture(fixture.model());
+
+        assertThat(flagged).isNotEqualTo(plain);
+        assertThat(stateHasher.hash(snapshot)).isEqualTo(flagged);
+        assertThat(snapshot.classifiers().stream().flatMap(classifier -> classifier.attributes().stream())
+                .filter(attribute -> attribute.isStatic() && attribute.isDerived())).isNotEmpty();
+        assertThat(snapshot.relationships().stream().flatMap(relationship -> relationship.ends().stream())
+                .filter(end -> end.isOrdered() && end.isUnique())).isNotEmpty();
+
+        setFlags(fixture, false);
+        assertThat(snapshotService.stateHash(fixture.model())).as("no flag, the hash it always had").isEqualTo(plain);
+
+        snapshotService.materialize(fixture.model(), snapshot);
+
+        assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(flagged);
+        assertThat(snapshotService.capture(fixture.model()).classifiers().stream()
+                .flatMap(classifier -> classifier.attributes().stream())
+                .filter(attribute -> attribute.isStatic() && attribute.isDerived())).isNotEmpty();
+        assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
+                .isEqualTo(snapshotService.toJson(snapshot));
+    }
+
+    private void setFlags(Fixture fixture, boolean value) {
+        transactionTemplate.executeWithoutResult(status -> {
+            attributeRepository.findAll().stream()
+                    .filter(candidate -> candidate.getClassifier().getModel().getId().equals(fixture.model().getId()))
+                    .forEach(candidate -> {
+                        candidate.setStatic(value);
+                        candidate.setDerived(value);
+                    });
+            relationshipEndRepository.findAll().stream()
+                    .filter(candidate -> candidate.getRelationship().getModel().getId().equals(fixture.model().getId()))
+                    .forEach(candidate -> {
+                        candidate.setOrdered(value);
+                        candidate.setUnique(value);
+                    });
+        });
+    }
+
     private void setStereotypes(Fixture fixture, String classifier, String attribute, String operation) {
         transactionTemplate.executeWithoutResult(status -> {
             classifierRepository.findById(fixture.mutableClassifierId()).orElseThrow().setStereotype(classifier);

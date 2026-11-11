@@ -214,6 +214,13 @@ public class UndoService {
                 payload.put("stereotype", snapshot.path("stereotype").isTextual()
                         ? snapshot.path("stereotype").asText() : null);
             }
+            // Only when the update touched them: the previous flag value comes back as an explicit boolean.
+            JsonNode updated = entry.getCommand().getCanonicalEnvelope().path("payload");
+            for (String flag : List.of("isStatic", "isDerived")) {
+                if (updated.has(flag)) {
+                    payload.put(flag, snapshot.path(flag).asBoolean(false));
+                }
+            }
             if (payload.isEmpty()) {
                 return Inverse.rejected("NOT_UNDOABLE", "El valor previo no fue capturado para " + entry.getType()
                         + ".");
@@ -243,6 +250,11 @@ public class UndoService {
             }
         }
         restoreRangeBounds(snapshot, payload);
+        for (String flag : List.of("isStatic", "isDerived")) {
+            if (snapshot.path(flag).asBoolean(false)) {
+                payload.put(flag, true);
+            }
+        }
         UUID classifierId = uuid(snapshot.path("classifierId"));
         return Inverse.of(new OperationEnvelope(UUID.randomUUID(), "attribute.add", author(), projectId,
                 modelId, baseRevision, List.of(new Target("classifier", classifierId)), List.of(), payload,
@@ -329,14 +341,26 @@ public class UndoService {
                 && classifierRepository.existsById(uuid(snapshot.path("associationClassId")))) {
             payload.put("associationClassId", snapshot.path("associationClassId").asText());
         }
-        payload.put("source", Map.of("classifierId", source.path("classifierId").asText()));
-        payload.put("target", Map.of("classifierId", target.path("classifierId").asText()));
+        payload.put("source", restoredEnd(source));
+        payload.put("target", restoredEnd(target));
         return Inverse.of(new OperationEnvelope(UUID.randomUUID(), "relationship.create", author(), projectId,
                 modelId, baseRevision,
                 List.of(new Target("classifier", uuid(source.path("classifierId"))),
                         new Target("classifier", uuid(target.path("classifierId")))),
                 List.of(), payload, CommandOrigin.UNDO, entry.getCommand().getCommandId(),
                 UUID.randomUUID().toString()));
+    }
+
+    /** The end payload of a recreated relationship: its classifier, plus each ordered/unique flag that was set. */
+    private static Map<String, Object> restoredEnd(JsonNode end) {
+        Map<String, Object> restored = new java.util.LinkedHashMap<>();
+        restored.put("classifierId", end.path("classifierId").asText());
+        for (String flag : List.of("isOrdered", "isUnique")) {
+            if (end.path(flag).asBoolean(false)) {
+                restored.put(flag, true);
+            }
+        }
+        return restored;
     }
 
     /**

@@ -594,6 +594,79 @@ class XmiSemanticEmitterTest {
         assertThat(items.upperBound()).isEqualTo(3);
     }
 
+    private static ModelResource flagsModel(boolean marked) {
+        AttributeResource counter = new AttributeResource(id(711), "counter", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.EXACTLY_ONE, null, id(712), "String", 0, null, null, null, marked, marked);
+        AttributeResource other = new AttributeResource(id(713), "other", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.EXACTLY_ONE, null, id(712), "String", 1, null, null, null, marked, false);
+        ClassifierResource owner = new ClassifierResource(id(700), "Owner", ClassifierKind.CLASS, false, null,
+                List.of(counter, other), List.of(), List.of());
+        ClassifierResource item = new ClassifierResource(id(701), "Item", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        RelationshipResource association = new RelationshipResource(id(720), "ASSOCIATION", "holds",
+                List.of(new RelationshipEndResource(id(721), id(700), "owner", MultiplicityKind.EXACTLY_ONE,
+                                NavigationKind.UNSPECIFIED, "none", (short) 1, null, null, marked, false),
+                        new RelationshipEndResource(id(722), id(701), "items", MultiplicityKind.ZERO_OR_MANY,
+                                NavigationKind.UNSPECIFIED, "none", (short) 2, null, null, false, marked)),
+                List.of());
+        return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(owner, item), List.of(association));
+    }
+
+    @Test
+    void attributeStaticDerivedAndEndOrderedUniqueRoundTripWithoutLosses() throws Exception {
+        XmiEmissionResult result = emitter.emit(flagsModel(true));
+        Document parsed = parse(result.document());
+        NodeList endNodes = parsed.getElementsByTagNameNS("*", "ownedEnd");
+        assertThat(endNodes.getLength()).isEqualTo(2);
+        Element first = (Element) endNodes.item(0);
+        Element second = (Element) endNodes.item(1);
+        assertThat(first.getAttribute("isOrdered")).isEqualTo("true");
+        assertThat(first.hasAttribute("isUnique")).as("false is not written").isFalse();
+        assertThat(second.hasAttribute("isOrdered")).isFalse();
+        assertThat(second.getAttribute("isUnique")).isEqualTo("true");
+
+        XmiReadingResult read = new XmiReader().read(result.document().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        List<AttributeResource> attributes = read.model().classifiers().stream()
+                .filter(classifier -> classifier.name().equals("Owner")).findFirst().orElseThrow().attributes();
+        assertThat(attributes).extracting(AttributeResource::isStatic).containsExactly(true, true);
+        assertThat(attributes).extracting(AttributeResource::isDerived).containsExactly(true, false);
+        List<RelationshipEndResource> ends = read.model().relationships().get(0).ends();
+        assertThat(ends).extracting(RelationshipEndResource::isOrdered).containsExactly(true, false);
+        assertThat(ends).extracting(RelationshipEndResource::isUnique).containsExactly(false, true);
+        assertThat(read.losses()).isEmpty();
+    }
+
+    @Test
+    void unmarkedAttributesAndEndsEmitNoEndPropertyAndReadBackUnmarked() throws Exception {
+        XmiEmissionResult result = emitter.emit(flagsModel(false));
+        Document parsed = parse(result.document());
+        NodeList endNodes = parsed.getElementsByTagNameNS("*", "ownedEnd");
+        for (int index = 0; index < endNodes.getLength(); index++) {
+            Element end = (Element) endNodes.item(index);
+            assertThat(end.hasAttribute("isOrdered")).isFalse();
+            assertThat(end.hasAttribute("isUnique")).isFalse();
+        }
+        NodeList attributeNodes = parsed.getElementsByTagNameNS("*", "ownedAttribute");
+        for (int index = 0; index < attributeNodes.getLength(); index++) {
+            Element attribute = (Element) attributeNodes.item(index);
+            assertThat(attribute.getAttribute("isStatic")).isEqualTo("false");
+            assertThat(attribute.getAttribute("isDerived")).isEqualTo("false");
+        }
+
+        XmiReadingResult read = new XmiReader().read(result.document().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(read.model().classifiers().stream().flatMap(classifier -> classifier.attributes().stream()))
+                .allSatisfy(attribute -> {
+                    assertThat(attribute.isStatic()).isFalse();
+                    assertThat(attribute.isDerived()).isFalse();
+                });
+        assertThat(read.model().relationships().get(0).ends()).allSatisfy(end -> {
+            assertThat(end.isOrdered()).isFalse();
+            assertThat(end.isUnique()).isFalse();
+        });
+    }
+
     @Test
     void aDependencyStereotypeReadsBackAndAnEmittedPlainDependencyReadsBackWithoutOne() {
         byte[] stereotyped = emitter.emit(stereotypedDependencyModel("EXTEND")).document()

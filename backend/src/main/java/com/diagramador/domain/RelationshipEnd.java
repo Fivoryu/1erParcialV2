@@ -63,6 +63,12 @@ public class RelationshipEnd {
     @Column(name = "aggregation_kind", nullable = false, length = 16)
     private String aggregationKind;
 
+    @Column(name = "is_ordered", nullable = false)
+    private boolean isOrdered;
+
+    @Column(name = "is_unique", nullable = false)
+    private boolean isUnique;
+
     protected RelationshipEnd() {
     }
 
@@ -149,6 +155,22 @@ public class RelationshipEnd {
 
     public void setUpperBound(Integer upperBound) {
         this.upperBound = upperBound;
+    }
+
+    public boolean isOrdered() {
+        return isOrdered;
+    }
+
+    public void setOrdered(boolean isOrdered) {
+        this.isOrdered = isOrdered;
+    }
+
+    public boolean isUnique() {
+        return isUnique;
+    }
+
+    public void setUnique(boolean isUnique) {
+        this.isUnique = isUnique;
     }
 
     public NavigationKind getNavigability() {

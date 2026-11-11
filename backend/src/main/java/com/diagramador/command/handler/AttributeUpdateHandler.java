@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 public class AttributeUpdateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("name", "type", "visibility", "multiplicity", "lowerBound", "upperBound", "defaultValue",
-            "isStatic", "isAbstract", "stereotype");
+            "isStatic", "isDerived", "isAbstract", "stereotype");
 
     private final CommandHandlerSupport support;
 
@@ -65,6 +65,12 @@ public class AttributeUpdateHandler implements CommandHandler.AddAction {
         if (payload.has("defaultValue")) {
             attribute.setDefaultValue(support.optionalText(payload, "defaultValue"));
         }
+        if (payload.has("isStatic")) {
+            attribute.setStatic(support.bool(payload, "isStatic"));
+        }
+        if (payload.has("isDerived")) {
+            attribute.setDerived(support.bool(payload, "isDerived"));
+        }
         if (payload.has("stereotype")) {
             attribute.setStereotype(support.stereotype(payload, "stereotype", AttributeStereotype.class));
         }
@@ -72,9 +78,6 @@ public class AttributeUpdateHandler implements CommandHandler.AddAction {
     }
 
     private void rejectUnsupportedFlags(JsonNode payload) {
-        if (payload.has("isStatic")) {
-            support.precondition("Attribute isStatic is unsupported: BL-FEA-05");
-        }
         if (payload.has("isAbstract")) {
             support.precondition("Attribute isAbstract is unsupported: BL-FEA-06");
         }

@@ -66,6 +66,12 @@ public class UmlAttribute {
     @Column(name = "stereotype", length = 32)
     private String stereotype;
 
+    @Column(name = "is_static", nullable = false)
+    private boolean isStatic;
+
+    @Column(name = "is_derived", nullable = false)
+    private boolean isDerived;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -188,6 +194,22 @@ public class UmlAttribute {
 
     public void setStereotype(String stereotype) {
         this.stereotype = stereotype;
+    }
+
+    public boolean isStatic() {
+        return isStatic;
+    }
+
+    public void setStatic(boolean isStatic) {
+        this.isStatic = isStatic;
+    }
+
+    public boolean isDerived() {
+        return isDerived;
+    }
+
+    public void setDerived(boolean isDerived) {
+        this.isDerived = isDerived;
     }
 
     public OffsetDateTime getCreatedAt() {

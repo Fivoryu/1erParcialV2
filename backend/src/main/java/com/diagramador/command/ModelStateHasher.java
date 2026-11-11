@@ -112,13 +112,14 @@ public class ModelStateHasher {
                         classifier.getStoreOverride()), classifier.getStereotype()))
                 .forEach(lines::add);
         attributes.stream().sorted(byId(UmlAttribute::getId))
-                .map(attribute -> withStereotype(withBounds(line("attributes", attribute.getId(),
+                .map(attribute -> withFlags(withStereotype(withBounds(line("attributes", attribute.getId(),
                         field("classifierId", id(attribute.getClassifier())),
                         field("typeReferenceId", id(attribute.getTypeReference())), field("name", attribute.getName()),
                         field("kind", attribute.getKind()), field("visibility", attribute.getVisibility()),
                         field("multiplicity", attribute.getMultiplicity()), field("defaultValue", attribute.getDefaultValue()),
                         field("ordinal", attribute.getOrdinal())), attribute.getLowerBound(), attribute.getUpperBound()),
-                        attribute.getStereotype()))
+                        attribute.getStereotype()), "isStatic", attribute.isStatic(), "isDerived",
+                        attribute.isDerived()))
                 .forEach(lines::add);
         operations.stream().sorted(byId(UmlOperation::getId))
                 .map(operation -> withStereotype(line("operations", operation.getId(),
@@ -140,11 +141,12 @@ public class ModelStateHasher {
                         relationship.getStereotype()), relationship.getAssociationClassId()))
                 .forEach(lines::add);
         relationshipEnds.stream().sorted(byId(RelationshipEnd::getId))
-                .map(end -> withBounds(line("relationshipEnds", end.getId(), field("relationshipId", id(end.getRelationship())),
+                .map(end -> withFlags(withBounds(line("relationshipEnds", end.getId(), field("relationshipId", id(end.getRelationship())),
                         field("classifierId", id(end.getClassifier())), field("ordinal", end.getOrdinal()),
                         field("role", end.getRole()), field("multiplicity", end.getMultiplicity()),
                         field("navigability", end.getNavigability()), field("aggregationKind", end.getAggregationKind())),
-                        end.getLowerBound(), end.getUpperBound()))
+                        end.getLowerBound(), end.getUpperBound()), "isOrdered", end.isOrdered(), "isUnique",
+                        end.isUnique()))
                 .forEach(lines::add);
         constraintRepository.findByModelId(modelId).stream().sorted(byId(UmlConstraint::getId))
                 .map(constraint -> line("constraints", constraint.getId(), field("ownerType", constraint.getOwnerType()),
@@ -194,13 +196,14 @@ public class ModelStateHasher {
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.attributes().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
-                .map(attribute -> withStereotype(withBounds(line("attributes", attribute.id(),
+                .map(attribute -> withFlags(withStereotype(withBounds(line("attributes", attribute.id(),
                         field("classifierId", ownerId(classifiers, attribute.id())),
                         field("typeReferenceId", attribute.typeReferenceId()), field("name", attribute.name()),
                         field("kind", attribute.kind()), field("visibility", attribute.visibility()),
                         field("multiplicity", attribute.multiplicity()), field("defaultValue", attribute.defaultValue()),
                         field("ordinal", attribute.ordinal())), attribute.lowerBound(), attribute.upperBound()),
-                        attribute.stereotype()))
+                        attribute.stereotype()), "isStatic", attribute.isStatic(), "isDerived",
+                        attribute.isDerived()))
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.operations().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
@@ -228,12 +231,13 @@ public class ModelStateHasher {
                 .forEach(lines::add);
         relationships.stream().flatMap(relationship -> relationship.ends().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
-                .map(end -> withBounds(line("relationshipEnds", end.id(),
+                .map(end -> withFlags(withBounds(line("relationshipEnds", end.id(),
                         field("relationshipId", relationshipIdForEnd(relationships, end.id())),
                         field("classifierId", end.classifierId()), field("ordinal", end.ordinal()),
                         field("role", end.role()), field("multiplicity", end.multiplicity()),
                         field("navigability", end.navigability()), field("aggregationKind", end.aggregationKind())),
-                        end.lowerBound(), end.upperBound()))
+                        end.lowerBound(), end.upperBound()), "isOrdered", end.isOrdered(), "isUnique",
+                        end.isUnique()))
                 .forEach(lines::add);
         java.util.stream.Stream.concat(classifiers.stream().flatMap(value -> value.constraints().stream()),
                         relationships.stream().flatMap(value -> value.constraints().stream()))
@@ -369,6 +373,13 @@ public class ModelStateHasher {
     /** Appended only when set, so an element without a stereotype keeps the hash it had before the field existed. */
     private static String withStereotype(String line, String stereotype) {
         return stereotype == null ? line : line + "|" + field("stereotype", stereotype);
+    }
+
+    /** Each flag is appended only when true, so an element with neither set keeps the hash it had before. */
+    private static String withFlags(String line, String firstName, boolean first, String secondName,
+            boolean second) {
+        String result = first ? line + "|" + field(firstName, true) : line;
+        return second ? result + "|" + field(secondName, true) : result;
     }
 
     /** Appended only when a RANGE carries bounds, so every model without one keeps the hash it had before. */

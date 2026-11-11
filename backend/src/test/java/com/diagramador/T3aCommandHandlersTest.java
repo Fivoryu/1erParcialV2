@@ -305,8 +305,8 @@ class T3aCommandHandlersTest extends AbstractPostgresIntegrationTest {
                 "type", Map.of("primitiveName", "String"), "multiplicity", "RANGE"), target("classifier", classifierId)),
                 ErrorCode.INVALID_PAYLOAD, "lowerBound");
         assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
-                "type", Map.of("primitiveName", "String"), "isStatic", true), target("classifier", classifierId)),
-                ErrorCode.PRECONDITION_FAILED, "BL-FEA-05");
+                "type", Map.of("primitiveName", "String"), "isStatic", "yes"), target("classifier", classifierId)),
+                ErrorCode.INVALID_PAYLOAD, "isStatic");
         assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
                 "type", Map.of("primitiveName", "String"), "isAbstract", true), target("classifier", classifierId)),
                 ErrorCode.PRECONDITION_FAILED, "BL-FEA-06");
