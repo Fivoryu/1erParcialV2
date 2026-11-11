@@ -6,7 +6,10 @@ import com.diagramador.domain.Project;
 import com.diagramador.identity.CurrentUserContext;
 import com.diagramador.identity.ProjectAuthorizationService;
 import com.diagramador.persistence.ProjectRepository;
+import com.diagramador.xmi.XmiImportIssue;
 import com.diagramador.xmi.XmiImportMode;
+import com.diagramador.xmi.XmiRepair;
+import com.diagramador.xmi.XmiResolution;
 import com.diagramador.xmi.XmiImportService;
 import com.diagramador.xmi.XmiReadingResult;
 import com.diagramador.xmi.XmiReader;
@@ -56,7 +59,8 @@ public class XmiImportController {
         authorizationService.requireMember(projectId);
         byte[] rawBytes = decode(request.fileBase64());
         try {
-            return preview(reader.read(rawBytes), rawBytes);
+            return preview(importService.preview(projectId, rawBytes, request.mode(), request.resolutions()),
+                    rawBytes);
         } catch (IllegalArgumentException exception) {
             throw invalidPayload(exception.getMessage());
         }
@@ -79,7 +83,7 @@ public class XmiImportController {
         try {
             XmiImportService.XmiImportResult result = importService.importBytes(projectId,
                     new Author(user.userId(), user.username()), rawBytes, request.checksum(), request.mode(),
-                    request.idempotencyKey());
+                    request.idempotencyKey(), request.resolutions());
             return new XmiImportResource(result.command().status().name(), result.command(), result.exchangeId(),
                     result.losses(), result.disagreements());
         } catch (IllegalArgumentException exception) {
@@ -102,17 +106,24 @@ public class XmiImportController {
         }
     }
 
-    private static XmiPreviewResource preview(XmiReadingResult reading, byte[] rawBytes) {
-        List<XmiReadingResult.Loss> losses = new ArrayList<>(reading.losses());
-        if (!reading.documentation().isEmpty()) {
-            losses.add(new XmiReadingResult.Loss("classifier_documentation_not_persisted",
-                    reading.documentation().size()));
-        }
+    /**
+     * The dry run: counts of the file as parsed (unchanged), the losses the import would record (parse losses plus
+     * the named repairs), and the new fields: issues still standing, the repairs applied, the resulting counts and
+     * whether the import would end clean.
+     */
+    private static XmiPreviewResource preview(XmiImportService.XmiPreview preview, byte[] rawBytes) {
+        XmiReadingResult parsed = preview.parsed();
+        XmiImportService.Assessment assessment = preview.assessment();
+        return new XmiPreviewResource(counts(parsed), assessment.reading().losses(), parsed.disagreements(),
+                checksum(rawBytes), assessment.issues(), assessment.repairs(), counts(assessment.reading()),
+                assessment.clean());
+    }
+
+    private static Counts counts(XmiReadingResult reading) {
         int figures = reading.diagrams().stream().mapToInt(diagram -> diagram.figures().size()).sum();
         int connectors = reading.diagrams().stream().mapToInt(diagram -> diagram.connectors().size()).sum();
-        Counts counts = new Counts(reading.model().classifiers().size(), reading.model().relationships().size(),
+        return new Counts(reading.model().classifiers().size(), reading.model().relationships().size(),
                 reading.diagrams().size(), figures, connectors);
-        return new XmiPreviewResource(counts, losses, reading.disagreements(), checksum(rawBytes));
     }
 
     private static String checksum(byte[] rawBytes) {
@@ -128,14 +139,24 @@ public class XmiImportController {
                 message == null || message.isBlank() ? "The XMI request is invalid." : message, List.of(), null);
     }
 
-    public record XmiFileRequest(@NotBlank String fileBase64) {
+    /** {@code mode} and {@code resolutions} are optional: the dry run narrows its checks to them when present. */
+    public record XmiFileRequest(@NotBlank String fileBase64, XmiImportMode mode, List<XmiResolution> resolutions) {
+
+        public XmiFileRequest {
+            resolutions = resolutions == null ? List.of() : List.copyOf(resolutions);
+        }
     }
 
     public record XmiImportRequest(
             @NotBlank String fileBase64,
             @NotBlank @Pattern(regexp = "(?i)[0-9a-f]{64}") String checksum,
             @NotNull XmiImportMode mode,
-            @NotBlank @Size(max = 256) String idempotencyKey) {
+            @NotBlank @Size(max = 256) String idempotencyKey,
+            List<XmiResolution> resolutions) {
+
+        public XmiImportRequest {
+            resolutions = resolutions == null ? List.of() : List.copyOf(resolutions);
+        }
     }
 
     public record Counts(int classifiers, int relationships, int views, int figurePlacements,
@@ -143,11 +164,14 @@ public class XmiImportController {
     }
 
     public record XmiPreviewResource(Counts counts, List<XmiReadingResult.Loss> losses,
-            List<XmiReadingResult.Disagreement> disagreements, String checksum) {
+            List<XmiReadingResult.Disagreement> disagreements, String checksum, List<XmiImportIssue> issues,
+            List<XmiRepair.Repair> repairs, Counts resultingCounts, boolean clean) {
 
         public XmiPreviewResource {
             losses = List.copyOf(losses);
             disagreements = List.copyOf(disagreements);
+            issues = List.copyOf(issues);
+            repairs = List.copyOf(repairs);
         }
     }
 

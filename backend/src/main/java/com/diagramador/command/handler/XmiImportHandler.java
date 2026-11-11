@@ -40,8 +40,10 @@ import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import com.diagramador.persistence.XmiExchangeRepository;
 import com.diagramador.persistence.XmiLossItemRepository;
+import com.diagramador.xmi.XmiImportIssue;
 import com.diagramador.xmi.XmiImportMode;
 import com.diagramador.xmi.XmiImportService;
+import com.diagramador.xmi.XmiImportValidator;
 import com.diagramador.xmi.XmiReadingResult;
 import jakarta.persistence.EntityManager;
 import java.util.ArrayList;
@@ -64,6 +66,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
 
     private static final Set<String> PAYLOAD_FIELDS = Set.of("mode", "profile", "checksum", "readingResult");
 
+    private final XmiImportValidator validator = new XmiImportValidator();
     private final ObjectMapper objectMapper;
     private final ClassifierRepository classifierRepository;
     private final UmlAttributeRepository attributeRepository;
@@ -122,13 +125,16 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 invalid("Payload field 'checksum' must be a SHA-256 hex digest");
             }
             XmiReadingResult reading = scopeConflictingIdentities(context.model(), readingResult(payload));
-            validateReading(reading);
-            validateNames(reading.model());
+            if (reading == null || reading.model() == null) {
+                invalid("A parsed XMI model is required");
+            }
+            rejectFirstBlocker(validator.validate(reading, mode,
+                    mode == XmiImportMode.AGREGAR ? existingModel(context.model())
+                            : XmiImportValidator.ExistingModel.EMPTY));
 
             ExistingRows oldRows = mode == XmiImportMode.REEMPLAZAR ? existingRows(context.model()) : null;
             List<DeletedTarget> deletedTargets = oldRows == null ? List.of() : deletedTargets(oldRows, reading);
             if (mode == XmiImportMode.AGREGAR) {
-                rejectNameCollisions(context.model(), reading.model());
                 rejectIdCollisions(reading.model());
             } else {
                 stage = "replacement deletion";
@@ -346,97 +352,22 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         }
     }
 
-    private void validateReading(XmiReadingResult reading) {
-        if (reading == null || reading.model() == null) {
-            invalid("A parsed XMI model is required");
-        }
-        ModelResource model = reading.model();
-        if (model.views().size() != 1 || reading.diagrams().size() != 1) {
-            precondition("An XMI import must contain exactly one diagram view");
-        }
-        Map<UUID, ModelResource.ClassifierResource> classifiers = new LinkedHashMap<>();
-        for (ModelResource.ClassifierResource classifier : model.classifiers()) {
-            if (classifier.id() == null || classifier.name() == null || classifier.name().isBlank()) {
-                invalid("Every imported classifier requires an id and a name");
-            }
-            if (classifiers.putIfAbsent(classifier.id(), classifier) != null) {
-                invalid("The imported model contains duplicate classifier id " + classifier.id());
-            }
-        }
-        for (ModelResource.ClassifierResource classifier : classifiers.values()) {
-            if (classifier.namespaceId() != null) {
-                ModelResource.ClassifierResource namespace = classifiers.get(classifier.namespaceId());
-                if (namespace == null || namespace.kind() != ClassifierKind.PACKAGE) {
-                    precondition("Classifier '" + classifier.name() + "' has an unsupported namespace");
-                }
-            }
-        }
-        for (ModelResource.RelationshipResource relationship : model.relationships()) {
-            try {
-                RelationshipKind.valueOf(relationship.kind().toUpperCase(Locale.ROOT));
-            } catch (RuntimeException exception) {
-                invalid("Unsupported relationship kind '" + relationship.kind() + "'");
-            }
-            if (relationship.id() == null || relationship.ends().size() != 2) {
-                precondition("Every imported relationship must have an id and exactly two ends");
-            }
-            for (ModelResource.RelationshipEndResource end : relationship.ends()) {
-                if (!classifiers.containsKey(end.classifierId())) {
-                    precondition("Relationship " + relationship.id() + " references a missing classifier");
-                }
-                if (end.ordinal() != 1 && end.ordinal() != 2) {
-                    invalid("Relationship ends must have ordinal 1 or 2");
-                }
-            }
-        }
-        ModelResource.ViewResource view = model.views().get(0);
-        if (view.id() == null || view.name() == null || view.name().isBlank()) {
-            invalid("The imported diagram requires an id and a name");
-        }
-        Set<String> geometryTargets = new HashSet<>();
-        for (ModelResource.GeometryResource geometry : view.elementGeometry()) {
-            if (geometry.id() == null || geometry.targetType() != TargetType.CLASSIFIER
-                    || !classifiers.containsKey(geometry.targetId()) || geometry.w() <= 0 || geometry.h() <= 0) {
-                precondition("The imported diagram contains invalid classifier geometry");
-            }
-            if (!geometryTargets.add(geometry.targetType() + ":" + geometry.targetId())) {
-                invalid("The imported diagram contains duplicate geometry for a classifier");
-            }
-        }
-        for (ModelResource.ConnectorPathResource path : view.connectorPath()) {
-            if (path.id() == null || model.relationships().stream().noneMatch(r -> r.id().equals(path.relationshipId()))) {
-                precondition("The imported diagram contains a path for a missing relationship");
-            }
-        }
+    /** The handler rejects with the first blocker, exactly as the checks it shares with the dry run order them. */
+    private void rejectFirstBlocker(List<XmiImportIssue> issues) {
+        issues.stream().filter(issue -> issue.severity() == XmiImportIssue.Severity.BLOCKER).findFirst()
+                .ifPresent(issue -> {
+                    throw new CommandValidationException(issue.rejectionCode(), issue.rejectionMessage());
+                });
     }
 
-    private void validateNames(ModelResource model) {
-        Set<NameKey> names = new HashSet<>();
-        for (ModelResource.ClassifierResource classifier : model.classifiers()) {
-            NameKey key = new NameKey(classifier.namespaceId(), classifier.name());
-            if (!names.add(key)) {
-                precondition("Imported classifier name '" + classifier.name() + "' collides within its namespace");
-            }
-        }
-    }
-
-    private void rejectNameCollisions(UmlModel model, ModelResource imported) {
-        List<Classifier> existing = classifierRepository.findByModelId(model.getId());
-        for (ModelResource.ClassifierResource candidate : imported.classifiers()) {
-            Classifier collision = existing.stream()
-                    .filter(item -> Objects.equals(item.getName(), candidate.name()))
-                    .filter(item -> Objects.equals(item.getNamespace() == null ? null : item.getNamespace().getId(),
-                            candidate.namespaceId()))
-                    .findFirst().orElse(null);
-            if (collision != null) {
-                precondition("AGREGAR is blocked: classifier name '" + candidate.name()
-                        + "' collides with existing classifier " + collision.getId());
-            }
-        }
-        String viewName = imported.views().get(0).name();
-        if (viewRepository.findByModelId(model.getId()).stream().anyMatch(view -> view.getName().equals(viewName))) {
-            precondition("AGREGAR is blocked: diagram name '" + viewName + "' already exists");
-        }
+    /** The stored names AGREGAR can collide with; also read by the import service for its dry run. */
+    public XmiImportValidator.ExistingModel existingModel(UmlModel model) {
+        List<XmiImportValidator.ExistingClassifier> classifiers = classifierRepository.findByModelId(model.getId())
+                .stream().map(item -> new XmiImportValidator.ExistingClassifier(item.getId(),
+                        item.getNamespace() == null ? null : item.getNamespace().getId(), item.getName())).toList();
+        Set<String> viewNames = new HashSet<>();
+        viewRepository.findByModelId(model.getId()).forEach(view -> viewNames.add(view.getName()));
+        return new XmiImportValidator.ExistingModel(classifiers, viewNames);
     }
 
     private void rejectIdCollisions(ModelResource model) {
@@ -862,9 +793,6 @@ public class XmiImportHandler implements CommandHandler.AddAction {
 
     private void precondition(String message) {
         throw new CommandValidationException(ErrorCode.PRECONDITION_FAILED, message);
-    }
-
-    private record NameKey(UUID namespaceId, String name) {
     }
 
     private record ExistingRows(List<Classifier> classifiers, List<UmlAttribute> attributes,

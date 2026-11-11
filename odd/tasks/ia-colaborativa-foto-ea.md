@@ -18,7 +18,8 @@ Rama: feat/ia-colaborativa-foto-ea (worktree, base f4a0bee) · Entrega: ask-on-r
 | T1 | S3, S4 | delegada (writer) + cableado web inline | hecho (ChatProposalApiTest 9, ChatAttachmentApiTest 7, web 187, tsc, lint) | ver git log |
 | T2 | S5 | inline | hecho (XmiExportApiTest 6) | ver git log |
 | T3 | S6 | inline | hecho (ChatAiApiTest 9, web chatState/ChatPanel) | ver git log |
-| T5 | S8, S9 | delegada tras T1 (writer backend) + web | pendiente | — |
+| T5a | S8, S9 | delegada (writer backend) | hecho (69 pruebas XMI en verde; ver L5) | ver git log |
+| T5b | S8, S9 | web (lista de problemas, resoluciones) + paso de IA con opciones cerradas | pendiente | — |
 | T4 | S1, S2 | actualizar Google Doc + manual | pendiente | — |
 
 ## Log
@@ -26,3 +27,4 @@ Rama: feat/ia-colaborativa-foto-ea (worktree, base f4a0bee) · Entrega: ask-on-r
 - L2 Análisis (explorador): existe cola de IA (1 hilo, cola de 4, una petición pendiente por usuario), SSE por proyecto, propuestas con aceptación atómica, subida de fotos solo a respuestas de texto del chat; exportar/importar XMI con panel. Faltan: foto→propuesta, captura de cámara, prueba export→import encadenada, solicitante en el estado en vivo.
 - L3 (2026-11-10) "Exportar e importar, quiero que la IA pueda hacer eso. Sobre toda la de exportar, si se le pasa un archivo XMI que lo importe al diagrama sea capaz de poder resolver problemas o conflictos, pero que la importaión al final este limpia y sin errores"
 - L4 Mapa de importación (explorador): la vista previa no valida (solo lee); el handler rechaza duros: vistas != 1, figuras/relaciones sobre clasificadores no soportados, ids duplicados, nombres repetidos, anidamiento inválido, colisiones en AGREGAR; `ModelValidator` R1-R9 no se usa al importar; el asistente no tiene herramientas XMI; el banner web de colisiones nunca se activa (espera `NAME_COLLISION_BLOCKS`, el import emite `PRECONDITION_FAILED`); `/commands` genérico permite `xmi.import` sin checksum de bytes.
+- L5 (T5a) Backend de importación limpia: `XmiImportValidator` (fuente única, la usa el handler), `XmiRepair` (7 reparaciones deterministas registradas como pérdidas), `resolutions` RENAME/SKIP en vista previa e importación, vista previa como ensayo (`issues`, `repairs`, `resultingCounts`, `clean`) y compuerta con `ModelValidator`. Desvío: `UNRESOLVED_TYPE` y `UNSUPPORTED_MULTIPLICITY_COMBINATION` cuentan como AVISO en la compuerta porque saltan en toda exportación normal de EA (Prueba3.xml); el resto de ERROR bloquea. Pendiente: `/commands` genérico evita reparaciones y compuerta.
