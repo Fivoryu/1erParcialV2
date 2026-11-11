@@ -27,7 +27,8 @@ import org.springframework.stereotype.Component;
 public class RelationshipCreateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "kind", "name", "stereotype", "associationClassId", "source", "target", "waypoints");
-    private static final Set<String> END_FIELDS = Set.of("classifierId", "role", "multiplicity", "navigability");
+    private static final Set<String> END_FIELDS = Set.of("classifierId", "role", "multiplicity", "lowerBound",
+            "upperBound", "navigability");
 
     private final CommandHandlerSupport support;
     private final UmlRelationshipRepository relationshipRepository;
@@ -75,10 +76,12 @@ public class RelationshipCreateHandler implements CommandHandler.AddAction {
 
         CommandHandlerSupport.AggregationKinds aggregation = support.aggregationKinds(kind);
         endRepository.saveAll(List.of(
-                RelationshipEnd.create(relationship, source.classifier(), (short) 1, source.role(),
-                        source.multiplicity(), source.navigability(), aggregation.source()),
-                RelationshipEnd.create(relationship, target.classifier(), (short) 2, target.role(),
-                        target.multiplicity(), target.navigability(), aggregation.target())));
+                RelationshipEnd.create(null, relationship, source.classifier(), (short) 1, source.role(),
+                        source.multiplicity().kind(), source.multiplicity().lowerBound(),
+                        source.multiplicity().upperBound(), source.navigability(), aggregation.source()),
+                RelationshipEnd.create(null, relationship, target.classifier(), (short) 2, target.role(),
+                        target.multiplicity().kind(), target.multiplicity().lowerBound(),
+                        target.multiplicity().upperBound(), target.navigability(), aggregation.target())));
 
         List<ConnectorPath> paths = new ArrayList<>();
         for (int ordinal = 0; ordinal < waypoints.size(); ordinal++) {
@@ -98,7 +101,8 @@ public class RelationshipCreateHandler implements CommandHandler.AddAction {
         UUID classifierId = support.uuid(end, "classifierId");
         Classifier classifier = support.classifier(context.model(), classifierId);
         String role = support.optionalText(end, "role");
-        MultiplicityKind multiplicity = support.multiplicity(end, "multiplicity", MultiplicityKind.EXACTLY_ONE);
+        CommandHandlerSupport.Multiplicity multiplicity = support.multiplicity(end, "multiplicity",
+                MultiplicityKind.EXACTLY_ONE, null, null);
         NavigationKind navigability = navigability(end, "navigability", NavigationKind.UNSPECIFIED);
         return new EndInput(classifier, role, multiplicity, navigability);
     }
@@ -162,7 +166,7 @@ public class RelationshipCreateHandler implements CommandHandler.AddAction {
         }
     }
 
-    private record EndInput(Classifier classifier, String role, MultiplicityKind multiplicity,
+    private record EndInput(Classifier classifier, String role, CommandHandlerSupport.Multiplicity multiplicity,
             NavigationKind navigability) {
     }
 

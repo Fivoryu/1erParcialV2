@@ -352,7 +352,7 @@ class ModelValidatorTest {
     // ---- R4: incomplete RANGE multiplicity specification (acta deviation, see class javadoc) ----
 
     @Test
-    void rangeAttributeMultiplicityIsReportedAsIncompleteSpecification() {
+    void rangeAttributeWithoutLowerBoundIsReportedAsIncompleteSpecification() {
         ModelValidationReadModel model = readModel(
                 List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Person")),
                 List.of(), List.of(),
@@ -369,6 +369,17 @@ class ModelValidatorTest {
         assertThat(diagnostic.elementId()).isEqualTo(PERSON_ID);
         assertThat(diagnostic.feature()).isEqualTo("tags");
         assertThat(diagnostic.message()).isNotBlank();
+    }
+
+    @Test
+    void rangeAttributeWithBoundsIsNotReported() {
+        UmlAttribute bounded = UmlAttribute.create(id(42), classifier(PERSON_ID, null, ClassifierKind.CLASS, "Owner"),
+                null, "tags", "property", "private", MultiplicityKind.RANGE, 2, 5, null, 0);
+        ModelValidationReadModel model = readModel(
+                List.of(classifier(PERSON_ID, null, ClassifierKind.CLASS, "Person")),
+                List.of(), List.of(), List.of(withId(bounded, id(42))), List.of(), List.of(), List.of());
+
+        assertThat(validator.incompleteRangeMultiplicities(model)).isEmpty();
     }
 
     // ---- R5: unique member names per namespace ----

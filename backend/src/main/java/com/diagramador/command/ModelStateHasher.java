@@ -109,12 +109,12 @@ public class ModelStateHasher {
                         classifier.getStoreOverride()))
                 .forEach(lines::add);
         attributes.stream().sorted(byId(UmlAttribute::getId))
-                .map(attribute -> line("attributes", attribute.getId(),
+                .map(attribute -> withBounds(line("attributes", attribute.getId(),
                         field("classifierId", id(attribute.getClassifier())),
                         field("typeReferenceId", id(attribute.getTypeReference())), field("name", attribute.getName()),
                         field("kind", attribute.getKind()), field("visibility", attribute.getVisibility()),
                         field("multiplicity", attribute.getMultiplicity()), field("defaultValue", attribute.getDefaultValue()),
-                        field("ordinal", attribute.getOrdinal())))
+                        field("ordinal", attribute.getOrdinal())), attribute.getLowerBound(), attribute.getUpperBound()))
                 .forEach(lines::add);
         operations.stream().sorted(byId(UmlOperation::getId))
                 .map(operation -> line("operations", operation.getId(),
@@ -135,10 +135,11 @@ public class ModelStateHasher {
                         relationship.getStereotype()), relationship.getAssociationClassId()))
                 .forEach(lines::add);
         relationshipEnds.stream().sorted(byId(RelationshipEnd::getId))
-                .map(end -> line("relationshipEnds", end.getId(), field("relationshipId", id(end.getRelationship())),
+                .map(end -> withBounds(line("relationshipEnds", end.getId(), field("relationshipId", id(end.getRelationship())),
                         field("classifierId", id(end.getClassifier())), field("ordinal", end.getOrdinal()),
                         field("role", end.getRole()), field("multiplicity", end.getMultiplicity()),
-                        field("navigability", end.getNavigability()), field("aggregationKind", end.getAggregationKind())))
+                        field("navigability", end.getNavigability()), field("aggregationKind", end.getAggregationKind())),
+                        end.getLowerBound(), end.getUpperBound()))
                 .forEach(lines::add);
         constraintRepository.findByModelId(modelId).stream().sorted(byId(UmlConstraint::getId))
                 .map(constraint -> line("constraints", constraint.getId(), field("ownerType", constraint.getOwnerType()),
@@ -186,12 +187,12 @@ public class ModelStateHasher {
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.attributes().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
-                .map(attribute -> line("attributes", attribute.id(),
+                .map(attribute -> withBounds(line("attributes", attribute.id(),
                         field("classifierId", ownerId(classifiers, attribute.id())),
                         field("typeReferenceId", attribute.typeReferenceId()), field("name", attribute.name()),
                         field("kind", attribute.kind()), field("visibility", attribute.visibility()),
                         field("multiplicity", attribute.multiplicity()), field("defaultValue", attribute.defaultValue()),
-                        field("ordinal", attribute.ordinal())))
+                        field("ordinal", attribute.ordinal())), attribute.lowerBound(), attribute.upperBound()))
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.operations().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
@@ -218,11 +219,12 @@ public class ModelStateHasher {
                 .forEach(lines::add);
         relationships.stream().flatMap(relationship -> relationship.ends().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
-                .map(end -> line("relationshipEnds", end.id(),
+                .map(end -> withBounds(line("relationshipEnds", end.id(),
                         field("relationshipId", relationshipIdForEnd(relationships, end.id())),
                         field("classifierId", end.classifierId()), field("ordinal", end.ordinal()),
                         field("role", end.role()), field("multiplicity", end.multiplicity()),
-                        field("navigability", end.navigability()), field("aggregationKind", end.aggregationKind())))
+                        field("navigability", end.navigability()), field("aggregationKind", end.aggregationKind())),
+                        end.lowerBound(), end.upperBound()))
                 .forEach(lines::add);
         java.util.stream.Stream.concat(classifiers.stream().flatMap(value -> value.constraints().stream()),
                         relationships.stream().flatMap(value -> value.constraints().stream()))
@@ -338,6 +340,14 @@ public class ModelStateHasher {
     /** Appended only when set, so a relationship without a stereotype keeps the hash it had before the field existed. */
     private static String withStereotype(String line, String stereotype) {
         return stereotype == null ? line : line + "|" + field("stereotype", stereotype);
+    }
+
+    /** Appended only when a RANGE carries bounds, so every model without one keeps the hash it had before. */
+    private static String withBounds(String line, Integer lowerBound, Integer upperBound) {
+        if (lowerBound == null && upperBound == null) {
+            return line;
+        }
+        return line + "|" + field("lowerBound", lowerBound) + "|" + field("upperBound", upperBound);
     }
 
     /** Appended only when set, so an association without a class of its own keeps the hash it had before the field. */

@@ -329,7 +329,8 @@ public final class MergeDiff {
                         "classifierId", classifier.id(), "name", attribute.name(), "kind", attribute.kind(),
                         "visibility", attribute.visibility(), "multiplicity", attribute.multiplicity(),
                         "defaultValue", attribute.defaultValue(), "typeReferenceId", attribute.typeReferenceId(),
-                        "type", attribute.type(), "ordinal", attribute.ordinal());
+                        "type", attribute.type(), "ordinal", attribute.ordinal(),
+                        "lowerBound", attribute.lowerBound(), "upperBound", attribute.upperBound());
                 add(elements, element("ATTRIBUTE", attribute.id(), attribute.name(), classifier.id(), childFields));
             }
             for (OperationResource operation : classifier.operations()) {
@@ -364,7 +365,8 @@ public final class MergeDiff {
                 Map<String, Object> endFields = fields(
                         "relationshipId", relationship.id(), "classifierId", end.classifierId(),
                         "role", end.role(), "multiplicity", end.multiplicity(), "navigability", end.navigability(),
-                        "aggregationKind", end.aggregationKind(), "ordinal", end.ordinal());
+                        "aggregationKind", end.aggregationKind(), "ordinal", end.ordinal(),
+                        "lowerBound", end.lowerBound(), "upperBound", end.upperBound());
                 add(elements, element("RELATIONSHIP_END", end.id(), end.role(), relationship.id(), endFields));
             }
             for (ConstraintResource constraint : relationship.constraints()) {
@@ -506,7 +508,7 @@ public final class MergeDiff {
         return new AttributeResource(element.targetId(), string(fields, "name"), string(fields, "kind"),
                 string(fields, "visibility"), (com.diagramador.domain.MultiplicityKind) fields.get("multiplicity"),
                 string(fields, "defaultValue"), uuid(fields, "typeReferenceId"), string(fields, "type"),
-                number(fields, "ordinal"));
+                number(fields, "ordinal"), nullableNumber(fields, "lowerBound"), nullableNumber(fields, "upperBound"));
     }
 
     private static OperationResource operationResource(Element element, Map<ElementKey, Element> elements) {
@@ -535,7 +537,8 @@ public final class MergeDiff {
         return new RelationshipEndResource(element.targetId(), uuid(fields, "classifierId"),
                 string(fields, "role"), (com.diagramador.domain.MultiplicityKind) fields.get("multiplicity"),
                 (com.diagramador.domain.NavigationKind) fields.get("navigability"),
-                string(fields, "aggregationKind"), (short) number(fields, "ordinal"));
+                string(fields, "aggregationKind"), (short) number(fields, "ordinal"),
+                nullableNumber(fields, "lowerBound"), nullableNumber(fields, "upperBound"));
     }
 
     private static GeometryResource geometryResource(Element element) {
@@ -561,6 +564,11 @@ public final class MergeDiff {
 
     private static int number(Map<String, Object> fields, String name) {
         return ((Number) fields.get(name)).intValue();
+    }
+
+    private static Integer nullableNumber(Map<String, Object> fields, String name) {
+        Object value = fields.get(name);
+        return value == null ? null : ((Number) value).intValue();
     }
 
     private static boolean bool(Map<String, Object> fields, String name) {

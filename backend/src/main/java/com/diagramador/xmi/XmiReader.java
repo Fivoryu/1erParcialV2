@@ -239,13 +239,13 @@ public final class XmiReader {
             int ordinal = 0;
             for (Element attribute : children(owner, "ownedAttribute")) {
                 UUID id = id(attribute, "attribute:" + ownerId + ":" + ordinal);
-                MultiplicityKind multiplicity = multiplicity(attribute);
+                ParsedMultiplicity multiplicity = multiplicity(attribute);
                 TypeReference type = enumeration ? TypeReference.empty() : readType(attribute);
                 Element defaultValue = child(attribute, "defaultValue");
                 result.add(new AttributeResource(id, attribute.getAttribute("name"),
                         enumeration ? "LITERAL" : "ATTRIBUTE", visibility(attribute.getAttribute("visibility")),
-                        multiplicity, defaultValue == null ? null : defaultValue.getAttribute("value"),
-                        type.id(), type.name(), ordinal++));
+                        multiplicity.kind(), defaultValue == null ? null : defaultValue.getAttribute("value"),
+                        type.id(), type.name(), ordinal++, multiplicity.lowerBound(), multiplicity.upperBound()));
             }
             return result;
         }
@@ -405,10 +405,13 @@ public final class XmiReader {
                 if (classifierRef.isEmpty()) {
                     loss("unresolved_relationship_end", 1);
                 }
+                ParsedMultiplicity endMultiplicity = child(end, "lowerValue") == null
+                        || child(end, "upperValue") == null ? null : multiplicity(end);
                 parsed.add(new SemanticEnd(xmi(end, "id"), classifierRef, end.getAttribute("name"),
-                        child(end, "lowerValue") == null || child(end, "upperValue") == null
-                                ? null : multiplicity(end),
-                        bound(end, "lowerValue"), bound(end, "upperValue"), end.getAttribute("aggregation")));
+                        endMultiplicity == null ? null : endMultiplicity.kind(),
+                        bound(end, "lowerValue"), bound(end, "upperValue"), end.getAttribute("aggregation"),
+                        endMultiplicity == null ? null : endMultiplicity.lowerBound(),
+                        endMultiplicity == null ? null : endMultiplicity.upperBound()));
             }
             List<RelationshipEndResource> result = new ArrayList<>();
             Set<SemanticEnd> used = new LinkedHashSet<>();
@@ -476,8 +479,18 @@ public final class XmiReader {
             }
             MultiplicityKind multiplicity = semanticMultiplicity != null ? semanticMultiplicity
                     : extensionMultiplicity != null ? extensionMultiplicity : defaultMultiplicity;
+            Integer lowerBound = null;
+            Integer upperBound = null;
             if (multiplicity == MultiplicityKind.RANGE) {
-                loss("unsupported_multiplicity", 1);
+                if (semantic != null && semantic.multiplicity() == MultiplicityKind.RANGE) {
+                    // Bounds (or the 0..* fallback with its loss) were settled when the semantic end was parsed.
+                    lowerBound = semantic.lowerBound();
+                    upperBound = semantic.upperBound();
+                } else {
+                    // A RANGE that only came from a default or an extension has no numeric bounds to keep.
+                    loss("unsupported_multiplicity", 1);
+                    lowerBound = 0;
+                }
             }
             NavigationKind navigation = extensionEnd == null ? NavigationKind.UNSPECIFIED
                     : extensionEnd.navigability();
@@ -488,7 +501,7 @@ public final class XmiReader {
             UUID endId = semantic != null && !semantic.id().isEmpty() ? uuid(semantic.id())
                     : namedUuid("end:" + relationshipId + ":" + ordinal);
             return new RelationshipEndResource(endId, uuid(classifierRef), role, multiplicity,
-                    navigation, aggregation, (short) ordinal);
+                    navigation, aggregation, (short) ordinal, lowerBound, upperBound);
         }
 
         private List<XmiReadingResult.Diagram> readDiagrams() {
@@ -641,12 +654,17 @@ public final class XmiReader {
             }
         }
 
-        private MultiplicityKind multiplicity(Element element) {
+        /**
+         * Reads lowerValue/upperValue. A numeric RANGE keeps its bounds (upper -1 means unbounded); an
+         * unreadable or inconsistent one is reported as a loss and falls back to the neutral 0..* RANGE so the
+         * persisted bounds always satisfy the model's invariants.
+         */
+        private ParsedMultiplicity multiplicity(Element element) {
             Element lower = child(element, "lowerValue");
             Element upper = child(element, "upperValue");
             if (lower == null || upper == null) {
                 loss("unsupported_multiplicity", 1);
-                return MultiplicityKind.RANGE;
+                return ParsedMultiplicity.FALLBACK_RANGE;
             }
             String low = lower.getAttribute("value");
             String high = upper.getAttribute("value");
@@ -656,13 +674,21 @@ public final class XmiReader {
                     : "uml:LiteralInteger".equals(upperType);
             if (!"uml:LiteralInteger".equals(xmi(lower, "type")) || !validUpperType) {
                 loss("unsupported_multiplicity_encoding", 1);
-                return MultiplicityKind.RANGE;
+                return ParsedMultiplicity.FALLBACK_RANGE;
             }
             MultiplicityKind result = boundsMultiplicity(low, high);
-            if (result == MultiplicityKind.RANGE) {
-                loss("unsupported_multiplicity", 1);
+            if (result != MultiplicityKind.RANGE) {
+                return new ParsedMultiplicity(result, null, null);
             }
-            return result;
+            Integer lowerBound = parseBound(low);
+            Integer upperBound = "-1".equals(high) ? null : parseBound(high);
+            boolean valid = lowerBound != null && lowerBound >= 0
+                    && ("-1".equals(high) || (upperBound != null && upperBound >= Math.max(lowerBound, 1)));
+            if (!valid) {
+                loss("unsupported_multiplicity", 1);
+                return ParsedMultiplicity.FALLBACK_RANGE;
+            }
+            return new ParsedMultiplicity(MultiplicityKind.RANGE, lowerBound, upperBound);
         }
 
         private String bound(Element owner, String childName) {
@@ -921,6 +947,18 @@ public final class XmiReader {
         return end == null ? "" : end.upper();
     }
 
+    private static Integer parseBound(String value) {
+        try {
+            return value == null || value.isBlank() ? null : Integer.valueOf(value.trim());
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private record ParsedMultiplicity(MultiplicityKind kind, Integer lowerBound, Integer upperBound) {
+        private static final ParsedMultiplicity FALLBACK_RANGE = new ParsedMultiplicity(MultiplicityKind.RANGE, 0, null);
+    }
+
     private static MultiplicityKind boundsMultiplicity(String lower, String upper) {
         if ("1".equals(lower) && "1".equals(upper)) {
             return MultiplicityKind.EXACTLY_ONE;
@@ -985,7 +1023,8 @@ public final class XmiReader {
     }
 
     private record SemanticEnd(String id, String classifierRef, String role,
-            MultiplicityKind multiplicity, String lower, String upper, String aggregation) {
+            MultiplicityKind multiplicity, String lower, String upper, String aggregation, Integer lowerBound,
+            Integer upperBound) {
     }
 
     private record ExtensionEnd(String classifierRef, String role, String visibility,

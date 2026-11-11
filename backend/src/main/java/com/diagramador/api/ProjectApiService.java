@@ -387,7 +387,8 @@ public class ProjectApiService {
         TypeReference typeReference = attribute.getTypeReference();
         return new AttributeResource(attribute.getId(), attribute.getName(), attribute.getKind(),
                 attribute.getVisibility(), attribute.getMultiplicity(), attribute.getDefaultValue(),
-                typeReference == null ? null : typeReference.getId(), typeName(typeReference), attribute.getOrdinal());
+                typeReference == null ? null : typeReference.getId(), typeName(typeReference), attribute.getOrdinal(),
+                attribute.getLowerBound(), attribute.getUpperBound());
     }
 
     private OperationResource operationResource(UmlOperation operation) {
@@ -413,7 +414,8 @@ public class ProjectApiService {
                 .stream()
                 .sorted(Comparator.comparingInt(RelationshipEnd::getOrdinal).thenComparing(RelationshipEnd::getId))
                 .map(end -> new RelationshipEndResource(end.getId(), end.getClassifier().getId(), end.getRole(),
-                        end.getMultiplicity(), end.getNavigability(), end.getAggregationKind(), end.getOrdinal()))
+                        end.getMultiplicity(), end.getNavigability(), end.getAggregationKind(), end.getOrdinal(),
+                        end.getLowerBound(), end.getUpperBound()))
                 .toList();
         List<ConstraintResource> constraintResources = sortedById(constraints, UmlConstraint::getId).stream()
                 .map(constraint -> new ConstraintResource(constraint.getId(), constraint.getExpression(),

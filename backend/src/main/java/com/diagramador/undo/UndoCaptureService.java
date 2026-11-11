@@ -177,6 +177,8 @@ public class UndoCaptureService {
         snapshot.put("visibility", attribute.getVisibility());
         snapshot.put("multiplicity", attribute.getMultiplicity() == null ? null
                 : attribute.getMultiplicity().name());
+        snapshot.put("lowerBound", attribute.getLowerBound());
+        snapshot.put("upperBound", attribute.getUpperBound());
         snapshot.put("defaultValue", attribute.getDefaultValue());
         snapshot.put("ordinal", attribute.getOrdinal());
         return snapshot;
@@ -212,6 +214,8 @@ public class UndoCaptureService {
             endSnapshot.put("ordinal", (int) end.getOrdinal());
             endSnapshot.put("role", end.getRole());
             endSnapshot.put("multiplicity", end.getMultiplicity() == null ? null : end.getMultiplicity().name());
+            endSnapshot.put("lowerBound", end.getLowerBound());
+            endSnapshot.put("upperBound", end.getUpperBound());
             endSnapshot.put("navigability", end.getNavigability() == null ? null : end.getNavigability().name());
             ends.add(endSnapshot);
         }

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class AttributeUpdateHandler implements CommandHandler.AddAction {
 
-    private static final Set<String> FIELDS = Set.of("name", "type", "visibility", "multiplicity", "defaultValue",
+    private static final Set<String> FIELDS = Set.of("name", "type", "visibility", "multiplicity", "lowerBound", "upperBound", "defaultValue",
             "isStatic", "isAbstract");
 
     private final CommandHandlerSupport support;
@@ -54,8 +54,12 @@ public class AttributeUpdateHandler implements CommandHandler.AddAction {
         if (payload.has("visibility")) {
             attribute.setVisibility(support.visibility(payload, "visibility", attribute.getVisibility()));
         }
-        if (payload.has("multiplicity")) {
-            attribute.setMultiplicity(support.multiplicity(payload, "multiplicity", attribute.getMultiplicity()));
+        if (payload.has("multiplicity") || payload.has("lowerBound") || payload.has("upperBound")) {
+            CommandHandlerSupport.Multiplicity multiplicity = support.multiplicity(payload, "multiplicity",
+                    attribute.getMultiplicity(), attribute.getLowerBound(), attribute.getUpperBound());
+            attribute.setMultiplicity(multiplicity.kind());
+            attribute.setLowerBound(multiplicity.lowerBound());
+            attribute.setUpperBound(multiplicity.upperBound());
         }
         if (payload.has("defaultValue")) {
             attribute.setDefaultValue(support.optionalText(payload, "defaultValue"));

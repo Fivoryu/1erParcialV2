@@ -19,7 +19,8 @@ import org.springframework.stereotype.Component;
 public class RelationshipUpdateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("name", "kind", "stereotype", "associationClassId", "source", "target");
-    private static final Set<String> END_FIELDS = Set.of("role", "multiplicity", "navigability");
+    private static final Set<String> END_FIELDS = Set.of("role", "multiplicity", "lowerBound", "upperBound",
+            "navigability");
 
     private final CommandHandlerSupport support;
     private final RelationshipEndRepository endRepository;
@@ -101,8 +102,12 @@ public class RelationshipUpdateHandler implements CommandHandler.AddAction {
         if (update.has("role")) {
             end.setRole(support.optionalText(update, "role"));
         }
-        if (update.has("multiplicity")) {
-            end.setMultiplicity(support.multiplicity(update, "multiplicity", end.getMultiplicity()));
+        if (update.has("multiplicity") || update.has("lowerBound") || update.has("upperBound")) {
+            CommandHandlerSupport.Multiplicity multiplicity = support.multiplicity(update, "multiplicity",
+                    end.getMultiplicity(), end.getLowerBound(), end.getUpperBound());
+            end.setMultiplicity(multiplicity.kind());
+            end.setLowerBound(multiplicity.lowerBound());
+            end.setUpperBound(multiplicity.upperBound());
         }
         if (update.has("navigability")) {
             end.setNavigability(navigability(update, "navigability", end.getNavigability()));

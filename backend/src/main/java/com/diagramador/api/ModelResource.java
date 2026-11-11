@@ -131,7 +131,14 @@ public record ModelResource(
             String defaultValue,
             UUID typeReferenceId,
             String type,
-            int ordinal) {
+            int ordinal,
+            Integer lowerBound,
+            Integer upperBound) {
+        /** Pre-RANGE shape: bounds absent (null), as old snapshots without the fields read. */
+        public AttributeResource(UUID id, String name, String kind, String visibility, MultiplicityKind multiplicity,
+                String defaultValue, UUID typeReferenceId, String type, int ordinal) {
+            this(id, name, kind, visibility, multiplicity, defaultValue, typeReferenceId, type, ordinal, null, null);
+        }
     }
 
     public record OperationResource(
@@ -196,6 +203,13 @@ public record ModelResource(
             MultiplicityKind multiplicity,
             NavigationKind navigability,
             String aggregationKind,
-            short ordinal) {
+            short ordinal,
+            Integer lowerBound,
+            Integer upperBound) {
+        /** Pre-RANGE shape: bounds absent (null), as old snapshots without the fields read. */
+        public RelationshipEndResource(UUID id, UUID classifierId, String role, MultiplicityKind multiplicity,
+                NavigationKind navigability, String aggregationKind, short ordinal) {
+            this(id, classifierId, role, multiplicity, navigability, aggregationKind, ordinal, null, null);
+        }
     }
 }

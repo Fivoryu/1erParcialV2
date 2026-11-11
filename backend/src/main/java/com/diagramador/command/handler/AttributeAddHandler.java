@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class AttributeAddHandler implements CommandHandler.AddAction {
 
-    private static final Set<String> FIELDS = Set.of("id", "name", "type", "visibility", "multiplicity",
+    private static final Set<String> FIELDS = Set.of("id", "name", "type", "visibility", "multiplicity", "lowerBound", "upperBound",
             "defaultValue", "ordinal", "isStatic", "isAbstract");
 
     private final CommandHandlerSupport support;
@@ -51,7 +51,8 @@ public class AttributeAddHandler implements CommandHandler.AddAction {
         support.ensureAttributeNameAvailable(classifier, name, null);
         TypeReference type = literal ? null : support.typeReference(context, payload.get("type"));
         String visibility = support.visibility(payload, "visibility", "PUBLIC");
-        MultiplicityKind multiplicity = support.multiplicity(payload, "multiplicity", MultiplicityKind.EXACTLY_ONE);
+        CommandHandlerSupport.Multiplicity multiplicity = support.multiplicity(payload, "multiplicity",
+                MultiplicityKind.EXACTLY_ONE, null, null);
         int ordinal = support.ordinalOrNext(payload, "ordinal",
                 attributeRepository.findByClassifierId(classifier.getId()).stream().map(UmlAttribute::getOrdinal).toList());
         support.insertAttribute(context, id, classifier, type, name, visibility, multiplicity,

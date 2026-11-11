@@ -222,6 +222,39 @@ class UndoServiceTest {
     }
 
     @Test
+    void undoRestoresRangeBoundsOfAnUpdatedAndOfARemovedAttribute() {
+        Fixture fixture = fixture("undo-attribute-range");
+        UUID classifierId = createClassifier(fixture, 0, "Order");
+        UUID attributeId = UUID.randomUUID();
+        assertAccepted(command(fixture, "attribute.add", 1,
+                Map.of("id", attributeId, "name", "tags", "type", Map.of("primitiveName", "String"),
+                        "multiplicity", "RANGE", "lowerBound", 2),
+                List.of(new Target("classifier", classifierId))));
+        assertAccepted(command(fixture, "attribute.update", 2,
+                Map.of("multiplicity", "RANGE", "lowerBound", 1, "upperBound", 4),
+                List.of(new Target("attribute", attributeId))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        transactionTemplate.execute(status -> {
+            var restored = attributeRepository.findById(attributeId).orElseThrow();
+            assertThat(restored.getLowerBound()).isEqualTo(2);
+            assertThat(restored.getUpperBound()).isNull();
+            return null;
+        });
+
+        assertAccepted(command(fixture, "attribute.remove", 4, Map.of(),
+                List.of(new Target("attribute", attributeId))));
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        transactionTemplate.execute(status -> {
+            var restored = attributeRepository.findById(attributeId).orElseThrow();
+            assertThat(restored.getMultiplicity()).isEqualTo(com.diagramador.domain.MultiplicityKind.RANGE);
+            assertThat(restored.getLowerBound()).isEqualTo(2);
+            assertThat(restored.getUpperBound()).isNull();
+            return null;
+        });
+    }
+
+    @Test
     void undoOfRelationshipCreateAppliesTheInverseDelete() {
         Fixture fixture = fixture("undo-relationship-create");
         UUID sourceId = createClassifier(fixture, 0, "Order");

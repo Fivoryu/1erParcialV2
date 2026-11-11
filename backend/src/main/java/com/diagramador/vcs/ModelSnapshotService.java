@@ -12,6 +12,7 @@ import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.command.ModelStateHasher;
+import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.ConnectorPath;
@@ -435,7 +436,8 @@ public class ModelSnapshotService {
         TypeReference typeReference = attribute.getTypeReference();
         return new ModelResource.AttributeResource(attribute.getId(), attribute.getName(), attribute.getKind(),
                 attribute.getVisibility(), attribute.getMultiplicity(), attribute.getDefaultValue(),
-                typeReference == null ? null : typeReference.getId(), typeName(typeReference), attribute.getOrdinal());
+                typeReference == null ? null : typeReference.getId(), typeName(typeReference), attribute.getOrdinal(),
+                attribute.getLowerBound(), attribute.getUpperBound());
     }
 
     private OperationResource operationResource(UmlOperation operation) {
@@ -461,7 +463,8 @@ public class ModelSnapshotService {
                 .stream()
                 .sorted(Comparator.comparingInt(RelationshipEnd::getOrdinal).thenComparing(RelationshipEnd::getId))
                 .map(end -> new RelationshipEndResource(end.getId(), end.getClassifier().getId(), end.getRole(),
-                        end.getMultiplicity(), end.getNavigability(), end.getAggregationKind(), end.getOrdinal()))
+                        end.getMultiplicity(), end.getNavigability(), end.getAggregationKind(), end.getOrdinal(),
+                        end.getLowerBound(), end.getUpperBound()))
                 .toList();
         List<ConstraintResource> constraintResources = sortedById(constraints, UmlConstraint::getId).stream()
                 .map(constraint -> new ConstraintResource(constraint.getId(), constraint.getExpression(),
@@ -573,14 +576,23 @@ public class ModelSnapshotService {
                 .executeUpdate();
     }
 
+    /** Snapshots from before bounds existed may hold a RANGE without a lower bound: it restores as 0..*. */
+    private static Integer persistedLower(MultiplicityKind multiplicity, Integer lowerBound) {
+        if (multiplicity != MultiplicityKind.RANGE) {
+            return null;
+        }
+        return lowerBound == null ? 0 : lowerBound;
+    }
+
     private void upsertAttribute(AttributeSlot slot) {
         AttributeResource resource = slot.resource();
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.uml_attribute
                     (attribute_id, classifier_id, type_reference_id, name, kind, visibility,
-                     multiplicity, default_value, ordinal)
+                     multiplicity, lower_bound, upper_bound, default_value, ordinal)
                 VALUES (:id, :classifierId, :typeReferenceId, :name, :kind, :visibility,
-                        CAST(:multiplicity AS diagrammer.multiplicity_kind), :defaultValue, :ordinal)
+                        CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
+                        :defaultValue, :ordinal)
                 ON CONFLICT (attribute_id) DO UPDATE SET
                     classifier_id = EXCLUDED.classifier_id,
                     type_reference_id = EXCLUDED.type_reference_id,
@@ -588,6 +600,8 @@ public class ModelSnapshotService {
                     kind = EXCLUDED.kind,
                     visibility = EXCLUDED.visibility,
                     multiplicity = EXCLUDED.multiplicity,
+                    lower_bound = EXCLUDED.lower_bound,
+                    upper_bound = EXCLUDED.upper_bound,
                     default_value = EXCLUDED.default_value,
                     ordinal = EXCLUDED.ordinal
                 """)
@@ -598,6 +612,9 @@ public class ModelSnapshotService {
                 .setParameter("kind", resource.kind())
                 .setParameter("visibility", resource.visibility())
                 .setParameter("multiplicity", resource.multiplicity() == null ? null : resource.multiplicity().name())
+                .setParameter("lowerBound", persistedLower(resource.multiplicity(), resource.lowerBound()))
+                .setParameter("upperBound", resource.multiplicity() == MultiplicityKind.RANGE
+                        ? resource.upperBound() : null)
                 .setParameter("defaultValue", resource.defaultValue())
                 .setParameter("ordinal", resource.ordinal())
                 .executeUpdate();
@@ -680,9 +697,9 @@ public class ModelSnapshotService {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.relationship_end
                     (relationship_end_id, relationship_id, classifier_id, ordinal, role, multiplicity,
-                     navigability, aggregation_kind)
+                     lower_bound, upper_bound, navigability, aggregation_kind)
                 VALUES (:id, :relationshipId, :classifierId, :ordinal, :role,
-                        CAST(:multiplicity AS diagrammer.multiplicity_kind),
+                        CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
                         CAST(:navigability AS diagrammer.navigation_kind), :aggregationKind)
                 ON CONFLICT (relationship_end_id) DO UPDATE SET
                     relationship_id = EXCLUDED.relationship_id,
@@ -690,6 +707,8 @@ public class ModelSnapshotService {
                     ordinal = EXCLUDED.ordinal,
                     role = EXCLUDED.role,
                     multiplicity = EXCLUDED.multiplicity,
+                    lower_bound = EXCLUDED.lower_bound,
+                    upper_bound = EXCLUDED.upper_bound,
                     navigability = EXCLUDED.navigability,
                     aggregation_kind = EXCLUDED.aggregation_kind
                 """)
@@ -699,6 +718,9 @@ public class ModelSnapshotService {
                 .setParameter("ordinal", resource.ordinal())
                 .setParameter("role", resource.role())
                 .setParameter("multiplicity", resource.multiplicity() == null ? null : resource.multiplicity().name())
+                .setParameter("lowerBound", persistedLower(resource.multiplicity(), resource.lowerBound()))
+                .setParameter("upperBound", resource.multiplicity() == MultiplicityKind.RANGE
+                        ? resource.upperBound() : null)
                 .setParameter("navigability", resource.navigability() == null ? null : resource.navigability().name())
                 .setParameter("aggregationKind", resource.aggregationKind())
                 .executeUpdate();

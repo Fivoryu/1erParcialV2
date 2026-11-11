@@ -191,19 +191,57 @@ public class CommandHandlerSupport {
         return value;
     }
 
-    public MultiplicityKind multiplicity(JsonNode payload, String field, MultiplicityKind defaultValue) {
+    /** Resolved multiplicity: the kind plus RANGE bounds (both null unless the kind is RANGE). */
+    public record Multiplicity(MultiplicityKind kind, Integer lowerBound, Integer upperBound) {
+    }
+
+    /**
+     * Shared multiplicity validation for attribute and relationship-end commands. Reads {@code field} (kind),
+     * {@code lowerBound} and {@code upperBound} from {@code payload}; anything absent falls back to the current
+     * values. RANGE requires lowerBound >= 0 and an upperBound that is null (unbounded) or >= max(lowerBound, 1);
+     * every other kind must not carry bounds and clears them.
+     */
+    public Multiplicity multiplicity(JsonNode payload, String field, MultiplicityKind currentKind,
+            Integer currentLower, Integer currentUpper) {
         String value = payload.has(field) && !payload.get(field).isNull()
                 ? text(payload, field).toUpperCase(Locale.ROOT)
-                : defaultValue.name();
-        if (value.equals("RANGE")) {
-            precondition("Multiplicity RANGE is unsupported: BL-REL-07 and GAP-05");
-        }
+                : currentKind.name();
+        MultiplicityKind kind;
         try {
-            return MultiplicityKind.valueOf(value);
+            kind = MultiplicityKind.valueOf(value);
         } catch (IllegalArgumentException exception) {
             invalid("Unsupported multiplicity '" + value + "'");
             return null;
         }
+        if (kind != MultiplicityKind.RANGE) {
+            if (payload.hasNonNull("lowerBound") || payload.hasNonNull("upperBound")) {
+                invalid("lowerBound and upperBound are only allowed when multiplicity is RANGE");
+            }
+            return new Multiplicity(kind, null, null);
+        }
+        Integer lower = payload.has("lowerBound") ? bound(payload, "lowerBound") : currentLower;
+        Integer upper = payload.has("upperBound") ? bound(payload, "upperBound") : currentUpper;
+        if (lower == null) {
+            invalid("Multiplicity RANGE requires lowerBound");
+        }
+        if (lower < 0) {
+            invalid("lowerBound must be >= 0");
+        }
+        if (upper != null && upper < Math.max(lower, 1)) {
+            invalid("upperBound must be >= max(lowerBound, 1)");
+        }
+        return new Multiplicity(kind, lower, upper);
+    }
+
+    private Integer bound(JsonNode payload, String field) {
+        JsonNode node = payload.get(field);
+        if (node.isNull()) {
+            return null;
+        }
+        if (!node.isIntegralNumber() || !node.canConvertToInt()) {
+            invalid("Payload field '" + field + "' must be an integer");
+        }
+        return node.intValue();
     }
 
     public ClassifierKind classifierKind(JsonNode payload) {
@@ -514,16 +552,16 @@ public class CommandHandlerSupport {
     }
 
     public void insertAttribute(CommandHandler.Context context, UUID id, Classifier classifier,
-            TypeReference type, String name, String visibility, MultiplicityKind multiplicity, String defaultValue,
+            TypeReference type, String name, String visibility, Multiplicity multiplicity, String defaultValue,
             int ordinal) {
         String kind = classifier.getKind() == ClassifierKind.ENUMERATION ? "LITERAL" : "ATTRIBUTE";
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.uml_attribute
                     (attribute_id, classifier_id, type_reference_id, name, kind, visibility, multiplicity,
-                     default_value, ordinal, created_at)
+                     lower_bound, upper_bound, default_value, ordinal, created_at)
                 VALUES (CAST(:id AS uuid), CAST(:classifierId AS uuid), CAST(:typeReferenceId AS uuid), :name,
                     :kind, :visibility, CAST(:multiplicity AS diagrammer.multiplicity_kind),
-                    :defaultValue, :ordinal, now())
+                    :lowerBound, :upperBound, :defaultValue, :ordinal, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("classifierId", classifier.getId())
@@ -531,7 +569,9 @@ public class CommandHandlerSupport {
                 .setParameter("name", name)
                 .setParameter("kind", kind)
                 .setParameter("visibility", visibility)
-                .setParameter("multiplicity", multiplicity.name())
+                .setParameter("multiplicity", multiplicity.kind().name())
+                .setParameter("lowerBound", multiplicity.lowerBound())
+                .setParameter("upperBound", multiplicity.upperBound())
                 .setParameter("defaultValue", defaultValue)
                 .setParameter("ordinal", ordinal)
                 .executeUpdate();

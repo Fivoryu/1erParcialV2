@@ -557,6 +557,42 @@ class XmiSemanticEmitterTest {
     }
 
     @Test
+    void rangeMultiplicityRoundTripsItsNumericBoundsWithoutLosses() {
+        AttributeResource tags = new AttributeResource(id(511), "tags", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.RANGE, null, id(512), "String", 0, 2, 5);
+        AttributeResource open = new AttributeResource(id(513), "open", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.RANGE, null, id(512), "String", 1, 2, null);
+        ClassifierResource owner = new ClassifierResource(id(500), "Owner", ClassifierKind.CLASS, false, null,
+                List.of(tags, open), List.of(), List.of());
+        ClassifierResource item = new ClassifierResource(id(501), "Item", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        RelationshipResource association = new RelationshipResource(id(520), "ASSOCIATION", "holds",
+                List.of(new RelationshipEndResource(id(521), id(500), "owner", MultiplicityKind.EXACTLY_ONE,
+                                NavigationKind.UNSPECIFIED, "none", (short) 1),
+                        new RelationshipEndResource(id(522), id(501), "items", MultiplicityKind.RANGE,
+                                NavigationKind.UNSPECIFIED, "none", (short) 2, 3, 3)), List.of());
+        ModelResource model = new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(owner, item),
+                List.of(association));
+
+        XmiEmissionResult result = emitter.emit(model);
+
+        assertThat(result.losses()).extracting(XmiEmissionResult.Loss::name)
+                .doesNotContain("unsupported_multiplicity_range");
+        XmiReadingResult read = new XmiReader().read(result.document().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        List<AttributeResource> attributes = read.model().classifiers().stream()
+                .filter(classifier -> classifier.name().equals("Owner")).findFirst().orElseThrow().attributes();
+        assertThat(attributes).extracting(AttributeResource::lowerBound).containsExactly(2, 2);
+        assertThat(attributes).extracting(AttributeResource::upperBound).containsExactly(5, null);
+        assertThat(attributes).extracting(AttributeResource::multiplicity)
+                .containsOnly(MultiplicityKind.RANGE);
+        RelationshipEndResource items = read.model().relationships().get(0).ends().stream()
+                .filter(end -> end.ordinal() == 2).findFirst().orElseThrow();
+        assertThat(items.multiplicity()).isEqualTo(MultiplicityKind.RANGE);
+        assertThat(items.lowerBound()).isEqualTo(3);
+        assertThat(items.upperBound()).isEqualTo(3);
+    }
+
+    @Test
     void aDependencyStereotypeReadsBackAndAnEmittedPlainDependencyReadsBackWithoutOne() {
         byte[] stereotyped = emitter.emit(stereotypedDependencyModel("EXTEND")).document()
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8);

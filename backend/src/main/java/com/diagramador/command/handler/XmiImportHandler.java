@@ -207,7 +207,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             List<ModelResource.AttributeResource> attributes = classifier.attributes().stream().map(attribute ->
                     new ModelResource.AttributeResource(mapped(attributeIds, attribute.id()), attribute.name(),
                             attribute.kind(), attribute.visibility(), attribute.multiplicity(), attribute.defaultValue(),
-                            mapped(classifierIds, attribute.typeReferenceId()), attribute.type(), attribute.ordinal()))
+                            mapped(classifierIds, attribute.typeReferenceId()), attribute.type(), attribute.ordinal(),
+                            attribute.lowerBound(), attribute.upperBound()))
                     .toList();
             List<ModelResource.OperationResource> operations = classifier.operations().stream().map(operation -> {
                 List<ModelResource.ParameterResource> parameters = operation.parameters().stream().map(parameter ->
@@ -230,7 +231,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             List<ModelResource.RelationshipEndResource> ends = relationship.ends().stream().map(end ->
                     new ModelResource.RelationshipEndResource(mapped(endIds, end.id()),
                             mapped(classifierIds, end.classifierId()), end.role(), end.multiplicity(),
-                            end.navigability(), end.aggregationKind(), end.ordinal())).toList();
+                            end.navigability(), end.aggregationKind(), end.ordinal(),
+                            end.lowerBound(), end.upperBound())).toList();
             List<ModelResource.ConstraintResource> constraints = relationship.constraints().stream().map(constraint ->
                     new ModelResource.ConstraintResource(mapped(constraintIds, constraint.id()),
                             constraint.expression(), constraint.severity())).toList();
@@ -286,6 +288,18 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             }
         }
         return result;
+    }
+
+    /** Bounds persist only for RANGE (the table CHECK demands it); a RANGE without a lower bound reads as 0..*. */
+    private static Integer rangeLower(MultiplicityKind multiplicity, Integer lowerBound) {
+        if (multiplicity != MultiplicityKind.RANGE) {
+            return null;
+        }
+        return lowerBound == null ? 0 : lowerBound;
+    }
+
+    private static Integer rangeUpper(MultiplicityKind multiplicity, Integer upperBound) {
+        return multiplicity == MultiplicityKind.RANGE ? upperBound : null;
     }
 
     private UUID mapped(Map<UUID, UUID> ids, UUID id) {
@@ -597,9 +611,10 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 entityManager.createNativeQuery("""
                         INSERT INTO diagrammer.uml_attribute
                             (attribute_id, classifier_id, type_reference_id, name, kind, visibility,
-                             multiplicity, default_value, ordinal)
+                             multiplicity, lower_bound, upper_bound, default_value, ordinal)
                         VALUES (:id, :classifierId, :typeId, :name, :kind, :visibility,
-                                CAST(:multiplicity AS diagrammer.multiplicity_kind), :defaultValue, :ordinal)
+                                CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
+                                :defaultValue, :ordinal)
                         """)
                         .setParameter("id", resource.id())
                         .setParameter("classifierId", classifier.getId())
@@ -608,6 +623,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         .setParameter("kind", resource.kind())
                         .setParameter("visibility", resource.visibility())
                         .setParameter("multiplicity", multiplicity.name())
+                        .setParameter("lowerBound", rangeLower(multiplicity, resource.lowerBound()))
+                        .setParameter("upperBound", rangeUpper(multiplicity, resource.upperBound()))
                         .setParameter("defaultValue", resource.defaultValue())
                         .setParameter("ordinal", resource.ordinal())
                         .executeUpdate();
@@ -750,9 +767,9 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.relationship_end
                     (relationship_end_id, relationship_id, classifier_id, ordinal, role, multiplicity,
-                     navigability, aggregation_kind)
+                     lower_bound, upper_bound, navigability, aggregation_kind)
                 VALUES (:id, :relationshipId, :classifierId, :ordinal, :role,
-                        CAST(:multiplicity AS diagrammer.multiplicity_kind),
+                        CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
                         CAST(:navigability AS diagrammer.navigation_kind), :aggregation)
                 """)
                 .setParameter("id", end.id())
@@ -762,6 +779,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 .setParameter("role", end.role())
                 .setParameter("multiplicity", (end.multiplicity() == null
                         ? MultiplicityKind.EXACTLY_ONE : end.multiplicity()).name())
+                .setParameter("lowerBound", rangeLower(end.multiplicity(), end.lowerBound()))
+                .setParameter("upperBound", rangeUpper(end.multiplicity(), end.upperBound()))
                 .setParameter("navigability", (end.navigability() == null
                         ? NavigationKind.UNSPECIFIED : end.navigability()).name())
                 .setParameter("aggregation", end.aggregationKind() == null ? "NONE"

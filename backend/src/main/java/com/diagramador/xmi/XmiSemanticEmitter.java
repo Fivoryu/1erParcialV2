@@ -170,7 +170,8 @@ public final class XmiSemanticEmitter {
         element.setAttribute("isDerivedUnion", "false");
         owner.appendChild(element);
 
-        appendMultiplicity(document, element, attribute.multiplicity(), context);
+        appendMultiplicity(document, element, attribute.multiplicity(), attribute.lowerBound(), attribute.upperBound(),
+                context);
         if (!enumerationConstant) {
             appendTypeReference(document, element, attribute.type(), context);
         }
@@ -342,7 +343,7 @@ public final class XmiSemanticEmitter {
             Element type = document.createElementNS(UML_NAMESPACE, "type");
             setXmiAttribute(type, "idref", classifierXmiId(context.classifierById.get(end.classifierId())));
             ownedEnd.appendChild(type);
-            appendMultiplicity(document, ownedEnd, end.multiplicity(), context);
+            appendMultiplicity(document, ownedEnd, end.multiplicity(), end.lowerBound(), end.upperBound(), context);
             association.appendChild(ownedEnd);
         }
         appendConstraints(document, association, relationship.constraints(), context);
@@ -400,7 +401,7 @@ public final class XmiSemanticEmitter {
     }
 
     private void appendMultiplicity(Document document, Element owner, MultiplicityKind multiplicity,
-            Context context) {
+            Integer lowerBound, Integer upperBound, Context context) {
         if (multiplicity == null) {
             context.loss("unsupported_multiplicity");
             return;
@@ -425,8 +426,12 @@ public final class XmiSemanticEmitter {
                 upper = "-1";
             }
             case RANGE -> {
-                context.loss("unsupported_multiplicity_range");
-                return;
+                if (lowerBound == null) {
+                    context.loss("unsupported_multiplicity_range");
+                    return;
+                }
+                lower = lowerBound.toString();
+                upper = upperBound == null ? "-1" : upperBound.toString();
             }
             default -> throw new IllegalStateException("Unhandled multiplicity: " + multiplicity);
         }

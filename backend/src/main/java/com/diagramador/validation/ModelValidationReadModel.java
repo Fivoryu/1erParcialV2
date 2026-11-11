@@ -66,13 +66,14 @@ public record ModelValidationReadModel(
         List<RelationshipEndElement> relationshipEnds = relationshipEndRows.stream()
                 .sorted(byId(RelationshipEnd::getId))
                 .map(end -> new RelationshipEndElement(end.getId(), id(end.getRelationship()), id(end.getClassifier()),
-                        end.getOrdinal(), end.getRole(), end.getMultiplicity()))
+                        end.getOrdinal(), end.getRole(), end.getMultiplicity(), end.getLowerBound(),
+                        end.getUpperBound()))
                 .toList();
         List<AttributeElement> attributes = attributeRows.stream()
                 .sorted(byId(UmlAttribute::getId))
                 .map(attribute -> new AttributeElement(attribute.getId(), id(attribute.getClassifier()),
                         id(attribute.getTypeReference()), attribute.getName(), attribute.getMultiplicity(),
-                        attribute.getOrdinal()))
+                        attribute.getOrdinal(), attribute.getLowerBound(), attribute.getUpperBound()))
                 .toList();
         List<OperationElement> operations = operationRows.stream()
                 .sorted(byId(UmlOperation::getId))
@@ -105,7 +106,13 @@ public record ModelValidationReadModel(
             UUID classifierId,
             short ordinal,
             String role,
-            MultiplicityKind multiplicity) {
+            MultiplicityKind multiplicity,
+            Integer lowerBound,
+            Integer upperBound) {
+        public RelationshipEndElement(UUID id, UUID relationshipId, UUID classifierId, short ordinal, String role,
+                MultiplicityKind multiplicity) {
+            this(id, relationshipId, classifierId, ordinal, role, multiplicity, null, null);
+        }
     }
 
     public record AttributeElement(
@@ -114,7 +121,13 @@ public record ModelValidationReadModel(
             UUID typeReferenceId,
             String name,
             MultiplicityKind multiplicity,
-            int ordinal) {
+            int ordinal,
+            Integer lowerBound,
+            Integer upperBound) {
+        public AttributeElement(UUID id, UUID classifierId, UUID typeReferenceId, String name,
+                MultiplicityKind multiplicity, int ordinal) {
+            this(id, classifierId, typeReferenceId, name, multiplicity, ordinal, null, null);
+        }
     }
 
     public record OperationElement(

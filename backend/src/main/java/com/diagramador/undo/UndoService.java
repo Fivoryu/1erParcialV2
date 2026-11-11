@@ -194,6 +194,7 @@ public class UndoService {
                     payload.put(field, objectMapper.convertValue(value, Object.class));
                 }
             }
+            restoreRangeBounds(snapshot, payload);
             if (payload.isEmpty()) {
                 return Inverse.rejected("NOT_UNDOABLE", "El valor previo no fue capturado para " + entry.getType()
                         + ".");
@@ -221,6 +222,7 @@ public class UndoService {
                 payload.put(field, objectMapper.convertValue(value, Object.class));
             }
         }
+        restoreRangeBounds(snapshot, payload);
         UUID classifierId = uuid(snapshot.path("classifierId"));
         return Inverse.of(new OperationEnvelope(UUID.randomUUID(), "attribute.add", author(), projectId,
                 modelId, baseRevision, List.of(new Target("classifier", classifierId)), List.of(), payload,
@@ -270,6 +272,18 @@ public class UndoService {
                         new Target("classifier", uuid(target.path("classifierId")))),
                 List.of(), payload, CommandOrigin.UNDO, entry.getCommand().getCommandId(),
                 UUID.randomUUID().toString()));
+    }
+
+    /**
+     * A previous RANGE restores both bounds, an unbounded upper bound included as an explicit null; any other
+     * previous multiplicity restores none, because restoring the kind already clears the bounds.
+     */
+    private static void restoreRangeBounds(JsonNode snapshot, Map<String, Object> payload) {
+        if (!"RANGE".equals(snapshot.path("multiplicity").asText(null))) {
+            return;
+        }
+        payload.put("lowerBound", snapshot.path("lowerBound").isNumber() ? snapshot.path("lowerBound").asInt() : null);
+        payload.put("upperBound", snapshot.path("upperBound").isNumber() ? snapshot.path("upperBound").asInt() : null);
     }
 
     // --- capture-shape helpers -----------------------------------------------------------

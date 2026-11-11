@@ -178,6 +178,25 @@ class VcsMergeDiffTest {
         assertThat(result.mergedSnapshot().classifiers()).containsExactly(sourceAddition, targetAddition);
     }
 
+    @Test
+    void rangeBoundsSurviveAMergeAndOldSnapshotsReadThemAsNull() {
+        com.diagramador.api.ModelResource.AttributeResource ranged = new com.diagramador.api.ModelResource.AttributeResource(
+                UUID.fromString("40000000-0000-0000-0000-000000000001"), "tags", "ATTRIBUTE", "PUBLIC",
+                com.diagramador.domain.MultiplicityKind.RANGE, null, null, "String", 0, 2, 5);
+        com.diagramador.api.ModelResource.AttributeResource legacy = new com.diagramador.api.ModelResource.AttributeResource(
+                UUID.fromString("40000000-0000-0000-0000-000000000002"), "name", "ATTRIBUTE", "PUBLIC",
+                com.diagramador.domain.MultiplicityKind.EXACTLY_ONE, null, null, "String", 1);
+        ClassifierResource owner = new ClassifierResource(CLASSIFIER_ID, "Order", ClassifierKind.CLASS, false, null,
+                List.of(ranged, legacy), List.of(), List.of());
+
+        MergeDiff.Result result = MergeDiff.merge(model(), model(owner), model());
+
+        assertThat(result.conflicts()).isEmpty();
+        assertThat(result.mergedSnapshot().classifiers().get(0).attributes())
+                .extracting(attribute -> attribute.lowerBound() + ".." + attribute.upperBound())
+                .containsExactly("2..5", "null..null");
+    }
+
     private static SnapshotModel model(ClassifierResource... classifiers) {
         return new SnapshotModel(List.of(), List.of(classifiers), List.of(), List.of());
     }

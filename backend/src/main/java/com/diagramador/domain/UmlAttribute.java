@@ -50,6 +50,12 @@ public class UmlAttribute {
     @Column(name = "multiplicity", nullable = false)
     private MultiplicityKind multiplicity;
 
+    @Column(name = "lower_bound")
+    private Integer lowerBound;
+
+    @Column(name = "upper_bound")
+    private Integer upperBound;
+
     @Column(name = "default_value", columnDefinition = "text")
     private String defaultValue;
 
@@ -69,6 +75,13 @@ public class UmlAttribute {
 
     public static UmlAttribute create(UUID id, Classifier classifier, TypeReference typeReference, String name,
             String kind, String visibility, MultiplicityKind multiplicity, String defaultValue, int ordinal) {
+        return create(id, classifier, typeReference, name, kind, visibility, multiplicity, null, null, defaultValue,
+                ordinal);
+    }
+
+    public static UmlAttribute create(UUID id, Classifier classifier, TypeReference typeReference, String name,
+            String kind, String visibility, MultiplicityKind multiplicity, Integer lowerBound, Integer upperBound,
+            String defaultValue, int ordinal) {
         UmlAttribute attribute = new UmlAttribute();
         attribute.id = id;
         attribute.classifier = classifier;
@@ -77,6 +90,8 @@ public class UmlAttribute {
         attribute.kind = kind;
         attribute.visibility = visibility;
         attribute.multiplicity = multiplicity;
+        attribute.lowerBound = lowerBound;
+        attribute.upperBound = upperBound;
         attribute.defaultValue = defaultValue;
         attribute.ordinal = ordinal;
         attribute.createdAt = OffsetDateTime.now();
@@ -129,6 +144,22 @@ public class UmlAttribute {
 
     public void setMultiplicity(MultiplicityKind multiplicity) {
         this.multiplicity = multiplicity;
+    }
+
+    public Integer getLowerBound() {
+        return lowerBound;
+    }
+
+    public void setLowerBound(Integer lowerBound) {
+        this.lowerBound = lowerBound;
+    }
+
+    public Integer getUpperBound() {
+        return upperBound;
+    }
+
+    public void setUpperBound(Integer upperBound) {
+        this.upperBound = upperBound;
     }
 
     public String getDefaultValue() {
