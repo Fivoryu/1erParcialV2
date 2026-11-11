@@ -45,6 +45,7 @@ import com.diagramador.xmi.XmiImportMode;
 import com.diagramador.xmi.XmiImportService;
 import com.diagramador.xmi.XmiImportValidator;
 import com.diagramador.xmi.XmiReadingResult;
+import com.diagramador.xmi.XmiSemanticGate;
 import jakarta.persistence.EntityManager;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -67,6 +68,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
     private static final Set<String> PAYLOAD_FIELDS = Set.of("mode", "profile", "checksum", "readingResult");
 
     private final XmiImportValidator validator = new XmiImportValidator();
+    private final XmiSemanticGate semanticGate = new XmiSemanticGate();
     private final ObjectMapper objectMapper;
     private final ClassifierRepository classifierRepository;
     private final UmlAttributeRepository attributeRepository;
@@ -131,6 +133,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             rejectFirstBlocker(validator.validate(reading, mode,
                     mode == XmiImportMode.AGREGAR ? existingModel(context.model())
                             : XmiImportValidator.ExistingModel.EMPTY));
+            rejectFirstSemanticBlocker(semanticGate.issues(reading));
 
             ExistingRows oldRows = mode == XmiImportMode.REEMPLAZAR ? existingRows(context.model()) : null;
             List<DeletedTarget> deletedTargets = oldRows == null ? List.of() : deletedTargets(oldRows, reading);
@@ -357,6 +360,15 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         issues.stream().filter(issue -> issue.severity() == XmiImportIssue.Severity.BLOCKER).findFirst()
                 .ifPresent(issue -> {
                     throw new CommandValidationException(issue.rejectionCode(), issue.rejectionMessage());
+                });
+    }
+
+    /** Same verdict and wording as the import service's dry run, so every route into the handler ends clean. */
+    private void rejectFirstSemanticBlocker(List<XmiImportIssue> issues) {
+        issues.stream().filter(issue -> issue.severity() == XmiImportIssue.Severity.BLOCKER).findFirst()
+                .ifPresent(issue -> {
+                    throw new CommandValidationException(issue.rejectionCode(),
+                            "La importación no quedaría limpia: " + issue.rejectionMessage());
                 });
     }
 

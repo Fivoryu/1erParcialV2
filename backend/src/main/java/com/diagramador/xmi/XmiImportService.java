@@ -11,14 +11,10 @@ import com.diagramador.command.OperationEnvelope;
 import com.diagramador.command.Precondition;
 import com.diagramador.command.handler.XmiImportHandler;
 import com.diagramador.domain.ExchangeDirection;
-import com.diagramador.domain.SeverityKind;
 import com.diagramador.domain.UmlModel;
 import com.diagramador.domain.XmiExchange;
 import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.XmiExchangeRepository;
-import com.diagramador.validation.ModelResourceValidationAdapter;
-import com.diagramador.validation.ModelValidationDiagnostic;
-import com.diagramador.validation.ModelValidator;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -27,7 +23,6 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -38,19 +33,11 @@ public class XmiImportService {
     public static final String COMMAND_TYPE = "xmi.import";
     public static final String PROFILE = "Enterprise Architect 15.0.1514 / XMI 2.1";
 
-    /**
-     * Semantic rules about whether the model can feed the backend generator, not about whether the file is a sound
-     * model: EA exports routinely leave attributes untyped and use many-to-many associations, so these stay visible
-     * as warnings and do not stop an import.
-     */
-    private static final Set<String> GENERATION_READINESS_RULES = Set.of(ModelValidator.UNRESOLVED_TYPE,
-            ModelValidator.UNSUPPORTED_MULTIPLICITY_COMBINATION);
-
     private final XmiReader reader = new XmiReader();
     private final XmiResolutionApplier resolutionApplier = new XmiResolutionApplier();
     private final XmiRepair repair = new XmiRepair();
     private final XmiImportValidator validator = new XmiImportValidator();
-    private final ModelValidator modelValidator = new ModelValidator();
+    private final XmiSemanticGate semanticGate = new XmiSemanticGate();
     private final UmlModelRepository modelRepository;
     private final CommandService commandService;
     private final XmiImportHandler importHandler;
@@ -157,29 +144,7 @@ public class XmiImportService {
         XmiReadingResult reading = repaired.reading();
         XmiImportValidator.ExistingModel existing = mode == XmiImportMode.AGREGAR && model != null
                 ? importHandler.existingModel(model) : XmiImportValidator.ExistingModel.EMPTY;
-        return new Assessment(reading, repairs, validator.validate(reading, mode, existing), semanticIssues(reading));
-    }
-
-    /** The semantic model rules over what the import would leave behind; a model they cannot read has no verdict. */
-    private List<XmiImportIssue> semanticIssues(XmiReadingResult reading) {
-        List<ModelValidationDiagnostic> diagnostics;
-        try {
-            diagnostics = modelValidator.validate(ModelResourceValidationAdapter.toReadModel(reading.model()));
-        } catch (RuntimeException exception) {
-            return List.of();
-        }
-        List<XmiImportIssue> issues = new ArrayList<>();
-        for (ModelValidationDiagnostic diagnostic : diagnostics) {
-            String subject = diagnostic.elementId() == null ? null : diagnostic.elementId().toString();
-            String message = "El modelo importado incumple la regla " + diagnostic.code() + " ("
-                    + diagnostic.feature() + "): " + diagnostic.message();
-            boolean blocks = diagnostic.severity() == SeverityKind.ERROR
-                    && !GENERATION_READINESS_RULES.contains(diagnostic.code());
-            issues.add(blocks
-                    ?XmiImportIssue.modelBlocker(diagnostic.code(), subject, diagnostic.feature(), message)
-                    : XmiImportIssue.warning(diagnostic.code(), subject, diagnostic.feature(), message));
-        }
-        return issues;
+        return new Assessment(reading, repairs, validator.validate(reading, mode, existing), semanticGate.issues(reading));
     }
 
     private static String verifyChecksum(byte[] rawBytes, String suppliedChecksum) {

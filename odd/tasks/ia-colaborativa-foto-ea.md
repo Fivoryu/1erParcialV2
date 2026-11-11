@@ -20,7 +20,8 @@ Rama: feat/ia-colaborativa-foto-ea (worktree, base f4a0bee) · Entrega: ask-on-r
 | T3 | S6 | inline | hecho (ChatAiApiTest 9, web chatState/ChatPanel) | ver git log |
 | T5a | S8, S9 | delegada (writer backend) | hecho (69 pruebas XMI en verde; ver L5) | ver git log |
 | T5b | S8, S9 | 2 writers en paralelo (backend sugeridor; web panel) | hecho (XmiImportApiTest 18, XmiExportApiTest 6, XmiResolutionSuggesterTest 12; web src/xmi+src/api 91, tsc, eslint) | ver git log |
-| T4 | S1, S2 | actualizar Google Doc + manual | pendiente | — |
+| T5c | S8 | delegada (writer) | hecho (XmiCommandsCleanGateTest 2, XmiImportApiTest 18, XmiImportServiceTest 8, +unitarias; 38 verdes en la última corrida) | ver git log |
+| T4 | S1, S2 | Google Doc (CU-16, CU-18, CU-21, manual 3.3/3.4/3.5) | hecho (11 reemplazos aplicados el 2026-11-11) | — |
 
 ## Log
 - L1 (2026-11-10) "En un worktree haz el punto 3 y 5, es decir que analices lo que falta en el software y de ahí lo implementas, ya que otro agente se esta encargando de UML en el local."
@@ -31,3 +32,5 @@ Rama: feat/ia-colaborativa-foto-ea (worktree, base f4a0bee) · Entrega: ask-on-r
 - L5b (2026-11-10) Decisión del usuario: "Si" a continuar con T5b (web + paso de IA).
 - L6 Contrato T5b (decidido por el padre, supuesto): `POST /projects/{projectId}/xmi/suggest-resolutions` (EDITOR), cuerpo `{fileBase64, checksum, mode}` igual que la vista previa. Respuesta `{resolutions:[{subject, action, newName?}], source:"AI"|"RULES", explanation}`. La IA local recibe solo los problemas con sus opciones cerradas (RENAME/SKIP) y devuelve JSON; cada elección se valida contra las opciones del problema y un `newName` debe ser no vacío y sin colisión; lo inválido o faltante lo completa una regla determinista (RENAME con sufijo " (2)", " (3)"...), `source` indica qué decidió. Sin IA disponible, todo por reglas. La IA nunca elige el modo: con `mode` REEMPLAZAR no hay colisiones que resolver. La persona revisa y confirma las resoluciones antes de importar; el cliente web envía esas `resolutions` a la vista previa y a la importación.
 - L7 (T5b) Sugeridor `XmiResolutionSuggester` + `POST /xmi/suggest-resolutions` (IA con opciones cerradas, validación y respaldo por reglas, tiempo máximo 20 s configurable en `diagrammer.xmi.suggest-timeout-ms`) y panel web con lista de problemas, reparaciones, elección renombrar/omitir y "Resolver con IA". Pendiente: `/commands` genérico evita reparaciones y compuerta.
+- L8 (T5c) `/commands` con `xmi.import` pasa por la misma compuerta semántica (`XmiSemanticGate`, usada por el servicio y por el handler): un modelo con errores se rechaza antes de escribir. Queda fuera: las reparaciones y el checksum de bytes solo aplican en la ruta `/xmi/import`.
+- L9 Google Doc actualizado con CU-16 (vista previa ensayo, resolver con IA), CU-18 (quién preguntó), CU-21 (cámara, proponer desde la foto) y manual 3.3/3.4/3.5. Pendiente de documentar: la compuerta también en `/commands` (L8).
