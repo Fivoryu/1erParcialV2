@@ -6,6 +6,7 @@ export interface SessionAiStatus {
   sessionId: Uuid;
   state: ChatAiState;
   reason?: string;
+  requestedByDisplayName?: string;
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {
@@ -82,6 +83,8 @@ export function chatAiStatusFromProjectEvent(data: unknown): SessionAiStatus | n
     sessionId: payload.sessionId,
     state,
     ...(typeof payload.reason === 'string' ? { reason: payload.reason } : {}),
+    ...(typeof payload.requestedByDisplayName === 'string'
+      ? { requestedByDisplayName: payload.requestedByDisplayName } : {}),
   };
 }
 
