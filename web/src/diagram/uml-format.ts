@@ -20,15 +20,79 @@ const MULTIPLICITY_NOTATION: Record<string, string> = {
  */
 const UML_DEFAULT_MULTIPLICITY = 'EXACTLY_ONE';
 
-export function formatMultiplicity(multiplicity: string): string {
+export const RANGE_MULTIPLICITY = 'RANGE';
+
+/** The numeric bounds of a RANGE multiplicity; `upperBound` null means unbounded (`*`). */
+export interface RangeBounds {
+  lowerBound?: number | null;
+  upperBound?: number | null;
+}
+
+/** `2..5`, `2..*`, or just `3` when both bounds are equal. Empty while the lower bound is missing. */
+export function formatRange({ lowerBound, upperBound }: RangeBounds): string {
+  if (lowerBound === null || lowerBound === undefined) {
+    return '';
+  }
+  if (upperBound === null || upperBound === undefined) {
+    return `${lowerBound}..*`;
+  }
+  return lowerBound === upperBound ? `${lowerBound}` : `${lowerBound}..${upperBound}`;
+}
+
+export function formatMultiplicity(multiplicity: string, bounds?: RangeBounds): string {
+  if (multiplicity === RANGE_MULTIPLICITY) {
+    return bounds ? formatRange(bounds) : '';
+  }
   return MULTIPLICITY_NOTATION[multiplicity] ?? '';
 }
 
-function formatBounds(multiplicity: string, prefix: string): string {
+/**
+ * Mirrors the backend rule for a RANGE: the lower bound is a non-negative integer and the
+ * upper bound is empty (unbounded) or at least max(lower, 1). Returns a Spanish message, or null.
+ */
+export function validateRangeBounds(lowerText: string, upperText: string): string | null {
+  const lower = lowerText.trim();
+  const upper = upperText.trim();
+  if (!/^\d+$/.test(lower)) {
+    return 'El mínimo debe ser un entero mayor o igual a 0.';
+  }
+  if (upper === '') {
+    return null;
+  }
+  if (!/^\d+$/.test(upper)) {
+    return 'El máximo debe ser un entero o quedar vacío (ilimitado).';
+  }
+  if (Number(upper) < Math.max(Number(lower), 1)) {
+    return 'El máximo debe ser mayor o igual al mínimo y a 1.';
+  }
+  return null;
+}
+
+/** The payload bounds for a multiplicity choice: numbers for a RANGE, explicit nulls otherwise. */
+export function rangeBoundsPayload(
+  multiplicity: string,
+  lowerText: string,
+  upperText: string,
+): { lowerBound: number | null; upperBound: number | null } {
+  if (multiplicity !== RANGE_MULTIPLICITY) {
+    return { lowerBound: null, upperBound: null };
+  }
+  const upper = upperText.trim();
+  return { lowerBound: Number(lowerText.trim()), upperBound: upper === '' ? null : Number(upper) };
+}
+
+/** The bounds a copy of a member or end must carry: only a RANGE has any, every other payload stays as it was. */
+export function rangeBounds(source: RangeBounds & { multiplicity: string }): RangeBounds {
+  return source.multiplicity === RANGE_MULTIPLICITY
+    ? { lowerBound: source.lowerBound ?? null, upperBound: source.upperBound ?? null }
+    : {};
+}
+
+function formatBounds(multiplicity: string, prefix: string, bounds?: RangeBounds): string {
   if (multiplicity === UML_DEFAULT_MULTIPLICITY) {
     return '';
   }
-  const notation = formatMultiplicity(multiplicity);
+  const notation = formatMultiplicity(multiplicity, bounds);
   return notation ? `${prefix}${notation}]` : '';
 }
 
@@ -56,7 +120,7 @@ export function endLabelsApplyTo(kind: string): boolean {
  */
 export function formatRelationshipEndLabel(end: RelationshipEndResource): string {
   const role = end.role?.trim() ?? '';
-  return [role, formatMultiplicity(end.multiplicity)].filter(Boolean).join(' ');
+  return [role, formatMultiplicity(end.multiplicity, end)].filter(Boolean).join(' ');
 }
 
 export function formatVisibility(visibility: string): string {
@@ -88,7 +152,7 @@ function formatType(type: string | null): string {
 
 export function formatAttribute(attribute: AttributeResource): string {
   const type = formatType(attribute.type);
-  const bounds = formatBounds(attribute.multiplicity, ' [');
+  const bounds = formatBounds(attribute.multiplicity, ' [', attribute);
   const defaultValue = attribute.defaultValue === null ? '' : ` = ${attribute.defaultValue}`;
   return `${formatVisibility(attribute.visibility)} ${attribute.name}${type}${bounds}${defaultValue}`;
 }

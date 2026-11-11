@@ -188,6 +188,8 @@ export function buildRelationshipCreateRequest(
     classifierId,
     role: null,
     multiplicity: 'EXACTLY_ONE',
+    lowerBound: null,
+    upperBound: null,
     navigability: 'UNSPECIFIED',
   });
   return {
@@ -213,8 +215,17 @@ export interface RelationshipUpdateValues {
   stereotype?: string | null;
   /** Left out, the relationship keeps its association class; null releases it. */
   associationClassId?: string | null;
-  source: { role: string | null; multiplicity: string; navigability: string };
-  target: { role: string | null; multiplicity: string; navigability: string };
+  source: RelationshipEndValues;
+  target: RelationshipEndValues;
+}
+
+/** One end of a relationship update; the bounds are numbers for a RANGE and null for every other multiplicity. */
+export interface RelationshipEndValues {
+  role: string | null;
+  multiplicity: string;
+  lowerBound?: number | null;
+  upperBound?: number | null;
+  navigability: string;
 }
 
 export function buildRelationshipUpdateRequest(
@@ -386,6 +397,20 @@ function payloadString(envelope: OperationEnvelope, key: string): string | null 
   return typeof value === 'string' ? value : null;
 }
 
+function payloadBound(value: unknown): number | null | undefined {
+  return typeof value === 'number' ? value : value === null ? null : undefined;
+}
+
+/** The bounds an update carries: absent keys keep the stored bounds, explicit nulls clear them. */
+function boundsUpdate(payload: Record<string, unknown>): { lowerBound?: number | null; upperBound?: number | null } {
+  const lowerBound = payloadBound(payload.lowerBound);
+  const upperBound = payloadBound(payload.upperBound);
+  return {
+    ...(lowerBound !== undefined ? { lowerBound } : {}),
+    ...(upperBound !== undefined ? { upperBound } : {}),
+  };
+}
+
 function payloadBoolean(envelope: OperationEnvelope, key: string): boolean | null {
   const value = envelope.payload[key];
   return typeof value === 'boolean' ? value : null;
@@ -473,6 +498,8 @@ function addAttribute(model: ModelResource, envelope: OperationEnvelope, classif
     kind: 'ATTRIBUTE',
     visibility: payloadString(envelope, 'visibility') ?? 'PUBLIC',
     multiplicity: payloadString(envelope, 'multiplicity') ?? 'EXACTLY_ONE',
+    lowerBound: payloadBound(envelope.payload.lowerBound) ?? null,
+    upperBound: payloadBound(envelope.payload.upperBound) ?? null,
     defaultValue: payloadString(envelope, 'defaultValue'),
     typeReferenceId: null,
     type: resolveTypeName(model, envelope.payload.type),
@@ -633,6 +660,7 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
                 ...end,
                 ...(typeof update.role === 'string' || update.role === null ? { role: update.role } : {}),
                 ...(typeof update.multiplicity === 'string' ? { multiplicity: update.multiplicity } : {}),
+                ...boundsUpdate(update),
                 ...(typeof update.navigability === 'string' ? { navigability: update.navigability } : {}),
               };
             }),
@@ -730,6 +758,7 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             name: payloadString(envelope, 'name') ?? attribute.name,
             visibility: payloadString(envelope, 'visibility') ?? attribute.visibility,
             multiplicity: payloadString(envelope, 'multiplicity') ?? attribute.multiplicity,
+            ...boundsUpdate(envelope.payload),
             defaultValue: Object.hasOwn(envelope.payload, 'defaultValue')
               ? payloadString(envelope, 'defaultValue')
               : attribute.defaultValue,

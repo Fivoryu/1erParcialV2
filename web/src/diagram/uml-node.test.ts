@@ -377,7 +377,8 @@ describe('UML class node presentation', () => {
     expect(markup).toContain('0..1');
     expect(markup).toContain('Protegido (#)');
     expect(markup).toContain('Paquete (~)');
-    expect(markup).not.toContain('RANGE');
+    expect(markup).toContain('value="RANGE"');
+    expect(markup).toContain('Rango');
     expect(markup).not.toContain('Atributo estático');
     expect(markup).not.toContain('Atributo abstracto');
   });

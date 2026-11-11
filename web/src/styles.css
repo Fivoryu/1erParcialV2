@@ -5129,3 +5129,14 @@ kbd {
   color: var(--danger);
   font-size: 12px;
 }
+
+.multiplicity-range-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.field-error {
+  margin: 0 0 10px;
+  color: var(--danger);
+  font-size: 11px;
+}

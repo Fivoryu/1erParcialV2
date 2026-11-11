@@ -35,7 +35,14 @@ import {
 } from './commands';
 import type { CanvasSelection } from './selection';
 import { associationClassCandidates, isAssociationKind } from './associationClass';
-import { formatStereotype, orderedAttributes, orderedOperations } from './uml-format';
+import {
+  RANGE_MULTIPLICITY,
+  formatStereotype,
+  orderedAttributes,
+  orderedOperations,
+  rangeBoundsPayload,
+  validateRangeBounds,
+} from './uml-format';
 import { describeStoreReason, STORE_LABELS, StoreBadge } from './StoreBadge';
 
 interface PropertiesPanelProps {
@@ -52,6 +59,77 @@ const MULTIPLICITIES = [
   { value: 'ONE_OR_MANY', label: '1..*' },
   { value: 'ZERO_OR_MANY', label: '0..*' },
 ] as const;
+
+/** The multiplicity choice being edited: the kind plus the text of the two RANGE bound inputs. */
+interface MultiplicityDraft {
+  kind: string;
+  lower: string;
+  upper: string;
+}
+
+function multiplicityDraft(source: {
+  multiplicity: string;
+  lowerBound?: number | null;
+  upperBound?: number | null;
+} | undefined): MultiplicityDraft {
+  return {
+    kind: source?.multiplicity ?? 'EXACTLY_ONE',
+    lower: source?.lowerBound == null ? '' : String(source.lowerBound),
+    upper: source?.upperBound == null ? '' : String(source.upperBound),
+  };
+}
+
+function multiplicityError(draft: MultiplicityDraft): string | null {
+  return draft.kind === RANGE_MULTIPLICITY ? validateRangeBounds(draft.lower, draft.upper) : null;
+}
+
+/** The select (with its Rango option) and, for a RANGE, the Mínimo / Máximo inputs with their inline error. */
+function MultiplicityFields({
+  prefix,
+  draft,
+  onChange,
+}: {
+  prefix: string;
+  draft: MultiplicityDraft;
+  onChange: (draft: MultiplicityDraft) => void;
+}) {
+  const error = multiplicityError(draft);
+  return (
+    <>
+      <label className="field-label" htmlFor={`${prefix}-multiplicity`}>Multiplicidad</label>
+      <select
+        id={`${prefix}-multiplicity`}
+        onChange={(event) => onChange({ ...draft, kind: event.target.value })}
+        value={draft.kind}
+      >
+        {MULTIPLICITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        <option value={RANGE_MULTIPLICITY}>Rango</option>
+      </select>
+      {draft.kind === RANGE_MULTIPLICITY && (
+        <div className="multiplicity-range-fields">
+          <label className="field-label" htmlFor={`${prefix}-lower-bound`}>Mínimo</label>
+          <input
+            aria-invalid={error !== null}
+            id={`${prefix}-lower-bound`}
+            inputMode="numeric"
+            onChange={(event) => onChange({ ...draft, lower: event.target.value })}
+            value={draft.lower}
+          />
+          <label className="field-label" htmlFor={`${prefix}-upper-bound`}>Máximo <span>Vacío = ilimitado (*)</span></label>
+          <input
+            aria-invalid={error !== null}
+            id={`${prefix}-upper-bound`}
+            inputMode="numeric"
+            onChange={(event) => onChange({ ...draft, upper: event.target.value })}
+            placeholder="*"
+            value={draft.upper}
+          />
+          {error && <p className="field-error" role="alert">{error}</p>}
+        </div>
+      )}
+    </>
+  );
+}
 
 const RELATIONSHIP_KIND_LABELS: Record<RelationshipKind, string> = {
   ASSOCIATION: 'Asociación',
@@ -371,6 +449,8 @@ function ClassifierProperties({
           type: { primitiveName: 'String' },
           visibility: 'PUBLIC',
           multiplicity: 'EXACTLY_ONE',
+          lowerBound: null,
+          upperBound: null,
           defaultValue: null,
           ordinal: nextOrdinal(classifier.attributes),
         },
@@ -502,10 +582,10 @@ function RelationshipProperties({
   const [stereotype, setStereotype] = useState(relationship.stereotype ?? '');
   const [associationClassId, setAssociationClassId] = useState(relationship.associationClassId ?? '');
   const [sourceRole, setSourceRole] = useState(sourceEnd?.role ?? '');
-  const [sourceMultiplicity, setSourceMultiplicity] = useState(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
+  const [sourceMultiplicity, setSourceMultiplicity] = useState(multiplicityDraft(sourceEnd));
   const [sourceNavigability, setSourceNavigability] = useState(sourceEnd?.navigability ?? 'UNSPECIFIED');
   const [targetRole, setTargetRole] = useState(targetEnd?.role ?? '');
-  const [targetMultiplicity, setTargetMultiplicity] = useState(targetEnd?.multiplicity ?? 'EXACTLY_ONE');
+  const [targetMultiplicity, setTargetMultiplicity] = useState(multiplicityDraft(targetEnd));
   const [targetNavigability, setTargetNavigability] = useState(targetEnd?.navigability ?? 'UNSPECIFIED');
   const sourceClassifier = model.classifiers.find((classifier) => classifier.id === sourceEnd?.classifierId);
   const targetClassifier = model.classifiers.find((classifier) => classifier.id === targetEnd?.classifierId);
@@ -550,10 +630,10 @@ function RelationshipProperties({
     setStereotype(relationship.stereotype ?? '');
     setAssociationClassId(relationship.associationClassId ?? '');
     setSourceRole(sourceEnd?.role ?? '');
-    setSourceMultiplicity(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
+    setSourceMultiplicity(multiplicityDraft(sourceEnd));
     setSourceNavigability(sourceEnd?.navigability ?? 'UNSPECIFIED');
     setTargetRole(targetEnd?.role ?? '');
-    setTargetMultiplicity(targetEnd?.multiplicity ?? 'EXACTLY_ONE');
+    setTargetMultiplicity(multiplicityDraft(targetEnd));
     setTargetNavigability(targetEnd?.navigability ?? 'UNSPECIFIED');
   }, [
     relationship.id,
@@ -563,15 +643,21 @@ function RelationshipProperties({
     relationship.associationClassId,
     sourceEnd?.role,
     sourceEnd?.multiplicity,
+    sourceEnd?.lowerBound,
+    sourceEnd?.upperBound,
     sourceEnd?.navigability,
     targetEnd?.role,
     targetEnd?.multiplicity,
+    targetEnd?.lowerBound,
+    targetEnd?.upperBound,
     targetEnd?.navigability,
   ]);
 
+  const endsInvalid = multiplicityError(sourceMultiplicity) !== null || multiplicityError(targetMultiplicity) !== null;
+
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!sourceEnd || !targetEnd) {
+    if (!sourceEnd || !targetEnd || endsInvalid) {
       return;
     }
     onCommand(buildRelationshipUpdateRequest(relationship, {
@@ -581,12 +667,14 @@ function RelationshipProperties({
       associationClassId: isAssociationKind(kind) ? associationClassId || null : null,
       source: {
         role: sourceRole.trim() || null,
-        multiplicity: sourceMultiplicity,
+        multiplicity: sourceMultiplicity.kind,
+        ...rangeBoundsPayload(sourceMultiplicity.kind, sourceMultiplicity.lower, sourceMultiplicity.upper),
         navigability: sourceNavigability,
       },
       target: {
         role: targetRole.trim() || null,
-        multiplicity: targetMultiplicity,
+        multiplicity: targetMultiplicity.kind,
+        ...rangeBoundsPayload(targetMultiplicity.kind, targetMultiplicity.lower, targetMultiplicity.upper),
         navigability: targetNavigability,
       },
     }));
@@ -597,8 +685,8 @@ function RelationshipProperties({
     classifierName: string | undefined,
     role: string,
     setRole: (value: string) => void,
-    multiplicity: string,
-    setMultiplicity: (value: string) => void,
+    multiplicity: MultiplicityDraft,
+    setMultiplicity: (value: MultiplicityDraft) => void,
     navigability: string,
     setNavigability: (value: string) => void,
   ) {
@@ -609,10 +697,7 @@ function RelationshipProperties({
         <legend>{title}{classifierName ? ` · ${classifierName}` : ''}</legend>
         <label className="field-label" htmlFor={`${prefix}-role`}>Rol</label>
         <input id={`${prefix}-role`} onChange={(event) => setRole(event.target.value)} value={role} />
-        <label className="field-label" htmlFor={`${prefix}-multiplicity`}>Multiplicidad</label>
-        <select id={`${prefix}-multiplicity`} onChange={(event) => setMultiplicity(event.target.value)} value={multiplicity}>
-          {MULTIPLICITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
+        <MultiplicityFields draft={multiplicity} onChange={setMultiplicity} prefix={prefix} />
         <label className="field-label" htmlFor={`${prefix}-navigability`}>Navegabilidad</label>
         <select id={`${prefix}-navigability`} onChange={(event) => setNavigability(event.target.value)} value={navigability}>
           {NAVIGABILITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
@@ -678,7 +763,7 @@ function RelationshipProperties({
           setSourceMultiplicity, sourceNavigability, setSourceNavigability)}
         {endFields('target', targetClassifier?.name, targetRole, setTargetRole, targetMultiplicity,
           setTargetMultiplicity, targetNavigability, setTargetNavigability)}
-        <button className="button button-primary button-compact" type="submit">Guardar relación</button>
+        <button className="button button-primary button-compact" disabled={endsInvalid} type="submit">Guardar relación</button>
       </form>
     </section>
       <section className="property-section" aria-labelledby="relationship-style-title">
@@ -762,20 +847,23 @@ function AttributeProperties({
 }) {
   const [type, setType] = useState(attribute.type ?? '');
   const [visibility, setVisibility] = useState(attribute.visibility);
-  const [multiplicity, setMultiplicity] = useState(attribute.multiplicity);
+  const [multiplicity, setMultiplicity] = useState(multiplicityDraft(attribute));
   const [defaultValue, setDefaultValue] = useState(attribute.defaultValue ?? '');
 
   useEffect(() => {
     setType(attribute.type ?? '');
     setVisibility(attribute.visibility);
-    setMultiplicity(attribute.multiplicity);
+    setMultiplicity(multiplicityDraft(attribute));
     setDefaultValue(attribute.defaultValue ?? '');
-  }, [attribute.id, attribute.type, attribute.visibility, attribute.multiplicity, attribute.defaultValue]);
+  }, [attribute.id, attribute.type, attribute.visibility, attribute.multiplicity,
+    attribute.lowerBound, attribute.upperBound, attribute.defaultValue]);
+
+  const multiplicityInvalid = multiplicityError(multiplicity) !== null;
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const cleanType = type.trim();
-    if (!cleanType) {
+    if (!cleanType || multiplicityInvalid) {
       return;
     }
     onCommand({
@@ -784,7 +872,8 @@ function AttributeProperties({
       payload: {
         type: typeReference(model, cleanType),
         visibility,
-        multiplicity,
+        multiplicity: multiplicity.kind,
+        ...rangeBoundsPayload(multiplicity.kind, multiplicity.lower, multiplicity.upper),
         defaultValue: defaultValue === '' ? null : defaultValue,
       },
     });
@@ -825,14 +914,11 @@ function AttributeProperties({
           <option value="PACKAGE">Paquete (~)</option>
         </select>
 
-        <label className="field-label" htmlFor="attribute-multiplicity">Multiplicidad</label>
-        <select id="attribute-multiplicity" onChange={(event) => setMultiplicity(event.target.value)} value={multiplicity}>
-          {MULTIPLICITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
+        <MultiplicityFields draft={multiplicity} onChange={setMultiplicity} prefix="attribute" />
 
         <label className="field-label" htmlFor="attribute-default">Valor predeterminado</label>
         <input id="attribute-default" onChange={(event) => setDefaultValue(event.target.value)} value={defaultValue} />
-        <button className="button button-primary button-compact" type="submit">Guardar atributo</button>
+        <button className="button button-primary button-compact" disabled={multiplicityInvalid} type="submit">Guardar atributo</button>
       </form>
     </>
   );

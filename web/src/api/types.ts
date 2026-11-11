@@ -406,6 +406,9 @@ export interface AttributeResource {
   kind: string;
   visibility: string;
   multiplicity: string;
+  /** Numeric bounds, meaningful only when `multiplicity` is RANGE; absent on older snapshots. */
+  lowerBound?: number | null;
+  upperBound?: number | null;
   defaultValue: string | null;
   typeReferenceId: Uuid | null;
   type: string | null;
@@ -458,6 +461,9 @@ export interface RelationshipEndResource {
   classifierId: Uuid;
   role: string | null;
   multiplicity: string;
+  /** Numeric bounds, meaningful only when `multiplicity` is RANGE; absent on older snapshots. */
+  lowerBound?: number | null;
+  upperBound?: number | null;
   navigability: string;
   aggregationKind: string;
   ordinal: number;

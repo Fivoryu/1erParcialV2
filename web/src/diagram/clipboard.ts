@@ -6,6 +6,7 @@
  * (classifier.create, attribute.add, relationship.create, ...), so it goes through the same
  * validation, optimistic projection, and collaboration events as manual edits.
  */
+import { rangeBounds } from './uml-format';
 import type {
   ClassifierResource,
   ModelResource,
@@ -190,6 +191,7 @@ export function pasteClipboard(
             type: typeInput(attribute.type) ?? { primitiveName: 'String' },
             visibility: attribute.visibility,
             multiplicity: attribute.multiplicity,
+            ...rangeBounds(attribute),
             defaultValue: attribute.defaultValue,
             ordinal: attribute.ordinal,
           },
@@ -250,6 +252,7 @@ export function pasteClipboard(
       classifierId,
       role: from.role,
       multiplicity: from.multiplicity,
+      ...rangeBounds(from),
       navigability: from.navigability,
     });
     const associationClassCopy = original.associationClassId ? copies.get(original.associationClassId) : undefined;
