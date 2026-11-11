@@ -46,6 +46,13 @@ public class ApiExceptionHandler {
         return response(HttpStatus.NOT_FOUND, "NOT_FOUND", "Resource was not found.", List.of(), null);
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResource> handleUploadTooLarge(
+            org.springframework.web.multipart.MaxUploadSizeExceededException exception) {
+        return response(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_TOO_LARGE",
+                "The attached file exceeds the 5 MB limit.", List.of(), null);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResource> handleUnexpectedFailure(Exception exception) {
         // A swallowed 500 is undiagnosable; the stack is the only trace the operator gets.

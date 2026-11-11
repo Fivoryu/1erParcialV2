@@ -12,6 +12,11 @@ spring:
       # those type names unqualified (`citext`, `classifier_kind`, ...) instead of
       # `"diagrammer"."citext"`, which is what `ddl-auto: validate` compares against.
       connection-init-sql: SET search_path TO diagrammer, public
+  servlet:
+    multipart:
+      # Spring's default is 1 MB per file, below the 5 MB attachment limit enforced by ChatAttachmentService.
+      max-file-size: 6MB
+      max-request-size: 7MB
   jpa:
     # Flyway owns the schema; Hibernate only checks that the mapping matches it.
     hibernate:

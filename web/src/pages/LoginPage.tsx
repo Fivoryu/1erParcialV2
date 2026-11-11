@@ -120,7 +120,7 @@ export function LoginPageView({
               maxLength={64}
               minLength={3}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onUsernameChange(event.target.value)}
-              pattern="[A-Za-z0-9._-]+"
+              pattern="[A-Za-z0-9._\-]+"
               required
               title="Usa entre 3 y 64 letras, números, puntos, guiones bajos o guiones."
               value={username}
