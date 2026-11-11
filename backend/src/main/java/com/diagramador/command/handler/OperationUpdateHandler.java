@@ -2,6 +2,7 @@ package com.diagramador.command.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.OperationStereotype;
 import com.diagramador.domain.UmlOperation;
 import java.util.Set;
 import org.springframework.stereotype.Component;
@@ -9,7 +10,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class OperationUpdateHandler implements CommandHandler.AddAction {
 
-    private static final Set<String> FIELDS = Set.of("name", "returnType", "visibility", "isAbstract", "isStatic");
+    private static final Set<String> FIELDS = Set.of("name", "returnType", "visibility", "isAbstract", "isStatic", "stereotype");
 
     private final CommandHandlerSupport support;
 
@@ -46,6 +47,9 @@ public class OperationUpdateHandler implements CommandHandler.AddAction {
         }
         if (payload.has("isStatic")) {
             operation.setStatic(support.bool(payload, "isStatic"));
+        }
+        if (payload.has("stereotype")) {
+            operation.setStereotype(support.stereotype(payload, "stereotype", OperationStereotype.class));
         }
         return Outcome.none();
     }

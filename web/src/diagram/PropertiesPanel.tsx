@@ -5,6 +5,8 @@ import type {
   ConstraintResource,
   ConstraintSeverity,
   ModelResource,
+  NoteResource,
+  NoteTargetType,
   OperationEnvelope,
   OperationResource,
   RelationshipResource,
@@ -16,13 +18,23 @@ import {
   buildConstraintRemoveRequest,
   buildConstraintUpdateRequest,
   buildGeometrySetRequest,
+  buildNoteLinkRequest,
+  buildNoteUnlinkRequest,
+  buildNoteUpdateRequest,
+  NOTE_BODY_MAX,
   buildParameterAddRequest,
   buildParameterRemoveRequest,
   buildParameterUpdateRequest,
   buildRelationshipUpdateRequest,
   buildStyleSetRequest,
   DEFAULT_ROUTING,
+  ATTRIBUTE_STEREOTYPES,
+  buildClassifierSetStereotypeRequest,
+  CLASSIFIER_STEREOTYPES,
+  classifierAcceptsStereotype,
   DEPENDENCY_STEREOTYPES,
+  OPERATION_STEREOTYPES,
+  STEREOTYPE_LABELS,
   mergeViewStyleUpdate,
   RELATIONSHIP_KINDS,
   type ConstraintOwnerType,
@@ -35,7 +47,14 @@ import {
 } from './commands';
 import type { CanvasSelection } from './selection';
 import { associationClassCandidates, isAssociationKind } from './associationClass';
-import { formatStereotype, orderedAttributes, orderedOperations } from './uml-format';
+import {
+  RANGE_MULTIPLICITY,
+  formatStereotype,
+  orderedAttributes,
+  orderedOperations,
+  rangeBoundsPayload,
+  validateRangeBounds,
+} from './uml-format';
 import { describeStoreReason, STORE_LABELS, StoreBadge } from './StoreBadge';
 
 interface PropertiesPanelProps {
@@ -52,6 +71,87 @@ const MULTIPLICITIES = [
   { value: 'ONE_OR_MANY', label: '1..*' },
   { value: 'ZERO_OR_MANY', label: '0..*' },
 ] as const;
+
+/** The multiplicity choice being edited: the kind plus the text of the two RANGE bound inputs. */
+/** The ordered/unique flags of one relationship end while the form is being edited. */
+interface EndFlagsDraft {
+  isOrdered: boolean;
+  isUnique: boolean;
+}
+
+function endFlagsDraft(end: { isOrdered?: boolean; isUnique?: boolean } | undefined): EndFlagsDraft {
+  return { isOrdered: end?.isOrdered ?? false, isUnique: end?.isUnique ?? false };
+}
+
+interface MultiplicityDraft {
+  kind: string;
+  lower: string;
+  upper: string;
+}
+
+function multiplicityDraft(source: {
+  multiplicity: string;
+  lowerBound?: number | null;
+  upperBound?: number | null;
+} | undefined): MultiplicityDraft {
+  return {
+    kind: source?.multiplicity ?? 'EXACTLY_ONE',
+    lower: source?.lowerBound == null ? '' : String(source.lowerBound),
+    upper: source?.upperBound == null ? '' : String(source.upperBound),
+  };
+}
+
+function multiplicityError(draft: MultiplicityDraft): string | null {
+  return draft.kind === RANGE_MULTIPLICITY ? validateRangeBounds(draft.lower, draft.upper) : null;
+}
+
+/** The select (with its Rango option) and, for a RANGE, the Mínimo / Máximo inputs with their inline error. */
+function MultiplicityFields({
+  prefix,
+  draft,
+  onChange,
+}: {
+  prefix: string;
+  draft: MultiplicityDraft;
+  onChange: (draft: MultiplicityDraft) => void;
+}) {
+  const error = multiplicityError(draft);
+  return (
+    <>
+      <label className="field-label" htmlFor={`${prefix}-multiplicity`}>Multiplicidad</label>
+      <select
+        id={`${prefix}-multiplicity`}
+        onChange={(event) => onChange({ ...draft, kind: event.target.value })}
+        value={draft.kind}
+      >
+        {MULTIPLICITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        <option value={RANGE_MULTIPLICITY}>Rango</option>
+      </select>
+      {draft.kind === RANGE_MULTIPLICITY && (
+        <div className="multiplicity-range-fields">
+          <label className="field-label" htmlFor={`${prefix}-lower-bound`}>Mínimo</label>
+          <input
+            aria-invalid={error !== null}
+            id={`${prefix}-lower-bound`}
+            inputMode="numeric"
+            onChange={(event) => onChange({ ...draft, lower: event.target.value })}
+            value={draft.lower}
+          />
+          <label className="field-label" htmlFor={`${prefix}-upper-bound`}>Máximo <span>Vacío = ilimitado (*)</span></label>
+          <input
+            aria-invalid={error !== null}
+            id={`${prefix}-upper-bound`}
+            inputMode="numeric"
+            onChange={(event) => onChange({ ...draft, upper: event.target.value })}
+            placeholder="*"
+            value={draft.upper}
+          />
+          {error && <p className="field-error" role="alert">{error}</p>}
+        </div>
+      )}
+    </>
+  );
+}
 
 const RELATIONSHIP_KIND_LABELS: Record<RelationshipKind, string> = {
   ASSOCIATION: 'Asociación',
@@ -114,6 +214,45 @@ export function dispatchStoreSelection(
     classifierId,
     selectedStore === 'SQL' || selectedStore === 'DOCUMENT' ? selectedStore : null,
   ));
+}
+
+/** A select over a fixed stereotype list; users never type stereotype syntax. Empty value means none. */
+function StereotypeSelect({
+  id,
+  options,
+  value,
+  onChange,
+}: {
+  id: string;
+  options: readonly string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <>
+      <label className="field-label" htmlFor={id}>Estereotipo</label>
+      <select id={id} onChange={(event) => onChange(event.target.value)} value={value}>
+        <option value="">(ninguno)</option>
+        {options.map((name) => (
+          <option key={name} value={name}>{STEREOTYPE_LABELS[name] ?? name}</option>
+        ))}
+      </select>
+    </>
+  );
+}
+
+/** The payload fragment of a member save: only a changed stereotype is sent, and none is an explicit null. */
+export function stereotypeChange(stored: string | null | undefined, selected: string): { stereotype?: string | null } {
+  const next = selected || null;
+  return next === (stored ?? null) ? {} : { stereotype: next };
+}
+
+export function dispatchStereotypeSelection(
+  onCommand: PropertiesPanelProps['onCommand'],
+  classifierId: string,
+  selected: string,
+): void {
+  onCommand(buildClassifierSetStereotypeRequest(classifierId, selected || null));
 }
 
 /** Lets the user fix where a class is stored, or hand the choice back to the automatic classifier. */
@@ -335,6 +474,137 @@ function nextOrdinal(items: Array<{ ordinal: number }>): number {
   return items.reduce((maximum, item) => Math.max(maximum, item.ordinal), -1) + 1;
 }
 
+/** How a relationship is named where the user picks it: its name, or its kind and the classes it joins. */
+export function relationshipLabel(model: ModelResource, relationship: RelationshipResource): string {
+  const ends = [...relationship.ends].sort((left, right) => left.ordinal - right.ordinal)
+    .map((end) => model.classifiers.find((candidate) => candidate.id === end.classifierId)?.name ?? '?');
+  const joined = ends.join(' – ');
+  return relationship.name ? `${relationship.name} (${joined})` : `${relationship.kind} (${joined})`;
+}
+
+/** Saves the body of a note only when it is not blank and actually changed; returns whether it sent. */
+export function dispatchNoteBody(onCommand: PropertiesPanelProps['onCommand'], note: NoteResource, body: string): boolean {
+  if (!body.trim() || body === note.body) {
+    return false;
+  }
+  onCommand(buildNoteUpdateRequest(note.id, body));
+  return true;
+}
+
+/** Links a note to the element chosen in the select, whose value is `TYPE:id`; returns whether it sent. */
+export function dispatchNoteLink(onCommand: PropertiesPanelProps['onCommand'], noteId: string, choice: string): boolean {
+  const [targetType, targetId] = choice.split(':');
+  if ((targetType === 'CLASSIFIER' || targetType === 'RELATIONSHIP') && targetId) {
+    onCommand(buildNoteLinkRequest(noteId, targetType, targetId));
+    return true;
+  }
+  return false;
+}
+
+function NoteProperties({
+  note,
+  model,
+  onCommand,
+  onDelete,
+}: {
+  note: NoteResource;
+  model: ModelResource;
+  onCommand: PropertiesPanelProps['onCommand'];
+  onDelete: () => void;
+}) {
+  const [body, setBody] = useState(note.body);
+  const [pending, setPending] = useState('');
+
+  useEffect(() => {
+    setBody(note.body);
+  }, [note.id, note.body]);
+
+  const linked = note.annotatedElements.flatMap((element) => {
+    if (element.targetType === 'CLASSIFIER') {
+      const classifier = model.classifiers.find((candidate) => candidate.id === element.targetId);
+      return classifier ? [{ ...element, label: classifier.name }] : [];
+    }
+    const relationship = model.relationships.find((candidate) => candidate.id === element.targetId);
+    return relationship ? [{ ...element, label: relationshipLabel(model, relationship) }] : [];
+  });
+  const isLinked = (targetType: NoteTargetType, targetId: string) =>
+    note.annotatedElements.some((element) => element.targetType === targetType && element.targetId === targetId);
+  const candidates = [
+    ...model.classifiers
+      .filter((classifier) => !isLinked('CLASSIFIER', classifier.id))
+      .map((classifier) => ({ key: `CLASSIFIER:${classifier.id}`, label: `Clase: ${classifier.name}` })),
+    ...model.relationships
+      .filter((relationship) => !isLinked('RELATIONSHIP', relationship.id))
+      .map((relationship) => ({ key: `RELATIONSHIP:${relationship.id}`, label: `Relación: ${relationshipLabel(model, relationship)}` })),
+  ];
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    dispatchNoteBody(onCommand, note, body);
+  }
+
+  function link() {
+    if (dispatchNoteLink(onCommand, note.id, pending)) {
+      setPending('');
+    }
+  }
+
+  return (
+    <>
+      <div className="property-section">
+        <div className="property-section-heading">
+          <h3>Nota</h3>
+        </div>
+        <form className="property-constraint-form" onSubmit={save}>
+          <label className="field-label">
+            Texto de la nota
+            <textarea aria-label="Texto de la nota" maxLength={NOTE_BODY_MAX} onChange={(event) => setBody(event.target.value)}
+              rows={5} value={body} />
+          </label>
+          <div className="property-constraint-actions">
+            <button className="button button-secondary button-compact"
+              disabled={!body.trim() || body === note.body} type="submit">
+              Guardar nota
+            </button>
+            <button className="text-button danger-button" onClick={onDelete} type="button">Eliminar nota</button>
+          </div>
+        </form>
+      </div>
+      <section className="property-section" aria-label="Elementos anotados">
+        <div className="property-section-heading">
+          <h3>Anota a</h3>
+        </div>
+        {linked.length > 0 ? (
+          <ul className="property-constraint-list">
+            {linked.map((element) => (
+              <li key={`${element.targetType}:${element.targetId}`}>
+                <span>{element.targetType === 'CLASSIFIER' ? 'Clase' : 'Relación'}: {element.label}</span>
+                <button aria-label={`Quitar vínculo con ${element.label}`} className="text-button danger-button"
+                  onClick={() => onCommand(buildNoteUnlinkRequest(note.id, element.targetType, element.targetId))} type="button">
+                  Quitar
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="property-hint">La nota no está vinculada a ningún elemento.</p>}
+        {candidates.length > 0 && (
+          <div className="property-constraint-actions">
+            <select aria-label="Vincular la nota a" onChange={(event) => setPending(event.target.value)} value={pending}>
+              <option value="">Vincular a…</option>
+              {candidates.map((candidate) => (
+                <option key={candidate.key} value={candidate.key}>{candidate.label}</option>
+              ))}
+            </select>
+            <button className="button button-secondary button-compact" disabled={!pending} onClick={link} type="button">
+              Vincular
+            </button>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
 function ClassifierProperties({
   classifier,
   model,
@@ -371,6 +641,8 @@ function ClassifierProperties({
           type: { primitiveName: 'String' },
           visibility: 'PUBLIC',
           multiplicity: 'EXACTLY_ONE',
+          lowerBound: null,
+          upperBound: null,
           defaultValue: null,
           ordinal: nextOrdinal(classifier.attributes),
         },
@@ -438,6 +710,14 @@ function ClassifierProperties({
             <span>Clase abstracta</span>
           </label>
         )}
+        {classifierAcceptsStereotype(classifier.kind) && (
+          <StereotypeSelect
+            id="classifier-stereotype"
+            onChange={(value) => dispatchStereotypeSelection(onCommand, classifier.id, value)}
+            options={CLASSIFIER_STEREOTYPES}
+            value={classifier.stereotype ?? ''}
+          />
+        )}
         {canBeAbstract && <StoreField classifier={classifier} onCommand={onCommand} />}
       </section>
 
@@ -502,10 +782,12 @@ function RelationshipProperties({
   const [stereotype, setStereotype] = useState(relationship.stereotype ?? '');
   const [associationClassId, setAssociationClassId] = useState(relationship.associationClassId ?? '');
   const [sourceRole, setSourceRole] = useState(sourceEnd?.role ?? '');
-  const [sourceMultiplicity, setSourceMultiplicity] = useState(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
+  const [sourceMultiplicity, setSourceMultiplicity] = useState(multiplicityDraft(sourceEnd));
   const [sourceNavigability, setSourceNavigability] = useState(sourceEnd?.navigability ?? 'UNSPECIFIED');
+  const [sourceFlags, setSourceFlags] = useState(endFlagsDraft(sourceEnd));
+  const [targetFlags, setTargetFlags] = useState(endFlagsDraft(targetEnd));
   const [targetRole, setTargetRole] = useState(targetEnd?.role ?? '');
-  const [targetMultiplicity, setTargetMultiplicity] = useState(targetEnd?.multiplicity ?? 'EXACTLY_ONE');
+  const [targetMultiplicity, setTargetMultiplicity] = useState(multiplicityDraft(targetEnd));
   const [targetNavigability, setTargetNavigability] = useState(targetEnd?.navigability ?? 'UNSPECIFIED');
   const sourceClassifier = model.classifiers.find((classifier) => classifier.id === sourceEnd?.classifierId);
   const targetClassifier = model.classifiers.find((classifier) => classifier.id === targetEnd?.classifierId);
@@ -550,10 +832,12 @@ function RelationshipProperties({
     setStereotype(relationship.stereotype ?? '');
     setAssociationClassId(relationship.associationClassId ?? '');
     setSourceRole(sourceEnd?.role ?? '');
-    setSourceMultiplicity(sourceEnd?.multiplicity ?? 'EXACTLY_ONE');
+    setSourceMultiplicity(multiplicityDraft(sourceEnd));
     setSourceNavigability(sourceEnd?.navigability ?? 'UNSPECIFIED');
+    setSourceFlags(endFlagsDraft(sourceEnd));
+    setTargetFlags(endFlagsDraft(targetEnd));
     setTargetRole(targetEnd?.role ?? '');
-    setTargetMultiplicity(targetEnd?.multiplicity ?? 'EXACTLY_ONE');
+    setTargetMultiplicity(multiplicityDraft(targetEnd));
     setTargetNavigability(targetEnd?.navigability ?? 'UNSPECIFIED');
   }, [
     relationship.id,
@@ -563,15 +847,25 @@ function RelationshipProperties({
     relationship.associationClassId,
     sourceEnd?.role,
     sourceEnd?.multiplicity,
+    sourceEnd?.lowerBound,
+    sourceEnd?.upperBound,
     sourceEnd?.navigability,
+    sourceEnd?.isOrdered,
+    sourceEnd?.isUnique,
+    targetEnd?.isOrdered,
+    targetEnd?.isUnique,
     targetEnd?.role,
     targetEnd?.multiplicity,
+    targetEnd?.lowerBound,
+    targetEnd?.upperBound,
     targetEnd?.navigability,
   ]);
 
+  const endsInvalid = multiplicityError(sourceMultiplicity) !== null || multiplicityError(targetMultiplicity) !== null;
+
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!sourceEnd || !targetEnd) {
+    if (!sourceEnd || !targetEnd || endsInvalid) {
       return;
     }
     onCommand(buildRelationshipUpdateRequest(relationship, {
@@ -581,13 +875,19 @@ function RelationshipProperties({
       associationClassId: isAssociationKind(kind) ? associationClassId || null : null,
       source: {
         role: sourceRole.trim() || null,
-        multiplicity: sourceMultiplicity,
+        multiplicity: sourceMultiplicity.kind,
+        ...rangeBoundsPayload(sourceMultiplicity.kind, sourceMultiplicity.lower, sourceMultiplicity.upper),
         navigability: sourceNavigability,
+        isOrdered: sourceFlags.isOrdered,
+        isUnique: sourceFlags.isUnique,
       },
       target: {
         role: targetRole.trim() || null,
-        multiplicity: targetMultiplicity,
+        multiplicity: targetMultiplicity.kind,
+        ...rangeBoundsPayload(targetMultiplicity.kind, targetMultiplicity.lower, targetMultiplicity.upper),
         navigability: targetNavigability,
+        isOrdered: targetFlags.isOrdered,
+        isUnique: targetFlags.isUnique,
       },
     }));
   }
@@ -597,10 +897,12 @@ function RelationshipProperties({
     classifierName: string | undefined,
     role: string,
     setRole: (value: string) => void,
-    multiplicity: string,
-    setMultiplicity: (value: string) => void,
+    multiplicity: MultiplicityDraft,
+    setMultiplicity: (value: MultiplicityDraft) => void,
     navigability: string,
     setNavigability: (value: string) => void,
+    flags: EndFlagsDraft,
+    setFlags: (value: EndFlagsDraft) => void,
   ) {
     const title = side === 'source' ? 'Extremo de origen' : 'Extremo de destino';
     const prefix = `relationship-${side}`;
@@ -609,14 +911,29 @@ function RelationshipProperties({
         <legend>{title}{classifierName ? ` · ${classifierName}` : ''}</legend>
         <label className="field-label" htmlFor={`${prefix}-role`}>Rol</label>
         <input id={`${prefix}-role`} onChange={(event) => setRole(event.target.value)} value={role} />
-        <label className="field-label" htmlFor={`${prefix}-multiplicity`}>Multiplicidad</label>
-        <select id={`${prefix}-multiplicity`} onChange={(event) => setMultiplicity(event.target.value)} value={multiplicity}>
-          {MULTIPLICITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
+        <MultiplicityFields draft={multiplicity} onChange={setMultiplicity} prefix={prefix} />
         <label className="field-label" htmlFor={`${prefix}-navigability`}>Navegabilidad</label>
         <select id={`${prefix}-navigability`} onChange={(event) => setNavigability(event.target.value)} value={navigability}>
           {NAVIGABILITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
+        <label className="property-check">
+          <input
+            checked={flags.isOrdered}
+            id={`${prefix}-ordered`}
+            onChange={(event) => setFlags({ ...flags, isOrdered: event.target.checked })}
+            type="checkbox"
+          />
+          <span>Ordenado</span>
+        </label>
+        <label className="property-check">
+          <input
+            checked={flags.isUnique}
+            id={`${prefix}-unique`}
+            onChange={(event) => setFlags({ ...flags, isUnique: event.target.checked })}
+            type="checkbox"
+          />
+          <span>Único</span>
+        </label>
       </fieldset>
     );
   }
@@ -675,10 +992,10 @@ function RelationshipProperties({
           </>
         )}
         {endFields('source', sourceClassifier?.name, sourceRole, setSourceRole, sourceMultiplicity,
-          setSourceMultiplicity, sourceNavigability, setSourceNavigability)}
+          setSourceMultiplicity, sourceNavigability, setSourceNavigability, sourceFlags, setSourceFlags)}
         {endFields('target', targetClassifier?.name, targetRole, setTargetRole, targetMultiplicity,
-          setTargetMultiplicity, targetNavigability, setTargetNavigability)}
-        <button className="button button-primary button-compact" type="submit">Guardar relación</button>
+          setTargetMultiplicity, targetNavigability, setTargetNavigability, targetFlags, setTargetFlags)}
+        <button className="button button-primary button-compact" disabled={endsInvalid} type="submit">Guardar relación</button>
       </form>
     </section>
       <section className="property-section" aria-labelledby="relationship-style-title">
@@ -762,20 +1079,29 @@ function AttributeProperties({
 }) {
   const [type, setType] = useState(attribute.type ?? '');
   const [visibility, setVisibility] = useState(attribute.visibility);
-  const [multiplicity, setMultiplicity] = useState(attribute.multiplicity);
+  const [multiplicity, setMultiplicity] = useState(multiplicityDraft(attribute));
   const [defaultValue, setDefaultValue] = useState(attribute.defaultValue ?? '');
+  const [stereotype, setStereotype] = useState(attribute.stereotype ?? '');
+  const [isStatic, setIsStatic] = useState(attribute.isStatic ?? false);
+  const [isDerived, setIsDerived] = useState(attribute.isDerived ?? false);
 
   useEffect(() => {
+    setIsStatic(attribute.isStatic ?? false);
+    setIsDerived(attribute.isDerived ?? false);
     setType(attribute.type ?? '');
     setVisibility(attribute.visibility);
-    setMultiplicity(attribute.multiplicity);
+    setMultiplicity(multiplicityDraft(attribute));
     setDefaultValue(attribute.defaultValue ?? '');
-  }, [attribute.id, attribute.type, attribute.visibility, attribute.multiplicity, attribute.defaultValue]);
+    setStereotype(attribute.stereotype ?? '');
+  }, [attribute.stereotype, attribute.isStatic, attribute.isDerived, attribute.id, attribute.type, attribute.visibility, attribute.multiplicity,
+    attribute.lowerBound, attribute.upperBound, attribute.defaultValue]);
+
+  const multiplicityInvalid = multiplicityError(multiplicity) !== null;
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const cleanType = type.trim();
-    if (!cleanType) {
+    if (!cleanType || multiplicityInvalid) {
       return;
     }
     onCommand({
@@ -784,8 +1110,12 @@ function AttributeProperties({
       payload: {
         type: typeReference(model, cleanType),
         visibility,
-        multiplicity,
+        multiplicity: multiplicity.kind,
+        ...rangeBoundsPayload(multiplicity.kind, multiplicity.lower, multiplicity.upper),
         defaultValue: defaultValue === '' ? null : defaultValue,
+        ...stereotypeChange(attribute.stereotype, stereotype),
+        isStatic,
+        isDerived,
       },
     });
   }
@@ -821,16 +1151,26 @@ function AttributeProperties({
         <select id="attribute-visibility" onChange={(event) => setVisibility(event.target.value)} value={visibility}>
           <option value="PUBLIC">Público (+)</option>
           <option value="PRIVATE">Privado (-)</option>
+          <option value="PROTECTED">Protegido (#)</option>
+          <option value="PACKAGE">Paquete (~)</option>
         </select>
 
-        <label className="field-label" htmlFor="attribute-multiplicity">Multiplicidad</label>
-        <select id="attribute-multiplicity" onChange={(event) => setMultiplicity(event.target.value)} value={multiplicity}>
-          {MULTIPLICITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
+        <StereotypeSelect id="attribute-stereotype" onChange={setStereotype} options={ATTRIBUTE_STEREOTYPES} value={stereotype} />
+
+        <MultiplicityFields draft={multiplicity} onChange={setMultiplicity} prefix="attribute" />
 
         <label className="field-label" htmlFor="attribute-default">Valor predeterminado</label>
         <input id="attribute-default" onChange={(event) => setDefaultValue(event.target.value)} value={defaultValue} />
-        <button className="button button-primary button-compact" type="submit">Guardar atributo</button>
+
+        <label className="property-check">
+          <input checked={isStatic} onChange={(event) => setIsStatic(event.target.checked)} type="checkbox" />
+          <span>Estático</span>
+        </label>
+        <label className="property-check">
+          <input checked={isDerived} onChange={(event) => setIsDerived(event.target.checked)} type="checkbox" />
+          <span>Derivado</span>
+        </label>
+        <button className="button button-primary button-compact" disabled={multiplicityInvalid} type="submit">Guardar atributo</button>
       </form>
     </>
   );
@@ -942,13 +1282,15 @@ function OperationProperties({
   const [visibility, setVisibility] = useState(operation.visibility);
   const [isAbstract, setIsAbstract] = useState(operation.isAbstract);
   const [isStatic, setIsStatic] = useState(operation.isStatic);
+  const [stereotype, setStereotype] = useState(operation.stereotype ?? '');
 
   useEffect(() => {
     setReturnType(operation.returnType ?? '');
     setVisibility(operation.visibility);
     setIsAbstract(operation.isAbstract);
     setIsStatic(operation.isStatic);
-  }, [operation.id, operation.returnType, operation.visibility, operation.isAbstract, operation.isStatic]);
+    setStereotype(operation.stereotype ?? '');
+  }, [operation.stereotype, operation.id, operation.returnType, operation.visibility, operation.isAbstract, operation.isStatic]);
 
   function addParameter() {
     onCommand(buildParameterAddRequest(operation.id, {
@@ -969,6 +1311,7 @@ function OperationProperties({
         visibility,
         isAbstract,
         isStatic,
+        ...stereotypeChange(operation.stereotype, stereotype),
       },
     });
   }
@@ -990,7 +1333,11 @@ function OperationProperties({
         <select id="operation-visibility" onChange={(event) => setVisibility(event.target.value)} value={visibility}>
           <option value="PUBLIC">Público (+)</option>
           <option value="PRIVATE">Privado (-)</option>
+          <option value="PROTECTED">Protegido (#)</option>
+          <option value="PACKAGE">Paquete (~)</option>
         </select>
+
+        <StereotypeSelect id="operation-stereotype" onChange={setStereotype} options={OPERATION_STEREOTYPES} value={stereotype} />
 
         <label className="property-check">
           <input checked={isAbstract} onChange={(event) => setIsAbstract(event.target.checked)} type="checkbox" />
@@ -1037,6 +1384,24 @@ export default function PropertiesPanel({ model, selection, onCommand, onDelete,
         <p className="eyebrow">Detalles</p>
         <h2 id="properties-title">Propiedades</h2>
         <p className="property-hint">Selecciona una clase o uno de sus elementos para verlo y editarlo.</p>
+      </aside>
+    );
+  }
+
+  if (selection.kind === 'note') {
+    const note = (model.notes ?? []).find((candidate) => candidate.id === selection.noteId);
+    return (
+      <aside className="surface properties-panel" aria-labelledby="properties-title">
+        <p className="eyebrow">Detalles</p>
+        <h2 id="properties-title">Propiedades</h2>
+        {note ? (
+          <NoteProperties
+            note={note}
+            model={model}
+            onCommand={onCommand}
+            onDelete={() => onDelete(selection)}
+          />
+        ) : <p className="property-hint">Esta nota ya no está en el modelo.</p>}
       </aside>
     );
   }

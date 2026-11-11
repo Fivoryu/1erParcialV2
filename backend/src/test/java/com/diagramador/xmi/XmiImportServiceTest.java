@@ -73,6 +73,7 @@ class XmiImportServiceTest {
     @Autowired private UmlModelRepository modelRepository;
     @Autowired private ClassifierRepository classifierRepository;
     @Autowired private UmlAttributeRepository attributeRepository;
+    @Autowired private com.diagramador.persistence.UmlOperationRepository operationRepository;
     @Autowired private DiagramViewRepository viewRepository;
     @Autowired private com.diagramador.persistence.UmlRelationshipRepository relationshipRepository;
     @Autowired private ModelCommandRepository commandRepository;
@@ -289,6 +290,47 @@ class XmiImportServiceTest {
         var model = new com.diagramador.api.ModelResource(id.apply(1), id.apply(2), 3, id.apply(3), List.of(view),
                 List.of(clazz.apply(900L, "Student"), clazz.apply(901L, "Course"), clazz.apply(902L, "Enrolment")),
                 List.of(association));
+        return new XmiSemanticEmitter().emit(model).document().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void exportedClassifierAttributeAndOperationStereotypesSurviveImportAndRescopedReimport() throws Exception {
+        Fixture first = existingProject("Member stereotype import one");
+        Fixture second = existingProject("Member stereotype import two");
+        byte[] bytes = memberStereotypeXmi();
+
+        for (Fixture fixture : List.of(first, second)) {
+            XmiImportService.XmiImportResult result = importBytes(fixture, bytes, XmiImportMode.AGREGAR);
+            assertThat(result.command().status()).as("diagnostics: %s", result.command().diagnostics())
+                    .isEqualTo(CommandStatus.ACCEPTED);
+            transactionTemplate.executeWithoutResult(status -> {
+                var classifier = classifierRepository.findByModelId(fixture.model().getId()).stream()
+                        .filter(candidate -> candidate.getName().equals("Stereotyped")).findFirst().orElseThrow();
+                assertThat(classifier.getStereotype()).isEqualTo("ENTITY");
+                assertThat(attributeRepository.findByClassifierId(classifier.getId())).singleElement()
+                        .satisfies(attribute -> assertThat(attribute.getStereotype()).isEqualTo("UNIQUE"));
+                assertThat(operationRepository.findByClassifierId(classifier.getId())).singleElement()
+                        .satisfies(operation -> assertThat(operation.getStereotype()).isEqualTo("CREATE"));
+            });
+        }
+    }
+
+    private byte[] memberStereotypeXmi() {
+        java.util.function.LongFunction<UUID> id = value ->
+                UUID.fromString("00000000-0000-0000-0000-%012x".formatted(value));
+        var attribute = new com.diagramador.api.ModelResource.AttributeResource(id.apply(941), "code", "ATTRIBUTE",
+                "PUBLIC", MultiplicityKind.EXACTLY_ONE, null, null, "String", 0, null, null, "UNIQUE");
+        var operation = new com.diagramador.api.ModelResource.OperationResource(id.apply(942), "make", "PUBLIC",
+                false, false, null, null, 0, List.of(), "CREATE");
+        var owner = new com.diagramador.api.ModelResource.ClassifierResource(id.apply(940), "Stereotyped",
+                ClassifierKind.CLASS, false, null, List.of(attribute), List.of(operation), List.of(), null, null, null,
+                "ENTITY");
+        var view = new com.diagramador.api.ModelResource.ViewResource(id.apply(1300), "Member stereotype view", true,
+                List.of(new com.diagramador.api.ModelResource.GeometryResource(id.apply(1500),
+                        com.diagramador.domain.TargetType.CLASSIFIER, id.apply(940), 40, 60, 200, 100, 0)),
+                List.of());
+        var model = new com.diagramador.api.ModelResource(id.apply(1), id.apply(2), 3, id.apply(3), List.of(view),
+                List.of(owner), List.of());
         return new XmiSemanticEmitter().emit(model).document().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 

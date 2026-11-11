@@ -5,6 +5,8 @@ import com.diagramador.api.ModelResource.AttributeResource;
 import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
 import com.diagramador.api.ModelResource.GeometryResource;
+import com.diagramador.api.ModelResource.NoteLinkResource;
+import com.diagramador.api.ModelResource.NoteResource;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
@@ -109,6 +111,7 @@ public final class XmiSemanticEmitter {
             appendClassifier(document, model, classifier, context);
         }
         appendRelationships(document, model, snapshot.relationships(), context);
+        appendNotes(document, model, snapshot.notes(), context);
         appendPrimitiveTypes(document, model, context);
         appendExtension(document, root, snapshot, context);
         return document;
@@ -162,15 +165,16 @@ public final class XmiSemanticEmitter {
         }
         // The property flags EA's own export writes (docs/fixtures/xmi/Prueba3.xml): without them EA reads the
         // property as non-unique and renders every imported attribute as {bag}.
-        element.setAttribute("isStatic", "false");
+        element.setAttribute("isStatic", Boolean.toString(attribute.isStatic()));
         element.setAttribute("isReadOnly", "false");
-        element.setAttribute("isDerived", "false");
+        element.setAttribute("isDerived", Boolean.toString(attribute.isDerived()));
         element.setAttribute("isOrdered", "false");
         element.setAttribute("isUnique", "true");
         element.setAttribute("isDerivedUnion", "false");
         owner.appendChild(element);
 
-        appendMultiplicity(document, element, attribute.multiplicity(), context);
+        appendMultiplicity(document, element, attribute.multiplicity(), attribute.lowerBound(), attribute.upperBound(),
+                context);
         if (!enumerationConstant) {
             appendTypeReference(document, element, attribute.type(), context);
         }
@@ -265,6 +269,49 @@ public final class XmiSemanticEmitter {
         }
     }
 
+    /**
+     * Notes are UML comments owned by the model: {@code body} holds the text and each annotated element is an
+     * {@code annotatedElement} idref to its emitted id. A link to an element that was not emitted (an unresolved
+     * namespace, a relationship dropped with its own loss) is left out and counted, so no idref ever dangles.
+     */
+    private void appendNotes(Document document, Element model, List<NoteResource> notes, Context context) {
+        List<NoteResource> sorted = notes.stream().sorted(Comparator.comparing(NoteResource::id)).toList();
+        for (NoteResource note : sorted) {
+            Element comment = document.createElementNS(UML_NAMESPACE, "ownedComment");
+            setXmiAttribute(comment, "type", "uml:Comment");
+            setXmiAttribute(comment, "id", context.registerId(XmiIdCodec.classifierId(note.id())));
+            comment.setAttribute("body", Objects.requireNonNull(note.body(), "note.body"));
+            List<NoteLinkResource> links = note.annotatedElements().stream()
+                    .sorted(Comparator.comparing((NoteLinkResource link) -> link.targetType().name())
+                            .thenComparing(NoteLinkResource::targetId))
+                    .toList();
+            for (NoteLinkResource link : links) {
+                String target = annotatedElementXmiId(link, context);
+                if (target == null) {
+                    context.loss("unresolved_note_reference");
+                    continue;
+                }
+                Element annotated = document.createElementNS(UML_NAMESPACE, "annotatedElement");
+                setXmiAttribute(annotated, "idref", target);
+                comment.appendChild(annotated);
+            }
+            model.appendChild(comment);
+        }
+    }
+
+    private String annotatedElementXmiId(NoteLinkResource link, Context context) {
+        if (link.targetType() == TargetType.CLASSIFIER) {
+            ClassifierResource classifier = context.classifierById.get(link.targetId());
+            return classifier == null || !context.emittableClassifierIds.contains(classifier.id()) ? null
+                    : classifierXmiId(classifier);
+        }
+        if (link.targetType() == TargetType.RELATIONSHIP) {
+            String id = XmiIdCodec.classifierId(link.targetId());
+            return context.ids.contains(id) ? id : null;
+        }
+        return null;
+    }
+
     private void appendRelationships(Document document, Element model, List<RelationshipResource> relationships,
             Context context) {
         for (RelationshipResource relationship : sortedRelationships(relationships)) {
@@ -335,6 +382,13 @@ public final class XmiSemanticEmitter {
             setOptionalAttribute(ownedEnd, "name", end.role());
             ownedEnd.setAttribute("visibility", "public");
             ownedEnd.setAttribute("association", associationId);
+            // Written only when set: an unmarked end carries neither property, as before they existed.
+            if (end.isOrdered()) {
+                ownedEnd.setAttribute("isOrdered", "true");
+            }
+            if (end.isUnique()) {
+                ownedEnd.setAttribute("isUnique", "true");
+            }
             String aggregation = aggregation(end.aggregationKind(), context);
             if (aggregation != null) {
                 ownedEnd.setAttribute("aggregation", aggregation);
@@ -342,7 +396,7 @@ public final class XmiSemanticEmitter {
             Element type = document.createElementNS(UML_NAMESPACE, "type");
             setXmiAttribute(type, "idref", classifierXmiId(context.classifierById.get(end.classifierId())));
             ownedEnd.appendChild(type);
-            appendMultiplicity(document, ownedEnd, end.multiplicity(), context);
+            appendMultiplicity(document, ownedEnd, end.multiplicity(), end.lowerBound(), end.upperBound(), context);
             association.appendChild(ownedEnd);
         }
         appendConstraints(document, association, relationship.constraints(), context);
@@ -400,7 +454,7 @@ public final class XmiSemanticEmitter {
     }
 
     private void appendMultiplicity(Document document, Element owner, MultiplicityKind multiplicity,
-            Context context) {
+            Integer lowerBound, Integer upperBound, Context context) {
         if (multiplicity == null) {
             context.loss("unsupported_multiplicity");
             return;
@@ -425,8 +479,12 @@ public final class XmiSemanticEmitter {
                 upper = "-1";
             }
             case RANGE -> {
-                context.loss("unsupported_multiplicity_range");
-                return;
+                if (lowerBound == null) {
+                    context.loss("unsupported_multiplicity_range");
+                    return;
+                }
+                lower = lowerBound.toString();
+                upper = upperBound == null ? "-1" : upperBound.toString();
             }
             default -> throw new IllegalStateException("Unhandled multiplicity: " + multiplicity);
         }
@@ -525,16 +583,14 @@ public final class XmiSemanticEmitter {
                     context.loss("extension_unresolved_placement");
                     continue;
                 }
-                selectedIds.add(classifier.id());
-                UUID namespaceId = classifier.namespaceId();
-                while (namespaceId != null) {
-                    ClassifierResource namespace = context.classifierById.get(namespaceId);
-                    if (namespace == null || namespace.kind() != ClassifierKind.PACKAGE) {
-                        break;
-                    }
-                    selectedIds.add(namespace.id());
-                    namespaceId = namespace.namespaceId();
-                }
+                selectWithPackages(classifier, selectedIds, context);
+            }
+        }
+        // A stereotype lives only in the extension, so a stereotyped class gets its element even when no view
+        // places it; otherwise the export would drop the stereotype without saying so.
+        for (ClassifierResource classifier : context.classifierById.values()) {
+            if (context.emittableClassifierIds.contains(classifier.id()) && carriesStereotype(classifier)) {
+                selectWithPackages(classifier, selectedIds, context);
             }
         }
         return selectedIds.stream()
@@ -544,6 +600,42 @@ public final class XmiSemanticEmitter {
                         .thenComparing(ClassifierResource::name, Comparator.nullsFirst(String::compareTo))
                         .thenComparing(ClassifierResource::id))
                 .toList();
+    }
+
+    private static void selectWithPackages(ClassifierResource classifier, Set<UUID> selectedIds, Context context) {
+        selectedIds.add(classifier.id());
+        UUID namespaceId = classifier.namespaceId();
+        while (namespaceId != null) {
+            ClassifierResource namespace = context.classifierById.get(namespaceId);
+            if (namespace == null || namespace.kind() != ClassifierKind.PACKAGE) {
+                break;
+            }
+            selectedIds.add(namespace.id());
+            namespaceId = namespace.namespaceId();
+        }
+    }
+
+    private static boolean carriesStereotype(ClassifierResource classifier) {
+        return isPresent(classifier.stereotype())
+                || classifier.attributes().stream().anyMatch(attribute -> isPresent(attribute.stereotype()))
+                || classifier.operations().stream().anyMatch(operation -> isPresent(operation.stereotype()));
+    }
+
+    private static boolean isPresent(String stereotype) {
+        return stereotype != null && !stereotype.isBlank();
+    }
+
+    /** The vendor `stereotype` form Enterprise Architect writes: the lower-case name of the fixed list entry. */
+    private static String extensionStereotype(String stereotype) {
+        return stereotype.toLowerCase(Locale.ROOT);
+    }
+
+    private static void appendExtensionStereotype(Document document, Element owner, String stereotype) {
+        if (isPresent(stereotype)) {
+            Element element = document.createElement("stereotype");
+            element.setAttribute("stereotype", extensionStereotype(stereotype));
+            owner.appendChild(element);
+        }
     }
 
     private void appendExtensionConnectors(Document document, Element connectors, ModelResource snapshot,
@@ -863,6 +955,9 @@ public final class XmiSemanticEmitter {
             properties.setAttribute("isAbstract", Boolean.toString(classifier.isAbstract()
                     || classifier.kind() == ClassifierKind.ABSTRACT_CLASS));
         }
+        if (isPresent(classifier.stereotype())) {
+            properties.setAttribute("stereotype", extensionStereotype(classifier.stereotype()));
+        }
         element.appendChild(properties);
 
         if (!classifier.attributes().isEmpty()) {
@@ -870,6 +965,19 @@ public final class XmiSemanticEmitter {
             element.appendChild(attributes);
             for (AttributeResource attribute : orderedAttributes(classifier)) {
                 appendExtensionAttribute(document, attributes, attribute, context);
+            }
+        }
+        List<OperationResource> stereotypedOperations = orderedOperations(classifier).stream()
+                .filter(operation -> isPresent(operation.stereotype())).toList();
+        if (!stereotypedOperations.isEmpty()) {
+            Element operations = document.createElement("operations");
+            element.appendChild(operations);
+            for (OperationResource operation : stereotypedOperations) {
+                Element extensionOperation = document.createElement("operation");
+                setXmiAttribute(extensionOperation, "idref", XmiIdCodec.classifierId(operation.id()));
+                extensionOperation.setAttribute("name", Objects.requireNonNull(operation.name(), "operation.name"));
+                appendExtensionStereotype(document, extensionOperation, operation.stereotype());
+                operations.appendChild(extensionOperation);
             }
         }
     }
@@ -893,6 +1001,7 @@ public final class XmiSemanticEmitter {
         Element containment = document.createElement("containment");
         containment.setAttribute("position", Integer.toString(attribute.ordinal()));
         element.appendChild(containment);
+        appendExtensionStereotype(document, element, attribute.stereotype());
         context.loss("attribute_layout_position_approximation");
         context.loss("attribute_layout_containment_kind");
 

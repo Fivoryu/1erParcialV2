@@ -18,12 +18,20 @@ public record ModelResource(
         List<ViewResource> views,
         List<ClassifierResource> classifiers,
         List<RelationshipResource> relationships,
-        @JsonProperty("view_style") List<ViewStyleResource> viewStyle) {
+        @JsonProperty("view_style") List<ViewStyleResource> viewStyle,
+        List<NoteResource> notes) {
 
     /** Legacy shape used by the XMI emitter/reader path: styles stay out of the exchange. */
     public ModelResource(UUID id, UUID projectId, long revision, UUID versionId, List<ViewResource> views,
             List<ClassifierResource> classifiers, List<RelationshipResource> relationships) {
-        this(id, projectId, revision, versionId, views, classifiers, relationships, List.of());
+        this(id, projectId, revision, versionId, views, classifiers, relationships, List.of(), List.of());
+    }
+
+    /** Pre-notes shape: no notes, as old snapshots without the field read. */
+    public ModelResource(UUID id, UUID projectId, long revision, UUID versionId, List<ViewResource> views,
+            List<ClassifierResource> classifiers, List<RelationshipResource> relationships,
+            List<ViewStyleResource> viewStyle) {
+        this(id, projectId, revision, versionId, views, classifiers, relationships, viewStyle, List.of());
     }
 
     public ModelResource {
@@ -31,6 +39,19 @@ public record ModelResource(
         classifiers = classifiers == null ? List.of() : List.copyOf(classifiers);
         relationships = relationships == null ? List.of() : List.copyOf(relationships);
         viewStyle = viewStyle == null ? List.of() : List.copyOf(viewStyle);
+        notes = notes == null ? List.of() : List.copyOf(notes);
+    }
+
+    /** UML Comment: free text annotating zero or more classifiers or relationships of the model. */
+    public record NoteResource(UUID id, String body, List<NoteLinkResource> annotatedElements) {
+
+        public NoteResource {
+            annotatedElements = annotatedElements == null ? List.of() : List.copyOf(annotatedElements);
+        }
+    }
+
+    /** One annotated element of a note; {@code targetType} is CLASSIFIER or RELATIONSHIP. */
+    public record NoteLinkResource(TargetType targetType, UUID targetId) {
     }
 
     public record ViewResource(
@@ -100,7 +121,8 @@ public record ModelResource(
             List<ConstraintResource> constraints,
             @JsonInclude(JsonInclude.Include.NON_NULL) PersistenceStore storeOverride,
             @JsonInclude(JsonInclude.Include.NON_NULL) PersistenceStore store,
-            @JsonInclude(JsonInclude.Include.NON_NULL) String storeReason) {
+            @JsonInclude(JsonInclude.Include.NON_NULL) String storeReason,
+            String stereotype) {
 
         public ClassifierResource {
             attributes = attributes == null ? List.of() : List.copyOf(attributes);
@@ -112,13 +134,22 @@ public record ModelResource(
         public ClassifierResource(UUID id, String name, ClassifierKind kind, boolean isAbstract, UUID namespaceId,
                 List<AttributeResource> attributes, List<OperationResource> operations,
                 List<ConstraintResource> constraints) {
-            this(id, name, kind, isAbstract, namespaceId, attributes, operations, constraints, null, null, null);
+            this(id, name, kind, isAbstract, namespaceId, attributes, operations, constraints, null, null, null, null);
+        }
+
+        /** Pre-stereotype shape: no stereotype (null), as old snapshots without the field read. */
+        public ClassifierResource(UUID id, String name, ClassifierKind kind, boolean isAbstract, UUID namespaceId,
+                List<AttributeResource> attributes, List<OperationResource> operations,
+                List<ConstraintResource> constraints, PersistenceStore storeOverride, PersistenceStore store,
+                String storeReason) {
+            this(id, name, kind, isAbstract, namespaceId, attributes, operations, constraints, storeOverride, store,
+                    storeReason, null);
         }
 
         /** The same classifier carrying the effective store and the reason the classifier gave for it. */
         public ClassifierResource withStore(PersistenceStore effectiveStore, String reason) {
             return new ClassifierResource(id, name, kind, isAbstract, namespaceId, attributes, operations,
-                    constraints, storeOverride, effectiveStore, reason);
+                    constraints, storeOverride, effectiveStore, reason, stereotype);
         }
     }
 
@@ -131,7 +162,34 @@ public record ModelResource(
             String defaultValue,
             UUID typeReferenceId,
             String type,
-            int ordinal) {
+            int ordinal,
+            Integer lowerBound,
+            Integer upperBound,
+            String stereotype,
+            @JsonProperty("isStatic") boolean isStatic,
+            @JsonProperty("isDerived") boolean isDerived) {
+        /** Pre-RANGE shape: bounds absent (null), as old snapshots without the fields read. */
+        public AttributeResource(UUID id, String name, String kind, String visibility, MultiplicityKind multiplicity,
+                String defaultValue, UUID typeReferenceId, String type, int ordinal) {
+            this(id, name, kind, visibility, multiplicity, defaultValue, typeReferenceId, type, ordinal, null, null,
+                    null);
+        }
+
+        /** Pre-static/derived shape: both flags false, as old snapshots without the fields read. */
+        public AttributeResource(UUID id, String name, String kind, String visibility, MultiplicityKind multiplicity,
+                String defaultValue, UUID typeReferenceId, String type, int ordinal, Integer lowerBound,
+                Integer upperBound, String stereotype) {
+            this(id, name, kind, visibility, multiplicity, defaultValue, typeReferenceId, type, ordinal, lowerBound,
+                    upperBound, stereotype, false, false);
+        }
+
+        /** Pre-stereotype shape: no stereotype (null), as old snapshots without the field read. */
+        public AttributeResource(UUID id, String name, String kind, String visibility, MultiplicityKind multiplicity,
+                String defaultValue, UUID typeReferenceId, String type, int ordinal, Integer lowerBound,
+                Integer upperBound) {
+            this(id, name, kind, visibility, multiplicity, defaultValue, typeReferenceId, type, ordinal, lowerBound,
+                    upperBound, null);
+        }
     }
 
     public record OperationResource(
@@ -143,10 +201,18 @@ public record ModelResource(
             UUID returnTypeReferenceId,
             String returnType,
             int ordinal,
-            List<ParameterResource> parameters) {
+            List<ParameterResource> parameters,
+            String stereotype) {
 
         public OperationResource {
             parameters = parameters == null ? List.of() : List.copyOf(parameters);
+        }
+
+        /** Pre-stereotype shape: no stereotype (null), as old snapshots without the field read. */
+        public OperationResource(UUID id, String name, String visibility, boolean isAbstract, boolean isStatic,
+                UUID returnTypeReferenceId, String returnType, int ordinal, List<ParameterResource> parameters) {
+            this(id, name, visibility, isAbstract, isStatic, returnTypeReferenceId, returnType, ordinal, parameters,
+                    null);
         }
     }
 
@@ -196,6 +262,24 @@ public record ModelResource(
             MultiplicityKind multiplicity,
             NavigationKind navigability,
             String aggregationKind,
-            short ordinal) {
+            short ordinal,
+            Integer lowerBound,
+            Integer upperBound,
+            @JsonProperty("isOrdered") boolean isOrdered,
+            @JsonProperty("isUnique") boolean isUnique) {
+        /** Pre-RANGE shape: bounds absent (null), as old snapshots without the fields read. */
+        public RelationshipEndResource(UUID id, UUID classifierId, String role, MultiplicityKind multiplicity,
+                NavigationKind navigability, String aggregationKind, short ordinal) {
+            this(id, classifierId, role, multiplicity, navigability, aggregationKind, ordinal, null, null, false,
+                    false);
+        }
+
+        /** Pre-ordered/unique shape: both flags false, as old snapshots without the fields read. */
+        public RelationshipEndResource(UUID id, UUID classifierId, String role, MultiplicityKind multiplicity,
+                NavigationKind navigability, String aggregationKind, short ordinal, Integer lowerBound,
+                Integer upperBound) {
+            this(id, classifierId, role, multiplicity, navigability, aggregationKind, ordinal, lowerBound, upperBound,
+                    false, false);
+        }
     }
 }

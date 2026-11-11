@@ -49,6 +49,12 @@ public class RelationshipEnd {
     @Column(name = "multiplicity", nullable = false)
     private MultiplicityKind multiplicity;
 
+    @Column(name = "lower_bound")
+    private Integer lowerBound;
+
+    @Column(name = "upper_bound")
+    private Integer upperBound;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "navigability", nullable = false)
@@ -56,6 +62,12 @@ public class RelationshipEnd {
 
     @Column(name = "aggregation_kind", nullable = false, length = 16)
     private String aggregationKind;
+
+    @Column(name = "is_ordered", nullable = false)
+    private boolean isOrdered;
+
+    @Column(name = "is_unique", nullable = false)
+    private boolean isUnique;
 
     protected RelationshipEnd() {
     }
@@ -68,6 +80,13 @@ public class RelationshipEnd {
     /** Identity-preserving factory used by snapshot materialization. */
     public static RelationshipEnd create(UUID id, UmlRelationship relationship, Classifier classifier, short ordinal,
             String role, MultiplicityKind multiplicity, NavigationKind navigability, String aggregationKind) {
+        return create(id, relationship, classifier, ordinal, role, multiplicity, null, null, navigability,
+                aggregationKind);
+    }
+
+    public static RelationshipEnd create(UUID id, UmlRelationship relationship, Classifier classifier, short ordinal,
+            String role, MultiplicityKind multiplicity, Integer lowerBound, Integer upperBound,
+            NavigationKind navigability, String aggregationKind) {
         RelationshipEnd end = new RelationshipEnd();
         end.id = id;
         end.relationship = relationship;
@@ -75,6 +94,8 @@ public class RelationshipEnd {
         end.ordinal = ordinal;
         end.role = role;
         end.multiplicity = multiplicity;
+        end.lowerBound = lowerBound;
+        end.upperBound = upperBound;
         end.navigability = navigability;
         end.aggregationKind = aggregationKind;
         return end;
@@ -118,6 +139,38 @@ public class RelationshipEnd {
 
     public void setMultiplicity(MultiplicityKind multiplicity) {
         this.multiplicity = multiplicity;
+    }
+
+    public Integer getLowerBound() {
+        return lowerBound;
+    }
+
+    public void setLowerBound(Integer lowerBound) {
+        this.lowerBound = lowerBound;
+    }
+
+    public Integer getUpperBound() {
+        return upperBound;
+    }
+
+    public void setUpperBound(Integer upperBound) {
+        this.upperBound = upperBound;
+    }
+
+    public boolean isOrdered() {
+        return isOrdered;
+    }
+
+    public void setOrdered(boolean isOrdered) {
+        this.isOrdered = isOrdered;
+    }
+
+    public boolean isUnique() {
+        return isUnique;
+    }
+
+    public void setUnique(boolean isUnique) {
+        this.isUnique = isUnique;
     }
 
     public NavigationKind getNavigability() {

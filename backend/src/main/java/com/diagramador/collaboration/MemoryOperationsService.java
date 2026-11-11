@@ -387,7 +387,9 @@ public class MemoryOperationsService {
                 .append(' ').append(nullToEmpty(relationship.name()));
         relationship.ends().forEach(end -> summary.append("; role ").append(nullToEmpty(end.role()))
                 .append(" classifier ").append(end.classifierId())
-                .append(" multiplicity ").append(end.multiplicity()));
+                .append(" multiplicity ").append(end.multiplicity())
+                .append(end.lowerBound() == null ? "" : " bounds " + end.lowerBound() + ".."
+                        + (end.upperBound() == null ? "*" : end.upperBound())));
         relationship.constraints().stream().limit(8).forEach(constraint -> summary.append("; constraint ")
                 .append(constraint.expression()));
         return summary.toString();

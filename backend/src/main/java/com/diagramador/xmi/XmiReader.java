@@ -6,13 +6,19 @@ import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConnectorPathResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
 import com.diagramador.api.ModelResource.GeometryResource;
+import com.diagramador.api.ModelResource.NoteLinkResource;
+import com.diagramador.api.ModelResource.NoteResource;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.api.ModelResource.ViewResource;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.AttributeStereotype;
+import com.diagramador.domain.ClassifierStereotype;
 import com.diagramador.domain.DependencyStereotype;
+import com.diagramador.domain.OperationStereotype;
+import com.diagramador.domain.Stereotypes;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.RelationshipKind;
@@ -71,6 +77,7 @@ public final class XmiReader {
         List<ClassifierResource> classifiers = new ArrayList<>();
         context.readClassifiers(modelElement, null, classifiers);
         List<RelationshipResource> relationships = context.readRelationships();
+        List<NoteResource> notes = context.readNotes(classifiers, relationships);
         List<XmiReadingResult.Diagram> diagrams = context.readDiagrams();
         List<ViewResource> views = context.views();
         long revision = context.revision();
@@ -78,7 +85,7 @@ public final class XmiReader {
         UUID projectId = namedUuid("project:" + modelId);
         UUID versionId = namedUuid("version:" + modelId + ":" + revision);
         ModelResource model = new ModelResource(modelId, projectId, revision, versionId, views,
-                classifiers, relationships);
+                classifiers, relationships, List.of(), notes);
         return context.result(model, diagrams);
     }
 
@@ -216,16 +223,17 @@ public final class XmiReader {
                 String id = xmi(element, "id");
                 UUID classifierId = id(element, "classifier:" + namespaceId + ":" + anonymous++ + ":"
                         + element.getAttribute("name"));
+                Element extensionElement = extensionElements.get(id);
                 List<AttributeResource> attributes = readAttributes(element, kind == ClassifierKind.ENUMERATION,
-                        classifierId);
-                List<OperationResource> operations = readOperations(element, classifierId);
+                        classifierId, extensionElement);
+                List<OperationResource> operations = readOperations(element, classifierId, extensionElement);
                 List<ConstraintResource> constraints = readConstraints(element);
+                Element properties = child(extensionElement, "properties");
                 output.add(new ClassifierResource(classifierId, element.getAttribute("name"), kind,
                         Boolean.parseBoolean(element.getAttribute("isAbstract")), namespaceId,
-                        attributes, operations, constraints));
+                        attributes, operations, constraints, null, null, null,
+                        classifierStereotype(properties, kind)));
 
-                Element extensionElement = extensionElements.get(id);
-                Element properties = child(extensionElement, "properties");
                 String note = properties == null ? "" : properties.getAttribute("documentation");
                 if (!note.isBlank()) {
                     documentation.put(classifierId, note);
@@ -234,24 +242,31 @@ public final class XmiReader {
             }
         }
 
-        private List<AttributeResource> readAttributes(Element owner, boolean enumeration, UUID ownerId) {
+        private List<AttributeResource> readAttributes(Element owner, boolean enumeration, UUID ownerId,
+                Element extensionElement) {
             List<AttributeResource> result = new ArrayList<>();
+            Map<String, String> stereotypes = memberStereotypes(extensionElement, "attributes", "attribute");
             int ordinal = 0;
             for (Element attribute : children(owner, "ownedAttribute")) {
                 UUID id = id(attribute, "attribute:" + ownerId + ":" + ordinal);
-                MultiplicityKind multiplicity = multiplicity(attribute);
+                ParsedMultiplicity multiplicity = multiplicity(attribute);
                 TypeReference type = enumeration ? TypeReference.empty() : readType(attribute);
                 Element defaultValue = child(attribute, "defaultValue");
                 result.add(new AttributeResource(id, attribute.getAttribute("name"),
                         enumeration ? "LITERAL" : "ATTRIBUTE", visibility(attribute.getAttribute("visibility")),
-                        multiplicity, defaultValue == null ? null : defaultValue.getAttribute("value"),
-                        type.id(), type.name(), ordinal++));
+                        multiplicity.kind(), defaultValue == null ? null : defaultValue.getAttribute("value"),
+                        type.id(), type.name(), ordinal++, multiplicity.lowerBound(), multiplicity.upperBound(),
+                        memberStereotype(stereotypes.get(xmi(attribute, "id")), AttributeStereotype.class,
+                                "unsupported_attribute_stereotype"),
+                        Boolean.parseBoolean(attribute.getAttribute("isStatic")),
+                        Boolean.parseBoolean(attribute.getAttribute("isDerived"))));
             }
             return result;
         }
 
-        private List<OperationResource> readOperations(Element owner, UUID ownerId) {
+        private List<OperationResource> readOperations(Element owner, UUID ownerId, Element extensionElement) {
             List<OperationResource> result = new ArrayList<>();
+            Map<String, String> stereotypes = memberStereotypes(extensionElement, "operations", "operation");
             int operationOrdinal = 0;
             for (Element operation : children(owner, "ownedOperation")) {
                 List<ParameterResource> parameters = new ArrayList<>();
@@ -286,9 +301,55 @@ public final class XmiReader {
                         visibility(operation.getAttribute("visibility")),
                         Boolean.parseBoolean(operation.getAttribute("isAbstract")),
                         Boolean.parseBoolean(operation.getAttribute("isStatic")), returnId, returnName,
-                        operationOrdinal++, parameters));
+                        operationOrdinal++, parameters,
+                        memberStereotype(stereotypes.get(xmi(operation, "id")), OperationStereotype.class,
+                                "unsupported_operation_stereotype")));
             }
             return result;
+        }
+
+        /** The `stereotype` of every member the extension lists under {@code container}, keyed by XMI id. */
+        private Map<String, String> memberStereotypes(Element extensionElement, String container, String memberName) {
+            Map<String, String> result = new HashMap<>();
+            for (Element member : children(child(extensionElement, container), memberName)) {
+                Element stereotype = child(member, "stereotype");
+                String written = stereotype == null ? "" : stereotype.getAttribute("stereotype").trim();
+                if (!written.isEmpty()) {
+                    result.put(xmi(member, "idref"), written);
+                }
+            }
+            return result;
+        }
+
+        /** An attribute or operation stereotype from the fixed list; an unknown name is dropped with a loss entry. */
+        private <E extends Enum<E>> String memberStereotype(String written, Class<E> list, String lossName) {
+            if (written == null) {
+                return null;
+            }
+            String canonical = Stereotypes.canonical(list, written);
+            if (canonical == null) {
+                loss(lossName, 1);
+            }
+            return canonical;
+        }
+
+        /** The classifier stereotype of the extension properties; unknown names and non-class kinds are dropped. */
+        private String classifierStereotype(Element properties, ClassifierKind kind) {
+            String written = properties == null ? "" : properties.getAttribute("stereotype").trim();
+            if (written.isEmpty()) {
+                return null;
+            }
+            // EA marks an interface or enumeration with its own kind keyword as the stereotype; that
+            // is the classifier kind we already model, not an applied stereotype, so it is no loss.
+            if (!Stereotypes.classifierMayCarryOne(kind) && written.equalsIgnoreCase(kind.name())) {
+                return null;
+            }
+            String canonical = Stereotypes.canonical(ClassifierStereotype.class, written);
+            if (canonical == null || !Stereotypes.classifierMayCarryOne(kind)) {
+                loss("unsupported_classifier_stereotype", 1);
+                return null;
+            }
+            return canonical;
         }
 
         private List<ConstraintResource> readConstraints(Element owner) {
@@ -302,6 +363,55 @@ public final class XmiReader {
                 }
                 result.add(new ConstraintResource(id(rule, "constraint:" + result.size()), expression, null));
                 loss("constraint_severity_not_representable", 1);
+            }
+            return result;
+        }
+
+        /**
+         * UML comments (EA notes): an {@code ownedComment} with its text in {@code body} and the elements it
+         * annotates as {@code annotatedElement} idrefs. A reference to anything that is not a classifier or a
+         * relationship of the document is dropped with a loss entry, as is an empty body; a longer body is cut.
+         */
+        private List<NoteResource> readNotes(List<ClassifierResource> classifiers,
+                List<RelationshipResource> relationships) {
+            Set<UUID> classifierIds = new LinkedHashSet<>();
+            classifiers.forEach(classifier -> classifierIds.add(classifier.id()));
+            Set<UUID> relationshipIds = new LinkedHashSet<>();
+            relationships.forEach(relationship -> relationshipIds.add(relationship.id()));
+            List<NoteResource> result = new ArrayList<>();
+            Set<UUID> seen = new LinkedHashSet<>();
+            for (Element comment : descendants(model, "ownedComment")) {
+                String type = xmi(comment, "type");
+                if (!type.isEmpty() && !"uml:Comment".equals(type)) {
+                    continue;
+                }
+                String body = comment.hasAttribute("body") ? comment.getAttribute("body")
+                        : child(comment, "body") == null ? "" : child(comment, "body").getTextContent();
+                if (body == null || body.isBlank()) {
+                    loss("empty_note", 1);
+                    continue;
+                }
+                if (body.length() > 2000) {
+                    body = body.substring(0, 2000);
+                    loss("note_body_truncated", 1);
+                }
+                UUID id = id(comment, "note:" + result.size());
+                if (!seen.add(id)) {
+                    loss("duplicate_note", 1);
+                    continue;
+                }
+                Set<NoteLinkResource> links = new LinkedHashSet<>();
+                for (Element reference : children(comment, "annotatedElement")) {
+                    UUID target = uuid(xmi(reference, "idref"));
+                    if (classifierIds.contains(target)) {
+                        links.add(new NoteLinkResource(TargetType.CLASSIFIER, target));
+                    } else if (relationshipIds.contains(target)) {
+                        links.add(new NoteLinkResource(TargetType.RELATIONSHIP, target));
+                    } else {
+                        loss("unresolved_note_reference", 1);
+                    }
+                }
+                result.add(new NoteResource(id, body, List.copyOf(links)));
             }
             return result;
         }
@@ -405,10 +515,17 @@ public final class XmiReader {
                 if (classifierRef.isEmpty()) {
                     loss("unresolved_relationship_end", 1);
                 }
+                ParsedMultiplicity endMultiplicity = child(end, "lowerValue") == null
+                        || child(end, "upperValue") == null ? null : multiplicity(end);
                 parsed.add(new SemanticEnd(xmi(end, "id"), classifierRef, end.getAttribute("name"),
-                        child(end, "lowerValue") == null || child(end, "upperValue") == null
-                                ? null : multiplicity(end),
-                        bound(end, "lowerValue"), bound(end, "upperValue"), end.getAttribute("aggregation")));
+                        endMultiplicity == null ? null : endMultiplicity.kind(),
+                        bound(end, "lowerValue"), bound(end, "upperValue"), end.getAttribute("aggregation"),
+                        endMultiplicity == null ? null : endMultiplicity.lowerBound(),
+                        endMultiplicity == null ? null : endMultiplicity.upperBound(),
+                        Boolean.parseBoolean(end.getAttribute("isOrdered")),
+                        // UML's own default for Property.isUnique is true and EA writes it on every
+                        // end, so reading it would mark {unique} on every imported end.
+                        false));
             }
             List<RelationshipEndResource> result = new ArrayList<>();
             Set<SemanticEnd> used = new LinkedHashSet<>();
@@ -476,8 +593,18 @@ public final class XmiReader {
             }
             MultiplicityKind multiplicity = semanticMultiplicity != null ? semanticMultiplicity
                     : extensionMultiplicity != null ? extensionMultiplicity : defaultMultiplicity;
+            Integer lowerBound = null;
+            Integer upperBound = null;
             if (multiplicity == MultiplicityKind.RANGE) {
-                loss("unsupported_multiplicity", 1);
+                if (semantic != null && semantic.multiplicity() == MultiplicityKind.RANGE) {
+                    // Bounds (or the 0..* fallback with its loss) were settled when the semantic end was parsed.
+                    lowerBound = semantic.lowerBound();
+                    upperBound = semantic.upperBound();
+                } else {
+                    // A RANGE that only came from a default or an extension has no numeric bounds to keep.
+                    loss("unsupported_multiplicity", 1);
+                    lowerBound = 0;
+                }
             }
             NavigationKind navigation = extensionEnd == null ? NavigationKind.UNSPECIFIED
                     : extensionEnd.navigability();
@@ -488,7 +615,8 @@ public final class XmiReader {
             UUID endId = semantic != null && !semantic.id().isEmpty() ? uuid(semantic.id())
                     : namedUuid("end:" + relationshipId + ":" + ordinal);
             return new RelationshipEndResource(endId, uuid(classifierRef), role, multiplicity,
-                    navigation, aggregation, (short) ordinal);
+                    navigation, aggregation, (short) ordinal, lowerBound, upperBound,
+                    semantic != null && semantic.isOrdered(), semantic != null && semantic.isUnique());
         }
 
         private List<XmiReadingResult.Diagram> readDiagrams() {
@@ -641,12 +769,17 @@ public final class XmiReader {
             }
         }
 
-        private MultiplicityKind multiplicity(Element element) {
+        /**
+         * Reads lowerValue/upperValue. A numeric RANGE keeps its bounds (upper -1 means unbounded); an
+         * unreadable or inconsistent one is reported as a loss and falls back to the neutral 0..* RANGE so the
+         * persisted bounds always satisfy the model's invariants.
+         */
+        private ParsedMultiplicity multiplicity(Element element) {
             Element lower = child(element, "lowerValue");
             Element upper = child(element, "upperValue");
             if (lower == null || upper == null) {
                 loss("unsupported_multiplicity", 1);
-                return MultiplicityKind.RANGE;
+                return ParsedMultiplicity.FALLBACK_RANGE;
             }
             String low = lower.getAttribute("value");
             String high = upper.getAttribute("value");
@@ -656,13 +789,21 @@ public final class XmiReader {
                     : "uml:LiteralInteger".equals(upperType);
             if (!"uml:LiteralInteger".equals(xmi(lower, "type")) || !validUpperType) {
                 loss("unsupported_multiplicity_encoding", 1);
-                return MultiplicityKind.RANGE;
+                return ParsedMultiplicity.FALLBACK_RANGE;
             }
             MultiplicityKind result = boundsMultiplicity(low, high);
-            if (result == MultiplicityKind.RANGE) {
-                loss("unsupported_multiplicity", 1);
+            if (result != MultiplicityKind.RANGE) {
+                return new ParsedMultiplicity(result, null, null);
             }
-            return result;
+            Integer lowerBound = parseBound(low);
+            Integer upperBound = "-1".equals(high) ? null : parseBound(high);
+            boolean valid = lowerBound != null && lowerBound >= 0
+                    && ("-1".equals(high) || (upperBound != null && upperBound >= Math.max(lowerBound, 1)));
+            if (!valid) {
+                loss("unsupported_multiplicity", 1);
+                return ParsedMultiplicity.FALLBACK_RANGE;
+            }
+            return new ParsedMultiplicity(MultiplicityKind.RANGE, lowerBound, upperBound);
         }
 
         private String bound(Element owner, String childName) {
@@ -921,6 +1062,18 @@ public final class XmiReader {
         return end == null ? "" : end.upper();
     }
 
+    private static Integer parseBound(String value) {
+        try {
+            return value == null || value.isBlank() ? null : Integer.valueOf(value.trim());
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private record ParsedMultiplicity(MultiplicityKind kind, Integer lowerBound, Integer upperBound) {
+        private static final ParsedMultiplicity FALLBACK_RANGE = new ParsedMultiplicity(MultiplicityKind.RANGE, 0, null);
+    }
+
     private static MultiplicityKind boundsMultiplicity(String lower, String upper) {
         if ("1".equals(lower) && "1".equals(upper)) {
             return MultiplicityKind.EXACTLY_ONE;
@@ -985,7 +1138,8 @@ public final class XmiReader {
     }
 
     private record SemanticEnd(String id, String classifierRef, String role,
-            MultiplicityKind multiplicity, String lower, String upper, String aggregation) {
+            MultiplicityKind multiplicity, String lower, String upper, String aggregation, Integer lowerBound,
+            Integer upperBound, boolean isOrdered, boolean isUnique) {
     }
 
     private record ExtensionEnd(String classifierRef, String role, String visibility,

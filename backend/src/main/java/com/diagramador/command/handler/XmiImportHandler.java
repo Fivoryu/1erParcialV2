@@ -14,7 +14,11 @@ import com.diagramador.domain.ExchangeStatus;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.OperationParameter;
+import com.diagramador.domain.AttributeStereotype;
+import com.diagramador.domain.ClassifierStereotype;
 import com.diagramador.domain.DependencyStereotype;
+import com.diagramador.domain.OperationStereotype;
+import com.diagramador.domain.Stereotypes;
 import com.diagramador.domain.RelationshipEnd;
 import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.SeverityKind;
@@ -23,6 +27,7 @@ import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
 import com.diagramador.domain.UmlConstraint;
 import com.diagramador.domain.UmlModel;
+import com.diagramador.domain.UmlNote;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.domain.XmiExchange;
@@ -36,6 +41,7 @@ import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.TypeReferenceRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
+import com.diagramador.persistence.UmlNoteRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import com.diagramador.persistence.XmiExchangeRepository;
@@ -84,6 +90,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
     private final EntityManager entityManager;
     private final XmiExchangeRepository exchangeRepository;
     private final XmiLossItemRepository lossItemRepository;
+    private final UmlNoteRepository noteRepository;
 
     public XmiImportHandler(ObjectMapper objectMapper, ClassifierRepository classifierRepository,
             UmlAttributeRepository attributeRepository, UmlOperationRepository operationRepository,
@@ -92,7 +99,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             RelationshipEndRepository relationshipEndRepository, DiagramViewRepository viewRepository,
             ElementGeometryRepository geometryRepository, ConnectorPathRepository pathRepository,
             EntityManager entityManager, XmiExchangeRepository exchangeRepository,
-            XmiLossItemRepository lossItemRepository) {
+            XmiLossItemRepository lossItemRepository, UmlNoteRepository noteRepository) {
         this.objectMapper = objectMapper;
         this.classifierRepository = classifierRepository;
         this.attributeRepository = attributeRepository;
@@ -108,6 +115,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         this.entityManager = entityManager;
         this.exchangeRepository = exchangeRepository;
         this.lossItemRepository = lossItemRepository;
+        this.noteRepository = noteRepository;
     }
 
     @Override
@@ -151,6 +159,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             persistAttributesAndOperations(context.model(), reading.model(), classifiers, typeReferences);
             stage = "relationship insertion";
             persistRelationships(context.model(), reading.model(), classifiers, typeReferences);
+            stage = "note insertion";
+            persistNotes(context, reading.model(), classifiers);
             stage = "diagram insertion";
             persistViews(context, reading.model(), classifiers, mode);
             stage = "exchange and loss recording";
@@ -211,12 +221,16 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         Map<UUID, UUID> pathIds = scopedIds(source.views().stream()
                 .flatMap(view -> view.connectorPath().stream()).map(ModelResource.ConnectorPathResource::id).toList(),
                 target.getId());
+        Map<UUID, UUID> noteIds = scopedIds(source.notes().stream().map(ModelResource.NoteResource::id).toList(),
+                target.getId());
 
         List<ModelResource.ClassifierResource> classifiers = source.classifiers().stream().map(classifier -> {
             List<ModelResource.AttributeResource> attributes = classifier.attributes().stream().map(attribute ->
                     new ModelResource.AttributeResource(mapped(attributeIds, attribute.id()), attribute.name(),
                             attribute.kind(), attribute.visibility(), attribute.multiplicity(), attribute.defaultValue(),
-                            mapped(classifierIds, attribute.typeReferenceId()), attribute.type(), attribute.ordinal()))
+                            mapped(classifierIds, attribute.typeReferenceId()), attribute.type(), attribute.ordinal(),
+                            attribute.lowerBound(), attribute.upperBound(), attribute.stereotype(),
+                            attribute.isStatic(), attribute.isDerived()))
                     .toList();
             List<ModelResource.OperationResource> operations = classifier.operations().stream().map(operation -> {
                 List<ModelResource.ParameterResource> parameters = operation.parameters().stream().map(parameter ->
@@ -226,20 +240,21 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 return new ModelResource.OperationResource(mapped(operationIds, operation.id()), operation.name(),
                         operation.visibility(), operation.isAbstract(), operation.isStatic(),
                         mapped(classifierIds, operation.returnTypeReferenceId()), operation.returnType(),
-                        operation.ordinal(), parameters);
+                        operation.ordinal(), parameters, operation.stereotype());
             }).toList();
             List<ModelResource.ConstraintResource> constraints = classifier.constraints().stream().map(constraint ->
                     new ModelResource.ConstraintResource(mapped(constraintIds, constraint.id()),
                             constraint.expression(), constraint.severity())).toList();
             return new ModelResource.ClassifierResource(mapped(classifierIds, classifier.id()), classifier.name(),
                     classifier.kind(), classifier.isAbstract(), mapped(classifierIds, classifier.namespaceId()),
-                    attributes, operations, constraints);
+                    attributes, operations, constraints, null, null, null, classifier.stereotype());
         }).toList();
         List<ModelResource.RelationshipResource> relationships = source.relationships().stream().map(relationship -> {
             List<ModelResource.RelationshipEndResource> ends = relationship.ends().stream().map(end ->
                     new ModelResource.RelationshipEndResource(mapped(endIds, end.id()),
                             mapped(classifierIds, end.classifierId()), end.role(), end.multiplicity(),
-                            end.navigability(), end.aggregationKind(), end.ordinal())).toList();
+                            end.navigability(), end.aggregationKind(), end.ordinal(),
+                            end.lowerBound(), end.upperBound(), end.isOrdered(), end.isUnique())).toList();
             List<ModelResource.ConstraintResource> constraints = relationship.constraints().stream().map(constraint ->
                     new ModelResource.ConstraintResource(mapped(constraintIds, constraint.id()),
                             constraint.expression(), constraint.severity())).toList();
@@ -260,8 +275,14 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             return new ModelResource.ViewResource(mapped(viewIds, view.id()), view.name(), view.isDefault(),
                     geometry, paths);
         }).toList();
+        List<ModelResource.NoteResource> notes = source.notes().stream().map(note ->
+                new ModelResource.NoteResource(mapped(noteIds, note.id()), note.body(),
+                        note.annotatedElements().stream().map(link -> new ModelResource.NoteLinkResource(
+                                link.targetType(), link.targetType() == TargetType.CLASSIFIER
+                                        ? mapped(classifierIds, link.targetId())
+                                        : mapped(relationshipIds, link.targetId()))).toList())).toList();
         ModelResource scoped = new ModelResource(source.id(), source.projectId(), source.revision(), source.versionId(),
-                views, classifiers, relationships);
+                views, classifiers, relationships, List.of(), notes);
         Map<UUID, String> documentation = new LinkedHashMap<>();
         reading.documentation().forEach((id, text) -> documentation.put(mapped(classifierIds, id), text));
         List<XmiReadingResult.Diagram> diagrams = reading.diagrams().stream().map(diagram -> {
@@ -295,6 +316,18 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             }
         }
         return result;
+    }
+
+    /** Bounds persist only for RANGE (the table CHECK demands it); a RANGE without a lower bound reads as 0..*. */
+    private static Integer rangeLower(MultiplicityKind multiplicity, Integer lowerBound) {
+        if (multiplicity != MultiplicityKind.RANGE) {
+            return null;
+        }
+        return lowerBound == null ? 0 : lowerBound;
+    }
+
+    private static Integer rangeUpper(MultiplicityKind multiplicity, Integer upperBound) {
+        return multiplicity == MultiplicityKind.RANGE ? upperBound : null;
     }
 
     private UUID mapped(Map<UUID, UUID> ids, UUID id) {
@@ -407,6 +440,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 }
             });
         }
+        model.notes().forEach(note -> unavailable(noteRepository.existsById(note.id()), note.id(), "note"));
         ModelResource.ViewResource view = model.views().get(0);
         unavailable(viewRepository.existsById(view.id()), view.id(), "diagram view");
         view.elementGeometry().forEach(item -> unavailable(geometryRepository.existsById(item.id()), item.id(), "geometry"));
@@ -439,7 +473,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         }
         return new ExistingRows(classifiers, attributes, operations, parameters,
                 typeReferenceRepository.findByModelId(model.getId()), constraintRepository.findByModelId(model.getId()),
-                relationships, ends, viewRepository.findByModelId(model.getId()));
+                relationships, ends, viewRepository.findByModelId(model.getId()),
+                noteRepository.findByModelId(model.getId()));
     }
 
     private List<DeletedTarget> deletedTargets(ExistingRows oldRows, XmiReadingResult reading) {
@@ -468,6 +503,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                     targets.add(new DeletedTarget(TargetType.CONSTRAINT, item.id())));
         }
         model.views().forEach(view -> targets.add(new DeletedTarget(TargetType.DIAGRAM_VIEW, view.id())));
+        model.notes().forEach(note -> targets.add(new DeletedTarget(TargetType.NOTE, note.id())));
         return targets;
     }
 
@@ -484,6 +520,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         operationRepository.deleteAll(rows.operations());
         typeReferenceRepository.deleteAll(rows.typeReferences());
         viewRepository.deleteAll(rows.views());
+        noteRepository.deleteAll(rows.notes());
         classifierRepository.deleteAll(rows.classifiers());
     }
 
@@ -505,8 +542,9 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         || (kind == ClassifierKind.CLASS && resource.isAbstract());
                 entityManager.createNativeQuery("""
                         INSERT INTO diagrammer.classifier
-                            (classifier_id, model_id, namespace_id, kind, name, is_abstract)
-                        VALUES (:id, :modelId, :namespaceId, CAST(:kind AS diagrammer.classifier_kind), :name, :abstract)
+                            (classifier_id, model_id, namespace_id, kind, name, is_abstract, stereotype)
+                        VALUES (:id, :modelId, :namespaceId, CAST(:kind AS diagrammer.classifier_kind), :name, :abstract,
+                                :stereotype)
                         """)
                         .setParameter("id", resource.id())
                         .setParameter("modelId", model.getId())
@@ -514,6 +552,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         .setParameter("kind", isAbstract ? ClassifierKind.ABSTRACT_CLASS.name() : kind.name())
                         .setParameter("name", resource.name())
                         .setParameter("abstract", isAbstract)
+                        .setParameter("stereotype", Stereotypes.classifierMayCarryOne(kind)
+                                ? Stereotypes.canonical(ClassifierStereotype.class, resource.stereotype()) : null)
                         .executeUpdate();
                 Classifier classifier = classifierRepository.findById(resource.id())
                         .orElseThrow(() -> new IllegalStateException("Imported classifier could not be reloaded"));
@@ -540,9 +580,11 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 entityManager.createNativeQuery("""
                         INSERT INTO diagrammer.uml_attribute
                             (attribute_id, classifier_id, type_reference_id, name, kind, visibility,
-                             multiplicity, default_value, ordinal)
+                             multiplicity, lower_bound, upper_bound, default_value, ordinal, stereotype,
+                             is_static, is_derived)
                         VALUES (:id, :classifierId, :typeId, :name, :kind, :visibility,
-                                CAST(:multiplicity AS diagrammer.multiplicity_kind), :defaultValue, :ordinal)
+                                CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
+                                :defaultValue, :ordinal, :stereotype, :isStatic, :isDerived)
                         """)
                         .setParameter("id", resource.id())
                         .setParameter("classifierId", classifier.getId())
@@ -551,8 +593,14 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         .setParameter("kind", resource.kind())
                         .setParameter("visibility", resource.visibility())
                         .setParameter("multiplicity", multiplicity.name())
+                        .setParameter("lowerBound", rangeLower(multiplicity, resource.lowerBound()))
+                        .setParameter("upperBound", rangeUpper(multiplicity, resource.upperBound()))
                         .setParameter("defaultValue", resource.defaultValue())
                         .setParameter("ordinal", resource.ordinal())
+                        .setParameter("stereotype", Stereotypes.canonical(AttributeStereotype.class,
+                                resource.stereotype()))
+                        .setParameter("isStatic", resource.isStatic())
+                        .setParameter("isDerived", resource.isDerived())
                         .executeUpdate();
             }
             for (ModelResource.OperationResource resource : classifierResource.operations()) {
@@ -561,9 +609,9 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 entityManager.createNativeQuery("""
                         INSERT INTO diagrammer.uml_operation
                             (operation_id, classifier_id, name, return_type_reference_id, visibility,
-                             is_abstract, is_static, ordinal)
+                             is_abstract, is_static, ordinal, stereotype)
                         VALUES (:id, :classifierId, :name, :returnTypeId, :visibility,
-                                :abstract, :static, :ordinal)
+                                :abstract, :static, :ordinal, :stereotype)
                         """)
                         .setParameter("id", resource.id())
                         .setParameter("classifierId", classifier.getId())
@@ -573,6 +621,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         .setParameter("abstract", resource.isAbstract())
                         .setParameter("static", resource.isStatic())
                         .setParameter("ordinal", resource.ordinal())
+                        .setParameter("stereotype", Stereotypes.canonical(OperationStereotype.class,
+                                resource.stereotype()))
                         .executeUpdate();
                 UmlOperation operation = operationRepository.findById(resource.id())
                         .orElseThrow(() -> new IllegalStateException("Imported operation could not be reloaded"));
@@ -693,10 +743,10 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.relationship_end
                     (relationship_end_id, relationship_id, classifier_id, ordinal, role, multiplicity,
-                     navigability, aggregation_kind)
+                     lower_bound, upper_bound, navigability, aggregation_kind, is_ordered, is_unique)
                 VALUES (:id, :relationshipId, :classifierId, :ordinal, :role,
-                        CAST(:multiplicity AS diagrammer.multiplicity_kind),
-                        CAST(:navigability AS diagrammer.navigation_kind), :aggregation)
+                        CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
+                        CAST(:navigability AS diagrammer.navigation_kind), :aggregation, :isOrdered, :isUnique)
                 """)
                 .setParameter("id", end.id())
                 .setParameter("relationshipId", relationshipId)
@@ -705,10 +755,14 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 .setParameter("role", end.role())
                 .setParameter("multiplicity", (end.multiplicity() == null
                         ? MultiplicityKind.EXACTLY_ONE : end.multiplicity()).name())
+                .setParameter("lowerBound", rangeLower(end.multiplicity(), end.lowerBound()))
+                .setParameter("upperBound", rangeUpper(end.multiplicity(), end.upperBound()))
                 .setParameter("navigability", (end.navigability() == null
                         ? NavigationKind.UNSPECIFIED : end.navigability()).name())
                 .setParameter("aggregation", end.aggregationKind() == null ? "NONE"
                         : end.aggregationKind().toUpperCase(Locale.ROOT))
+                .setParameter("isOrdered", end.isOrdered())
+                .setParameter("isUnique", end.isUnique())
                 .executeUpdate();
     }
 
@@ -733,6 +787,39 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                     .setParameter("expression", resource.expression())
                     .setParameter("severity", severity.name())
                     .executeUpdate();
+        }
+    }
+
+    /** Notes come after classifiers and relationships; a link whose element was not imported is dropped. */
+    private void persistNotes(Context context, ModelResource imported, Map<UUID, Classifier> classifiers) {
+        Set<UUID> relationshipIds = new HashSet<>();
+        imported.relationships().forEach(relationship -> relationshipIds.add(relationship.id()));
+        for (ModelResource.NoteResource note : imported.notes()) {
+            entityManager.createNativeQuery("""
+                    INSERT INTO diagrammer.uml_note (note_id, model_id, body, created_at)
+                    VALUES (CAST(:id AS uuid), CAST(:modelId AS uuid), :body, now())
+                    """)
+                    .setParameter("id", note.id())
+                    .setParameter("modelId", context.model().getId())
+                    .setParameter("body", note.body())
+                    .executeUpdate();
+            Set<ModelResource.NoteLinkResource> inserted = new LinkedHashSet<>();
+            for (ModelResource.NoteLinkResource link : note.annotatedElements()) {
+                boolean present = link.targetType() == TargetType.CLASSIFIER
+                        ? classifiers.containsKey(link.targetId())
+                        : link.targetType() == TargetType.RELATIONSHIP && relationshipIds.contains(link.targetId());
+                if (!present || !inserted.add(link)) {
+                    continue;
+                }
+                entityManager.createNativeQuery("""
+                        INSERT INTO diagrammer.uml_note_link (note_id, target_type, target_id)
+                        VALUES (CAST(:noteId AS uuid), :targetType, CAST(:targetId AS uuid))
+                        """)
+                        .setParameter("noteId", note.id())
+                        .setParameter("targetType", link.targetType().name())
+                        .setParameter("targetId", link.targetId())
+                        .executeUpdate();
+            }
         }
     }
 
@@ -810,7 +897,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
     private record ExistingRows(List<Classifier> classifiers, List<UmlAttribute> attributes,
             List<UmlOperation> operations, List<OperationParameter> parameters, List<TypeReference> typeReferences,
             List<UmlConstraint> constraints, List<UmlRelationship> relationships, List<RelationshipEnd> ends,
-            List<DiagramView> views) {
+            List<DiagramView> views, List<UmlNote> notes) {
 
         private List<DeletedTarget> targets() {
             Set<DeletedTarget> targets = new LinkedHashSet<>();
@@ -822,6 +909,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             relationships.forEach(item -> targets.add(new DeletedTarget(TargetType.RELATIONSHIP, item.getId())));
             ends.forEach(item -> targets.add(new DeletedTarget(TargetType.RELATIONSHIP_END, item.getId())));
             views.forEach(item -> targets.add(new DeletedTarget(TargetType.DIAGRAM_VIEW, item.getId())));
+            notes.forEach(item -> targets.add(new DeletedTarget(TargetType.NOTE, item.getId())));
             return List.copyOf(targets);
         }
     }

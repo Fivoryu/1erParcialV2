@@ -259,7 +259,8 @@ describe('UML relationship markers and labels', () => {
     expect(panel).toContain('0..1');
     expect(panel).toContain('1..*');
     expect(panel).toContain('0..*');
-    expect(panel).not.toContain('RANGE');
+    expect(panel).toContain('value="RANGE"');
+    expect(panel).toContain('Rango');
     expect(RELATIONSHIP_KINDS).toEqual([
       'ASSOCIATION',
       'AGGREGATION',

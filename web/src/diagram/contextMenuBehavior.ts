@@ -273,11 +273,20 @@ export function multiplicityUpdateRequest(
   endOrdinal: number,
   multiplicity: string,
 ): ModelCommandRequest | null {
-  const end = (end: RelationshipEndResource) => ({
-    role: end.role,
-    multiplicity: end.ordinal === endOrdinal ? multiplicity : end.multiplicity,
-    navigability: end.navigability,
-  });
+  const end = (end: RelationshipEndResource) => {
+    const edited = end.ordinal === endOrdinal;
+    // Bounds travel only for an end that is, or just stopped being, a RANGE: the menu offers the
+    // fixed kinds, so the edited end sends explicit nulls, and every other payload stays unchanged.
+    const bounds = end.multiplicity !== 'RANGE' ? {}
+      : edited ? { lowerBound: null, upperBound: null }
+        : { lowerBound: end.lowerBound ?? null, upperBound: end.upperBound ?? null };
+    return {
+      role: end.role,
+      multiplicity: edited ? multiplicity : end.multiplicity,
+      ...bounds,
+      navigability: end.navigability,
+    };
+  };
   const sourceEnd = relationship.ends.find((candidate) => candidate.ordinal === 1) ?? relationship.ends[0];
   const targetEnd = relationship.ends.find((candidate) => candidate.ordinal === 2) ?? relationship.ends[1];
   if (!sourceEnd || !targetEnd) {

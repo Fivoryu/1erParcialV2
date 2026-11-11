@@ -5129,3 +5129,58 @@ kbd {
   color: var(--danger);
   font-size: 12px;
 }
+
+.multiplicity-range-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.field-error {
+  margin: 0 0 10px;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+/* UML notes: a rectangle with a folded top-right corner, dashed links drawn by the canvas. */
+.uml-note-card {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 10px 26px 10px 12px;
+  border: 1px solid #a88fa6;
+  background: #fffbe6;
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.uml-note-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(225deg, #fff 50%, #e7d8a8 50%);
+  border-left: 1px solid #a88fa6;
+  border-bottom: 1px solid #a88fa6;
+  box-sizing: border-box;
+}
+
+.uml-note-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.uml-note-anchor {
+  width: 1px;
+  height: 1px;
+}
+
+.uml-note-anchor .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}

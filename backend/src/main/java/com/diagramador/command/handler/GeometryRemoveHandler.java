@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
-/** Removes the selected classifier rectangle or relationship path from one shared view. */
+/** Removes the selected classifier or note rectangle or relationship path from one shared view. */
 @Component
 public class GeometryRemoveHandler implements CommandHandler.DeleteAction {
 
@@ -47,10 +47,14 @@ public class GeometryRemoveHandler implements CommandHandler.DeleteAction {
         UUID viewId = support.uuid(payload, "viewId");
         UUID targetId = support.uuid(payload, "targetId");
         DiagramView view = support.diagramView(context.model(), viewId);
-        if (targetType == TargetType.CLASSIFIER) {
-            support.classifier(context.model(), targetId);
+        if (targetType == TargetType.CLASSIFIER || targetType == TargetType.NOTE) {
+            if (targetType == TargetType.NOTE) {
+                support.note(context.model(), targetId);
+            } else {
+                support.classifier(context.model(), targetId);
+            }
             List<ElementGeometry> geometries = geometryRepository.findByViewId(view.getId()).stream()
-                    .filter(geometry -> geometry.getTargetType() == TargetType.CLASSIFIER
+                    .filter(geometry -> geometry.getTargetType() == targetType
                             && geometry.getTargetId().equals(targetId))
                     .toList();
             geometryRepository.deleteAll(geometries);
@@ -69,9 +73,10 @@ public class GeometryRemoveHandler implements CommandHandler.DeleteAction {
         return switch (value.toUpperCase(java.util.Locale.ROOT)) {
             case "CLASSIFIER" -> TargetType.CLASSIFIER;
             case "RELATIONSHIP" -> TargetType.RELATIONSHIP;
+            case "NOTE" -> TargetType.NOTE;
             default -> {
                 support.invalid("Unsupported geometry targetType '" + value
-                        + "'; supported values are CLASSIFIER and RELATIONSHIP");
+                        + "'; supported values are CLASSIFIER, RELATIONSHIP and NOTE");
                 yield null;
             }
         };

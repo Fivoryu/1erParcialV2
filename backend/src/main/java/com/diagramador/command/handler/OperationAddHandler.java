@@ -3,6 +3,7 @@ package com.diagramador.command.handler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.diagramador.command.CommandHandler;
 import com.diagramador.domain.Classifier;
+import com.diagramador.domain.OperationStereotype;
 import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.persistence.UmlOperationRepository;
@@ -14,7 +15,7 @@ import org.springframework.stereotype.Component;
 public class OperationAddHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "name", "returnType", "visibility", "isAbstract",
-            "isStatic", "ordinal");
+            "isStatic", "ordinal", "stereotype");
 
     private final CommandHandlerSupport support;
     private final UmlOperationRepository operationRepository;
@@ -46,7 +47,7 @@ public class OperationAddHandler implements CommandHandler.AddAction {
         int ordinal = support.ordinalOrNext(payload, "ordinal",
                 operationRepository.findByClassifierId(classifier.getId()).stream().map(UmlOperation::getOrdinal).toList());
         support.insertOperation(context, id, classifier, name, returnType, visibility,
-                isAbstract, isStatic, ordinal);
+                isAbstract, isStatic, ordinal, support.stereotype(payload, "stereotype", OperationStereotype.class));
         return Outcome.none();
     }
 }

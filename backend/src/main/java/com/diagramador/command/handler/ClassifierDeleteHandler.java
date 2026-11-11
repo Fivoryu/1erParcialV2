@@ -10,6 +10,7 @@ import com.diagramador.domain.TargetType;
 import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
 import com.diagramador.domain.UmlConstraint;
+import com.diagramador.domain.UmlNoteLink;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.persistence.ClassifierRepository;
@@ -19,6 +20,7 @@ import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
+import com.diagramador.persistence.UmlNoteLinkRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import com.diagramador.persistence.TypeReferenceRepository;
@@ -43,13 +45,14 @@ public class ClassifierDeleteHandler implements CommandHandler.DeleteAction {
     private final TypeReferenceRepository typeReferenceRepository;
     private final ConnectorPathRepository connectorPathRepository;
     private final ElementGeometryRepository geometryRepository;
+    private final UmlNoteLinkRepository noteLinkRepository;
 
     public ClassifierDeleteHandler(CommandHandlerSupport support, ClassifierRepository classifierRepository,
             UmlAttributeRepository attributeRepository, UmlOperationRepository operationRepository,
             OperationParameterRepository parameterRepository, UmlConstraintRepository constraintRepository,
             RelationshipEndRepository relationshipEndRepository, UmlRelationshipRepository relationshipRepository,
             TypeReferenceRepository typeReferenceRepository, ConnectorPathRepository connectorPathRepository,
-            ElementGeometryRepository geometryRepository) {
+            ElementGeometryRepository geometryRepository, UmlNoteLinkRepository noteLinkRepository) {
         this.support = support;
         this.classifierRepository = classifierRepository;
         this.attributeRepository = attributeRepository;
@@ -61,6 +64,7 @@ public class ClassifierDeleteHandler implements CommandHandler.DeleteAction {
         this.typeReferenceRepository = typeReferenceRepository;
         this.connectorPathRepository = connectorPathRepository;
         this.geometryRepository = geometryRepository;
+        this.noteLinkRepository = noteLinkRepository;
     }
 
     @Override
@@ -117,9 +121,16 @@ public class ClassifierDeleteHandler implements CommandHandler.DeleteAction {
                         new CommandHandler.DeletedTarget(geometry.getTargetType(), geometry.getTargetId())))
                 .toList();
 
+        // Notes that annotated the classifier or one of the removed relationships lose that link, not the note.
+        Set<java.util.UUID> annotatedIds = new LinkedHashSet<>();
+        annotatedIds.add(classifier.getId());
+        relationships.forEach(relationship -> annotatedIds.add(relationship.getId()));
+        List<UmlNoteLink> noteLinks = noteLinkRepository.findByKeyTargetIdIn(annotatedIds);
+
         // The schema has no target_type member for type_reference, connector_path, or
         // element_geometry. They are physically deleted with this cascade, but cannot be
         // represented by tombstone rows.
+        noteLinkRepository.deleteAll(noteLinks);
         connectorPathRepository.deleteAll(paths);
         relationshipEndRepository.deleteAll(ends);
         relationshipRepository.deleteAll(relationships);

@@ -65,6 +65,8 @@ export function draftRelationship(sourceId: string, targetId: string): Relations
     classifierId,
     role: null,
     multiplicity: 'EXACTLY_ONE',
+    lowerBound: null,
+    upperBound: null,
     navigability: 'UNSPECIFIED',
     aggregationKind: 'NONE',
     ordinal,

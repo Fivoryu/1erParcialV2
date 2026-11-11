@@ -9,6 +9,8 @@ import type {
   ConstraintResource,
   ConstraintSeverity,
   ModelResource,
+  NoteResource,
+  NoteTargetType,
   OperationEnvelope,
   OperationResource,
   ParameterResource,
@@ -51,6 +53,58 @@ export const DEPENDENCY_STEREOTYPES = [
   'TRACE',
 ] as const;
 export type DependencyStereotype = (typeof DEPENDENCY_STEREOTYPES)[number];
+
+/** Stereotypes a class or abstract class may carry; interfaces, enumerations and packages offer none. */
+export const CLASSIFIER_STEREOTYPES = [
+  'ENTITY',
+  'BOUNDARY',
+  'CONTROL',
+  'SERVICE',
+  'UTILITY',
+  'TYPE',
+  'AUXILIARY',
+  'FOCUS',
+  'IMPLEMENTATION_CLASS',
+  'METACLASS',
+  'SIGNAL',
+] as const;
+export const OPERATION_STEREOTYPES = ['CREATE', 'DESTROY', 'QUERY'] as const;
+/** Attribute stereotypes are modeling conventions, not UML-standard ones. */
+export const ATTRIBUTE_STEREOTYPES = ['ID', 'UNIQUE', 'READONLY'] as const;
+
+/** Spanish label plus the UML term, as the select shows it. */
+export const STEREOTYPE_LABELS: Record<string, string> = {
+  ENTITY: 'Entidad «entity»',
+  BOUNDARY: 'Frontera «boundary»',
+  CONTROL: 'Control «control»',
+  SERVICE: 'Servicio «service»',
+  UTILITY: 'Utilidad «utility»',
+  TYPE: 'Tipo «type»',
+  AUXILIARY: 'Auxiliar «auxiliary»',
+  FOCUS: 'Foco «focus»',
+  IMPLEMENTATION_CLASS: 'Clase de implementación «implementation_class»',
+  METACLASS: 'Metaclase «metaclass»',
+  SIGNAL: 'Señal «signal»',
+  CREATE: 'Crear «create»',
+  DESTROY: 'Destruir «destroy»',
+  QUERY: 'Consulta «query»',
+  ID: 'Identificador «id»',
+  UNIQUE: 'Único «unique»',
+  READONLY: 'Solo lectura «readonly»',
+};
+
+export function classifierAcceptsStereotype(kind: string): boolean {
+  return kind === 'CLASS' || kind === 'ABSTRACT_CLASS';
+}
+
+/** A null stereotype clears the one the classifier has. */
+export function buildClassifierSetStereotypeRequest(classifierId: string, stereotype: string | null): ModelCommandRequest {
+  return {
+    type: 'classifier.stereotype.set',
+    targets: [{ scope: 'classifier', id: classifierId }],
+    payload: { stereotype },
+  };
+}
 
 export interface ModelCommandRequest {
   type: string;
@@ -165,6 +219,7 @@ export function buildClassifierCreateEnvelope(
   model: ModelResource,
   kind: ClassifierKind,
   uuidFactory?: UuidFactory,
+  stereotype?: string | null,
 ): OperationEnvelope {
   return buildOperationEnvelope({
     type: 'classifier.create',
@@ -175,8 +230,48 @@ export function buildClassifierCreateEnvelope(
       name: nextClassifierName(model, kind),
       kind,
       namespaceId: null,
+      ...(stereotype ? { stereotype } : {}),
     },
   }, uuidFactory);
+}
+
+/** Longest note body the backend accepts. */
+export const NOTE_BODY_MAX = 2000;
+
+/** A new note; `annotatedElementIds` are the elements it starts attached to (may be empty). */
+export function buildNoteCreateRequest(body: string, annotatedElementIds: readonly string[] = []): ModelCommandRequest {
+  return {
+    type: 'note.create',
+    payload: { body, annotatedElementIds: [...annotatedElementIds] },
+  };
+}
+
+export function buildNoteUpdateRequest(noteId: string, body: string): ModelCommandRequest {
+  return {
+    type: 'note.update',
+    targets: [{ scope: 'note', id: noteId }],
+    payload: { body },
+  };
+}
+
+export function buildNoteDeleteRequest(noteId: string): ModelCommandRequest {
+  return { type: 'note.delete', targets: [{ scope: 'note', id: noteId }], payload: {} };
+}
+
+export function buildNoteLinkRequest(noteId: string, targetType: NoteTargetType, targetId: string): ModelCommandRequest {
+  return {
+    type: 'note.link',
+    targets: [{ scope: 'note', id: noteId }],
+    payload: { targetType, targetId },
+  };
+}
+
+export function buildNoteUnlinkRequest(noteId: string, targetType: NoteTargetType, targetId: string): ModelCommandRequest {
+  return {
+    type: 'note.unlink',
+    targets: [{ scope: 'note', id: noteId }],
+    payload: { targetType, targetId },
+  };
 }
 
 export function buildRelationshipCreateRequest(
@@ -188,6 +283,8 @@ export function buildRelationshipCreateRequest(
     classifierId,
     role: null,
     multiplicity: 'EXACTLY_ONE',
+    lowerBound: null,
+    upperBound: null,
     navigability: 'UNSPECIFIED',
   });
   return {
@@ -213,8 +310,20 @@ export interface RelationshipUpdateValues {
   stereotype?: string | null;
   /** Left out, the relationship keeps its association class; null releases it. */
   associationClassId?: string | null;
-  source: { role: string | null; multiplicity: string; navigability: string };
-  target: { role: string | null; multiplicity: string; navigability: string };
+  source: RelationshipEndValues;
+  target: RelationshipEndValues;
+}
+
+/** One end of a relationship update; the bounds are numbers for a RANGE and null for every other multiplicity. */
+export interface RelationshipEndValues {
+  role: string | null;
+  multiplicity: string;
+  lowerBound?: number | null;
+  upperBound?: number | null;
+  navigability: string;
+  /** Left out, the end keeps its flag. */
+  isOrdered?: boolean;
+  isUnique?: boolean;
 }
 
 export function buildRelationshipUpdateRequest(
@@ -262,7 +371,12 @@ export interface RelationshipWaypointsUpdate {
   waypoints: Array<{ x: number; y: number }>;
 }
 
-export type GeometryUpdate = ClassifierGeometryUpdate | RelationshipWaypointsUpdate;
+/** A note has a rectangle in the view, exactly like a classifier. */
+export interface NoteGeometryUpdate extends Omit<ClassifierGeometryUpdate, 'targetType'> {
+  targetType: 'NOTE';
+}
+
+export type GeometryUpdate = ClassifierGeometryUpdate | NoteGeometryUpdate | RelationshipWaypointsUpdate;
 
 export function buildGeometrySetRequest(payload: GeometryUpdate): ModelCommandRequest {
   return { type: 'geometry.set', payload: { ...payload } };
@@ -386,6 +500,38 @@ function payloadString(envelope: OperationEnvelope, key: string): string | null 
   return typeof value === 'string' ? value : null;
 }
 
+function payloadBound(value: unknown): number | null | undefined {
+  return typeof value === 'number' ? value : value === null ? null : undefined;
+}
+
+/** The bounds an update carries: absent keys keep the stored bounds, explicit nulls clear them. */
+function boundsUpdate(payload: Record<string, unknown>): { lowerBound?: number | null; upperBound?: number | null } {
+  const lowerBound = payloadBound(payload.lowerBound);
+  const upperBound = payloadBound(payload.upperBound);
+  return {
+    ...(lowerBound !== undefined ? { lowerBound } : {}),
+    ...(upperBound !== undefined ? { upperBound } : {}),
+  };
+}
+
+/** A stereotype in a payload: a name, an explicit null (clears), or undefined when the key is absent. */
+function payloadStereotype(payload: Record<string, unknown>): string | null | undefined {
+  const value = payload.stereotype;
+  return typeof value === 'string' ? value : value === null ? null : undefined;
+}
+
+/** A created element carries a stereotype only when one was chosen. */
+function newStereotype(payload: Record<string, unknown>): { stereotype?: string } {
+  const stereotype = payloadStereotype(payload);
+  return stereotype ? { stereotype } : {};
+}
+
+/** The stereotype an update carries: absent keeps the stored one, an explicit null clears it. */
+function stereotypeUpdate(payload: Record<string, unknown>): { stereotype?: string | null } {
+  const stereotype = payloadStereotype(payload);
+  return stereotype !== undefined ? { stereotype } : {};
+}
+
 function payloadBoolean(envelope: OperationEnvelope, key: string): boolean | null {
   const value = envelope.payload[key];
   return typeof value === 'boolean' ? value : null;
@@ -423,6 +569,17 @@ function ownerClassifierId(model: ModelResource, scope: 'attribute' | 'operation
     return classifier.operations.some((operation) => operation.id === elementId);
   });
   return owner?.id ?? null;
+}
+
+function updateNote(model: ModelResource, noteId: string, update: (note: NoteResource) => NoteResource): ModelResource {
+  return { ...model, notes: (model.notes ?? []).map((note) => (note.id === noteId ? update(note) : note)) };
+}
+
+function noteTarget(payload: Record<string, unknown>): { targetType: NoteTargetType; targetId: string } | null {
+  const { targetType, targetId: id } = payload;
+  return (targetType === 'CLASSIFIER' || targetType === 'RELATIONSHIP') && typeof id === 'string'
+    ? { targetType, targetId: id }
+    : null;
 }
 
 function updateClassifier(
@@ -473,10 +630,15 @@ function addAttribute(model: ModelResource, envelope: OperationEnvelope, classif
     kind: 'ATTRIBUTE',
     visibility: payloadString(envelope, 'visibility') ?? 'PUBLIC',
     multiplicity: payloadString(envelope, 'multiplicity') ?? 'EXACTLY_ONE',
+    lowerBound: payloadBound(envelope.payload.lowerBound) ?? null,
+    upperBound: payloadBound(envelope.payload.upperBound) ?? null,
     defaultValue: payloadString(envelope, 'defaultValue'),
+    isStatic: payloadBoolean(envelope, 'isStatic') ?? false,
+    isDerived: payloadBoolean(envelope, 'isDerived') ?? false,
     typeReferenceId: null,
     type: resolveTypeName(model, envelope.payload.type),
     ordinal: typeof envelope.payload.ordinal === 'number' ? envelope.payload.ordinal : 0,
+    ...newStereotype(envelope.payload),
   };
   return updateClassifier(model, classifierId, (classifier) => ({
     ...classifier,
@@ -500,6 +662,7 @@ function addOperation(model: ModelResource, envelope: OperationEnvelope, classif
     returnType: resolveTypeName(model, envelope.payload.returnType),
     ordinal: typeof envelope.payload.ordinal === 'number' ? envelope.payload.ordinal : 0,
     parameters: [],
+    ...newStereotype(envelope.payload),
   };
   return updateClassifier(model, classifierId, (classifier) => ({
     ...classifier,
@@ -633,6 +796,9 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
                 ...end,
                 ...(typeof update.role === 'string' || update.role === null ? { role: update.role } : {}),
                 ...(typeof update.multiplicity === 'string' ? { multiplicity: update.multiplicity } : {}),
+                ...boundsUpdate(update),
+                ...(typeof update.isOrdered === 'boolean' ? { isOrdered: update.isOrdered } : {}),
+                ...(typeof update.isUnique === 'boolean' ? { isUnique: update.isUnique } : {}),
                 ...(typeof update.navigability === 'string' ? { navigability: update.navigability } : {}),
               };
             }),
@@ -658,8 +824,16 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
           attributes: [],
           operations: [],
           constraints: [],
+          ...newStereotype(envelope.payload),
         }],
       };
+    }
+    case 'classifier.stereotype.set': {
+      const stereotype = payloadStereotype(envelope.payload);
+      if (!classifierId || stereotype === undefined) {
+        return model;
+      }
+      return updateClassifier(model, classifierId, (classifier) => ({ ...classifier, stereotype }));
     }
     case 'classifier.rename': {
       if (!classifierId) {
@@ -730,6 +904,10 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             name: payloadString(envelope, 'name') ?? attribute.name,
             visibility: payloadString(envelope, 'visibility') ?? attribute.visibility,
             multiplicity: payloadString(envelope, 'multiplicity') ?? attribute.multiplicity,
+            ...boundsUpdate(envelope.payload),
+            ...stereotypeUpdate(envelope.payload),
+            isStatic: payloadBoolean(envelope, 'isStatic') ?? attribute.isStatic ?? false,
+            isDerived: payloadBoolean(envelope, 'isDerived') ?? attribute.isDerived ?? false,
             defaultValue: Object.hasOwn(envelope.payload, 'defaultValue')
               ? payloadString(envelope, 'defaultValue')
               : attribute.defaultValue,
@@ -761,6 +939,7 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             visibility: payloadString(envelope, 'visibility') ?? operation.visibility,
             isAbstract: payloadBoolean(envelope, 'isAbstract') ?? operation.isAbstract,
             isStatic: payloadBoolean(envelope, 'isStatic') ?? operation.isStatic,
+            ...stereotypeUpdate(envelope.payload),
             returnType,
           };
         }),
@@ -840,6 +1019,56 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         })),
       };
     }
+    case 'note.create': {
+      const id = payloadString(envelope, 'id');
+      const body = payloadString(envelope, 'body');
+      if (!id || body === null) {
+        return model;
+      }
+      const ids = Array.isArray(envelope.payload.annotatedElementIds) ? envelope.payload.annotatedElementIds : [];
+      const classifierIds = new Set(model.classifiers.map((classifier) => classifier.id));
+      const relationshipIds = new Set(model.relationships.map((relationship) => relationship.id));
+      const annotatedElements: NoteResource['annotatedElements'] = [...new Set(ids.filter((value): value is string => typeof value === 'string'))]
+        .flatMap((elementId): NoteResource['annotatedElements'] => classifierIds.has(elementId)
+          ? [{ targetType: 'CLASSIFIER' as const, targetId: elementId }]
+          : relationshipIds.has(elementId) ? [{ targetType: 'RELATIONSHIP' as const, targetId: elementId }] : []);
+      return { ...model, notes: [...(model.notes ?? []), { id, body, annotatedElements }] };
+    }
+    case 'note.update': {
+      const noteId = targetId(envelope, 'note');
+      const body = payloadString(envelope, 'body');
+      if (!noteId || body === null) {
+        return model;
+      }
+      return updateNote(model, noteId, (note) => ({ ...note, body }));
+    }
+    case 'note.delete': {
+      const noteId = targetId(envelope, 'note');
+      return noteId ? { ...model, notes: (model.notes ?? []).filter((note) => note.id !== noteId) } : model;
+    }
+    case 'note.link': {
+      const noteId = targetId(envelope, 'note');
+      const link = noteTarget(envelope.payload);
+      if (!noteId || !link) {
+        return model;
+      }
+      return updateNote(model, noteId, (note) => note.annotatedElements.some((element) =>
+        element.targetType === link.targetType && element.targetId === link.targetId)
+        ? note
+        : { ...note, annotatedElements: [...note.annotatedElements, link] });
+    }
+    case 'note.unlink': {
+      const noteId = targetId(envelope, 'note');
+      const link = noteTarget(envelope.payload);
+      if (!noteId || !link) {
+        return model;
+      }
+      return updateNote(model, noteId, (note) => ({
+        ...note,
+        annotatedElements: note.annotatedElements.filter((element) =>
+          !(element.targetType === link.targetType && element.targetId === link.targetId)),
+      }));
+    }
     case 'classifier.delete': {
       if (!classifierId) {
         return model;
@@ -849,6 +1078,15 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
         .map((relationship) => relationship.id));
       return {
         ...model,
+        // A deleted element loses its note links; the notes themselves stay.
+        ...(model.notes ? {
+          notes: model.notes.map((note) => ({
+            ...note,
+            annotatedElements: note.annotatedElements.filter((element) =>
+              !((element.targetType === 'CLASSIFIER' && element.targetId === classifierId)
+                || (element.targetType === 'RELATIONSHIP' && removedRelationships.has(element.targetId)))),
+          })),
+        } : {}),
         classifiers: model.classifiers.filter((classifier) => classifier.id !== classifierId),
         // The server releases the link of an association whose class is deleted and keeps the association.
         relationships: model.relationships
@@ -882,7 +1120,8 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
       const viewId = payloadString(envelope, 'viewId');
       const geometryTargetId = payloadString(envelope, 'targetId');
       const [x, y, w, h] = ['x', 'y', 'w', 'h'].map((key) => payloadNumber(envelope, key));
-      if (payloadString(envelope, 'targetType') !== 'CLASSIFIER' || !viewId || !geometryTargetId
+      const geometryType = payloadString(envelope, 'targetType');
+      if ((geometryType !== 'CLASSIFIER' && geometryType !== 'NOTE') || !viewId || !geometryTargetId
           || x == null || y == null || w == null || h == null) {
         return model;
       }
@@ -894,8 +1133,8 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             return view;
           }
           const existing = view.element_geometry.find((candidate) =>
-            candidate.targetType === 'CLASSIFIER' && candidate.targetId === geometryTargetId);
-          const row = { id: existing?.id ?? geometryTargetId, targetType: 'CLASSIFIER', targetId: geometryTargetId, x, y, w, h, zOrder };
+            candidate.targetType === geometryType && candidate.targetId === geometryTargetId);
+          const row = { id: existing?.id ?? geometryTargetId, targetType: geometryType, targetId: geometryTargetId, x, y, w, h, zOrder };
           return {
             ...view,
             element_geometry: existing

@@ -50,11 +50,27 @@ public class UmlAttribute {
     @Column(name = "multiplicity", nullable = false)
     private MultiplicityKind multiplicity;
 
+    @Column(name = "lower_bound")
+    private Integer lowerBound;
+
+    @Column(name = "upper_bound")
+    private Integer upperBound;
+
     @Column(name = "default_value", columnDefinition = "text")
     private String defaultValue;
 
     @Column(name = "ordinal", nullable = false)
     private int ordinal;
+
+    /** An AttributeStereotype name; NULL means none. */
+    @Column(name = "stereotype", length = 32)
+    private String stereotype;
+
+    @Column(name = "is_static", nullable = false)
+    private boolean isStatic;
+
+    @Column(name = "is_derived", nullable = false)
+    private boolean isDerived;
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
@@ -69,6 +85,13 @@ public class UmlAttribute {
 
     public static UmlAttribute create(UUID id, Classifier classifier, TypeReference typeReference, String name,
             String kind, String visibility, MultiplicityKind multiplicity, String defaultValue, int ordinal) {
+        return create(id, classifier, typeReference, name, kind, visibility, multiplicity, null, null, defaultValue,
+                ordinal);
+    }
+
+    public static UmlAttribute create(UUID id, Classifier classifier, TypeReference typeReference, String name,
+            String kind, String visibility, MultiplicityKind multiplicity, Integer lowerBound, Integer upperBound,
+            String defaultValue, int ordinal) {
         UmlAttribute attribute = new UmlAttribute();
         attribute.id = id;
         attribute.classifier = classifier;
@@ -77,6 +100,8 @@ public class UmlAttribute {
         attribute.kind = kind;
         attribute.visibility = visibility;
         attribute.multiplicity = multiplicity;
+        attribute.lowerBound = lowerBound;
+        attribute.upperBound = upperBound;
         attribute.defaultValue = defaultValue;
         attribute.ordinal = ordinal;
         attribute.createdAt = OffsetDateTime.now();
@@ -131,6 +156,22 @@ public class UmlAttribute {
         this.multiplicity = multiplicity;
     }
 
+    public Integer getLowerBound() {
+        return lowerBound;
+    }
+
+    public void setLowerBound(Integer lowerBound) {
+        this.lowerBound = lowerBound;
+    }
+
+    public Integer getUpperBound() {
+        return upperBound;
+    }
+
+    public void setUpperBound(Integer upperBound) {
+        this.upperBound = upperBound;
+    }
+
     public String getDefaultValue() {
         return defaultValue;
     }
@@ -145,6 +186,30 @@ public class UmlAttribute {
 
     public void setOrdinal(int ordinal) {
         this.ordinal = ordinal;
+    }
+
+    public String getStereotype() {
+        return stereotype;
+    }
+
+    public void setStereotype(String stereotype) {
+        this.stereotype = stereotype;
+    }
+
+    public boolean isStatic() {
+        return isStatic;
+    }
+
+    public void setStatic(boolean isStatic) {
+        this.isStatic = isStatic;
+    }
+
+    public boolean isDerived() {
+        return isDerived;
+    }
+
+    public void setDerived(boolean isDerived) {
+        this.isDerived = isDerived;
     }
 
     public OffsetDateTime getCreatedAt() {

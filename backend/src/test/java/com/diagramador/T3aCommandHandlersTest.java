@@ -218,23 +218,95 @@ class T3aCommandHandlersTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void acceptsAllFourUmlVisibilityLevelsOnAttributes() {
+        Fixture fixture = fixture();
+        UUID classifierId = UUID.randomUUID();
+        assertAccepted(command(fixture, "classifier.create", 0,
+                Map.of("id", classifierId, "name", "C", "kind", "CLASS"), List.of()));
+
+        long revision = 1;
+        for (String visibility : List.of("PUBLIC", "PRIVATE", "PROTECTED", "PACKAGE")) {
+            assertAccepted(command(fixture, "attribute.add", revision, Map.of("id", UUID.randomUUID(),
+                    "name", "a" + visibility.toLowerCase(), "type", Map.of("primitiveName", "String"),
+                    "visibility", visibility), target("classifier", classifierId)));
+            revision++;
+        }
+    }
+
+    @Test
+    void attributeRangeMultiplicityStoresNumericBounds() {
+        Fixture fixture = fixture();
+        UUID classifierId = UUID.randomUUID();
+        assertAccepted(command(fixture, "classifier.create", 0,
+                Map.of("id", classifierId, "name", "C", "kind", "CLASS"), List.of()));
+
+        UUID bounded = UUID.randomUUID();
+        UUID unbounded = UUID.randomUUID();
+        UUID exact = UUID.randomUUID();
+        assertAccepted(command(fixture, "attribute.add", 1, Map.of("id", bounded, "name", "a",
+                "type", Map.of("primitiveName", "String"), "multiplicity", "RANGE", "lowerBound", 2,
+                "upperBound", 5), target("classifier", classifierId)));
+        assertAccepted(command(fixture, "attribute.add", 2, Map.of("id", unbounded, "name", "b",
+                "type", Map.of("primitiveName", "String"), "multiplicity", "RANGE", "lowerBound", 2),
+                target("classifier", classifierId)));
+        assertAccepted(command(fixture, "attribute.add", 3, Map.of("id", exact, "name", "c",
+                "type", Map.of("primitiveName", "String"), "multiplicity", "RANGE", "lowerBound", 3,
+                "upperBound", 3), target("classifier", classifierId)));
+
+        assertThat(attributeRepository.findById(bounded).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.getMultiplicity()).isEqualTo(com.diagramador.domain.MultiplicityKind.RANGE);
+            assertThat(attribute.getLowerBound()).isEqualTo(2);
+            assertThat(attribute.getUpperBound()).isEqualTo(5);
+        });
+        assertThat(attributeRepository.findById(unbounded).orElseThrow().getUpperBound()).isNull();
+        assertThat(attributeRepository.findById(exact).orElseThrow().getLowerBound()).isEqualTo(3);
+
+        // update keeps bounds not mentioned, and switching away from RANGE clears them
+        assertAccepted(command(fixture, "attribute.update", 4, Map.of("upperBound", 9),
+                target("attribute", bounded)));
+        assertThat(attributeRepository.findById(bounded).orElseThrow().getUpperBound()).isEqualTo(9);
+        assertThat(attributeRepository.findById(bounded).orElseThrow().getLowerBound()).isEqualTo(2);
+        assertAccepted(command(fixture, "attribute.update", 5, Map.of("multiplicity", "ZERO_OR_MANY"),
+                target("attribute", bounded)));
+        assertThat(attributeRepository.findById(bounded).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.getLowerBound()).isNull();
+            assertThat(attribute.getUpperBound()).isNull();
+        });
+    }
+
+    @Test
+    void attributeRangeBoundsAreValidated() {
+        Fixture fixture = fixture();
+        UUID classifierId = UUID.randomUUID();
+        assertAccepted(command(fixture, "classifier.create", 0,
+                Map.of("id", classifierId, "name", "C", "kind", "CLASS"), List.of()));
+
+        assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
+                "type", Map.of("primitiveName", "String"), "multiplicity", "RANGE", "lowerBound", 5,
+                "upperBound", 2), target("classifier", classifierId)), ErrorCode.INVALID_PAYLOAD, "upperBound");
+        assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
+                "type", Map.of("primitiveName", "String"), "multiplicity", "RANGE", "lowerBound", -1),
+                target("classifier", classifierId)), ErrorCode.INVALID_PAYLOAD, "lowerBound");
+        assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
+                "type", Map.of("primitiveName", "String"), "multiplicity", "ONE_OR_MANY", "lowerBound", 1),
+                target("classifier", classifierId)), ErrorCode.INVALID_PAYLOAD, "RANGE");
+    }
+
+    @Test
     void rejectedCasesNameTheBaselineConstructs() {
         Fixture fixture = fixture();
         UUID classifierId = UUID.randomUUID();
         assertAccepted(command(fixture, "classifier.create", 0, Map.of("id", classifierId, "name", "C", "kind", "CLASS"), List.of()));
 
         assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
-                "type", Map.of("primitiveName", "String"), "visibility", "PROTECTED"), target("classifier", classifierId)),
-                ErrorCode.PRECONDITION_FAILED, "BL-VIS-03");
-        assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
-                "type", Map.of("primitiveName", "String"), "visibility", "PACKAGE"), target("classifier", classifierId)),
-                ErrorCode.PRECONDITION_FAILED, "BL-VIS-04");
+                "type", Map.of("primitiveName", "String"), "visibility", "SECRET"), target("classifier", classifierId)),
+                ErrorCode.INVALID_PAYLOAD, "SECRET");
         assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
                 "type", Map.of("primitiveName", "String"), "multiplicity", "RANGE"), target("classifier", classifierId)),
-                ErrorCode.PRECONDITION_FAILED, "BL-REL-07", "GAP-05");
+                ErrorCode.INVALID_PAYLOAD, "lowerBound");
         assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
-                "type", Map.of("primitiveName", "String"), "isStatic", true), target("classifier", classifierId)),
-                ErrorCode.PRECONDITION_FAILED, "BL-FEA-05");
+                "type", Map.of("primitiveName", "String"), "isStatic", "yes"), target("classifier", classifierId)),
+                ErrorCode.INVALID_PAYLOAD, "isStatic");
         assertRejected(command(fixture, "attribute.add", 1, Map.of("id", UUID.randomUUID(), "name", "x",
                 "type", Map.of("primitiveName", "String"), "isAbstract", true), target("classifier", classifierId)),
                 ErrorCode.PRECONDITION_FAILED, "BL-FEA-06");

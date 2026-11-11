@@ -27,7 +27,8 @@ import org.springframework.stereotype.Component;
 public class RelationshipCreateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "kind", "name", "stereotype", "associationClassId", "source", "target", "waypoints");
-    private static final Set<String> END_FIELDS = Set.of("classifierId", "role", "multiplicity", "navigability");
+    private static final Set<String> END_FIELDS = Set.of("classifierId", "role", "multiplicity", "lowerBound",
+            "upperBound", "navigability", "isOrdered", "isUnique");
 
     private final CommandHandlerSupport support;
     private final UmlRelationshipRepository relationshipRepository;
@@ -74,11 +75,17 @@ public class RelationshipCreateHandler implements CommandHandler.AddAction {
         relationship.setAssociationClassId(associationClassId);
 
         CommandHandlerSupport.AggregationKinds aggregation = support.aggregationKinds(kind);
-        endRepository.saveAll(List.of(
-                RelationshipEnd.create(relationship, source.classifier(), (short) 1, source.role(),
-                        source.multiplicity(), source.navigability(), aggregation.source()),
-                RelationshipEnd.create(relationship, target.classifier(), (short) 2, target.role(),
-                        target.multiplicity(), target.navigability(), aggregation.target())));
+        RelationshipEnd sourceEnd = RelationshipEnd.create(null, relationship, source.classifier(), (short) 1,
+                source.role(), source.multiplicity().kind(), source.multiplicity().lowerBound(),
+                source.multiplicity().upperBound(), source.navigability(), aggregation.source());
+        sourceEnd.setOrdered(source.isOrdered());
+        sourceEnd.setUnique(source.isUnique());
+        RelationshipEnd targetEnd = RelationshipEnd.create(null, relationship, target.classifier(), (short) 2,
+                target.role(), target.multiplicity().kind(), target.multiplicity().lowerBound(),
+                target.multiplicity().upperBound(), target.navigability(), aggregation.target());
+        targetEnd.setOrdered(target.isOrdered());
+        targetEnd.setUnique(target.isUnique());
+        endRepository.saveAll(List.of(sourceEnd, targetEnd));
 
         List<ConnectorPath> paths = new ArrayList<>();
         for (int ordinal = 0; ordinal < waypoints.size(); ordinal++) {
@@ -98,9 +105,12 @@ public class RelationshipCreateHandler implements CommandHandler.AddAction {
         UUID classifierId = support.uuid(end, "classifierId");
         Classifier classifier = support.classifier(context.model(), classifierId);
         String role = support.optionalText(end, "role");
-        MultiplicityKind multiplicity = support.multiplicity(end, "multiplicity", MultiplicityKind.EXACTLY_ONE);
+        CommandHandlerSupport.Multiplicity multiplicity = support.multiplicity(end, "multiplicity",
+                MultiplicityKind.EXACTLY_ONE, null, null);
         NavigationKind navigability = navigability(end, "navigability", NavigationKind.UNSPECIFIED);
-        return new EndInput(classifier, role, multiplicity, navigability);
+        boolean isOrdered = end.has("isOrdered") && support.bool(end, "isOrdered");
+        boolean isUnique = end.has("isUnique") && support.bool(end, "isUnique");
+        return new EndInput(classifier, role, multiplicity, navigability, isOrdered, isUnique);
     }
 
     private void validateEnvelopeTargets(Context context, UUID sourceId, UUID targetId) {
@@ -162,8 +172,8 @@ public class RelationshipCreateHandler implements CommandHandler.AddAction {
         }
     }
 
-    private record EndInput(Classifier classifier, String role, MultiplicityKind multiplicity,
-            NavigationKind navigability) {
+    private record EndInput(Classifier classifier, String role, CommandHandlerSupport.Multiplicity multiplicity,
+            NavigationKind navigability, boolean isOrdered, boolean isUnique) {
     }
 
     private record Waypoint(int x, int y) {

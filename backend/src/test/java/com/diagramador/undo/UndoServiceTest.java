@@ -70,6 +70,7 @@ class UndoServiceTest {
     private final RelationshipEndRepository relationshipEndRepository;
     private final CurrentUserContext currentUserContext;
     private final TransactionTemplate transactionTemplate;
+    private final com.diagramador.api.NoteResourceAssembler noteResources;
 
     @Autowired
     UndoServiceTest(ProjectApiService projectApiService, UndoService undoService,
@@ -79,7 +80,8 @@ class UndoServiceTest {
             ClassifierRepository classifierRepository, UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, UmlRelationshipRepository relationshipRepository,
             RelationshipEndRepository relationshipEndRepository, CurrentUserContext currentUserContext,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate, com.diagramador.api.NoteResourceAssembler noteResources) {
+        this.noteResources = noteResources;
         this.projectApiService = projectApiService;
         this.undoService = undoService;
         this.undoLogRepository = undoLogRepository;
@@ -219,6 +221,155 @@ class UndoServiceTest {
             assertThat(restored.getTypeReference().getPrimitiveName()).isEqualTo("String");
             return null;
         });
+    }
+
+    @Test
+    void undoRestoresRangeBoundsOfAnUpdatedAndOfARemovedAttribute() {
+        Fixture fixture = fixture("undo-attribute-range");
+        UUID classifierId = createClassifier(fixture, 0, "Order");
+        UUID attributeId = UUID.randomUUID();
+        assertAccepted(command(fixture, "attribute.add", 1,
+                Map.of("id", attributeId, "name", "tags", "type", Map.of("primitiveName", "String"),
+                        "multiplicity", "RANGE", "lowerBound", 2),
+                List.of(new Target("classifier", classifierId))));
+        assertAccepted(command(fixture, "attribute.update", 2,
+                Map.of("multiplicity", "RANGE", "lowerBound", 1, "upperBound", 4),
+                List.of(new Target("attribute", attributeId))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        transactionTemplate.execute(status -> {
+            var restored = attributeRepository.findById(attributeId).orElseThrow();
+            assertThat(restored.getLowerBound()).isEqualTo(2);
+            assertThat(restored.getUpperBound()).isNull();
+            return null;
+        });
+
+        assertAccepted(command(fixture, "attribute.remove", 4, Map.of(),
+                List.of(new Target("attribute", attributeId))));
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        transactionTemplate.execute(status -> {
+            var restored = attributeRepository.findById(attributeId).orElseThrow();
+            assertThat(restored.getMultiplicity()).isEqualTo(com.diagramador.domain.MultiplicityKind.RANGE);
+            assertThat(restored.getLowerBound()).isEqualTo(2);
+            assertThat(restored.getUpperBound()).isNull();
+            return null;
+        });
+    }
+
+    @Test
+    void undoOfClassifierStereotypeSetRestoresThePreviousStereotypeIncludingNone() {
+        Fixture fixture = fixture("undo-set-stereotype");
+        UUID classifierId = createClassifier(fixture, 0, "Order");
+        assertAccepted(command(fixture, "classifier.stereotype.set", 1, Map.of("stereotype", "ENTITY"),
+                List.of(new Target("classifier", classifierId))));
+        assertAccepted(command(fixture, "classifier.stereotype.set", 2, Map.of("stereotype", "SERVICE"),
+                List.of(new Target("classifier", classifierId))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(classifierRepository.findById(classifierId).orElseThrow().getStereotype()).isEqualTo("ENTITY");
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(classifierRepository.findById(classifierId).orElseThrow().getStereotype()).isNull();
+
+        assertThat(undoService.redo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(classifierRepository.findById(classifierId).orElseThrow().getStereotype()).isEqualTo("ENTITY");
+    }
+
+    @Test
+    void undoRestoresTheFlagsOfAnUpdatedAndOfARemovedAttribute() {
+        Fixture fixture = fixture("undo-attribute-flags");
+        UUID classifierId = createClassifier(fixture, 0, "Order");
+        UUID attributeId = UUID.randomUUID();
+        assertAccepted(command(fixture, "attribute.add", 1,
+                Map.of("id", attributeId, "name", "code", "type", Map.of("primitiveName", "String"),
+                        "isStatic", true),
+                List.of(new Target("classifier", classifierId))));
+        assertAccepted(command(fixture, "attribute.update", 2, Map.of("isDerived", true, "isStatic", false),
+                List.of(new Target("attribute", attributeId))));
+        assertAccepted(command(fixture, "attribute.update", 3, Map.of("name", "renamed"),
+                List.of(new Target("attribute", attributeId))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.getName()).isEqualTo("code");
+            assertThat(attribute.isStatic()).isFalse();
+            assertThat(attribute.isDerived()).isTrue();
+        });
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.isStatic()).isTrue();
+            assertThat(attribute.isDerived()).isFalse();
+        });
+
+        assertAccepted(command(fixture, "attribute.update", 6, Map.of("isDerived", true),
+                List.of(new Target("attribute", attributeId))));
+        assertAccepted(command(fixture, "attribute.remove", 7, Map.of(),
+                List.of(new Target("attribute", attributeId))));
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.isStatic()).isTrue();
+            assertThat(attribute.isDerived()).isTrue();
+        });
+    }
+
+    @Test
+    void undoOfARelationshipDeleteRestoresTheEndProperties() {
+        Fixture fixture = fixture("undo-end-properties");
+        UUID source = createClassifier(fixture, 0, "Order");
+        UUID target = createClassifier(fixture, 1, "Customer");
+        UUID relationshipId = UUID.randomUUID();
+        assertAccepted(command(fixture, "relationship.create", 2, Map.of("id", relationshipId, "kind", "ASSOCIATION",
+                "source", Map.of("classifierId", source, "isOrdered", true),
+                "target", Map.of("classifierId", target, "isUnique", true)),
+                List.of(new Target("classifier", source), new Target("classifier", target))));
+        assertAccepted(command(fixture, "relationship.delete", 3, Map.of(),
+                List.of(new Target("relationship", relationshipId)),
+                List.of(new Precondition("cascade_count", 3, null))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+
+        var ends = relationshipEndRepository.findByRelationshipId(relationshipId);
+        assertThat(ends).hasSize(2);
+        assertThat(ends).filteredOn(end -> end.getOrdinal() == 1).singleElement().satisfies(end -> {
+            assertThat(end.isOrdered()).isTrue();
+            assertThat(end.isUnique()).isFalse();
+        });
+        assertThat(ends).filteredOn(end -> end.getOrdinal() == 2).singleElement().satisfies(end -> {
+            assertThat(end.isOrdered()).isFalse();
+            assertThat(end.isUnique()).isTrue();
+        });
+    }
+
+    @Test
+    void undoRestoresTheStereotypeOfAnUpdatedAndOfARemovedAttribute() {
+        Fixture fixture = fixture("undo-attribute-stereotype");
+        UUID classifierId = createClassifier(fixture, 0, "Order");
+        UUID attributeId = UUID.randomUUID();
+        assertAccepted(command(fixture, "attribute.add", 1,
+                Map.of("id", attributeId, "name", "code", "type", Map.of("primitiveName", "String"),
+                        "stereotype", "ID"),
+                List.of(new Target("classifier", classifierId))));
+        assertAccepted(command(fixture, "attribute.update", 2, Map.of("stereotype", "UNIQUE"),
+                List.of(new Target("attribute", attributeId))));
+        assertAccepted(command(fixture, "attribute.update", 3, Map.of("name", "renamed"),
+                List.of(new Target("attribute", attributeId))));
+        assertAccepted(command(fixture, "attribute.update", 4, java.util.Collections.singletonMap("stereotype", null),
+                List.of(new Target("attribute", attributeId))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow().getStereotype()).isEqualTo("UNIQUE");
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.getName()).isEqualTo("code");
+            assertThat(attribute.getStereotype()).as("renaming did not touch it").isEqualTo("UNIQUE");
+        });
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow().getStereotype()).isEqualTo("ID");
+
+        assertAccepted(command(fixture, "attribute.remove", 8, Map.of(),
+                List.of(new Target("attribute", attributeId))));
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow().getStereotype()).isEqualTo("ID");
     }
 
     @Test
@@ -463,6 +614,75 @@ class UndoServiceTest {
                 .findByModel_IdOrderByCreatedAtAscIdAsc(fixture.model().getId());
         assertThat(entries).isNotEmpty();
         return entries.get(entries.size() - 1);
+    }
+
+    @Test
+    void undoAndRedoCoverNoteCreateUpdateLinkUnlinkAndDelete() {
+        Fixture fixture = fixture("undo-notes");
+        UUID first = createClassifier(fixture, 0, "Order");
+        UUID second = createClassifier(fixture, 1, "Customer");
+        UUID noteId = UUID.randomUUID();
+        List<Target> note = List.of(new Target("note", noteId));
+        assertAccepted(command(fixture, "note.create", 2, Map.of("id", noteId, "body", "one",
+                "annotatedElementIds", List.of(first.toString())), List.of()));
+        assertAccepted(command(fixture, "note.update", 3, Map.of("body", "two"), note));
+        assertAccepted(command(fixture, "note.link", 4, Map.of("targetType", "CLASSIFIER", "targetId", second), note));
+        assertAccepted(command(fixture, "note.unlink", 5, Map.of("targetType", "CLASSIFIER", "targetId", first), note));
+        assertAccepted(command(fixture, "note.delete", 6, Map.of(), note));
+        assertThat(notesOf(fixture)).isEmpty();
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture)).singleElement().satisfies(restored -> {
+            assertThat(restored.id()).isEqualTo(noteId);
+            assertThat(restored.body()).isEqualTo("two");
+            assertThat(restored.annotatedElements()).extracting(link -> link.targetId()).containsExactly(second);
+        });
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture).get(0).annotatedElements()).extracting(link -> link.targetId())
+                .containsExactlyInAnyOrder(first, second);
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture).get(0).annotatedElements()).extracting(link -> link.targetId())
+                .containsExactly(first);
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture).get(0).body()).isEqualTo("one");
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture)).as("undoing the creation deletes the note").isEmpty();
+
+        assertThat(undoService.redo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture)).singleElement().satisfies(redone -> {
+            assertThat(redone.body()).isEqualTo("one");
+            assertThat(redone.annotatedElements()).extracting(link -> link.targetId()).containsExactly(first);
+        });
+    }
+
+    @Test
+    void undoingANoteDeleteSkipsAnnotatedElementsThatAreGoneByThen() {
+        Fixture fixture = fixture("undo-notes-gone");
+        UUID first = createClassifier(fixture, 0, "Order");
+        UUID second = createClassifier(fixture, 1, "Customer");
+        UUID noteId = UUID.randomUUID();
+        assertAccepted(command(fixture, "note.create", 2, Map.of("id", noteId, "body", "n",
+                "annotatedElementIds", List.of(first.toString(), second.toString())), List.of()));
+        assertAccepted(command(fixture, "note.delete", 3, Map.of(), List.of(new Target("note", noteId))));
+        // Another editor deletes the second class after the note was deleted.
+        currentUserContext.set(new CurrentUser(fixture.secondEditor().getId(), fixture.secondEditor().getUsername(),
+                "Editor2"));
+        assertAccepted(command(fixture, "classifier.delete", 4, Map.of(),
+                List.of(new Target("classifier", second)), List.of(new Precondition("cascade_count", 1, null))));
+        currentUserContext.set(new CurrentUser(fixture.author().getId(), fixture.author().getUsername(), "Author"));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+
+        assertThat(notesOf(fixture)).singleElement().satisfies(restored -> assertThat(restored.annotatedElements())
+                .extracting(link -> link.targetId()).containsExactly(first));
+    }
+
+    private List<com.diagramador.api.ModelResource.NoteResource> notesOf(Fixture fixture) {
+        return noteResources.forModel(fixture.model().getId());
     }
 
     private UUID createClassifier(Fixture fixture, long revision, String name) {

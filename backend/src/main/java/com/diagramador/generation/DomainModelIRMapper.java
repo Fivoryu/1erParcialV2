@@ -199,8 +199,9 @@ public final class DomainModelIRMapper {
             TypeUse type = resolveType(attribute.typeReferenceId(), attribute.id(), "type",
                     typeReferencesById, classifiersById, typeNamesById, primitiveTypes, diagnostics, false);
             String visibility = normalizedVisibility(attribute.visibility(), attribute.id(), diagnostics);
-            MultiplicityBounds bounds = bounds(attribute.multiplicity());
-            CollectionIntent collectionIntent = collectionIntent(attribute.multiplicity());
+            MultiplicityBounds bounds = bounds(attribute.multiplicity(), attribute.lowerBound(),
+                    attribute.upperBound());
+            CollectionIntent collectionIntent = collectionIntent(attribute.multiplicity(), attribute.upperBound());
             Boolean nullable = nullable(attribute.multiplicity());
             if (attribute.multiplicity() == MultiplicityKind.RANGE) {
                 addDiagnostic(diagnostics, "UNSUPPORTED_MULTIPLICITY", attribute.id(), "multiplicity",
@@ -358,8 +359,8 @@ public final class DomainModelIRMapper {
                 continue;
             }
 
-            List<RelationshipEndElement> manyEnds = ends.stream().filter(end -> isToMany(end.multiplicity())).toList();
-            List<RelationshipEndElement> oneEnds = ends.stream().filter(end -> isToOne(end.multiplicity())).toList();
+            List<RelationshipEndElement> manyEnds = ends.stream().filter(end -> isToMany(end.multiplicity(), end.upperBound())).toList();
+            List<RelationshipEndElement> oneEnds = ends.stream().filter(end -> isToOne(end.multiplicity(), end.upperBound())).toList();
             if (manyEnds.size() != 1 || oneEnds.size() != 1) {
                 String combination = multiplicityCombination(ends);
                 addDiagnostic(diagnostics, "UNSUPPORTED_MULTIPLICITY_COMBINATION", relationship.id(), "multiplicity",
@@ -393,7 +394,7 @@ public final class DomainModelIRMapper {
 
             relationships.add(new RelationshipDescriptor(relationship.id(), relationship.kind(), relationship.name(),
                     owningEnd, referencedEnd, owningFieldName, inverseCollectionFieldName,
-                    oneEnd.multiplicity() != MultiplicityKind.EXACTLY_ONE, inverseCollectionEmitted, lifecycleIntent));
+                    !isMandatory(oneEnd), inverseCollectionEmitted, lifecycleIntent));
 
             Set<String> relationshipArtifacts = new TreeSet<>();
             // The reference column lives with the owning (to-many) end, so only a relational owner touches the schema.
@@ -429,7 +430,7 @@ public final class DomainModelIRMapper {
         }
         return new RelationshipEndDescriptor(end.id(), end.classifierId(),
                 typeName == null ? null : typeName.sourceName(), end.role(), end.multiplicity(),
-                bounds(end.multiplicity()), end.navigability() == NavigationKind.NAVIGABLE,
+                bounds(end.multiplicity(), end.lowerBound(), end.upperBound()), end.navigability() == NavigationKind.NAVIGABLE,
                 end.aggregationKind(), lifecycleIntent(end.aggregationKind()));
     }
 
@@ -639,8 +640,11 @@ public final class DomainModelIRMapper {
         return visibility;
     }
 
-    private MultiplicityBounds bounds(MultiplicityKind multiplicity) {
-        if (multiplicity == null || multiplicity == MultiplicityKind.RANGE) {
+    private MultiplicityBounds bounds(MultiplicityKind multiplicity, Integer lowerBound, Integer upperBound) {
+        if (multiplicity == MultiplicityKind.RANGE) {
+            return new MultiplicityBounds(lowerBound, upperBound);
+        }
+        if (multiplicity == null) {
             return new MultiplicityBounds(null, null);
         }
         return switch (multiplicity) {
@@ -652,11 +656,11 @@ public final class DomainModelIRMapper {
         };
     }
 
-    private CollectionIntent collectionIntent(MultiplicityKind multiplicity) {
-        if (isToMany(multiplicity)) {
+    private CollectionIntent collectionIntent(MultiplicityKind multiplicity, Integer upperBound) {
+        if (isToMany(multiplicity, upperBound)) {
             return CollectionIntent.COLLECTION;
         }
-        if (isToOne(multiplicity)) {
+        if (isToOne(multiplicity, upperBound)) {
             return CollectionIntent.SINGLE_VALUE;
         }
         return CollectionIntent.UNRESOLVED;
@@ -672,12 +676,21 @@ public final class DomainModelIRMapper {
         return null;
     }
 
-    private boolean isToOne(MultiplicityKind multiplicity) {
+    /** A RANGE end stays outside the V1 generation profile: it is neither to-one nor to-many. */
+    private boolean isToOne(MultiplicityKind multiplicity, Integer upperBound) {
         return multiplicity == MultiplicityKind.EXACTLY_ONE || multiplicity == MultiplicityKind.ZERO_OR_ONE;
     }
 
-    private boolean isToMany(MultiplicityKind multiplicity) {
+    /** A RANGE end stays outside the V1 generation profile: it is neither to-one nor to-many. */
+    private boolean isToMany(MultiplicityKind multiplicity, Integer upperBound) {
         return multiplicity == MultiplicityKind.ONE_OR_MANY || multiplicity == MultiplicityKind.ZERO_OR_MANY;
+    }
+
+    private boolean isMandatory(RelationshipEndElement end) {
+        if (end.multiplicity() == MultiplicityKind.RANGE) {
+            return end.lowerBound() != null && end.lowerBound() >= 1;
+        }
+        return end.multiplicity() == MultiplicityKind.EXACTLY_ONE;
     }
 
     private boolean isSupportedRelationship(RelationshipKind kind) {

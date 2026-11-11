@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RelationshipEndResource } from '../api/types';
-import { formatAttribute, formatRelationshipEndLabel, formatRelationshipName, formatStereotype } from './uml-format';
+import { formatVisibility, formatAttribute, formatRelationshipEndLabel, formatRelationshipName, formatStereotype } from './uml-format';
 
 const end = (overrides: Partial<RelationshipEndResource>): RelationshipEndResource => ({
   id: 'end',
@@ -59,5 +59,11 @@ describe('formatRelationshipName', () => {
   it('shows the plain name when there is no stereotype, and nothing when there is neither', () => {
     expect(formatRelationshipName('owns', null)).toBe('owns');
     expect(formatRelationshipName(null, undefined)).toBe('');
+  });
+});
+
+describe('formatVisibility', () => {
+  it('maps the four UML 2.5 visibility levels to their symbols', () => {
+    expect(['PUBLIC', 'PRIVATE', 'PROTECTED', 'PACKAGE'].map(formatVisibility)).toEqual(['+', '-', '#', '~']);
   });
 });

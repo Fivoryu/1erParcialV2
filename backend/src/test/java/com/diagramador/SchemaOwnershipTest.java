@@ -71,20 +71,22 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("tombstone", Set.of("tombstone_id", "model_id", "target_type", "target_id", "cascade_id",
                     "command_id", "deleted_at")),
             Map.entry("classifier",  Set.of("classifier_id", "model_id", "namespace_id", "kind", "name", "is_abstract",
-                    "store_override", "created_at")),
+                    "store_override", "stereotype", "created_at")),
             Map.entry("type_reference", Set.of("type_reference_id", "model_id", "classifier_id", "primitive_name",
                     "created_at")),
             Map.entry("uml_attribute", Set.of("attribute_id", "classifier_id", "type_reference_id", "name", "kind",
-                    "visibility", "multiplicity", "default_value", "ordinal", "created_at")),
+                    "visibility", "multiplicity", "lower_bound", "upper_bound", "default_value", "ordinal", "stereotype", "is_static", "is_derived", "created_at")),
             Map.entry("uml_operation", Set.of("operation_id", "classifier_id", "name", "return_type_reference_id",
-                    "visibility", "is_abstract", "is_static", "ordinal", "created_at")),
+                    "visibility", "is_abstract", "is_static", "ordinal", "stereotype", "created_at")),
             Map.entry("operation_parameter", Set.of("parameter_id", "operation_id", "type_reference_id", "name",
                     "direction", "ordinal")),
             Map.entry("uml_relationship", Set.of("relationship_id", "model_id", "kind", "name", "stereotype", "association_class_id", "created_at")),
             Map.entry("relationship_end", Set.of("relationship_end_id", "relationship_id", "classifier_id", "ordinal",
-                    "role", "multiplicity", "navigability", "aggregation_kind")),
+                    "role", "multiplicity", "lower_bound", "upper_bound", "navigability", "aggregation_kind", "is_ordered", "is_unique")),
             Map.entry("uml_constraint", Set.of("constraint_id", "model_id", "owner_type", "owner_id", "expression",
                     "severity", "created_at")),
+            Map.entry("uml_note", Set.of("note_id", "model_id", "body", "created_at")),
+            Map.entry("uml_note_link", Set.of("note_id", "target_type", "target_id")),
             Map.entry("diagram_view", Set.of("view_id", "model_id", "name", "view_kind", "is_default", "created_at")),
             Map.entry("element_geometry", Set.of("geometry_id", "view_id", "target_type", "target_id", "x", "y", "w",
                     "h", "z_order")),
@@ -162,6 +164,8 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
             Map.entry("uml_relationship", Set.of("idx_relationship_model", "ux_relationship_association_class")),
             Map.entry("relationship_end", Set.of("idx_relationship_end_rel", "idx_relationship_end_cls")),
             Map.entry("uml_constraint", Set.of("idx_constraint_model")),
+            Map.entry("uml_note", Set.of("idx_note_model")),
+            Map.entry("uml_note_link", Set.of("idx_note_link_target")),
             Map.entry("diagram_view", Set.of()),
             Map.entry("element_geometry", Set.of()),
             Map.entry("connector_path", Set.of()),
@@ -266,7 +270,7 @@ class SchemaOwnershipTest extends AbstractPostgresIntegrationTest {
         assertEnumLabels("invitation_status", InvitationStatus.class, 5);
         assertEnumLabels("relationship_kind", RelationshipKind.class, 6);
         assertEnumLabels("severity_kind", SeverityKind.class, 3);
-        assertEnumLabels("target_type", TargetType.class, 8);
+        assertEnumLabels("target_type", TargetType.class, 9);
         assertEnumLabels("validation_state", com.diagramador.command.ValidationState.class, 3);
         assertEnumLabels("command_origin", com.diagramador.command.CommandOrigin.class, 11);
         assertEnumLabels("authorization_classification", com.diagramador.command.AuthorizationClassification.class, 5);

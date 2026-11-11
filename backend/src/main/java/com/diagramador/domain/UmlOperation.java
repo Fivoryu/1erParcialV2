@@ -47,6 +47,10 @@ public class UmlOperation {
     @Column(name = "ordinal", nullable = false)
     private int ordinal;
 
+    /** An OperationStereotype name; NULL means none. */
+    @Column(name = "stereotype", length = 32)
+    private String stereotype;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
@@ -127,6 +131,14 @@ public class UmlOperation {
 
     public void setOrdinal(int ordinal) {
         this.ordinal = ordinal;
+    }
+
+    public String getStereotype() {
+        return stereotype;
+    }
+
+    public void setStereotype(String stereotype) {
+        this.stereotype = stereotype;
     }
 
     public OffsetDateTime getCreatedAt() {

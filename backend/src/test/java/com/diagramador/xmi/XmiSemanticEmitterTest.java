@@ -9,6 +9,8 @@ import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConnectorPathResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
 import com.diagramador.api.ModelResource.GeometryResource;
+import com.diagramador.api.ModelResource.NoteLinkResource;
+import com.diagramador.api.ModelResource.NoteResource;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
@@ -557,6 +559,116 @@ class XmiSemanticEmitterTest {
     }
 
     @Test
+    void rangeMultiplicityRoundTripsItsNumericBoundsWithoutLosses() {
+        AttributeResource tags = new AttributeResource(id(511), "tags", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.RANGE, null, id(512), "String", 0, 2, 5);
+        AttributeResource open = new AttributeResource(id(513), "open", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.RANGE, null, id(512), "String", 1, 2, null);
+        ClassifierResource owner = new ClassifierResource(id(500), "Owner", ClassifierKind.CLASS, false, null,
+                List.of(tags, open), List.of(), List.of());
+        ClassifierResource item = new ClassifierResource(id(501), "Item", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        RelationshipResource association = new RelationshipResource(id(520), "ASSOCIATION", "holds",
+                List.of(new RelationshipEndResource(id(521), id(500), "owner", MultiplicityKind.EXACTLY_ONE,
+                                NavigationKind.UNSPECIFIED, "none", (short) 1),
+                        new RelationshipEndResource(id(522), id(501), "items", MultiplicityKind.RANGE,
+                                NavigationKind.UNSPECIFIED, "none", (short) 2, 3, 3)), List.of());
+        ModelResource model = new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(owner, item),
+                List.of(association));
+
+        XmiEmissionResult result = emitter.emit(model);
+
+        assertThat(result.losses()).extracting(XmiEmissionResult.Loss::name)
+                .doesNotContain("unsupported_multiplicity_range");
+        XmiReadingResult read = new XmiReader().read(result.document().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        List<AttributeResource> attributes = read.model().classifiers().stream()
+                .filter(classifier -> classifier.name().equals("Owner")).findFirst().orElseThrow().attributes();
+        assertThat(attributes).extracting(AttributeResource::lowerBound).containsExactly(2, 2);
+        assertThat(attributes).extracting(AttributeResource::upperBound).containsExactly(5, null);
+        assertThat(attributes).extracting(AttributeResource::multiplicity)
+                .containsOnly(MultiplicityKind.RANGE);
+        RelationshipEndResource items = read.model().relationships().get(0).ends().stream()
+                .filter(end -> end.ordinal() == 2).findFirst().orElseThrow();
+        assertThat(items.multiplicity()).isEqualTo(MultiplicityKind.RANGE);
+        assertThat(items.lowerBound()).isEqualTo(3);
+        assertThat(items.upperBound()).isEqualTo(3);
+    }
+
+    private static ModelResource flagsModel(boolean marked) {
+        AttributeResource counter = new AttributeResource(id(711), "counter", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.EXACTLY_ONE, null, id(712), "String", 0, null, null, null, marked, marked);
+        AttributeResource other = new AttributeResource(id(713), "other", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.EXACTLY_ONE, null, id(712), "String", 1, null, null, null, marked, false);
+        ClassifierResource owner = new ClassifierResource(id(700), "Owner", ClassifierKind.CLASS, false, null,
+                List.of(counter, other), List.of(), List.of());
+        ClassifierResource item = new ClassifierResource(id(701), "Item", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        RelationshipResource association = new RelationshipResource(id(720), "ASSOCIATION", "holds",
+                List.of(new RelationshipEndResource(id(721), id(700), "owner", MultiplicityKind.EXACTLY_ONE,
+                                NavigationKind.UNSPECIFIED, "none", (short) 1, null, null, marked, false),
+                        new RelationshipEndResource(id(722), id(701), "items", MultiplicityKind.ZERO_OR_MANY,
+                                NavigationKind.UNSPECIFIED, "none", (short) 2, null, null, false, marked)),
+                List.of());
+        return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(owner, item), List.of(association));
+    }
+
+    @Test
+    void attributeStaticDerivedAndEndOrderedUniqueRoundTripWithoutLosses() throws Exception {
+        XmiEmissionResult result = emitter.emit(flagsModel(true));
+        Document parsed = parse(result.document());
+        NodeList endNodes = parsed.getElementsByTagNameNS("*", "ownedEnd");
+        assertThat(endNodes.getLength()).isEqualTo(2);
+        Element first = (Element) endNodes.item(0);
+        Element second = (Element) endNodes.item(1);
+        assertThat(first.getAttribute("isOrdered")).isEqualTo("true");
+        assertThat(first.hasAttribute("isUnique")).as("false is not written").isFalse();
+        assertThat(second.hasAttribute("isOrdered")).isFalse();
+        assertThat(second.getAttribute("isUnique")).isEqualTo("true");
+
+        XmiReadingResult read = new XmiReader().read(result.document().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        List<AttributeResource> attributes = read.model().classifiers().stream()
+                .filter(classifier -> classifier.name().equals("Owner")).findFirst().orElseThrow().attributes();
+        assertThat(attributes).extracting(AttributeResource::isStatic).containsExactly(true, true);
+        assertThat(attributes).extracting(AttributeResource::isDerived).containsExactly(true, false);
+        List<RelationshipEndResource> ends = read.model().relationships().get(0).ends();
+        assertThat(ends).extracting(RelationshipEndResource::isOrdered).containsExactly(true, false);
+        // isUnique is written but not read back: UML defaults it to true and EA writes it on every end.
+        assertThat(ends).extracting(RelationshipEndResource::isUnique).containsExactly(false, false);
+        assertThat(read.losses()).isEmpty();
+    }
+
+    @Test
+    void unmarkedAttributesAndEndsEmitNoEndPropertyAndReadBackUnmarked() throws Exception {
+        XmiEmissionResult result = emitter.emit(flagsModel(false));
+        Document parsed = parse(result.document());
+        NodeList endNodes = parsed.getElementsByTagNameNS("*", "ownedEnd");
+        for (int index = 0; index < endNodes.getLength(); index++) {
+            Element end = (Element) endNodes.item(index);
+            assertThat(end.hasAttribute("isOrdered")).isFalse();
+            assertThat(end.hasAttribute("isUnique")).isFalse();
+        }
+        NodeList attributeNodes = parsed.getElementsByTagNameNS("*", "ownedAttribute");
+        for (int index = 0; index < attributeNodes.getLength(); index++) {
+            Element attribute = (Element) attributeNodes.item(index);
+            assertThat(attribute.getAttribute("isStatic")).isEqualTo("false");
+            assertThat(attribute.getAttribute("isDerived")).isEqualTo("false");
+        }
+
+        XmiReadingResult read = new XmiReader().read(result.document().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(read.model().classifiers().stream().flatMap(classifier -> classifier.attributes().stream()))
+                .allSatisfy(attribute -> {
+                    assertThat(attribute.isStatic()).isFalse();
+                    assertThat(attribute.isDerived()).isFalse();
+                });
+        assertThat(read.model().relationships().get(0).ends()).allSatisfy(end -> {
+            assertThat(end.isOrdered()).isFalse();
+            assertThat(end.isUnique()).isFalse();
+        });
+    }
+
+    @Test
     void aDependencyStereotypeReadsBackAndAnEmittedPlainDependencyReadsBackWithoutOne() {
         byte[] stereotyped = emitter.emit(stereotypedDependencyModel("EXTEND")).document()
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -570,6 +682,72 @@ class XmiSemanticEmitterTest {
                 });
         assertThat(new XmiReader().read(plain).model().relationships())
                 .singleElement().satisfies(relationship -> assertThat(relationship.stereotype()).isNull());
+    }
+
+    private static ModelResource memberStereotypeModel(String classStereotype, String attributeStereotype,
+            String operationStereotype, ClassifierKind kind) {
+        AttributeResource attribute = new AttributeResource(id(611), "code", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.EXACTLY_ONE, null, id(612), "String", 0, null, null, attributeStereotype);
+        OperationResource operation = new OperationResource(id(613), "load", "PUBLIC", false, false, null, null, 0,
+                List.of(), operationStereotype);
+        ClassifierResource owner = new ClassifierResource(id(610), "Stereotyped", kind, false, null,
+                List.of(attribute), List.of(operation), List.of(), null, null, null, classStereotype);
+        return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(owner), List.of());
+    }
+
+    @Test
+    void classifierAttributeAndOperationStereotypesRoundTripEvenWhenNoViewPlacesTheClass() throws Exception {
+        String document = emitter.emit(memberStereotypeModel("IMPLEMENTATION_CLASS", "READONLY", "QUERY",
+                ClassifierKind.CLASS)).document();
+        Element elementProperties = findDirectNoNamespace(find(parse(document), null, "element"), "properties");
+        assertThat(elementProperties.getAttribute("stereotype")).isEqualTo("implementation_class");
+
+        XmiReadingResult read = new XmiReader().read(document.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        ClassifierResource classifier = read.model().classifiers().get(0);
+        assertThat(classifier.stereotype()).isEqualTo("IMPLEMENTATION_CLASS");
+        assertThat(classifier.attributes()).singleElement()
+                .satisfies(attribute -> assertThat(attribute.stereotype()).isEqualTo("READONLY"));
+        assertThat(classifier.operations()).singleElement()
+                .satisfies(operation -> assertThat(operation.stereotype()).isEqualTo("QUERY"));
+        assertThat(read.losses()).extracting(XmiReadingResult.Loss::name)
+                .noneMatch(name -> name.contains("stereotype"));
+    }
+
+    @Test
+    void aModelWithoutStereotypesEmitsNoStereotypeAndReadsBackWithoutOne() {
+        String document = emitter.emit(memberStereotypeModel(null, null, null, ClassifierKind.CLASS)).document();
+
+        assertThat(document).doesNotContain("stereotype");
+        ClassifierResource classifier = new XmiReader().read(document.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                .model().classifiers().get(0);
+        assertThat(classifier.stereotype()).isNull();
+        assertThat(classifier.attributes().get(0).stereotype()).isNull();
+        assertThat(classifier.operations().get(0).stereotype()).isNull();
+    }
+
+    @Test
+    void unknownStereotypesAndOnesOnAnInterfaceAreDroppedOnReadWithALossEntry() {
+        String unknown = emitter.emit(memberStereotypeModel("ENTITY", "ID", "CREATE", ClassifierKind.CLASS)).document()
+                .replace("stereotype=\"entity\"", "stereotype=\"teleport\"")
+                .replace("stereotype=\"id\"", "stereotype=\"teleport\"")
+                .replace("stereotype=\"create\"", "stereotype=\"teleport\"");
+        XmiReadingResult read = new XmiReader().read(unknown.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        ClassifierResource classifier = read.model().classifiers().get(0);
+        assertThat(classifier.stereotype()).isNull();
+        assertThat(classifier.attributes().get(0).stereotype()).isNull();
+        assertThat(classifier.operations().get(0).stereotype()).isNull();
+        assertThat(read.losses()).extracting(XmiReadingResult.Loss::name).contains(
+                "unsupported_classifier_stereotype", "unsupported_attribute_stereotype",
+                "unsupported_operation_stereotype");
+
+        String onInterface = emitter.emit(memberStereotypeModel("ENTITY", null, null, ClassifierKind.INTERFACE))
+                .document();
+        XmiReadingResult interfaceRead = new XmiReader().read(onInterface.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(interfaceRead.model().classifiers().get(0).stereotype()).isNull();
+        assertThat(interfaceRead.losses()).extracting(XmiReadingResult.Loss::name)
+                .contains("unsupported_classifier_stereotype");
     }
 
     @Test
@@ -888,6 +1066,99 @@ class XmiSemanticEmitterTest {
                 List.of(end(id(911), id(900), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
                         end(id(912), id(901), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 2)), List.of());
         return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(client, supplier), List.of(dependency));
+    }
+
+    @Test
+    void notesAreEmittedAsOwnedCommentsWithAnnotatedElementIdrefsAndReadBack() throws Exception {
+        ModelResource model = notedModel(List.of(
+                new NoteResource(id(950), "Audit trail\nsecond line & <more>", List.of(
+                        new NoteLinkResource(TargetType.CLASSIFIER, id(900)),
+                        new NoteLinkResource(TargetType.RELATIONSHIP, id(910)))),
+                new NoteResource(id(951), "Standalone", List.of())));
+
+        XmiEmissionResult result = emitter.emit(model);
+        Document document = parse(result.document());
+
+        NodeList comments = document.getElementsByTagNameNS(UML_NAMESPACE, "ownedComment");
+        assertThat(comments.getLength()).isEqualTo(2);
+        Element audit = byId(document, XmiIdCodec.classifierId(id(950)));
+        assertThat(audit.getParentNode().getLocalName()).isEqualTo("Model");
+        assertThat(audit.getAttributeNS(XMI_NAMESPACE, "type")).isEqualTo("uml:Comment");
+        assertThat(audit.getAttribute("body")).isEqualTo("Audit trail\nsecond line & <more>");
+        NodeList annotated = audit.getElementsByTagNameNS(UML_NAMESPACE, "annotatedElement");
+        assertThat(annotated.getLength()).isEqualTo(2);
+        assertThat(((Element) annotated.item(0)).getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(XmiIdCodec.classifierId(id(900)));
+        assertThat(((Element) annotated.item(1)).getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(XmiIdCodec.classifierId(id(910)));
+        assertThat(byId(document, XmiIdCodec.classifierId(id(951)))
+                .getElementsByTagNameNS(UML_NAMESPACE, "annotatedElement").getLength()).isZero();
+        assertThat(result.losses()).noneMatch(loss -> loss.name().contains("note"));
+
+        XmiReadingResult read = new XmiReader().read(result.document().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(read.model().notes()).containsExactlyInAnyOrder(
+                new NoteResource(id(950), "Audit trail\nsecond line & <more>", List.of(
+                        new NoteLinkResource(TargetType.CLASSIFIER, id(900)),
+                        new NoteLinkResource(TargetType.RELATIONSHIP, id(910)))),
+                new NoteResource(id(951), "Standalone", List.of()));
+        assertThat(read.losses()).noneMatch(loss -> loss.name().contains("note"));
+    }
+
+    @Test
+    void aModelWithoutNotesEmitsNoComment() throws Exception {
+        String document = emitter.emit(notedModel(List.of())).document();
+
+        assertThat(document).doesNotContain("ownedComment");
+        assertThat(new XmiReader().read(document.getBytes(java.nio.charset.StandardCharsets.UTF_8)).model().notes())
+                .isEmpty();
+    }
+
+    @Test
+    void aNoteLinkToAnElementThatIsNotEmittedIsDroppedWithALossEntryOnEmission() throws Exception {
+        ModelResource model = notedModel(List.of(new NoteResource(id(950), "n", List.of(
+                new NoteLinkResource(TargetType.CLASSIFIER, id(900)),
+                new NoteLinkResource(TargetType.CLASSIFIER, id(998)),
+                new NoteLinkResource(TargetType.RELATIONSHIP, id(999))))));
+
+        XmiEmissionResult result = emitter.emit(model);
+        Document document = parse(result.document());
+
+        NodeList annotated = byId(document, XmiIdCodec.classifierId(id(950)))
+                .getElementsByTagNameNS(UML_NAMESPACE, "annotatedElement");
+        assertThat(annotated.getLength()).isEqualTo(1);
+        assertThat(((Element) annotated.item(0)).getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(XmiIdCodec.classifierId(id(900)));
+        assertThat(result.losses()).anySatisfy(loss -> {
+            assertThat(loss.name()).isEqualTo("unresolved_note_reference");
+            assertThat(loss.count()).isEqualTo(2);
+        });
+    }
+
+    @Test
+    void theReaderDropsUnknownNoteReferencesAndEmptyBodiesWithLossEntries() throws Exception {
+        String emitted = emitter.emit(notedModel(List.of(
+                new NoteResource(id(950), "kept", List.of(new NoteLinkResource(TargetType.CLASSIFIER, id(900)))),
+                new NoteResource(id(951), "blank-me", List.of())))).document();
+        String document = emitted
+                .replace("</ownedComment>", "<annotatedElement xmi:idref=\"EAID_00000000_0000_0000_0000_000000000777\"/>"
+                        + "</ownedComment>")
+                .replace("body=\"blank-me\"", "body=\"   \"");
+
+        XmiReadingResult read = new XmiReader().read(document.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(read.model().notes()).singleElement().satisfies(note -> {
+            assertThat(note.id()).isEqualTo(id(950));
+            assertThat(note.body()).isEqualTo("kept");
+            assertThat(note.annotatedElements()).containsExactly(new NoteLinkResource(TargetType.CLASSIFIER, id(900)));
+        });
+        assertThat(read.losses()).extracting(XmiReadingResult.Loss::name)
+                .contains("unresolved_note_reference", "empty_note");
+    }
+
+    private static ModelResource notedModel(List<NoteResource> notes) {
+        ModelResource base = stereotypedDependencyModel(null);
+        return new ModelResource(base.id(), base.projectId(), base.revision(), base.versionId(), List.of(),
+                base.classifiers(), base.relationships(), List.of(), notes);
     }
 
     private static ModelResource associationClassModel(UUID associationClassId) {

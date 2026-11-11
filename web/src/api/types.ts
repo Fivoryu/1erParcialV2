@@ -232,6 +232,22 @@ export interface ModelResource {
   relationships: RelationshipResource[];
   /** IA4-07: per-view relationship style rows (additive; absent in older payloads). */
   view_style?: ViewStyleResource[];
+  /** UML notes (additive; absent in older payloads, which read as no notes). */
+  notes?: NoteResource[];
+}
+
+/** What a note can be attached to: UML `Comment.annotatedElement`. */
+export type NoteTargetType = 'CLASSIFIER' | 'RELATIONSHIP';
+
+export interface NoteAnnotatedElementResource {
+  targetType: NoteTargetType;
+  targetId: Uuid;
+}
+
+export interface NoteResource {
+  id: Uuid;
+  body: string;
+  annotatedElements: NoteAnnotatedElementResource[];
 }
 
 export type ValidationSeverity = 'ERROR' | 'WARNING';
@@ -442,6 +458,8 @@ export interface ClassifierResource {
   /** The effective store and why; absent for kinds that are not persisted (interfaces, enumerations, packages). */
   store?: PersistenceStore;
   storeReason?: string;
+  /** One stereotype name from the fixed list (e.g. ENTITY); null or absent when none. */
+  stereotype?: string | null;
 }
 
 export interface AttributeResource {
@@ -450,10 +468,17 @@ export interface AttributeResource {
   kind: string;
   visibility: string;
   multiplicity: string;
+  /** Numeric bounds, meaningful only when `multiplicity` is RANGE; absent on older snapshots. */
+  lowerBound?: number | null;
+  upperBound?: number | null;
   defaultValue: string | null;
   typeReferenceId: Uuid | null;
   type: string | null;
   ordinal: number;
+  stereotype?: string | null;
+  /** UML static (underlined) and derived (`/name`) attribute flags; absent on older snapshots, read as false. */
+  isStatic?: boolean;
+  isDerived?: boolean;
 }
 
 export interface OperationResource {
@@ -466,6 +491,7 @@ export interface OperationResource {
   returnType: string | null;
   ordinal: number;
   parameters: ParameterResource[];
+  stereotype?: string | null;
 }
 
 export interface ParameterResource {
@@ -502,9 +528,15 @@ export interface RelationshipEndResource {
   classifierId: Uuid;
   role: string | null;
   multiplicity: string;
+  /** Numeric bounds, meaningful only when `multiplicity` is RANGE; absent on older snapshots. */
+  lowerBound?: number | null;
+  upperBound?: number | null;
   navigability: string;
   aggregationKind: string;
   ordinal: number;
+  /** End properties shown as `{ordered}` / `{unique}`; absent on older snapshots, read as false. */
+  isOrdered?: boolean;
+  isUnique?: boolean;
 }
 
 export type ErrorCode =

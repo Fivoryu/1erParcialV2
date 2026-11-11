@@ -61,6 +61,8 @@ import VersioningPanel from '../vcs/VersioningPanel';
 import {
   applyOptimisticCommand,
   buildClassifierCreateEnvelope,
+  buildNoteCreateRequest,
+  buildNoteDeleteRequest,
   buildModelCommandEnvelope,
   buildProjectRenameRequest,
   buildRelationshipDeleteRequest,
@@ -116,6 +118,8 @@ function selectedTargetElementId(selection: CanvasSelection | null): string | nu
       return selection.classifierId;
     case 'relationship':
       return selection.relationshipId;
+    case 'note':
+      return selection.noteId;
     default:
       return selection.elementId;
   }
@@ -726,7 +730,10 @@ export default function ProjectEditorPage() {
         if (outcome.kind === 'accepted') {
           const target = envelope.targets[0];
           if (target && envelope.type === 'classifier.delete') {
-            setSelection((current) => current?.kind !== 'relationship' && current?.classifierId === target.id ? null : current);
+            setSelection((current) => current && current.kind !== 'relationship' && current.kind !== 'note'
+              && current.classifierId === target.id ? null : current);
+          } else if (target && envelope.type === 'note.delete') {
+            setSelection((current) => current?.kind === 'note' && current.noteId === target.id ? null : current);
           } else if (target && envelope.type === 'relationship.delete') {
             setSelection((current) => current?.kind === 'relationship' && current.relationshipId === target.id ? null : current);
           } else if (target && envelope.type.endsWith('.remove')) {
@@ -734,6 +741,7 @@ export default function ProjectEditorPage() {
               && current.kind === target.scope.toLowerCase()
               && current.kind !== 'classifier'
               && current.kind !== 'relationship'
+              && current.kind !== 'note'
               && current.elementId === target.id
               ? null
               : current);
@@ -792,6 +800,18 @@ export default function ProjectEditorPage() {
     }
     dispatchEnvelope(envelope);
   }, [dispatchEnvelope]);
+
+  // A new note starts attached to the selected class or relationship, so the common case needs no linking step.
+  const addNote = useCallback(() => {
+    const annotated = selection?.kind === 'classifier'
+      ? [selection.classifierId]
+      : selection?.kind === 'relationship' ? [selection.relationshipId] : [];
+    const envelope = dispatchCommand(buildNoteCreateRequest('Nueva nota', annotated));
+    const id = envelope?.payload.id;
+    if (typeof id === 'string') {
+      setSelection({ kind: 'note', noteId: id });
+    }
+  }, [dispatchCommand, selection]);
 
   // Relation tool of the rail: the kind it creates, whether its setup is open, and the ends picked so far.
   const [relationKind, setRelationKind] = useState<RelationToolKind>('ASSOCIATION');
@@ -1174,6 +1194,11 @@ export default function ProjectEditorPage() {
       return;
     }
 
+    if (selected.kind === 'note') {
+      dispatchCommand(buildNoteDeleteRequest(selected.noteId));
+      return;
+    }
+
     if (selected.kind === 'classifier') {
       const cascadeCount = classifierCascadeCount(current, selected.classifierId);
       if (cascadeCount === 0) {
@@ -1305,6 +1330,7 @@ export default function ProjectEditorPage() {
                 relationActive={relationActive}
                 onSelectTool={() => setRelationActive(false)}
                 onAddClassifier={addClassifier}
+                onAddNote={addNote}
                 onToggleRelation={() => setRelationActive((active) => !active)}
                 onRelationKindChange={(kind) => {
                   setRelationKind(kind);

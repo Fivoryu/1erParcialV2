@@ -112,6 +112,27 @@ describe('copySelection', () => {
 });
 
 describe('pasteClipboard', () => {
+  it('carries RANGE bounds of attributes and relationship ends into the copies', () => {
+    const base = baseModel();
+    const model: ModelResource = {
+      ...base,
+      classifiers: base.classifiers.map((item) => item.id === 'a'
+        ? { ...item, attributes: [{ ...item.attributes[0]!, multiplicity: 'RANGE', lowerBound: 2, upperBound: null }] }
+        : item),
+      relationships: base.relationships.map((item) => item.id === 'ab'
+        ? { ...item, ends: item.ends.map((end) => end.ordinal === 2 ? { ...end, multiplicity: 'RANGE', lowerBound: 1, upperBound: 4 } : end) }
+        : item),
+    };
+    const clipboard = copySelection(model, ['a', 'b'])!;
+    const { dispatch, sent } = recordingDispatch(model);
+
+    pasteClipboard(clipboard, model, dispatch, 48);
+
+    expect(sentOfType(sent, 'attribute.add')[0]?.payload).toMatchObject({ multiplicity: 'RANGE', lowerBound: 2, upperBound: null });
+    const target = (sentOfType(sent, 'relationship.create')[0]?.payload as { target: object }).target;
+    expect(target).toMatchObject({ multiplicity: 'RANGE', lowerBound: 1, upperBound: 4 });
+  });
+
   it('creates copies with fresh ids and unique names, offset on the canvas', () => {
     const model = baseModel();
     const clipboard = copySelection(model, ['a', 'b'])!;

@@ -286,6 +286,7 @@ public class AssistantApplyService {
                 if (text(args.get("multiplicity")) != null) {
                     payload.put("multiplicity", text(args.get("multiplicity")).toUpperCase());
                 }
+                copyRangeBounds(payload, args);
                 if (text(args.get("defaultValue")) != null) {
                     payload.put("defaultValue", text(args.get("defaultValue")));
                 }
@@ -306,6 +307,7 @@ public class AssistantApplyService {
                 if (text(args.get("multiplicity")) != null) {
                     payload.put("multiplicity", text(args.get("multiplicity")).toUpperCase());
                 }
+                copyRangeBounds(payload, args);
                 if (text(args.get("defaultValue")) != null) {
                     payload.put("defaultValue", text(args.get("defaultValue")));
                 }
@@ -428,6 +430,16 @@ public class AssistantApplyService {
         return null;
     }
 
+    /** Forwards numeric RANGE bounds only; the command handler owns every rule about them. */
+    private static void copyRangeBounds(Map<String, Object> payload, Map<?, ?> args) {
+        for (String bound : List.of("lowerBound", "upperBound")) {
+            Integer value = intArg(args.get(bound));
+            if (value != null) {
+                payload.put(bound, value);
+            }
+        }
+    }
+
     private void copyEndUpdate(Map<String, Object> payload, String field, Object raw) {
         if (!(raw instanceof Map<?, ?> end)) {
             return;
@@ -439,6 +451,7 @@ public class AssistantApplyService {
                         : String.valueOf(end.get(allowed)).toUpperCase());
             }
         }
+        copyRangeBounds(update, end);
         if (!update.isEmpty()) {
             payload.put(field, update);
         }

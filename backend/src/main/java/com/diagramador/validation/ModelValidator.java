@@ -239,21 +239,20 @@ public class ModelValidator {
     }
 
     /**
-     * R4 — incomplete RANGE multiplicity specification on attributes. Deviation recorded in the acta
-     * (odd/tasks/validacion-uml-semantica.md §3.1 R4 note): the canonical model does not capture RANGE lower and
-     * upper bounds, so instead of comparing bounds the rule reports the RANGE as an incomplete specification.
+     * R4 — incomplete RANGE multiplicity specification on attributes. The canonical model captures numeric RANGE
+     * bounds, so a RANGE is complete as soon as it carries a lower bound; one without it (for instance a row
+     * written before bounds existed) is reported as an incomplete specification.
      * Deliberately a model-level WARNING, distinct from the generation layer's UNSUPPORTED_MULTIPLICITY error.
      */
     public List<ModelValidationDiagnostic> incompleteRangeMultiplicities(ModelValidationReadModel model) {
         List<ModelValidationDiagnostic> diagnostics = new ArrayList<>();
         for (AttributeElement attribute : model.attributes()) {
-            if (attribute.multiplicity() != MultiplicityKind.RANGE) {
+            if (attribute.multiplicity() != MultiplicityKind.RANGE || attribute.lowerBound() != null) {
                 continue;
             }
             diagnostics.add(new ModelValidationDiagnostic(INCOMPLETE_MULTIPLICITY_SPECIFICATION, SeverityKind.WARNING,
                     attribute.classifierId(), attribute.name(), "Attribute '" + attribute.name()
-                            + "' uses RANGE multiplicity, whose lower and upper bounds are not captured by the "
-                            + "canonical model."));
+                            + "' uses RANGE multiplicity without a lower bound."));
         }
         return sortedByElement(diagnostics);
     }
@@ -404,22 +403,29 @@ public class ModelValidator {
     private static OneToMany oneToMany(List<RelationshipEndElement> ends) {
         RelationshipEndElement first = ends.get(0);
         RelationshipEndElement second = ends.get(1);
-        if (isToOneMultiplicity(first.multiplicity()) && isToManyEnd(second.multiplicity())) {
+        if (isToOneEnd(first) && isToManyEnd(second)) {
             return new OneToMany(null, first, second);
         }
-        if (isToManyEnd(first.multiplicity()) && isToOneMultiplicity(second.multiplicity())) {
+        if (isToManyEnd(first) && isToOneEnd(second)) {
             return new OneToMany(null, second, first);
         }
         return null;
     }
 
-    private static boolean isToOneMultiplicity(MultiplicityKind multiplicity) {
-        return multiplicity == MultiplicityKind.EXACTLY_ONE || multiplicity == MultiplicityKind.ZERO_OR_ONE;
+    /** To-one as the generator maps it: a RANGE counts when its upper bound is exactly 1. */
+    private static boolean isToOneEnd(RelationshipEndElement end) {
+        if (end.multiplicity() == MultiplicityKind.RANGE) {
+            return end.upperBound() != null && end.upperBound() <= 1;
+        }
+        return end.multiplicity() == MultiplicityKind.EXACTLY_ONE || end.multiplicity() == MultiplicityKind.ZERO_OR_ONE;
     }
 
-    /** To-many as the generator maps it; unlike {@link #isToManyMultiplicity}, RANGE is not mappable. */
-    private static boolean isToManyEnd(MultiplicityKind multiplicity) {
-        return multiplicity == MultiplicityKind.ONE_OR_MANY || multiplicity == MultiplicityKind.ZERO_OR_MANY;
+    /** To-many as the generator maps it: a RANGE counts when its upper bound is unbounded or above 1. */
+    private static boolean isToManyEnd(RelationshipEndElement end) {
+        if (end.multiplicity() == MultiplicityKind.RANGE) {
+            return end.upperBound() == null || end.upperBound() > 1;
+        }
+        return end.multiplicity() == MultiplicityKind.ONE_OR_MANY || end.multiplicity() == MultiplicityKind.ZERO_OR_MANY;
     }
 
     private static boolean isStructuralKind(RelationshipKind kind) {

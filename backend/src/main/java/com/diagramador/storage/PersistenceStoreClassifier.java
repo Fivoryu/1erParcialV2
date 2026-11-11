@@ -63,7 +63,8 @@ public final class PersistenceStoreClassifier {
         for (ModelResource.ClassifierResource classifier : model.classifiers()) {
             names.put(classifier.id(), classifier.name());
             facts.add(new ClassifierFacts(classifier.id(), classifier.kind(), classifier.storeOverride(),
-                    classifier.attributes().stream().anyMatch(attribute -> isList(attribute.multiplicity()))));
+                    classifier.attributes().stream()
+                            .anyMatch(attribute -> isList(attribute.multiplicity(), attribute.upperBound()))));
         }
         List<CompositionLink> links = new ArrayList<>();
         for (ModelResource.RelationshipResource relationship : model.relationships()) {
@@ -83,7 +84,7 @@ public final class PersistenceStoreClassifier {
 
     public static Map<UUID, Decision> classify(InputSnapshot snapshot) {
         Set<UUID> withLists = new HashSet<>();
-        snapshot.attributes().stream().filter(attribute -> isList(attribute.multiplicity()))
+        snapshot.attributes().stream().filter(attribute -> isList(attribute.multiplicity(), attribute.upperBound()))
                 .forEach(attribute -> withLists.add(attribute.classifierId()));
         List<ClassifierFacts> facts = new ArrayList<>();
         Map<UUID, String> names = new HashMap<>();
@@ -124,7 +125,10 @@ public final class PersistenceStoreClassifier {
         return new Decision(PersistenceStore.SQL, false, REASON_DEFAULT);
     }
 
-    private static boolean isList(MultiplicityKind multiplicity) {
+    private static boolean isList(MultiplicityKind multiplicity, Integer upperBound) {
+        if (multiplicity == MultiplicityKind.RANGE) {
+            return upperBound == null || upperBound > 1;
+        }
         return multiplicity == MultiplicityKind.ZERO_OR_MANY || multiplicity == MultiplicityKind.ONE_OR_MANY;
     }
 }

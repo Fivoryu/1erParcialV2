@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { ChatProposalResource, ClassifierResource, ModelResource, RelationshipResource } from '../api/types';
 import { describeAssistantOperation, type DiagramNames } from '../assistant/assistantNames';
-import { formatAttribute, formatOperation, formatRelationshipName, orderedAttributes, orderedOperations } from '../diagram/uml-format';
+import { formatAttribute, formatOperation, formatStereotype, formatRelationshipName, orderedAttributes, orderedOperations } from '../diagram/uml-format';
 import { labelPoint, routeEdge, type Box, type Point } from './previewRouting';
 import { projectProposalPreview, type ProposalPreviewState } from './proposalProjectionPreview';
 
@@ -73,6 +73,8 @@ function PreviewClassCard({ classifier, states }: { classifier: ClassifierResour
         {classifier.kind === 'INTERFACE' && <div className="uml-stereotype">«interfaz»</div>}
         {classifier.kind === 'ENUMERATION' && <div className="uml-stereotype">«enumeración»</div>}
         {classifier.kind === 'PACKAGE' && <div className="uml-stereotype">«paquete»</div>}
+        {classifier.stereotype && (classifier.kind === 'CLASS' || classifier.kind === 'ABSTRACT_CLASS')
+          && <div className="uml-stereotype">{formatStereotype(classifier.stereotype)}</div>}
         <div className={`uml-class-name ${classifier.isAbstract ? 'uml-class-name--abstract' : ''}`}>
           {classifier.isAbstract ? <i>{classifier.name}</i> : classifier.name}
         </div>

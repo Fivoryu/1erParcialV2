@@ -47,6 +47,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -193,6 +194,150 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
         assertThat(withImport).isNotEqualTo(withUse);
         assertThat(withNone).isNotEqualTo(withUse).isNotEqualTo(withImport);
         assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(withUse);
+    }
+
+    @Test
+    void memberAndClassifierStereotypesChangeTheStateHashOnlyWhenSetAndRoundTripThroughASnapshot() {
+        Fixture fixture = createRichModel();
+        String plain = snapshotService.stateHash(fixture.model());
+
+        setStereotypes(fixture, "ENTITY", "ID", "QUERY");
+        String stereotyped = snapshotService.stateHash(fixture.model());
+        SnapshotModel snapshot = snapshotService.capture(fixture.model());
+
+        assertThat(stereotyped).isNotEqualTo(plain);
+        assertThat(stateHasher.hash(snapshot)).isEqualTo(stereotyped);
+        assertThat(snapshot.classifiers()).filteredOn(classifier -> classifier.id().equals(fixture.mutableClassifierId()))
+                .singleElement().satisfies(classifier -> {
+                    assertThat(classifier.stereotype()).isEqualTo("ENTITY");
+                    assertThat(classifier.attributes()).extracting(attribute -> attribute.stereotype())
+                            .containsOnly("ID");
+                    assertThat(classifier.operations()).extracting(operation -> operation.stereotype())
+                            .containsOnly("QUERY");
+                });
+
+        setStereotypes(fixture, null, null, null);
+        assertThat(snapshotService.stateHash(fixture.model())).as("no stereotype, the hash it always had")
+                .isEqualTo(plain);
+
+        snapshotService.materialize(fixture.model(), snapshot);
+
+        assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(stereotyped);
+        assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
+                .isEqualTo(snapshotService.toJson(snapshot));
+    }
+
+    @Test
+    void notesRoundTripThroughASnapshotAndChangeTheStateHashOnlyWhenPresent() {
+        Fixture fixture = createRichModel();
+        String plain = snapshotService.stateHash(fixture.model());
+        SnapshotModel base = snapshotService.capture(fixture.model());
+        UUID relationshipId = base.relationships().get(0).id();
+        UUID noteId = UUID.randomUUID();
+        SnapshotModel withNote = new SnapshotModel(base.views(), base.classifiers(), base.relationships(),
+                base.viewStyle(), List.of(new com.diagramador.api.ModelResource.NoteResource(noteId,
+                        "line one\nline two", List.of(
+                                new com.diagramador.api.ModelResource.NoteLinkResource(TargetType.CLASSIFIER,
+                                        fixture.mutableClassifierId()),
+                                new com.diagramador.api.ModelResource.NoteLinkResource(TargetType.RELATIONSHIP,
+                                        relationshipId)))));
+
+        snapshotService.materialize(fixture.model(), withNote);
+
+        String noted = snapshotService.stateHash(fixture.model());
+        assertThat(noted).isNotEqualTo(plain);
+        assertThat(stateHasher.hash(withNote)).isEqualTo(noted);
+        assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
+                .isEqualTo(snapshotService.toJson(withNote));
+        assertThat(snapshotService.fromJson(snapshotService.toJson(withNote)).notes()).isEqualTo(withNote.notes());
+
+        ObjectNode legacy = ((ObjectNode) snapshotService.toJson(base)).deepCopy();
+        legacy.remove("notes");
+        assertThat(snapshotService.fromJson(legacy).notes()).as("an old snapshot has no notes").isEmpty();
+
+        snapshotService.materialize(fixture.model(), base);
+        assertThat(snapshotService.capture(fixture.model()).notes()).isEmpty();
+        assertThat(snapshotService.stateHash(fixture.model())).as("no note, the hash it always had").isEqualTo(plain);
+    }
+
+    @Test
+    void aSnapshotWithANoteLinkToAnAbsentElementOrADuplicateLinkIsRejected() {
+        Fixture fixture = createRichModel();
+        SnapshotModel base = snapshotService.capture(fixture.model());
+        com.diagramador.api.ModelResource.NoteLinkResource known = new com.diagramador.api.ModelResource.NoteLinkResource(
+                TargetType.CLASSIFIER, fixture.mutableClassifierId());
+        SnapshotModel dangling = new SnapshotModel(base.views(), base.classifiers(), base.relationships(),
+                base.viewStyle(), List.of(new com.diagramador.api.ModelResource.NoteResource(UUID.randomUUID(), "n",
+                        List.of(new com.diagramador.api.ModelResource.NoteLinkResource(TargetType.CLASSIFIER,
+                                UUID.randomUUID())))));
+        SnapshotModel duplicated = new SnapshotModel(base.views(), base.classifiers(), base.relationships(),
+                base.viewStyle(), List.of(new com.diagramador.api.ModelResource.NoteResource(UUID.randomUUID(), "n",
+                        List.of(known, known))));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> snapshotService.materialize(fixture.model(), dangling))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("absent from the snapshot");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> snapshotService.materialize(fixture.model(), duplicated))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("twice");
+        assertThat(snapshotService.capture(fixture.model()).notes()).isEmpty();
+    }
+
+    @Test
+    void attributeFlagsAndEndPropertiesChangeTheStateHashOnlyWhenTrueAndRoundTripThroughASnapshot() {
+        Fixture fixture = createRichModel();
+        String plain = snapshotService.stateHash(fixture.model());
+
+        setFlags(fixture, true);
+        String flagged = snapshotService.stateHash(fixture.model());
+        SnapshotModel snapshot = snapshotService.capture(fixture.model());
+
+        assertThat(flagged).isNotEqualTo(plain);
+        assertThat(stateHasher.hash(snapshot)).isEqualTo(flagged);
+        assertThat(snapshot.classifiers().stream().flatMap(classifier -> classifier.attributes().stream())
+                .filter(attribute -> attribute.isStatic() && attribute.isDerived())).isNotEmpty();
+        assertThat(snapshot.relationships().stream().flatMap(relationship -> relationship.ends().stream())
+                .filter(end -> end.isOrdered() && end.isUnique())).isNotEmpty();
+
+        setFlags(fixture, false);
+        assertThat(snapshotService.stateHash(fixture.model())).as("no flag, the hash it always had").isEqualTo(plain);
+
+        snapshotService.materialize(fixture.model(), snapshot);
+
+        assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(flagged);
+        assertThat(snapshotService.capture(fixture.model()).classifiers().stream()
+                .flatMap(classifier -> classifier.attributes().stream())
+                .filter(attribute -> attribute.isStatic() && attribute.isDerived())).isNotEmpty();
+        assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
+                .isEqualTo(snapshotService.toJson(snapshot));
+    }
+
+    private void setFlags(Fixture fixture, boolean value) {
+        transactionTemplate.executeWithoutResult(status -> {
+            attributeRepository.findAll().stream()
+                    .filter(candidate -> candidate.getClassifier().getModel().getId().equals(fixture.model().getId()))
+                    .forEach(candidate -> {
+                        candidate.setStatic(value);
+                        candidate.setDerived(value);
+                    });
+            relationshipEndRepository.findAll().stream()
+                    .filter(candidate -> candidate.getRelationship().getModel().getId().equals(fixture.model().getId()))
+                    .forEach(candidate -> {
+                        candidate.setOrdered(value);
+                        candidate.setUnique(value);
+                    });
+        });
+    }
+
+    private void setStereotypes(Fixture fixture, String classifier, String attribute, String operation) {
+        transactionTemplate.executeWithoutResult(status -> {
+            classifierRepository.findById(fixture.mutableClassifierId()).orElseThrow().setStereotype(classifier);
+            attributeRepository.findAll().stream()
+                    .filter(candidate -> candidate.getClassifier().getId().equals(fixture.mutableClassifierId()))
+                    .forEach(candidate -> candidate.setStereotype(attribute));
+            operationRepository.findAll().stream()
+                    .filter(candidate -> candidate.getClassifier().getId().equals(fixture.mutableClassifierId()))
+                    .forEach(candidate -> candidate.setStereotype(operation));
+        });
     }
 
     @Test

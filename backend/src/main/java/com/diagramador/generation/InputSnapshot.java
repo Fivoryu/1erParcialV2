@@ -81,7 +81,14 @@ public record InputSnapshot(
             String visibility,
             MultiplicityKind multiplicity,
             String defaultValue,
-            int ordinal) {
+            int ordinal,
+            Integer lowerBound,
+            Integer upperBound) {
+        public AttributeElement(UUID id, UUID classifierId, UUID typeReferenceId, String name, String kind,
+                String visibility, MultiplicityKind multiplicity, String defaultValue, int ordinal) {
+            this(id, classifierId, typeReferenceId, name, kind, visibility, multiplicity, defaultValue, ordinal,
+                    null, null);
+        }
     }
 
     public record OperationElement(
@@ -118,7 +125,14 @@ public record InputSnapshot(
             String role,
             MultiplicityKind multiplicity,
             NavigationKind navigability,
-            String aggregationKind) {
+            String aggregationKind,
+            Integer lowerBound,
+            Integer upperBound) {
+        public RelationshipEndElement(UUID id, UUID relationshipId, UUID classifierId, short ordinal, String role,
+                MultiplicityKind multiplicity, NavigationKind navigability, String aggregationKind) {
+            this(id, relationshipId, classifierId, ordinal, role, multiplicity, navigability, aggregationKind,
+                    null, null);
+        }
     }
 
     public record ConstraintElement(

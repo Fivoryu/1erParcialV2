@@ -189,7 +189,7 @@ class T4aRelationshipAndGeometryHandlersTest extends AbstractPostgresIntegration
     }
 
     @Test
-    void relationshipRejectsRangeMultiplicityWithBaselineAndGapDiagnostic() {
+    void relationshipRejectsRangeMultiplicityWithoutLowerBound() {
         Fixture fixture = fixture("relationship-range-multiplicity");
         ClassifierIds classifiers = createClassifiers(fixture);
         UUID relationshipId = UUID.randomUUID();
@@ -197,9 +197,37 @@ class T4aRelationshipAndGeometryHandlersTest extends AbstractPostgresIntegration
         CommandResult result = createRelationship(fixture, 2, relationshipId, "ASSOCIATION", classifiers.source(),
                 classifiers.target(), Map.of("multiplicity", "RANGE"), Map.of(), null);
 
-        assertRejected(result, ErrorCode.PRECONDITION_FAILED, "BL-REL-07", "GAP-05");
+        assertRejected(result, ErrorCode.INVALID_PAYLOAD, "lowerBound");
         assertThat(relationshipRepository.findById(relationshipId)).isEmpty();
         assertThat(currentRevision(fixture)).isEqualTo(2L);
+    }
+
+    @Test
+    void relationshipEndsAcceptRangeWithBoundsAndUpdateThem() {
+        Fixture fixture = fixture("relationship-range-bounds");
+        ClassifierIds classifiers = createClassifiers(fixture);
+        UUID relationshipId = UUID.randomUUID();
+
+        assertAccepted(createRelationship(fixture, 2, relationshipId, "ASSOCIATION", classifiers.source(),
+                classifiers.target(), Map.of("multiplicity", "RANGE", "lowerBound", 2, "upperBound", 5),
+                Map.of(), null));
+
+        List<RelationshipEnd> ends = endsInOrdinalOrder(relationshipId);
+        assertThat(ends.get(0).getMultiplicity()).isEqualTo(MultiplicityKind.RANGE);
+        assertThat(ends.get(0).getLowerBound()).isEqualTo(2);
+        assertThat(ends.get(0).getUpperBound()).isEqualTo(5);
+        assertThat(ends.get(1).getLowerBound()).isNull();
+
+        assertAccepted(command(fixture, "relationship.update", 3,
+                Map.of("source", Map.of("multiplicity", "ZERO_OR_MANY")),
+                target("relationship", relationshipId), List.of()));
+        RelationshipEnd cleared = endsInOrdinalOrder(relationshipId).get(0);
+        assertThat(cleared.getLowerBound()).isNull();
+        assertThat(cleared.getUpperBound()).isNull();
+
+        assertRejected(command(fixture, "relationship.update", 4,
+                Map.of("target", Map.of("lowerBound", 1)),
+                target("relationship", relationshipId), List.of()), ErrorCode.INVALID_PAYLOAD, "RANGE");
     }
 
     @Test

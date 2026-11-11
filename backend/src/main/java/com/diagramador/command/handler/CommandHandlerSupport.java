@@ -7,7 +7,9 @@ import com.diagramador.command.CommandValidationException;
 import com.diagramador.command.ErrorCode;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.ClassifierStereotype;
 import com.diagramador.domain.DependencyStereotype;
+import com.diagramador.domain.Stereotypes;
 import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.OperationParameter;
@@ -17,6 +19,7 @@ import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
 import com.diagramador.domain.UmlConstraint;
 import com.diagramador.domain.UmlModel;
+import com.diagramador.domain.UmlNote;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.persistence.ClassifierRepository;
@@ -25,6 +28,7 @@ import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.TypeReferenceRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
+import com.diagramador.persistence.UmlNoteRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import java.util.HashSet;
@@ -49,12 +53,13 @@ public class CommandHandlerSupport {
     private final OperationParameterRepository parameterRepository;
     private final TypeReferenceRepository typeReferenceRepository;
     private final UmlConstraintRepository constraintRepository;
+    private final UmlNoteRepository noteRepository;
 
     public CommandHandlerSupport(ObjectMapper objectMapper, ClassifierRepository classifierRepository,
             DiagramViewRepository viewRepository, UmlRelationshipRepository relationshipRepository,
             UmlAttributeRepository attributeRepository, UmlOperationRepository operationRepository,
             OperationParameterRepository parameterRepository, TypeReferenceRepository typeReferenceRepository,
-            UmlConstraintRepository constraintRepository) {
+            UmlConstraintRepository constraintRepository, UmlNoteRepository noteRepository) {
         this.objectMapper = objectMapper;
         this.classifierRepository = classifierRepository;
         this.viewRepository = viewRepository;
@@ -64,6 +69,7 @@ public class CommandHandlerSupport {
         this.parameterRepository = parameterRepository;
         this.typeReferenceRepository = typeReferenceRepository;
         this.constraintRepository = constraintRepository;
+        this.noteRepository = noteRepository;
     }
 
     public JsonNode payload(CommandHandler.Context context, Set<String> allowed) {
@@ -184,31 +190,64 @@ public class CommandHandlerSupport {
         String value = payload.has(field) && !payload.get(field).isNull()
                 ? text(payload, field).toUpperCase(Locale.ROOT)
                 : defaultValue;
-        if (value.equals("PROTECTED")) {
-            precondition("Visibility PROTECTED is unsupported: BL-VIS-03 and GAP-06");
-        }
-        if (value.equals("PACKAGE")) {
-            precondition("Visibility PACKAGE is unsupported: BL-VIS-04 and GAP-06");
-        }
-        if (!value.equals("PUBLIC") && !value.equals("PRIVATE")) {
+        if (!value.equals("PUBLIC") && !value.equals("PRIVATE")
+                && !value.equals("PROTECTED") && !value.equals("PACKAGE")) {
             invalid("Unsupported visibility '" + value + "'");
         }
         return value;
     }
 
-    public MultiplicityKind multiplicity(JsonNode payload, String field, MultiplicityKind defaultValue) {
+    /** Resolved multiplicity: the kind plus RANGE bounds (both null unless the kind is RANGE). */
+    public record Multiplicity(MultiplicityKind kind, Integer lowerBound, Integer upperBound) {
+    }
+
+    /**
+     * Shared multiplicity validation for attribute and relationship-end commands. Reads {@code field} (kind),
+     * {@code lowerBound} and {@code upperBound} from {@code payload}; anything absent falls back to the current
+     * values. RANGE requires lowerBound >= 0 and an upperBound that is null (unbounded) or >= max(lowerBound, 1);
+     * every other kind must not carry bounds and clears them.
+     */
+    public Multiplicity multiplicity(JsonNode payload, String field, MultiplicityKind currentKind,
+            Integer currentLower, Integer currentUpper) {
         String value = payload.has(field) && !payload.get(field).isNull()
                 ? text(payload, field).toUpperCase(Locale.ROOT)
-                : defaultValue.name();
-        if (value.equals("RANGE")) {
-            precondition("Multiplicity RANGE is unsupported: BL-REL-07 and GAP-05");
-        }
+                : currentKind.name();
+        MultiplicityKind kind;
         try {
-            return MultiplicityKind.valueOf(value);
+            kind = MultiplicityKind.valueOf(value);
         } catch (IllegalArgumentException exception) {
             invalid("Unsupported multiplicity '" + value + "'");
             return null;
         }
+        if (kind != MultiplicityKind.RANGE) {
+            if (payload.hasNonNull("lowerBound") || payload.hasNonNull("upperBound")) {
+                invalid("lowerBound and upperBound are only allowed when multiplicity is RANGE");
+            }
+            return new Multiplicity(kind, null, null);
+        }
+        Integer lower = payload.has("lowerBound") ? bound(payload, "lowerBound") : currentLower;
+        Integer upper = payload.has("upperBound") ? bound(payload, "upperBound") : currentUpper;
+        if (lower == null) {
+            invalid("Multiplicity RANGE requires lowerBound");
+        }
+        if (lower < 0) {
+            invalid("lowerBound must be >= 0");
+        }
+        if (upper != null && upper < Math.max(lower, 1)) {
+            invalid("upperBound must be >= max(lowerBound, 1)");
+        }
+        return new Multiplicity(kind, lower, upper);
+    }
+
+    private Integer bound(JsonNode payload, String field) {
+        JsonNode node = payload.get(field);
+        if (node.isNull()) {
+            return null;
+        }
+        if (!node.isIntegralNumber() || !node.canConvertToInt()) {
+            invalid("Payload field '" + field + "' must be an integer");
+        }
+        return node.intValue();
     }
 
     public ClassifierKind classifierKind(JsonNode payload) {
@@ -251,6 +290,31 @@ public class CommandHandlerSupport {
             invalid("Payload field '" + field + "' applies only to dependencies, not to " + kind.name());
         }
         return value;
+    }
+
+    /**
+     * The stereotype of an element from an optional payload field: absent or null means none; otherwise it has to be
+     * a constant of {@code list} (ClassifierStereotype, AttributeStereotype or OperationStereotype), case ignored.
+     */
+    public <E extends Enum<E>> String stereotype(JsonNode payload, String field, Class<E> list) {
+        if (!payload.has(field) || payload.get(field).isNull()) {
+            return null;
+        }
+        String value = text(payload, field);
+        String canonical = Stereotypes.canonical(list, value);
+        if (canonical == null) {
+            invalid("Unsupported stereotype '" + value + "'");
+        }
+        return canonical;
+    }
+
+    /** A classifier stereotype from an optional payload field; only a class (plain or abstract) may carry one. */
+    public String classifierStereotype(JsonNode payload, String field, ClassifierKind kind) {
+        String stereotype = stereotype(payload, field, ClassifierStereotype.class);
+        if (stereotype != null && !Stereotypes.classifierMayCarryOne(kind)) {
+            invalid("Payload field '" + field + "' applies only to classes, not to " + kind.name());
+        }
+        return stereotype;
     }
 
     /**
@@ -389,6 +453,45 @@ public class CommandHandlerSupport {
         return constraint;
     }
 
+    public UmlNote note(CommandHandler.Context context) {
+        return note(context.model(), targetId(context, "note"));
+    }
+
+    public UmlNote note(UmlModel model, UUID id) {
+        UmlNote note = noteRepository.findById(id).orElse(null);
+        if (note == null || !note.getModel().getId().equals(model.getId())) {
+            precondition("Note " + id + " does not belong to model " + model.getId());
+        }
+        return note;
+    }
+
+    /** A note body: a non-blank string of at most {@link UmlNote#MAX_BODY_LENGTH} characters. */
+    public String noteBody(JsonNode payload, String field) {
+        String body = text(payload, field);
+        if (body.length() > UmlNote.MAX_BODY_LENGTH) {
+            invalid("Payload field '" + field + "' must be at most " + UmlNote.MAX_BODY_LENGTH + " characters");
+        }
+        return body;
+    }
+
+    /**
+     * What an annotated element id names in the model: a classifier or a relationship. Anything else is a failed
+     * precondition (the element is not there), like every other reference to a missing element.
+     */
+    public TargetType annotatedElementType(UmlModel model, UUID id) {
+        Classifier classifier = classifierRepository.findById(id).orElse(null);
+        if (classifier != null && classifier.getModel().getId().equals(model.getId())) {
+            return TargetType.CLASSIFIER;
+        }
+        UmlRelationship relationship = relationshipRepository.findById(id).orElse(null);
+        if (relationship != null && relationship.getModel().getId().equals(model.getId())) {
+            return TargetType.RELATIONSHIP;
+        }
+        precondition("Annotated element " + id + " is neither a classifier nor a relationship of model "
+                + model.getId());
+        return null;
+    }
+
     public Classifier namespace(UmlModel model, UUID namespaceId) {
         if (namespaceId == null) {
             return null;
@@ -489,12 +592,12 @@ public class CommandHandlerSupport {
     }
 
     public void insertClassifier(CommandHandler.Context context, UUID id, Classifier namespace, ClassifierKind kind,
-            String name, boolean isAbstract) {
+            String name, boolean isAbstract, String stereotype) {
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.classifier
-                    (classifier_id, model_id, namespace_id, kind, name, is_abstract, created_at)
+                    (classifier_id, model_id, namespace_id, kind, name, is_abstract, stereotype, created_at)
                 VALUES (CAST(:id AS uuid), CAST(:modelId AS uuid), CAST(:namespaceId AS uuid),
-                    CAST(:kind AS diagrammer.classifier_kind), :name, :isAbstract, now())
+                    CAST(:kind AS diagrammer.classifier_kind), :name, :isAbstract, :stereotype, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("modelId", context.model().getId())
@@ -502,6 +605,7 @@ public class CommandHandlerSupport {
                 .setParameter("kind", kind.name())
                 .setParameter("name", name)
                 .setParameter("isAbstract", isAbstract)
+                .setParameter("stereotype", stereotype)
                 .executeUpdate();
     }
 
@@ -519,16 +623,17 @@ public class CommandHandlerSupport {
     }
 
     public void insertAttribute(CommandHandler.Context context, UUID id, Classifier classifier,
-            TypeReference type, String name, String visibility, MultiplicityKind multiplicity, String defaultValue,
-            int ordinal) {
+            TypeReference type, String name, String visibility, Multiplicity multiplicity, String defaultValue,
+            int ordinal, String stereotype, boolean isStatic, boolean isDerived) {
         String kind = classifier.getKind() == ClassifierKind.ENUMERATION ? "LITERAL" : "ATTRIBUTE";
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.uml_attribute
                     (attribute_id, classifier_id, type_reference_id, name, kind, visibility, multiplicity,
-                     default_value, ordinal, created_at)
+                     lower_bound, upper_bound, default_value, ordinal, stereotype, is_static, is_derived,
+                     created_at)
                 VALUES (CAST(:id AS uuid), CAST(:classifierId AS uuid), CAST(:typeReferenceId AS uuid), :name,
                     :kind, :visibility, CAST(:multiplicity AS diagrammer.multiplicity_kind),
-                    :defaultValue, :ordinal, now())
+                    :lowerBound, :upperBound, :defaultValue, :ordinal, :stereotype, :isStatic, :isDerived, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("classifierId", classifier.getId())
@@ -536,20 +641,26 @@ public class CommandHandlerSupport {
                 .setParameter("name", name)
                 .setParameter("kind", kind)
                 .setParameter("visibility", visibility)
-                .setParameter("multiplicity", multiplicity.name())
+                .setParameter("multiplicity", multiplicity.kind().name())
+                .setParameter("lowerBound", multiplicity.lowerBound())
+                .setParameter("upperBound", multiplicity.upperBound())
                 .setParameter("defaultValue", defaultValue)
                 .setParameter("ordinal", ordinal)
+                .setParameter("stereotype", stereotype)
+                .setParameter("isStatic", isStatic)
+                .setParameter("isDerived", isDerived)
                 .executeUpdate();
     }
 
     public void insertOperation(CommandHandler.Context context, UUID id, Classifier classifier, String name,
-            TypeReference returnType, String visibility, boolean isAbstract, boolean isStatic, int ordinal) {
+            TypeReference returnType, String visibility, boolean isAbstract, boolean isStatic, int ordinal,
+            String stereotype) {
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.uml_operation
                     (operation_id, classifier_id, name, return_type_reference_id, visibility, is_abstract,
-                     is_static, ordinal, created_at)
+                     is_static, ordinal, stereotype, created_at)
                 VALUES (CAST(:id AS uuid), CAST(:classifierId AS uuid), :name, CAST(:returnTypeId AS uuid),
-                    :visibility, :isAbstract, :isStatic, :ordinal, now())
+                    :visibility, :isAbstract, :isStatic, :ordinal, :stereotype, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("classifierId", classifier.getId())
@@ -559,6 +670,7 @@ public class CommandHandlerSupport {
                 .setParameter("isAbstract", isAbstract)
                 .setParameter("isStatic", isStatic)
                 .setParameter("ordinal", ordinal)
+                .setParameter("stereotype", stereotype)
                 .executeUpdate();
     }
 
@@ -593,6 +705,28 @@ public class CommandHandlerSupport {
                 .setParameter("ownerId", ownerId)
                 .setParameter("expression", expression)
                 .setParameter("severity", severity)
+                .executeUpdate();
+    }
+
+    public void insertNote(CommandHandler.Context context, UUID id, String body) {
+        context.entityManager().createNativeQuery("""
+                INSERT INTO diagrammer.uml_note (note_id, model_id, body, created_at)
+                VALUES (CAST(:id AS uuid), CAST(:modelId AS uuid), :body, now())
+                """)
+                .setParameter("id", id)
+                .setParameter("modelId", context.model().getId())
+                .setParameter("body", body)
+                .executeUpdate();
+    }
+
+    public void insertNoteLink(CommandHandler.Context context, UUID noteId, TargetType targetType, UUID targetId) {
+        context.entityManager().createNativeQuery("""
+                INSERT INTO diagrammer.uml_note_link (note_id, target_type, target_id)
+                VALUES (CAST(:noteId AS uuid), :targetType, CAST(:targetId AS uuid))
+                """)
+                .setParameter("noteId", noteId)
+                .setParameter("targetType", targetType.name())
+                .setParameter("targetId", targetId)
                 .executeUpdate();
     }
 

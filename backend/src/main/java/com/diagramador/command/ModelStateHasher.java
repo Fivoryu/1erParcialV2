@@ -2,6 +2,7 @@ package com.diagramador.command;
 
 import com.diagramador.api.ModelResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
+import com.diagramador.api.NoteResourceAssembler;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ConnectorPath;
 import com.diagramador.domain.DiagramView;
@@ -53,13 +54,14 @@ public class ModelStateHasher {
     private final ElementGeometryRepository geometryRepository;
     private final ConnectorPathRepository connectorPathRepository;
     private final ViewStyleRepository viewStyleRepository;
+    private final NoteResourceAssembler noteResources;
 
     public ModelStateHasher(ClassifierRepository classifierRepository, UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, OperationParameterRepository parameterRepository,
             UmlRelationshipRepository relationshipRepository, RelationshipEndRepository relationshipEndRepository,
             UmlConstraintRepository constraintRepository, DiagramViewRepository viewRepository,
             ElementGeometryRepository geometryRepository, ConnectorPathRepository connectorPathRepository,
-            ViewStyleRepository viewStyleRepository) {
+            ViewStyleRepository viewStyleRepository, NoteResourceAssembler noteResources) {
         this.classifierRepository = classifierRepository;
         this.attributeRepository = attributeRepository;
         this.operationRepository = operationRepository;
@@ -71,6 +73,7 @@ public class ModelStateHasher {
         this.geometryRepository = geometryRepository;
         this.connectorPathRepository = connectorPathRepository;
         this.viewStyleRepository = viewStyleRepository;
+        this.noteResources = noteResources;
     }
 
     @Transactional(readOnly = true)
@@ -103,25 +106,28 @@ public class ModelStateHasher {
         }
 
         classifiers.stream().sorted(byId(Classifier::getId))
-                .map(classifier -> withStore(line("classifiers", classifier.getId(),
+                .map(classifier -> withStereotype(withStore(line("classifiers", classifier.getId(),
                         field("namespaceId", id(classifier.getNamespace())), field("kind", classifier.getKind()),
                         field("name", classifier.getName()), field("isAbstract", classifier.isAbstract())),
-                        classifier.getStoreOverride()))
+                        classifier.getStoreOverride()), classifier.getStereotype()))
                 .forEach(lines::add);
         attributes.stream().sorted(byId(UmlAttribute::getId))
-                .map(attribute -> line("attributes", attribute.getId(),
+                .map(attribute -> withFlags(withStereotype(withBounds(line("attributes", attribute.getId(),
                         field("classifierId", id(attribute.getClassifier())),
                         field("typeReferenceId", id(attribute.getTypeReference())), field("name", attribute.getName()),
                         field("kind", attribute.getKind()), field("visibility", attribute.getVisibility()),
                         field("multiplicity", attribute.getMultiplicity()), field("defaultValue", attribute.getDefaultValue()),
-                        field("ordinal", attribute.getOrdinal())))
+                        field("ordinal", attribute.getOrdinal())), attribute.getLowerBound(), attribute.getUpperBound()),
+                        attribute.getStereotype()), "isStatic", attribute.isStatic(), "isDerived",
+                        attribute.isDerived()))
                 .forEach(lines::add);
         operations.stream().sorted(byId(UmlOperation::getId))
-                .map(operation -> line("operations", operation.getId(),
+                .map(operation -> withStereotype(line("operations", operation.getId(),
                         field("classifierId", id(operation.getClassifier())), field("name", operation.getName()),
                         field("returnTypeReferenceId", id(operation.getReturnTypeReference())),
                         field("visibility", operation.getVisibility()), field("isAbstract", operation.isAbstract()),
-                        field("isStatic", operation.isStatic()), field("ordinal", operation.getOrdinal())))
+                        field("isStatic", operation.isStatic()), field("ordinal", operation.getOrdinal())),
+                        operation.getStereotype()))
                 .forEach(lines::add);
         parameters.stream().sorted(byId(OperationParameter::getId))
                 .map(parameter -> line("parameters", parameter.getId(),
@@ -135,10 +141,12 @@ public class ModelStateHasher {
                         relationship.getStereotype()), relationship.getAssociationClassId()))
                 .forEach(lines::add);
         relationshipEnds.stream().sorted(byId(RelationshipEnd::getId))
-                .map(end -> line("relationshipEnds", end.getId(), field("relationshipId", id(end.getRelationship())),
+                .map(end -> withFlags(withBounds(line("relationshipEnds", end.getId(), field("relationshipId", id(end.getRelationship())),
                         field("classifierId", id(end.getClassifier())), field("ordinal", end.getOrdinal()),
                         field("role", end.getRole()), field("multiplicity", end.getMultiplicity()),
-                        field("navigability", end.getNavigability()), field("aggregationKind", end.getAggregationKind())))
+                        field("navigability", end.getNavigability()), field("aggregationKind", end.getAggregationKind())),
+                        end.getLowerBound(), end.getUpperBound()), "isOrdered", end.isOrdered(), "isUnique",
+                        end.isUnique()))
                 .forEach(lines::add);
         constraintRepository.findByModelId(modelId).stream().sorted(byId(UmlConstraint::getId))
                 .map(constraint -> line("constraints", constraint.getId(), field("ownerType", constraint.getOwnerType()),
@@ -168,6 +176,8 @@ public class ModelStateHasher {
                         field("strokeWidth", style.getStrokeWidth()), field("dashed", style.isDashed()),
                         field("routeAdjustment", style.getRouteAdjustment())))
                 .forEach(lines::add);
+        // Notes come last and only when there are any, so a model without notes keeps the hash it had before.
+        noteLines(noteResources.forModel(modelId), lines);
 
         String canonicalProjection = String.join("\n", lines);
         return sha256(canonicalProjection);
@@ -179,27 +189,30 @@ public class ModelStateHasher {
         List<ModelResource.ClassifierResource> classifiers = snapshot.classifiers().stream()
                 .sorted(Comparator.comparing(value -> value.id().toString())).toList();
         classifiers.stream()
-                .map(classifier -> withStore(line("classifiers", classifier.id(),
+                .map(classifier -> withStereotype(withStore(line("classifiers", classifier.id(),
                         field("namespaceId", classifier.namespaceId()), field("kind", classifier.kind()),
                         field("name", classifier.name()), field("isAbstract", classifier.isAbstract())),
-                        classifier.storeOverride()))
+                        classifier.storeOverride()), classifier.stereotype()))
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.attributes().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
-                .map(attribute -> line("attributes", attribute.id(),
+                .map(attribute -> withFlags(withStereotype(withBounds(line("attributes", attribute.id(),
                         field("classifierId", ownerId(classifiers, attribute.id())),
                         field("typeReferenceId", attribute.typeReferenceId()), field("name", attribute.name()),
                         field("kind", attribute.kind()), field("visibility", attribute.visibility()),
                         field("multiplicity", attribute.multiplicity()), field("defaultValue", attribute.defaultValue()),
-                        field("ordinal", attribute.ordinal())))
+                        field("ordinal", attribute.ordinal())), attribute.lowerBound(), attribute.upperBound()),
+                        attribute.stereotype()), "isStatic", attribute.isStatic(), "isDerived",
+                        attribute.isDerived()))
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.operations().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
-                .map(operation -> line("operations", operation.id(),
+                .map(operation -> withStereotype(line("operations", operation.id(),
                         field("classifierId", ownerIdForOperation(classifiers, operation.id())),
                         field("name", operation.name()), field("returnTypeReferenceId", operation.returnTypeReferenceId()),
                         field("visibility", operation.visibility()), field("isAbstract", operation.isAbstract()),
-                        field("isStatic", operation.isStatic()), field("ordinal", operation.ordinal())))
+                        field("isStatic", operation.isStatic()), field("ordinal", operation.ordinal())),
+                        operation.stereotype()))
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.operations().stream())
                 .flatMap(operation -> operation.parameters().stream())
@@ -218,11 +231,13 @@ public class ModelStateHasher {
                 .forEach(lines::add);
         relationships.stream().flatMap(relationship -> relationship.ends().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
-                .map(end -> line("relationshipEnds", end.id(),
+                .map(end -> withFlags(withBounds(line("relationshipEnds", end.id(),
                         field("relationshipId", relationshipIdForEnd(relationships, end.id())),
                         field("classifierId", end.classifierId()), field("ordinal", end.ordinal()),
                         field("role", end.role()), field("multiplicity", end.multiplicity()),
-                        field("navigability", end.navigability()), field("aggregationKind", end.aggregationKind())))
+                        field("navigability", end.navigability()), field("aggregationKind", end.aggregationKind())),
+                        end.lowerBound(), end.upperBound()), "isOrdered", end.isOrdered(), "isUnique",
+                        end.isUnique()))
                 .forEach(lines::add);
         java.util.stream.Stream.concat(classifiers.stream().flatMap(value -> value.constraints().stream()),
                         relationships.stream().flatMap(value -> value.constraints().stream()))
@@ -262,7 +277,27 @@ public class ModelStateHasher {
                         field("strokeWidth", style.strokeWidth()), field("dashed", style.dashed()),
                         field("routeAdjustment", style.routeAdjustment())))
                 .forEach(lines::add);
+        noteLines(snapshot.notes(), lines);
         return sha256(String.join("\n", lines));
+    }
+
+    /** One line per note and per annotated element, ordered by id; nothing at all for a model without notes. */
+    private static void noteLines(List<ModelResource.NoteResource> notes, List<String> lines) {
+        notes.stream().sorted(Comparator.comparing(note -> note.id().toString()))
+                .map(note -> line("notes", note.id(), field("body", escapeBody(note.body()))))
+                .forEach(lines::add);
+        notes.stream().sorted(Comparator.comparing(note -> note.id().toString()))
+                .forEach(note -> note.annotatedElements().stream()
+                        .sorted(Comparator.comparing((ModelResource.NoteLinkResource link) -> link.targetType().name())
+                                .thenComparing(link -> link.targetId().toString()))
+                        .map(link -> line("noteLinks", note.id(), field("targetType", link.targetType()),
+                                field("targetId", link.targetId())))
+                        .forEach(lines::add));
+    }
+
+    /** A body may span lines; escaping keeps one note on one projection line. */
+    private static String escapeBody(String body) {
+        return body == null ? null : body.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n");
     }
 
     private UUID ownerId(List<ModelResource.ClassifierResource> classifiers, UUID attributeId) {
@@ -335,9 +370,24 @@ public class ModelStateHasher {
         return storeOverride == null ? line : line + "|" + field("storeOverride", storeOverride);
     }
 
-    /** Appended only when set, so a relationship without a stereotype keeps the hash it had before the field existed. */
+    /** Appended only when set, so an element without a stereotype keeps the hash it had before the field existed. */
     private static String withStereotype(String line, String stereotype) {
         return stereotype == null ? line : line + "|" + field("stereotype", stereotype);
+    }
+
+    /** Each flag is appended only when true, so an element with neither set keeps the hash it had before. */
+    private static String withFlags(String line, String firstName, boolean first, String secondName,
+            boolean second) {
+        String result = first ? line + "|" + field(firstName, true) : line;
+        return second ? result + "|" + field(secondName, true) : result;
+    }
+
+    /** Appended only when a RANGE carries bounds, so every model without one keeps the hash it had before. */
+    private static String withBounds(String line, Integer lowerBound, Integer upperBound) {
+        if (lowerBound == null && upperBound == null) {
+            return line;
+        }
+        return line + "|" + field("lowerBound", lowerBound) + "|" + field("upperBound", upperBound);
     }
 
     /** Appended only when set, so an association without a class of its own keeps the hash it had before the field. */

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { ClassifierResource } from '../api/types';
-import { formatAttribute, formatOperation, operationIsStatic, operationNameIsAbstract, orderedAttributes, orderedOperations } from './uml-format';
+import { attributeIsStatic, formatAttribute, formatOperation, formatStereotype, operationIsStatic, operationNameIsAbstract, orderedAttributes, orderedOperations } from './uml-format';
+import { classifierAcceptsStereotype } from './commands';
 import type { CanvasSelection } from './selection';
 import { StoreBadge } from './StoreBadge';
 import type { TouchedBy } from './touch-highlight';
@@ -174,6 +175,9 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
       <div className="uml-class-heading">
         {classifier.kind === 'INTERFACE' && <div className="uml-stereotype">«interfaz»</div>}
         {classifier.kind === 'ENUMERATION' && <div className="uml-stereotype">«enumeración»</div>}
+        {classifier.stereotype && classifierAcceptsStereotype(classifier.kind) && (
+          <div className="uml-stereotype" data-testid="uml-class-stereotype">{formatStereotype(classifier.stereotype)}</div>
+        )}
         <div className={`uml-class-name ${classifier.isAbstract ? 'uml-class-name--abstract' : ''}`}>
           {classifier.isAbstract ? (
             <i>
@@ -214,7 +218,10 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
               elementId: attribute.id,
             };
             return (
-              <div className="uml-member-row" key={attribute.id}>
+              <div
+                className={`uml-member-row${attributeIsStatic(attribute) ? ' uml-member--static' : ''}`}
+                key={attribute.id}
+              >
                 <EditableText
                   ariaLabel={`Editar atributo ${attribute.name}`}
                   className="uml-member-text"

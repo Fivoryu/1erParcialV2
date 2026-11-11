@@ -11,6 +11,7 @@ import com.diagramador.persistence.ConnectorPathRepository;
 import com.diagramador.persistence.ElementGeometryRepository;
 import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
+import com.diagramador.persistence.UmlNoteLinkRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,16 +27,19 @@ public class RelationshipDeleteHandler implements CommandHandler.DeleteAction {
     private final ConnectorPathRepository connectorPathRepository;
     private final ElementGeometryRepository geometryRepository;
     private final UmlConstraintRepository constraintRepository;
+    private final UmlNoteLinkRepository noteLinkRepository;
 
     public RelationshipDeleteHandler(CommandHandlerSupport support, UmlRelationshipRepository relationshipRepository,
             RelationshipEndRepository endRepository, ConnectorPathRepository connectorPathRepository,
-            ElementGeometryRepository geometryRepository, UmlConstraintRepository constraintRepository) {
+            ElementGeometryRepository geometryRepository, UmlConstraintRepository constraintRepository,
+            UmlNoteLinkRepository noteLinkRepository) {
         this.support = support;
         this.relationshipRepository = relationshipRepository;
         this.endRepository = endRepository;
         this.connectorPathRepository = connectorPathRepository;
         this.geometryRepository = geometryRepository;
         this.constraintRepository = constraintRepository;
+        this.noteLinkRepository = noteLinkRepository;
     }
 
     @Override
@@ -61,6 +65,8 @@ public class RelationshipDeleteHandler implements CommandHandler.DeleteAction {
                         && geometry.getTargetId().equals(relationship.getId()))
                 .toList();
 
+        // Notes that annotated the relationship lose that link, not the note.
+        noteLinkRepository.deleteAll(noteLinkRepository.findByKeyTargetIdIn(List.of(relationship.getId())));
         connectorPathRepository.deleteAll(paths);
         geometryRepository.deleteAll(relationshipGeometry);
         constraintRepository.deleteAll(constraints);

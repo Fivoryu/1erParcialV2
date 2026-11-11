@@ -2,6 +2,7 @@ package com.diagramador.command.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.AttributeStereotype;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.UmlAttribute;
@@ -11,8 +12,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class AttributeUpdateHandler implements CommandHandler.AddAction {
 
-    private static final Set<String> FIELDS = Set.of("name", "type", "visibility", "multiplicity", "defaultValue",
-            "isStatic", "isAbstract");
+    private static final Set<String> FIELDS = Set.of("name", "type", "visibility", "multiplicity", "lowerBound", "upperBound", "defaultValue",
+            "isStatic", "isDerived", "isAbstract", "stereotype");
 
     private final CommandHandlerSupport support;
 
@@ -54,19 +55,29 @@ public class AttributeUpdateHandler implements CommandHandler.AddAction {
         if (payload.has("visibility")) {
             attribute.setVisibility(support.visibility(payload, "visibility", attribute.getVisibility()));
         }
-        if (payload.has("multiplicity")) {
-            attribute.setMultiplicity(support.multiplicity(payload, "multiplicity", attribute.getMultiplicity()));
+        if (payload.has("multiplicity") || payload.has("lowerBound") || payload.has("upperBound")) {
+            CommandHandlerSupport.Multiplicity multiplicity = support.multiplicity(payload, "multiplicity",
+                    attribute.getMultiplicity(), attribute.getLowerBound(), attribute.getUpperBound());
+            attribute.setMultiplicity(multiplicity.kind());
+            attribute.setLowerBound(multiplicity.lowerBound());
+            attribute.setUpperBound(multiplicity.upperBound());
         }
         if (payload.has("defaultValue")) {
             attribute.setDefaultValue(support.optionalText(payload, "defaultValue"));
+        }
+        if (payload.has("isStatic")) {
+            attribute.setStatic(support.bool(payload, "isStatic"));
+        }
+        if (payload.has("isDerived")) {
+            attribute.setDerived(support.bool(payload, "isDerived"));
+        }
+        if (payload.has("stereotype")) {
+            attribute.setStereotype(support.stereotype(payload, "stereotype", AttributeStereotype.class));
         }
         return Outcome.none();
     }
 
     private void rejectUnsupportedFlags(JsonNode payload) {
-        if (payload.has("isStatic")) {
-            support.precondition("Attribute isStatic is unsupported: BL-FEA-05");
-        }
         if (payload.has("isAbstract")) {
             support.precondition("Attribute isAbstract is unsupported: BL-FEA-06");
         }

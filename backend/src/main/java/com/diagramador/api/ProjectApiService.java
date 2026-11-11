@@ -98,6 +98,7 @@ public class ProjectApiService {
     private final ViewStyleRepository viewStyleRepository;
     private final com.diagramador.command.CommandService commandService;
     private final com.diagramador.undo.UndoCaptureService undoCaptureService;
+    private final NoteResourceAssembler noteResources;
 
     public ProjectApiService(ProjectRepository projectRepository, ModelCommandRepository modelCommandRepository,
             UmlModelRepository modelRepository,
@@ -111,8 +112,9 @@ public class ProjectApiService {
             ProjectMemberRepository projectMemberRepository, CurrentUserContext currentUserContext,
             ProjectAuthorizationService projectAuthorizationService,
             com.diagramador.command.CommandService commandService,
-            com.diagramador.undo.UndoCaptureService undoCaptureService) {
+            com.diagramador.undo.UndoCaptureService undoCaptureService, NoteResourceAssembler noteResources) {
         this.projectRepository = projectRepository;
+        this.noteResources = noteResources;
         this.modelCommandRepository = modelCommandRepository;
         this.projectMemberRepository = projectMemberRepository;
         this.currentUserContext = currentUserContext;
@@ -291,7 +293,7 @@ public class ProjectApiService {
                                 routeAdjustment(style))))
                 .toList();
         return withEffectiveStores(new ModelResource(model.getId(), projectId, model.getCurrentRevision(), versionId,
-                views, classifiers, relationships, viewStyles));
+                views, classifiers, relationships, viewStyles, noteResources.forModel(model.getId())));
     }
 
     /** Fills each class with the store the generator will use and why, so every consumer reads one decision. */
@@ -304,7 +306,7 @@ public class ProjectApiService {
                         : classifier)
                 .toList();
         return new ModelResource(model.id(), model.projectId(), model.revision(), model.versionId(), model.views(),
-                classifiers, model.relationships(), model.viewStyle());
+                classifiers, model.relationships(), model.viewStyle(), model.notes());
     }
 
     /** ROR-02: null-safe read of the persisted frame-relative orthogonal adjustment. */
@@ -381,14 +383,16 @@ public class ProjectApiService {
         UUID namespaceId = classifier.getNamespace() == null ? null : classifier.getNamespace().getId();
         return new ClassifierResource(classifier.getId(), classifier.getName(), classifier.getKind(),
                 classifier.isAbstract(), namespaceId, attributes, operations, constraintResources,
-                classifier.getStoreOverride(), null, null);
+                classifier.getStoreOverride(), null, null, classifier.getStereotype());
     }
 
     private AttributeResource attributeResource(UmlAttribute attribute) {
         TypeReference typeReference = attribute.getTypeReference();
         return new AttributeResource(attribute.getId(), attribute.getName(), attribute.getKind(),
                 attribute.getVisibility(), attribute.getMultiplicity(), attribute.getDefaultValue(),
-                typeReference == null ? null : typeReference.getId(), typeName(typeReference), attribute.getOrdinal());
+                typeReference == null ? null : typeReference.getId(), typeName(typeReference), attribute.getOrdinal(),
+                attribute.getLowerBound(), attribute.getUpperBound(), attribute.getStereotype(), attribute.isStatic(),
+                attribute.isDerived());
     }
 
     private OperationResource operationResource(UmlOperation operation) {
@@ -400,7 +404,7 @@ public class ProjectApiService {
                 .toList();
         return new OperationResource(operation.getId(), operation.getName(), operation.getVisibility(),
                 operation.isAbstract(), operation.isStatic(), returnType == null ? null : returnType.getId(),
-                typeName(returnType), operation.getOrdinal(), parameters);
+                typeName(returnType), operation.getOrdinal(), parameters, operation.getStereotype());
     }
 
     private ParameterResource parameterResource(OperationParameter parameter) {
@@ -414,7 +418,8 @@ public class ProjectApiService {
                 .stream()
                 .sorted(Comparator.comparingInt(RelationshipEnd::getOrdinal).thenComparing(RelationshipEnd::getId))
                 .map(end -> new RelationshipEndResource(end.getId(), end.getClassifier().getId(), end.getRole(),
-                        end.getMultiplicity(), end.getNavigability(), end.getAggregationKind(), end.getOrdinal()))
+                        end.getMultiplicity(), end.getNavigability(), end.getAggregationKind(), end.getOrdinal(),
+                        end.getLowerBound(), end.getUpperBound(), end.isOrdered(), end.isUnique()))
                 .toList();
         List<ConstraintResource> constraintResources = sortedById(constraints, UmlConstraint::getId).stream()
                 .map(constraint -> new ConstraintResource(constraint.getId(), constraint.getExpression(),

@@ -5,6 +5,8 @@ import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConnectorPathResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
 import com.diagramador.api.ModelResource.GeometryResource;
+import com.diagramador.api.ModelResource.NoteLinkResource;
+import com.diagramador.api.ModelResource.NoteResource;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
@@ -322,14 +324,18 @@ public final class MergeDiff {
         for (ClassifierResource classifier : snapshot.classifiers()) {
             Map<String, Object> fields = fields(
                     "name", classifier.name(), "kind", classifier.kind(), "isAbstract", classifier.isAbstract(),
-                    "namespaceId", classifier.namespaceId(), "storeOverride", classifier.storeOverride());
+                    "namespaceId", classifier.namespaceId(), "storeOverride", classifier.storeOverride(),
+                    "stereotype", classifier.stereotype());
             add(elements, element("CLASSIFIER", classifier.id(), classifier.name(), null, fields));
             for (AttributeResource attribute : classifier.attributes()) {
                 Map<String, Object> childFields = fields(
                         "classifierId", classifier.id(), "name", attribute.name(), "kind", attribute.kind(),
                         "visibility", attribute.visibility(), "multiplicity", attribute.multiplicity(),
                         "defaultValue", attribute.defaultValue(), "typeReferenceId", attribute.typeReferenceId(),
-                        "type", attribute.type(), "ordinal", attribute.ordinal());
+                        "type", attribute.type(), "ordinal", attribute.ordinal(),
+                        "lowerBound", attribute.lowerBound(), "upperBound", attribute.upperBound(),
+                        "stereotype", attribute.stereotype(), "isStatic", attribute.isStatic(),
+                        "isDerived", attribute.isDerived());
                 add(elements, element("ATTRIBUTE", attribute.id(), attribute.name(), classifier.id(), childFields));
             }
             for (OperationResource operation : classifier.operations()) {
@@ -337,7 +343,7 @@ public final class MergeDiff {
                         "classifierId", classifier.id(), "name", operation.name(), "visibility", operation.visibility(),
                         "isAbstract", operation.isAbstract(), "isStatic", operation.isStatic(),
                         "returnTypeReferenceId", operation.returnTypeReferenceId(), "returnType", operation.returnType(),
-                        "ordinal", operation.ordinal());
+                        "ordinal", operation.ordinal(), "stereotype", operation.stereotype());
                 add(elements, element("OPERATION", operation.id(), operation.name(), classifier.id(), childFields));
                 for (ParameterResource parameter : operation.parameters()) {
                     Map<String, Object> parameterFields = fields(
@@ -364,7 +370,9 @@ public final class MergeDiff {
                 Map<String, Object> endFields = fields(
                         "relationshipId", relationship.id(), "classifierId", end.classifierId(),
                         "role", end.role(), "multiplicity", end.multiplicity(), "navigability", end.navigability(),
-                        "aggregationKind", end.aggregationKind(), "ordinal", end.ordinal());
+                        "aggregationKind", end.aggregationKind(), "ordinal", end.ordinal(),
+                        "lowerBound", end.lowerBound(), "upperBound", end.upperBound(),
+                        "isOrdered", end.isOrdered(), "isUnique", end.isUnique());
                 add(elements, element("RELATIONSHIP_END", end.id(), end.role(), relationship.id(), endFields));
             }
             for (ConstraintResource constraint : relationship.constraints()) {
@@ -373,6 +381,20 @@ public final class MergeDiff {
                         "expression", constraint.expression(), "severity", constraint.severity());
                 add(elements, element("CONSTRAINT", constraint.id(), constraint.expression(), relationship.id(),
                         constraintFields));
+            }
+        }
+        Map<UUID, String> annotatedNames = new HashMap<>();
+        snapshot.classifiers().forEach(classifier -> annotatedNames.put(classifier.id(), classifier.name()));
+        snapshot.relationships().forEach(relationship -> annotatedNames.put(relationship.id(), relationship.name()));
+        for (NoteResource note : snapshot.notes()) {
+            add(elements, new Element(new ElementKey("NOTE", note.id().toString()), note.id(), noteName(note.body()),
+                    null, null, fields("body", note.body())));
+            for (NoteLinkResource link : note.annotatedElements()) {
+                String identity = note.id() + "/" + link.targetType() + ":" + link.targetId();
+                String name = annotatedNames.get(link.targetId());
+                add(elements, new Element(new ElementKey("NOTE_LINK", identity), link.targetId(),
+                        name == null ? link.targetId().toString() : name, note.id().toString(), null,
+                        fields("noteId", note.id(), "targetType", link.targetType(), "targetId", link.targetId())));
             }
         }
         for (SnapshotModel.SnapshotView view : snapshot.views()) {
@@ -457,7 +479,8 @@ public final class MergeDiff {
             return new ClassifierResource(classifierId, string(classifier.fields(), "name"),
                     (ClassifierKind) classifier.fields().get("kind"), bool(classifier.fields(), "isAbstract"),
                     uuid(classifier.fields(), "namespaceId"), attributes, operations, constraints,
-                    (PersistenceStore) classifier.fields().get("storeOverride"), null, null);
+                    (PersistenceStore) classifier.fields().get("storeOverride"), null, null,
+                    string(classifier.fields(), "stereotype"));
         }).toList();
 
         List<RelationshipResource> mergedRelationships = relationships.stream().map(relationship -> {
@@ -493,7 +516,25 @@ public final class MergeDiff {
                         bool(style.fields(), "dashed"), (com.fasterxml.jackson.databind.JsonNode)
                                 style.fields().get("routeAdjustment")))
                 .toList();
-        return new SnapshotModel(mergedViews, mergedClassifiers, mergedRelationships, styles);
+        Set<UUID> classifierIds = new java.util.HashSet<>();
+        mergedClassifiers.forEach(classifier -> classifierIds.add(classifier.id()));
+        Set<UUID> relationshipIds = new java.util.HashSet<>();
+        mergedRelationships.forEach(relationship -> relationshipIds.add(relationship.id()));
+        List<Element> noteLinks = ofType(elements, "NOTE_LINK");
+        List<NoteResource> mergedNotes = ofType(elements, "NOTE").stream().map(note -> {
+            // A link survives only while the annotated element does: one branch may have deleted it.
+            List<NoteLinkResource> links = noteLinks.stream()
+                    .filter(link -> note.targetId().equals(link.fields().get("noteId")))
+                    .map(link -> new NoteLinkResource((TargetType) link.fields().get("targetType"),
+                            uuid(link.fields(), "targetId")))
+                    .filter(link -> link.targetType() == TargetType.CLASSIFIER
+                            ? classifierIds.contains(link.targetId()) : relationshipIds.contains(link.targetId()))
+                    .sorted(Comparator.comparing((NoteLinkResource link) -> link.targetType().name())
+                            .thenComparing(link -> link.targetId().toString()))
+                    .toList();
+            return new NoteResource(note.targetId(), string(note.fields(), "body"), links);
+        }).toList();
+        return new SnapshotModel(mergedViews, mergedClassifiers, mergedRelationships, styles, mergedNotes);
     }
 
     private static List<Element> ofType(Map<ElementKey, Element> elements, String type) {
@@ -506,7 +547,8 @@ public final class MergeDiff {
         return new AttributeResource(element.targetId(), string(fields, "name"), string(fields, "kind"),
                 string(fields, "visibility"), (com.diagramador.domain.MultiplicityKind) fields.get("multiplicity"),
                 string(fields, "defaultValue"), uuid(fields, "typeReferenceId"), string(fields, "type"),
-                number(fields, "ordinal"));
+                number(fields, "ordinal"), nullableNumber(fields, "lowerBound"), nullableNumber(fields, "upperBound"),
+                string(fields, "stereotype"), bool(fields, "isStatic"), bool(fields, "isDerived"));
     }
 
     private static OperationResource operationResource(Element element, Map<ElementKey, Element> elements) {
@@ -516,7 +558,7 @@ public final class MergeDiff {
                 .map(MergeDiff::parameterResource).toList();
         return new OperationResource(element.targetId(), string(fields, "name"), string(fields, "visibility"),
                 bool(fields, "isAbstract"), bool(fields, "isStatic"), uuid(fields, "returnTypeReferenceId"),
-                string(fields, "returnType"), number(fields, "ordinal"), parameters);
+                string(fields, "returnType"), number(fields, "ordinal"), parameters, string(fields, "stereotype"));
     }
 
     private static ParameterResource parameterResource(Element element) {
@@ -535,7 +577,9 @@ public final class MergeDiff {
         return new RelationshipEndResource(element.targetId(), uuid(fields, "classifierId"),
                 string(fields, "role"), (com.diagramador.domain.MultiplicityKind) fields.get("multiplicity"),
                 (com.diagramador.domain.NavigationKind) fields.get("navigability"),
-                string(fields, "aggregationKind"), (short) number(fields, "ordinal"));
+                string(fields, "aggregationKind"), (short) number(fields, "ordinal"),
+                nullableNumber(fields, "lowerBound"), nullableNumber(fields, "upperBound"),
+                bool(fields, "isOrdered"), bool(fields, "isUnique"));
     }
 
     private static GeometryResource geometryResource(Element element) {
@@ -561,6 +605,11 @@ public final class MergeDiff {
 
     private static int number(Map<String, Object> fields, String name) {
         return ((Number) fields.get(name)).intValue();
+    }
+
+    private static Integer nullableNumber(Map<String, Object> fields, String name) {
+        Object value = fields.get(name);
+        return value == null ? null : ((Number) value).intValue();
     }
 
     private static boolean bool(Map<String, Object> fields, String name) {
@@ -589,7 +638,8 @@ public final class MergeDiff {
         private Object valueComparedTo(Element other) {
             String primaryField = fields.containsKey("name") ? "name"
                     : fields.containsKey("role") ? "role"
-                            : fields.containsKey("expression") ? "expression" : null;
+                            : fields.containsKey("expression") ? "expression"
+                                    : fields.containsKey("body") ? "body" : null;
             if (primaryField != null && fields.keySet().stream()
                     .filter(field -> !field.equals(primaryField))
                     .allMatch(field -> Objects.equals(fields.get(field), other.fields().get(field)))) {
@@ -605,10 +655,22 @@ public final class MergeDiff {
     }
 
     private static String targetNameFor(String type, Map<String, Object> fields, UUID id) {
+        if (type.equals("NOTE")) {
+            return noteName((String) fields.get("body"));
+        }
         Object name = fields.containsKey("name") ? fields.get("name")
                 : fields.containsKey("role") ? fields.get("role")
                         : fields.containsKey("expression") ? fields.get("expression") : id;
         return name == null ? String.valueOf(id) : String.valueOf(name);
+    }
+
+    /** The name a note goes by in a diff or a conflict: the start of its body, on one line. */
+    private static String noteName(String body) {
+        if (body == null) {
+            return "";
+        }
+        String line = body.strip().replaceAll("\\s+", " ");
+        return line.length() <= 40 ? line : line.substring(0, 37) + "...";
     }
 
     private static String valueId(Map<String, Object> fields, String name) {

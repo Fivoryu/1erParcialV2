@@ -104,7 +104,8 @@ public class InputSnapshotFactory {
                 .map(attribute -> new InputSnapshot.AttributeElement(attribute.getId(),
                         attribute.getClassifier().getId(), id(attribute.getTypeReference()), attribute.getName(),
                         attribute.getKind(), attribute.getVisibility(), attribute.getMultiplicity(),
-                        attribute.getDefaultValue(), attribute.getOrdinal()))
+                        attribute.getDefaultValue(), attribute.getOrdinal(), attribute.getLowerBound(),
+                        attribute.getUpperBound()))
                 .toList();
         List<InputSnapshot.OperationElement> operations = operationRows.stream()
                 .sorted(byId(UmlOperation::getId))
@@ -132,7 +133,7 @@ public class InputSnapshotFactory {
                 .sorted(byId(RelationshipEnd::getId))
                 .map(end -> new InputSnapshot.RelationshipEndElement(end.getId(), end.getRelationship().getId(),
                         end.getClassifier().getId(), end.getOrdinal(), end.getRole(), end.getMultiplicity(),
-                        end.getNavigability(), end.getAggregationKind()))
+                        end.getNavigability(), end.getAggregationKind(), end.getLowerBound(), end.getUpperBound()))
                 .toList();
         List<InputSnapshot.ConstraintElement> constraints = constraintRows.stream()
                 .sorted(byId(UmlConstraint::getId))
@@ -164,12 +165,12 @@ public class InputSnapshotFactory {
                         classifier.storeOverride()))
                 .forEach(lines::add);
         attributes.stream().sorted(byId(InputSnapshot.AttributeElement::id))
-                .map(attribute -> line("attributes", attribute.id(),
+                .map(attribute -> withBounds(line("attributes", attribute.id(),
                         field("classifierId", attribute.classifierId()),
                         field("typeReferenceId", attribute.typeReferenceId()), field("name", attribute.name()),
                         field("kind", attribute.kind()), field("visibility", attribute.visibility()),
                         field("multiplicity", attribute.multiplicity()), field("defaultValue", attribute.defaultValue()),
-                        field("ordinal", attribute.ordinal())))
+                        field("ordinal", attribute.ordinal())), attribute.lowerBound(), attribute.upperBound()))
                 .forEach(lines::add);
         operations.stream().sorted(byId(InputSnapshot.OperationElement::id))
                 .map(operation -> line("operations", operation.id(),
@@ -193,10 +194,11 @@ public class InputSnapshotFactory {
                         field("kind", relationship.kind()), field("name", relationship.name())))
                 .forEach(lines::add);
         relationshipEnds.stream().sorted(byId(InputSnapshot.RelationshipEndElement::id))
-                .map(end -> line("relationshipEnds", end.id(), field("relationshipId", end.relationshipId()),
+                .map(end -> withBounds(line("relationshipEnds", end.id(), field("relationshipId", end.relationshipId()),
                         field("classifierId", end.classifierId()), field("ordinal", end.ordinal()),
                         field("role", end.role()), field("multiplicity", end.multiplicity()),
-                        field("navigability", end.navigability()), field("aggregationKind", end.aggregationKind())))
+                        field("navigability", end.navigability()), field("aggregationKind", end.aggregationKind())),
+                        end.lowerBound(), end.upperBound()))
                 .forEach(lines::add);
         constraints.stream().sorted(byId(InputSnapshot.ConstraintElement::id))
                 .map(constraint -> line("constraints", constraint.id(), field("ownerType", constraint.ownerType()),
@@ -218,6 +220,14 @@ public class InputSnapshotFactory {
 
     private static String field(String name, Object value) {
         return name + "=" + String.valueOf(value);
+    }
+
+    /** Appended only when a RANGE carries bounds, so every model without one keeps the projection it had before. */
+    private static String withBounds(String line, Integer lowerBound, Integer upperBound) {
+        if (lowerBound == null && upperBound == null) {
+            return line;
+        }
+        return line + "|" + field("lowerBound", lowerBound) + "|" + field("upperBound", upperBound);
     }
 
     /** Appended only when set, so a model without a manual store keeps the projection it had before the field. */

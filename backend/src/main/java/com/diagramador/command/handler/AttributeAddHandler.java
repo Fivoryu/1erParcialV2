@@ -2,6 +2,7 @@ package com.diagramador.command.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.AttributeStereotype;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
@@ -15,8 +16,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class AttributeAddHandler implements CommandHandler.AddAction {
 
-    private static final Set<String> FIELDS = Set.of("id", "name", "type", "visibility", "multiplicity",
-            "defaultValue", "ordinal", "isStatic", "isAbstract");
+    private static final Set<String> FIELDS = Set.of("id", "name", "type", "visibility", "multiplicity", "lowerBound", "upperBound",
+            "defaultValue", "ordinal", "isStatic", "isDerived", "isAbstract", "stereotype");
 
     private final CommandHandlerSupport support;
     private final UmlAttributeRepository attributeRepository;
@@ -35,6 +36,8 @@ public class AttributeAddHandler implements CommandHandler.AddAction {
     public Outcome apply(Context context) {
         JsonNode payload = support.payload(context, FIELDS);
         rejectUnsupportedFlags(payload);
+        boolean isStatic = payload.has("isStatic") && support.bool(payload, "isStatic");
+        boolean isDerived = payload.has("isDerived") && support.bool(payload, "isDerived");
         Classifier classifier = support.classifier(context, "classifier");
         boolean literal = classifier.getKind() == ClassifierKind.ENUMERATION;
         if (literal) {
@@ -51,18 +54,18 @@ public class AttributeAddHandler implements CommandHandler.AddAction {
         support.ensureAttributeNameAvailable(classifier, name, null);
         TypeReference type = literal ? null : support.typeReference(context, payload.get("type"));
         String visibility = support.visibility(payload, "visibility", "PUBLIC");
-        MultiplicityKind multiplicity = support.multiplicity(payload, "multiplicity", MultiplicityKind.EXACTLY_ONE);
+        CommandHandlerSupport.Multiplicity multiplicity = support.multiplicity(payload, "multiplicity",
+                MultiplicityKind.EXACTLY_ONE, null, null);
         int ordinal = support.ordinalOrNext(payload, "ordinal",
                 attributeRepository.findByClassifierId(classifier.getId()).stream().map(UmlAttribute::getOrdinal).toList());
         support.insertAttribute(context, id, classifier, type, name, visibility, multiplicity,
-                support.optionalText(payload, "defaultValue"), ordinal);
+                support.optionalText(payload, "defaultValue"), ordinal,
+                support.stereotype(payload, "stereotype", AttributeStereotype.class),
+                isStatic, isDerived);
         return Outcome.none();
     }
 
     private void rejectUnsupportedFlags(JsonNode payload) {
-        if (payload.has("isStatic")) {
-            support.precondition("Attribute isStatic is unsupported: BL-FEA-05");
-        }
         if (payload.has("isAbstract")) {
             support.precondition("Attribute isAbstract is unsupported: BL-FEA-06");
         }

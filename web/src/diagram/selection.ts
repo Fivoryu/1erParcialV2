@@ -3,4 +3,5 @@ export type CanvasSelection =
   | { kind: 'attribute'; classifierId: string; elementId: string }
   | { kind: 'operation'; classifierId: string; elementId: string }
   | { kind: 'constraint'; classifierId: string; elementId: string }
-  | { kind: 'relationship'; relationshipId: string };
+  | { kind: 'relationship'; relationshipId: string }
+  | { kind: 'note'; noteId: string };

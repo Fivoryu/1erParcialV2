@@ -1,5 +1,6 @@
 package com.diagramador;
 
+import java.time.Duration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -16,7 +17,10 @@ abstract class AbstractPostgresIntegrationTest {
             new PostgreSQLContainer<>("postgres:16-alpine")
                     // The suite shares one container across many Spring contexts (one Hikari pool
                     // each); the default max_connections=100 exhausted with ~30 contexts.
-                    .withCommand("postgres -c max_connections=300");
+                    .withCommand("postgres -c max_connections=300")
+                    // Container creation can take over a minute on a loaded Docker Desktop; the
+                    // default 60 s wait made every context fail with a launch timeout.
+                    .withStartupTimeout(Duration.ofMinutes(5));
 
     static {
         POSTGRES.start();

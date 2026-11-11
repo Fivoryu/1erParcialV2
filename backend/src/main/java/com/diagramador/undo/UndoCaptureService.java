@@ -10,6 +10,8 @@ import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
 import com.diagramador.domain.UmlConstraint;
 import com.diagramador.domain.UmlModel;
+import com.diagramador.domain.UmlNote;
+import com.diagramador.domain.UmlNoteLink;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.persistence.ClassifierRepository;
@@ -18,6 +20,8 @@ import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
+import com.diagramador.persistence.UmlNoteLinkRepository;
+import com.diagramador.persistence.UmlNoteRepository;
 import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
@@ -57,6 +61,8 @@ public class UndoCaptureService {
     private final UmlConstraintRepository constraintRepository;
     private final UmlRelationshipRepository relationshipRepository;
     private final RelationshipEndRepository relationshipEndRepository;
+    private final UmlNoteRepository noteRepository;
+    private final UmlNoteLinkRepository noteLinkRepository;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
@@ -65,7 +71,8 @@ public class UndoCaptureService {
             ClassifierRepository classifierRepository, UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, OperationParameterRepository parameterRepository,
             UmlConstraintRepository constraintRepository, UmlRelationshipRepository relationshipRepository,
-            RelationshipEndRepository relationshipEndRepository, ObjectMapper objectMapper,
+            RelationshipEndRepository relationshipEndRepository, UmlNoteRepository noteRepository,
+            UmlNoteLinkRepository noteLinkRepository, ObjectMapper objectMapper,
             TransactionTemplate transactionTemplate) {
         this.modelRepository = modelRepository;
         this.commandRepository = commandRepository;
@@ -78,6 +85,8 @@ public class UndoCaptureService {
         this.constraintRepository = constraintRepository;
         this.relationshipRepository = relationshipRepository;
         this.relationshipEndRepository = relationshipEndRepository;
+        this.noteRepository = noteRepository;
+        this.noteLinkRepository = noteLinkRepository;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
     }
@@ -141,6 +150,9 @@ public class UndoCaptureService {
                 case "constraint" -> constraintRepository.findById(target.id())
                         .filter(constraint -> constraint.getModel().getId().equals(envelope.modelId()))
                         .ifPresent(constraint -> targets.add(constraintSnapshot(constraint)));
+                case "note" -> noteRepository.findById(target.id())
+                        .filter(note -> note.getModel().getId().equals(envelope.modelId()))
+                        .ifPresent(note -> targets.add(noteSnapshot(note)));
                 default -> {
                     Map<String, Object> unknown = new LinkedHashMap<>();
                     unknown.put("scope", target.scope());
@@ -162,6 +174,7 @@ public class UndoCaptureService {
         snapshot.put("kind", classifier.getKind() == null ? null : classifier.getKind().name());
         snapshot.put("isAbstract", classifier.isAbstract());
         snapshot.put("store", classifier.getStoreOverride() == null ? null : classifier.getStoreOverride().name());
+        snapshot.put("stereotype", classifier.getStereotype());
         snapshot.put("namespaceId", classifier.getNamespace() == null ? null
                 : classifier.getNamespace().getId().toString());
         return snapshot;
@@ -177,8 +190,13 @@ public class UndoCaptureService {
         snapshot.put("visibility", attribute.getVisibility());
         snapshot.put("multiplicity", attribute.getMultiplicity() == null ? null
                 : attribute.getMultiplicity().name());
+        snapshot.put("lowerBound", attribute.getLowerBound());
+        snapshot.put("upperBound", attribute.getUpperBound());
         snapshot.put("defaultValue", attribute.getDefaultValue());
         snapshot.put("ordinal", attribute.getOrdinal());
+        snapshot.put("stereotype", attribute.getStereotype());
+        snapshot.put("isStatic", attribute.isStatic());
+        snapshot.put("isDerived", attribute.isDerived());
         return snapshot;
     }
 
@@ -193,6 +211,7 @@ public class UndoCaptureService {
         snapshot.put("isAbstract", operation.isAbstract());
         snapshot.put("isStatic", operation.isStatic());
         snapshot.put("ordinal", operation.getOrdinal());
+        snapshot.put("stereotype", operation.getStereotype());
         return snapshot;
     }
 
@@ -212,6 +231,10 @@ public class UndoCaptureService {
             endSnapshot.put("ordinal", (int) end.getOrdinal());
             endSnapshot.put("role", end.getRole());
             endSnapshot.put("multiplicity", end.getMultiplicity() == null ? null : end.getMultiplicity().name());
+            endSnapshot.put("lowerBound", end.getLowerBound());
+            endSnapshot.put("upperBound", end.getUpperBound());
+            endSnapshot.put("isOrdered", end.isOrdered());
+            endSnapshot.put("isUnique", end.isUnique());
             endSnapshot.put("navigability", end.getNavigability() == null ? null : end.getNavigability().name());
             ends.add(endSnapshot);
         }
@@ -239,6 +262,26 @@ public class UndoCaptureService {
         snapshot.put("ownerId", constraint.getOwnerId() == null ? null : constraint.getOwnerId().toString());
         snapshot.put("expression", constraint.getExpression());
         snapshot.put("severity", constraint.getSeverity() == null ? null : constraint.getSeverity().name());
+        return snapshot;
+    }
+
+    /** A note with its annotated elements, so deleting it can be undone by creating it again. */
+    private Map<String, Object> noteSnapshot(UmlNote note) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("scope", "note");
+        snapshot.put("id", note.getId().toString());
+        snapshot.put("body", note.getBody());
+        List<Map<String, Object>> annotated = new ArrayList<>();
+        for (UmlNoteLink link : noteLinkRepository.findByKeyNoteId(note.getId()).stream()
+                .sorted(java.util.Comparator.comparing((UmlNoteLink link) -> link.getTargetType().name())
+                        .thenComparing(link -> link.getTargetId().toString()))
+                .toList()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("targetType", link.getTargetType().name());
+            entry.put("targetId", link.getTargetId().toString());
+            annotated.add(entry);
+        }
+        snapshot.put("annotatedElements", annotated);
         return snapshot;
     }
 

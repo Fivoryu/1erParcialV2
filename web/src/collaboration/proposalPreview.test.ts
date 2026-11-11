@@ -104,6 +104,25 @@ describe('proposal projection prefix', () => {
     expect(result.states[ids.b]).toBe('modified');
   });
 
+  it('carries the numeric bounds of a RANGE attribute into the previewed model', () => {
+    const result = projectProposalPreview(model, [
+      op('attribute.add', ids.a, {
+        name: 'telefonos', multiplicity: 'range', lowerBound: 2, upperBound: 5,
+      }),
+    ]);
+    const added = result.model.classifiers[0]?.attributes.find((attribute) => attribute.name === 'telefonos');
+    expect(added).toMatchObject({ multiplicity: 'RANGE', lowerBound: 2, upperBound: 5 });
+  });
+
+  it('ignores a bound that is not a whole number and leaves the other attributes unbounded', () => {
+    const result = projectProposalPreview(model, [
+      op('attribute.add', ids.a, { name: 'edad', multiplicity: 'range', lowerBound: 'dos', upperBound: 1.5 }),
+    ]);
+    const added = result.model.classifiers[0]?.attributes.find((attribute) => attribute.name === 'edad');
+    expect(added).toMatchObject({ lowerBound: null, upperBound: null });
+    expect(result.model.classifiers[0]?.attributes[0]?.lowerBound ?? null).toBeNull();
+  });
+
   it('resolves classes created earlier in the plan by accent-insensitive name and stops on unknown ends', () => {
     const result = projectProposalPreview(model, [
       op('classifier.create', null, { name: 'Médico' }),
