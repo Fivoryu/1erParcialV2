@@ -57,6 +57,9 @@ export function proposalErrorMessage(error: unknown, fallback: (cause: unknown) 
     if (error.code === 'NO_PROPOSAL') {
       return error.message;
     }
+    if (error.code === 'NO_IMAGE') {
+      return 'Ese mensaje no tiene una foto para convertir en sugerencia.';
+    }
     if (error.code === 'PROPOSAL_DECIDED') {
       return 'Otra persona editora ya decidió sobre esta sugerencia.';
     }

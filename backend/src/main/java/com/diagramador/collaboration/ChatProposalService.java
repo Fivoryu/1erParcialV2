@@ -15,6 +15,7 @@ import com.diagramador.domain.DiagramMessage;
 import com.diagramador.domain.UserAccount;
 import com.diagramador.identity.CurrentUserContext;
 import com.diagramador.identity.ProjectAuthorizationService;
+import com.diagramador.persistence.ChatAttachmentRepository;
 import com.diagramador.persistence.ChatProposalRepository;
 import com.diagramador.persistence.UserAccountRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -26,6 +27,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -43,6 +45,8 @@ public class ChatProposalService {
     private static final Logger logger = LoggerFactory.getLogger(ChatProposalService.class);
     private static final int MAX_UTTERANCE_LENGTH = 1000;
     private static final int CARD_TITLE_LENGTH = 300;
+    private static final String PHOTO_DEFAULT_UTTERANCE =
+            "Pasá a operaciones el diagrama de clases de la foto adjunta.";
     private static final TypeReference<List<AssistantPlanOperation>> OPERATIONS_TYPE = new TypeReference<>() {
     };
 
@@ -57,12 +61,16 @@ public class ChatProposalService {
     private final ProjectEventBus eventBus;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final ChatAttachmentRepository chatAttachmentRepository;
+    private final int imageMaxSide;
 
     public ChatProposalService(ChatService chatService, AssistantPlanService assistantPlanService,
             AssistantApplyService assistantApplyService, ProjectApiService projectApiService,
             ProjectAuthorizationService projectAuthorizationService, CurrentUserContext currentUserContext,
             UserAccountRepository userAccountRepository, ChatProposalRepository proposalRepository,
-            ProjectEventBus eventBus, ObjectMapper objectMapper, TransactionTemplate transactionTemplate) {
+            ProjectEventBus eventBus, ObjectMapper objectMapper, TransactionTemplate transactionTemplate,
+            ChatAttachmentRepository chatAttachmentRepository,
+            @Value("${diagrammer.assistant.image-max-side:768}") int imageMaxSide) {
         this.chatService = chatService;
         this.assistantPlanService = assistantPlanService;
         this.assistantApplyService = assistantApplyService;
@@ -74,6 +82,8 @@ public class ChatProposalService {
         this.eventBus = eventBus;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
+        this.chatAttachmentRepository = chatAttachmentRepository;
+        this.imageMaxSide = imageMaxSide;
     }
 
     public record ProposalResource(UUID id, UUID messageId, UUID sessionId, UUID requestedByUserId,
@@ -88,7 +98,18 @@ public class ChatProposalService {
      * written together afterwards.
      */
     public ProposalResource propose(UUID projectId, UUID sessionId, String utterance) {
-        String request = utterance == null ? "" : utterance.strip();
+        return propose(projectId, sessionId, utterance, null);
+    }
+
+    /**
+     * Same flow, optionally planning from the photo attached to {@code attachmentMessageId}: the
+     * image rides the planning call and the result is still a PENDING proposal a human decides.
+     * Without an utterance, a photo request asks for a transcription of the diagram.
+     */
+    public ProposalResource propose(UUID projectId, UUID sessionId, String utterance,
+            UUID attachmentMessageId) {
+        String typed = utterance == null ? "" : utterance.strip();
+        String request = typed.isBlank() && attachmentMessageId != null ? PHOTO_DEFAULT_UTTERANCE : typed;
         if (request.isBlank()) {
             throw error(HttpStatus.BAD_REQUEST, "INVALID_PAYLOAD", "Describe the change you want suggested.");
         }
@@ -98,10 +119,15 @@ public class ChatProposalService {
         }
         chatService.requireAccessibleSession(projectId, sessionId);
         projectAuthorizationService.requireEditor(projectId);
+        ImageDownscaler.Fitted photo = attachmentMessageId == null ? null
+                : photoOf(sessionId, attachmentMessageId);
 
         long baseRevision = projectApiService.getModel(projectId).revision();
-        AssistantPlanResponse plan = assistantPlanService.plan(projectId,
-                new AssistantPlanRequest(request, baseRevision, null));
+        AssistantPlanRequest planRequest = new AssistantPlanRequest(request, baseRevision, null);
+        AssistantPlanResponse plan = photo == null
+                ? assistantPlanService.plan(projectId, planRequest)
+                : assistantPlanService.plan(projectId, planRequest,
+                        java.util.Base64.getEncoder().encodeToString(photo.data()), photo.mime());
         requireUsablePlan(plan);
 
         String operationsJson = writeOperations(plan.operations());
@@ -116,6 +142,17 @@ public class ChatProposalService {
         });
         publishDecision("proposal.created", projectId, resource);
         return resource;
+    }
+
+    /** The first image of a message of THIS session; anything else is the same NO_IMAGE refusal. */
+    private ImageDownscaler.Fitted photoOf(UUID sessionId, UUID messageId) {
+        var image = chatAttachmentRepository.findByMessage_IdOrderByCreatedAtAscIdAsc(messageId).stream()
+                .filter(attachment -> attachment.getSession().getId().equals(sessionId))
+                .findFirst()
+                .orElseThrow(() -> error(HttpStatus.UNPROCESSABLE_ENTITY, "NO_IMAGE",
+                        "That message has no photo to turn into a suggestion."));
+        // Only the copy sent to the model is reduced; the stored attachment stays as uploaded.
+        return ImageDownscaler.fit(image.getData(), image.getContentType(), imageMaxSide);
     }
 
     public List<ProposalResource> list(UUID projectId, UUID sessionId) {

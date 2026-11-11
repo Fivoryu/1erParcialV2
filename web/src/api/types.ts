@@ -288,8 +288,35 @@ export interface XmiDisagreementResource {
   extensionValue: string;
 }
 
+export type XmiResolutionAction = 'RENAME' | 'SKIP' | 'KEEP_VIEW';
+
+export interface XmiResolutionRequest {
+  subject: string;
+  action: XmiResolutionAction;
+  newName?: string | null;
+}
+
+export interface XmiImportIssueResource {
+  code: string;
+  severity: 'BLOCKER' | 'WARNING';
+  subject: string | null;
+  name: string | null;
+  message: string;
+  options: XmiResolutionAction[];
+}
+
+export interface XmiRepairResource {
+  code?: string;
+  subject?: string | null;
+  name?: string | null;
+  message?: string;
+  count?: number;
+}
+
 export interface XmiPreviewRequest {
   fileBase64: string;
+  mode?: XmiImportMode;
+  resolutions?: XmiResolutionRequest[];
 }
 
 export interface XmiImportRequest {
@@ -297,6 +324,7 @@ export interface XmiImportRequest {
   checksum: string;
   mode: XmiImportMode;
   idempotencyKey: string;
+  resolutions?: XmiResolutionRequest[];
 }
 
 export interface XmiPreviewResource {
@@ -304,6 +332,22 @@ export interface XmiPreviewResource {
   losses: XmiLossResource[];
   disagreements: XmiDisagreementResource[];
   checksum: string;
+  issues?: XmiImportIssueResource[];
+  repairs?: XmiRepairResource[];
+  resultingCounts?: XmiCountsResource;
+  clean?: boolean;
+}
+
+export interface XmiSuggestRequest {
+  fileBase64: string;
+  checksum: string;
+  mode: XmiImportMode;
+}
+
+export interface XmiSuggestionResource {
+  resolutions: XmiResolutionRequest[];
+  source: 'AI' | 'RULES';
+  explanation: string;
 }
 
 export interface XmiImportResource {

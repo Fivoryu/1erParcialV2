@@ -72,6 +72,16 @@ describe('shared chat state', () => {
     });
   });
 
+  it('keeps who asked the AI so every developer sees whom it is serving', () => {
+    const status = chatAiStatusFromProjectEvent({
+      payload: { sessionId, state: 'RUNNING', requestedByDisplayName: 'Ana' },
+    });
+    expect(status).toEqual({ sessionId, state: 'RUNNING', requestedByDisplayName: 'Ana' });
+    expect(chatAiStatusFromProjectEvent({
+      payload: { sessionId, state: 'RUNNING', requestedByDisplayName: 7 },
+    })).toEqual({ sessionId, state: 'RUNNING' });
+  });
+
   it('collects distinct attachment ids to load bytes for thumbnails', () => {
     expect(attachmentIdsFromHistory([question, answer, { ...question, id: otherSessionId }]))
       .toEqual(['55555555-5555-4555-8555-555555555555']);

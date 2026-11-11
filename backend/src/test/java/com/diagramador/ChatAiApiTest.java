@@ -112,6 +112,13 @@ class ChatAiApiTest extends AuthenticatedApiTest {
                 .anyMatch(event -> "chat.ai.status".equals(event.type())
                         && sessionId.equals(event.payload().get("sessionId"))
                         && "COMPLETED".equals(event.payload().get("state")))).isTrue();
+        // Several developers share the project: every status says who asked the AI.
+        assertThat(events.getAllValues().stream()
+                .filter(event -> event.projectId().equals(projectId))
+                .filter(event -> "chat.ai.status".equals(event.type())
+                        && sessionId.equals(event.payload().get("sessionId")))
+                .allMatch(event -> event.payload().get("requestedByDisplayName") instanceof String name
+                        && !name.isBlank())).isTrue();
     }
 
     @Test

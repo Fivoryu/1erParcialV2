@@ -4,11 +4,23 @@ import type { ApiClient } from '../api/client';
 import type {
   XmiDisagreementResource,
   XmiImportMode,
+  XmiImportIssueResource,
   XmiImportResource,
   XmiLossResource,
   XmiPreviewResource,
+  XmiResolutionRequest,
+  XmiSuggestionResource,
   Uuid,
 } from '../api/types';
+import {
+  buildResolutions,
+  canConfirmImport,
+  isCollisionCode,
+  mergeSuggestions,
+  splitIssues,
+  type ResolutionChoice,
+  type ResolutionChoices,
+} from './xmiResolutions';
 
 const api = createApiClient();
 
@@ -35,12 +47,14 @@ export function confirmXmiImport(
   preview: XmiPreviewResource,
   mode: XmiImportMode,
   idempotencyKey: string,
+  resolutions?: XmiResolutionRequest[],
 ): Promise<XmiImportResource> {
   return apiClient.importXmi(projectId, {
     fileBase64,
     checksum: preview.checksum,
     mode,
     idempotencyKey,
+    ...(resolutions && resolutions.length > 0 ? { resolutions } : {}),
   });
 }
 
@@ -56,6 +70,100 @@ export interface XmiImportPanelViewProps {
   onSelectMode(mode: XmiImportMode): void;
   onConfirm(): void;
   onDismissError(): void;
+  /** Blockers the user can resolve; kept across previews so an applied choice stays editable. */
+  resolvable?: XmiImportIssueResource[];
+  choices?: ResolutionChoices;
+  suggestion?: XmiSuggestionResource | null;
+  onChoose?(subject: string, choice: ResolutionChoice): void;
+  onApplyChoices?(): void;
+  onSuggest?(): void;
+}
+
+function IssueList({ title, empty, issues }: { title: string; empty: string; issues: XmiImportIssueResource[] }) {
+  return (
+    <div className="generation-section">
+      <h3>{title}</h3>
+      {issues.length === 0 ? (
+        <p className="property-hint">{empty}</p>
+      ) : (
+        <ul className="generation-diagnostics">
+          {issues.map((issue, index) => (
+            <li key={`${issue.code}-${issue.subject}-${index}`}>
+              <strong>{issue.name ?? issue.code}</strong>
+              <span>{issue.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ResolutionEditor({
+  items,
+  choices,
+  busy,
+  onChoose,
+}: {
+  items: XmiImportIssueResource[];
+  choices: ResolutionChoices;
+  busy: boolean;
+  onChoose: ((subject: string, choice: ResolutionChoice) => void) | undefined;
+}) {
+  return (
+    <ul className="generation-diagnostics">
+      {items.map((issue, index) => {
+        const subject = issue.subject ?? '';
+        const choice = choices[subject];
+        const actions = issue.options.filter(
+          (option): option is 'RENAME' | 'SKIP' => option === 'RENAME' || option === 'SKIP',
+        );
+        if (actions.length === 0) {
+          return (
+            <li key={`${subject}-${index}`}>
+              <strong>{issue.name ?? issue.code}</strong>
+              <span>{issue.message}</span>
+              <span className="property-hint">Este problema no se puede resolver aquí.</span>
+            </li>
+          );
+        }
+        return (
+          <li key={`${subject}-${index}`}>
+            <strong>{issue.name ?? issue.code}</strong>
+            <span>{issue.message}</span>
+            <label>
+              Acción{' '}
+              <select
+                value={choice?.action ?? ''}
+                disabled={busy}
+                onChange={(event) => {
+                  const action = event.currentTarget.value;
+                  if (action === 'RENAME' || action === 'SKIP') {
+                    onChoose?.(subject, { action, newName: choice?.newName ?? '' });
+                  }
+                }}
+              >
+                <option value="" disabled>Elige una acción</option>
+                {actions.includes('RENAME') && <option value="RENAME">Renombrar</option>}
+                {actions.includes('SKIP') && <option value="SKIP">Omitir</option>}
+              </select>
+            </label>
+            {choice?.action === 'RENAME' && (
+              <label>
+                Nuevo nombre{' '}
+                <input
+                  type="text"
+                  value={choice.newName}
+                  disabled={busy}
+                  onChange={(event) => onChoose?.(subject, { action: 'RENAME', newName: event.currentTarget.value })}
+                />
+              </label>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 function LossReport({ losses }: { losses: XmiLossResource[] }) {
@@ -112,13 +220,24 @@ export function XmiImportPanelView({
   onSelectMode,
   onConfirm,
   onDismissError,
+  resolvable,
+  choices = {},
+  suggestion = null,
+  onChoose,
+  onApplyChoices,
+  onSuggest,
 }: XmiImportPanelViewProps) {
   const fieldPrefix = useId();
   const replaceModeId = `${fieldPrefix}-replace`;
   const addModeId = `${fieldPrefix}-add`;
   const collisionDiagnostics = importResult?.command.diagnostics.filter(
-    (diagnostic) => diagnostic.code === 'NAME_COLLISION_BLOCKS',
+    (diagnostic) => isCollisionCode(diagnostic.code),
   ) ?? [];
+  const previewIssues = preview?.issues ?? [];
+  const previewSplit = splitIssues(previewIssues);
+  const hasPreviewCollision = previewIssues.some((issue) => isCollisionCode(issue.code));
+  const editableIssues = resolvable ?? previewSplit.blockers;
+  const canConfirm = preview === null ? false : canConfirmImport(preview, mode, busy);
   const hasNameCollision = collisionDiagnostics.length > 0;
   const counts = preview === null ? null : [
     ['Clasificadores', preview.counts.classifiers],
@@ -189,8 +308,72 @@ export function XmiImportPanelView({
               ))}
             </dl>
           </div>
+          {preview.issues !== undefined && (
+            <>
+              {hasPreviewCollision && (
+                <div className="notice notice-error" role="alert">
+                  <strong>Hay conflictos de nombres que bloquean la importación.</strong>
+                </div>
+              )}
+              <IssueList title="Bloqueantes" empty="No hay bloqueantes." issues={previewSplit.blockers} />
+              <IssueList title="Avisos" empty="No hay avisos." issues={previewSplit.warnings} />
+              {(preview.repairs ?? []).length > 0 && (
+                <div className="generation-section">
+                  <h3>Reparado automáticamente</h3>
+                  <ul className="generation-diagnostics">
+                    {(preview.repairs ?? []).map((repair, index) => (
+                      <li key={`${repair.code}-${repair.subject}-${index}`}>
+                        <strong>{repair.code}</strong>
+                        <span>{repair.message}</span>
+                        {repair.count !== undefined && <span>Elementos afectados: {repair.count}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="generation-run-state" data-state={preview.clean ? 'clean' : 'pending'}>
+                {preview.clean ? 'El resultado quedaría limpio' : 'Quedan problemas por resolver'}
+              </p>
+            </>
+          )}
           <LossReport losses={preview.losses} />
           <DisagreementReport disagreements={preview.disagreements} />
+        </div>
+      )}
+
+      {preview && editableIssues.length > 0 && (
+        <div className="generation-section">
+          <h3>Resolver problemas</h3>
+          <ResolutionEditor items={editableIssues} choices={choices} busy={busy} onChoose={onChoose} />
+          {suggestion && (
+            <div className="generation-notice" role="status">
+              <span className="badge">
+                {suggestion.source === 'AI' ? 'Sugerido por IA' : 'Sugerido por reglas'}
+              </span>{' '}
+              <span>{suggestion.explanation}</span>
+            </div>
+          )}
+          <div className="generation-actions">
+            <button
+              className="button"
+              type="button"
+              onClick={onSuggest}
+              disabled={busy || mode === null || !onSuggest}
+            >
+              Resolver con IA
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={onApplyChoices}
+              disabled={busy || mode === null || !onApplyChoices}
+            >
+              Aplicar y revisar
+            </button>
+          </div>
+          {mode === null && (
+            <p className="property-hint">Elige un modo de importación para resolver los problemas.</p>
+          )}
         </div>
       )}
 
@@ -233,7 +416,7 @@ export function XmiImportPanelView({
               className="button button-primary"
               type="button"
               onClick={onConfirm}
-              disabled={busy || mode === null}
+              disabled={!canConfirm}
             >
               {busy && busyMessage?.startsWith('Importando') ? 'Importando…' : confirmLabel}
             </button>
@@ -288,6 +471,19 @@ function messageFor(error: unknown): string {
   return 'No se pudo completar la solicitud XMI. Revisa el archivo e inténtalo de nuevo.';
 }
 
+function addBlockers(
+  catalog: Record<string, XmiImportIssueResource>,
+  preview: XmiPreviewResource,
+): Record<string, XmiImportIssueResource> {
+  const next = { ...catalog };
+  for (const blocker of splitIssues(preview.issues).blockers) {
+    if (blocker.subject && next[blocker.subject] === undefined) {
+      next[blocker.subject] = blocker;
+    }
+  }
+  return next;
+}
+
 export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileBase64, setFileBase64] = useState<string | null>(null);
@@ -297,6 +493,9 @@ export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
   const [busy, setBusy] = useState(false);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [choices, setChoices] = useState<ResolutionChoices>({});
+  const [catalog, setCatalog] = useState<Record<string, XmiImportIssueResource>>({});
+  const [suggestion, setSuggestion] = useState<XmiSuggestionResource | null>(null);
   const previewSequence = useRef(0);
 
   const selectFile = useCallback(async (file: File) => {
@@ -307,6 +506,9 @@ export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
     setPreview(null);
     setMode(null);
     setImportResult(null);
+    setChoices({});
+    setCatalog({});
+    setSuggestion(null);
     setError(null);
     setBusy(true);
     setBusyMessage('Preparando vista previa…');
@@ -315,6 +517,7 @@ export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
       if (previewSequence.current === sequence) {
         setFileBase64(loaded.fileBase64);
         setPreview(loaded.preview);
+        setCatalog(addBlockers({}, loaded.preview));
       }
     } catch (cause: unknown) {
       if (previewSequence.current === sequence) {
@@ -328,11 +531,82 @@ export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
     }
   }, [projectId]);
 
+  const rerunPreview = useCallback(async (
+    nextMode: XmiImportMode | null,
+    nextChoices: ResolutionChoices,
+    nextCatalog: Record<string, XmiImportIssueResource>,
+  ) => {
+    if (!fileBase64) {
+      return;
+    }
+    const sequence = previewSequence.current + 1;
+    previewSequence.current = sequence;
+    setBusy(true);
+    setBusyMessage('Actualizando vista previa…');
+    setError(null);
+    try {
+      const resolutions = buildResolutions(Object.values(nextCatalog), nextChoices);
+      const next = await api.previewXmi(projectId, {
+        fileBase64,
+        ...(nextMode ? { mode: nextMode } : {}),
+        ...(resolutions.length > 0 ? { resolutions } : {}),
+      });
+      if (previewSequence.current === sequence) {
+        setPreview(next);
+        setCatalog(addBlockers(nextCatalog, next));
+      }
+    } catch (cause: unknown) {
+      if (previewSequence.current === sequence) {
+        setError(messageFor(cause));
+      }
+    } finally {
+      if (previewSequence.current === sequence) {
+        setBusy(false);
+        setBusyMessage(null);
+      }
+    }
+  }, [fileBase64, projectId]);
+
   const chooseMode = useCallback((nextMode: XmiImportMode) => {
     setMode(nextMode);
     setImportResult(null);
     setError(null);
+    setChoices({});
+    setCatalog({});
+    setSuggestion(null);
+    void rerunPreview(nextMode, {}, {});
+  }, [rerunPreview]);
+
+  const chooseResolution = useCallback((subject: string, choice: ResolutionChoice) => {
+    setChoices((current) => ({ ...current, [subject]: choice }));
+    setImportResult(null);
   }, []);
+
+  const suggest = useCallback(async () => {
+    if (!preview || !fileBase64 || !mode) {
+      return;
+    }
+    setBusy(true);
+    setBusyMessage('Pidiendo sugerencias a la IA…');
+    setError(null);
+    try {
+      const result = await api.suggestXmiResolutions(projectId, {
+        fileBase64,
+        checksum: preview.checksum,
+        mode,
+      });
+      const merged = mergeSuggestions(choices, result.resolutions);
+      setChoices(merged);
+      setSuggestion(result);
+      setBusy(false);
+      setBusyMessage(null);
+      await rerunPreview(mode, merged, catalog);
+    } catch (cause: unknown) {
+      setError(messageFor(cause));
+      setBusy(false);
+      setBusyMessage(null);
+    }
+  }, [catalog, choices, fileBase64, mode, preview, projectId, rerunPreview]);
 
   const confirm = useCallback(async () => {
     if (!preview || !fileBase64 || !mode) {
@@ -350,6 +624,7 @@ export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
         preview,
         mode,
         crypto.randomUUID(),
+        buildResolutions(Object.values(catalog), choices),
       );
       setImportResult(result);
     } catch (cause: unknown) {
@@ -358,7 +633,7 @@ export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
       setBusy(false);
       setBusyMessage(null);
     }
-  }, [fileBase64, mode, preview, projectId]);
+  }, [catalog, choices, fileBase64, mode, preview, projectId]);
 
   return (
     <XmiImportPanelView
@@ -377,6 +652,16 @@ export default function XmiImportPanel({ projectId }: XmiImportPanelProps) {
         void confirm();
       }}
       onDismissError={() => setError(null)}
+      resolvable={Object.values(catalog)}
+      choices={choices}
+      suggestion={suggestion}
+      onChoose={chooseResolution}
+      onApplyChoices={() => {
+        void rerunPreview(mode, choices, catalog);
+      }}
+      onSuggest={() => {
+        void suggest();
+      }}
     />
   );
 }

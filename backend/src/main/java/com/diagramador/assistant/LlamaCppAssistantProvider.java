@@ -97,6 +97,9 @@ public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssis
             Cada clase del contexto puede traer "store": "SQL" (relacional) o "DOCUMENT" (MongoDB). "storeSetManually": true significa que una persona lo fijó; si no aparece, lo decidió el sistema según las señales del diagrama (ser parte de una composición o tener atributos de lista lleva a DOCUMENT). Una relación entre clases de distinto almacenamiento se guarda como referencia por id, sin clave foránea ni integridad referencial. El almacenamiento se cambia desde el panel de propiedades de la clase, en el campo Storage.
             """.strip();
 
+    static final String PHOTO_INSTRUCTION = "La foto adjunta es un diagrama de clases: transcribilo en las "
+            + "operaciones del catálogo (clases, atributos y relaciones que veas), sin inventar lo que no se lea.";
+
     private final boolean enabled;
     private final String url;
     private final String model;
@@ -201,9 +204,37 @@ public class LlamaCppAssistantProvider implements AiAssistantProvider, ChatAssis
             throw new IllegalStateException("AI assistant provider is disabled");
         }
 
-        return callCompletions(List.of(
+        return callCompletions(draftMessages(modelContextJson, utterance, null, null));
+    }
+
+    @Override
+    public String draft(String modelContextJson, String utterance, String imageBase64, String imageMime) {
+        if (!enabled) {
+            throw new IllegalStateException("AI assistant provider is disabled");
+        }
+        return callCompletions(draftMessages(modelContextJson, utterance, imageBase64, imageMime));
+    }
+
+    /**
+     * The planning conversation. Text-only requests keep the exact two messages they always had;
+     * with a photo the system prompt is untouched and the instruction to transcribe the diagram
+     * rides the user turn, next to the inline image.
+     */
+    static List<Map<String, Object>> draftMessages(String modelContextJson, String utterance,
+            String imageBase64, String imageMime) {
+        String userText = modelContextJson + "\n\nPedido: " + utterance;
+        if (imageBase64 == null) {
+            return List.of(
+                    Map.of("role", "system", "content", SYSTEM_PROMPT),
+                    Map.of("role", "user", "content", userText));
+        }
+        String mime = imageMime == null || imageMime.isBlank() ? "image/jpeg" : imageMime;
+        return List.of(
                 Map.of("role", "system", "content", SYSTEM_PROMPT),
-                Map.of("role", "user", "content", modelContextJson + "\n\nPedido: " + utterance)));
+                Map.of("role", "user", "content", List.of(
+                        Map.of("type", "text", "text", userText + "\n\n" + PHOTO_INSTRUCTION),
+                        Map.of("type", "image_url", "image_url",
+                                Map.of("url", "data:" + mime + ";base64," + imageBase64)))));
     }
 
     private URI endpoint() {

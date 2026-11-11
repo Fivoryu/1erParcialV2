@@ -48,6 +48,7 @@ const SPECIFIC_MESSAGES: Record<string, string> = {
   MERGE_REQUEST_NOT_OPEN: 'La solicitud de fusión ya no está abierta.',
   MERGE_REQUEST_EXISTS: 'Ya hay una solicitud de fusión abierta entre esas ramas.',
   NETWORK_ERROR: 'No se pudo conectar con el servidor. Revisa la conexión e inténtalo de nuevo.',
+  NO_IMAGE: 'Ese mensaje no tiene una foto para convertir en sugerencia.',
   NO_FREE_PORT_PAIR: 'No hay puertos libres para un nuevo despliegue.',
   OPERATION_BODY_TOO_LARGE: 'La operación es demasiado grande.',
   PROPOSAL_DECIDED: 'Esta sugerencia ya fue decidida.',

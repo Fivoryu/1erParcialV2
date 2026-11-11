@@ -322,6 +322,12 @@ describe('ChatPanel', () => {
     expect(markup).toContain('Nueva sesión');
   });
 
+  it('names who asked the AI so several developers see whom it is serving', () => {
+    const markup = render({ aiStatus: { sessionId: session.id, state: 'RUNNING', requestedByDisplayName: 'Ana' } });
+
+    expect(markup).toContain('Solicitud de IA de Ana en curso');
+  });
+
   it('shows the actual AI request state and reason', () => {
     const markup = render({ aiStatus: { sessionId: session.id, state: 'FAILED', reason: 'Provider unavailable' } });
 

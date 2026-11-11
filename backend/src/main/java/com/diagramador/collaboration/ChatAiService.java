@@ -127,7 +127,7 @@ public class ChatAiService {
         try {
             // QUEUED is published before any worker can exist, so RUNNING/COMPLETED can never
             // precede it, and a cancellation's CANCELLED can only follow it.
-            publishStatus(projectId, sessionId, "QUEUED", null);
+            publishStatus(projectId, sessionId, request, "QUEUED", null);
             contextBudgetService.prepare(projectId, sessionId, messageId);
             Future<?> future = executor.submit(() -> run(projectId, sessionId, request));
             synchronized (request) {
@@ -158,7 +158,7 @@ public class ChatAiService {
     private void failRequest(UUID projectId, UUID sessionId, PendingRequest request, String reason) {
         pending.remove(sessionId, request);
         request.state = "FAILED";
-        publishStatus(projectId, sessionId, "FAILED", reason);
+        publishStatus(projectId, sessionId, request, "FAILED", reason);
     }
 
     public PendingResource pendingState(UUID projectId, UUID sessionId) {
@@ -198,7 +198,7 @@ public class ChatAiService {
         }
         pending.remove(sessionId, request);
         request.state = "CANCELLED";
-        publishStatus(projectId, sessionId, "CANCELLED", null);
+        publishStatus(projectId, sessionId, request, "CANCELLED", null);
     }
 
     private void run(UUID projectId, UUID sessionId, PendingRequest request) {
@@ -211,7 +211,7 @@ public class ChatAiService {
         try {
             currentUserContext.set(request.initiatingUser);
             request.state = "RUNNING";
-            publishStatus(projectId, sessionId, "RUNNING", null);
+            publishStatus(projectId, sessionId, request, "RUNNING", null);
 
             ChatSession accessibleSession = chatService.requireAccessibleSession(projectId, sessionId);
             UUID viewId = accessibleSession.getView().getId();
@@ -242,16 +242,16 @@ public class ChatAiService {
             }
             if (!published) {
                 request.state = "FAILED";
-                publishStatus(projectId, sessionId, "FAILED",
+                publishStatus(projectId, sessionId, request, "FAILED",
                         "The shared context changed; the response was not published.");
                 return;
             }
             request.state = "COMPLETED";
-            publishStatus(projectId, sessionId, "COMPLETED", null);
+            publishStatus(projectId, sessionId, request, "COMPLETED", null);
         } catch (RuntimeException exception) {
             logger.warn("AI answer failed for session {}", sessionId, exception);
             request.state = "FAILED";
-            publishStatus(projectId, sessionId, "FAILED", briefReason(exception));
+            publishStatus(projectId, sessionId, request, "FAILED", briefReason(exception));
         } finally {
             pending.remove(sessionId, request);
             currentUserContext.clear();
@@ -290,11 +290,17 @@ public class ChatAiService {
         return turns;
     }
 
-    private void publishStatus(UUID projectId, UUID sessionId, String state, String reason) {
+    private void publishStatus(UUID projectId, UUID sessionId, PendingRequest request, String state,
+            String reason) {
         try {
-            Map<String, Object> payload = reason == null
-                    ? Map.of("sessionId", sessionId, "state", state)
-                    : Map.of("sessionId", sessionId, "state", state, "reason", reason);
+            // The requester is part of every status so each developer sees whom the AI is serving.
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("sessionId", sessionId);
+            payload.put("state", state);
+            payload.put("requestedByDisplayName", request.initiatingUser.displayName());
+            if (reason != null) {
+                payload.put("reason", reason);
+            }
             eventBus.publish(ProjectEvent.of("chat.ai.status", projectId, payload));
         } catch (RuntimeException exception) {
             logger.warn("Failed to publish chat.ai.status {} for session {}", state, sessionId, exception);

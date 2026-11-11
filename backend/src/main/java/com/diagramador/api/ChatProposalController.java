@@ -36,7 +36,8 @@ public class ChatProposalController {
     public ResponseEntity<ProposalResource> propose(@PathVariable("projectId") UUID projectId,
             @PathVariable("sessionId") UUID sessionId, @RequestBody ProposeRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(proposalService.propose(projectId, sessionId, request == null ? null : request.utterance()));
+                .body(proposalService.propose(projectId, sessionId, request == null ? null : request.utterance(),
+                        request == null ? null : request.attachmentMessageId()));
     }
 
     @PostMapping("/projects/{projectId}/sessions/{sessionId}/proposals/{proposalId}/accept")
@@ -51,6 +52,6 @@ public class ChatProposalController {
         return proposalService.reject(projectId, sessionId, proposalId);
     }
 
-    public record ProposeRequest(String utterance) {
+    public record ProposeRequest(String utterance, UUID attachmentMessageId) {
     }
 }

@@ -15,6 +15,34 @@ class LlamaCppAssistantProviderPromptTest {
     private static final String PROMPT = LlamaCppAssistantProvider.SYSTEM_PROMPT;
 
     @Test
+    void textOnlyDraftMessagesStayExactlyAsBeforeTheImageRoute() {
+        List<java.util.Map<String, Object>> messages = LlamaCppAssistantProvider.draftMessages("{\"ctx\":1}",
+                "Creá Paciente", null, null);
+
+        assertThat(messages).containsExactly(
+                java.util.Map.of("role", "system", "content", LlamaCppAssistantProvider.SYSTEM_PROMPT),
+                java.util.Map.of("role", "user", "content", "{\"ctx\":1}\n\nPedido: Creá Paciente"));
+    }
+
+    @Test
+    void anImageDraftKeepsTheSystemPromptAndAppendsTheInstructionToTheMultimodalUserTurn() {
+        List<java.util.Map<String, Object>> messages = LlamaCppAssistantProvider.draftMessages("{\"ctx\":1}",
+                "Creá Paciente", "QUJD", "image/jpeg");
+
+        assertThat(messages).hasSize(2);
+        assertThat(messages.get(0)).isEqualTo(
+                java.util.Map.of("role", "system", "content", LlamaCppAssistantProvider.SYSTEM_PROMPT));
+        List<?> parts = (List<?>) messages.get(1).get("content");
+        java.util.Map<?, ?> text = (java.util.Map<?, ?>) parts.get(0);
+        assertThat((String) text.get("text")).startsWith("{\"ctx\":1}\n\nPedido: Creá Paciente")
+                .contains("foto adjunta es un diagrama de clases: transcribilo");
+        java.util.Map<?, ?> image = (java.util.Map<?, ?>) parts.get(1);
+        assertThat(image.get("type")).isEqualTo("image_url");
+        assertThat(((java.util.Map<?, ?>) image.get("image_url")).get("url"))
+                .isEqualTo("data:image/jpeg;base64,QUJD");
+    }
+
+    @Test
     void promptDeclaresTheV3ContractVersion() {
         assertThat(PROMPT).contains("ia4-02-prompt-v7");
         assertThat(PROMPT).doesNotContain("ia4-01-prompt-v4").doesNotContain("ia4-01-prompt-v3");

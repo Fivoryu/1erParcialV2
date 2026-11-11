@@ -145,6 +145,21 @@ describe('chat suggestions', () => {
     expect(render({ canDecideProposals: true, draft: 'Add Patient' })).not.toContain('Sugerir cambio');
   });
 
+  it('offers Proponer desde la foto only to editors that can suggest from a photo', () => {
+    expect(render({ canDecideProposals: true, onSuggestFromPhoto: () => true }))
+      .toContain('Proponer desde la foto');
+    expect(render({ canDecideProposals: false, onSuggestFromPhoto: () => true }))
+      .not.toContain('Proponer desde la foto');
+    expect(render({ canDecideProposals: true })).not.toContain('Proponer desde la foto');
+    // Without a photo attached the action stays disabled.
+    expect(render({ canDecideProposals: true, onSuggestFromPhoto: () => true }))
+      .toMatch(/<button[^>]*disabled=""[^>]*>Proponer desde la foto<\/button>/);
+  });
+
+  it('opens the camera on a phone from the photo input', () => {
+    expect(render({})).toMatch(/<input[^>]*id="chat-image-attachments"[^>]*capture="environment"/);
+  });
+
   it('surfaces why a suggestion could not be made', () => {
     expect(render({ proposalNotice: 'The local AI is not enabled on this deployment.' }))
       .toContain('The local AI is not enabled on this deployment.');

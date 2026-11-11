@@ -1,9 +1,14 @@
 package com.diagramador;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,6 +24,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -164,6 +170,103 @@ class ChatProposalApiTest extends AuthenticatedApiTest {
                 "SELECT count(*) FROM diagrammer.chat_proposal WHERE session_id = ?::uuid", Integer.class,
                 sessionId.toString());
         assertThat(stored).isZero();
+    }
+
+    @Test
+    void aPhotoOfTheMessageBecomesAPendingProposalThatChangesNothingUntilAccepted() throws Exception {
+        String owner = username("owner");
+        UUID projectId = createProject(owner);
+        UUID sessionId = createSession(owner, projectId);
+        String photoMessage = postPhotoMessage(owner, projectId, sessionId);
+        when(provider.draft(anyString(), anyString(), anyString(), anyString())).thenReturn(CREATE_PATIENT_PLAN);
+
+        JsonNode proposal = json(mockMvc.perform(authorizedAs(owner,
+                        post("/projects/{p}/sessions/{s}/proposals", projectId, sessionId)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(Map.of("utterance", "Pasá esta foto al diagrama",
+                                        "attachmentMessageId", photoMessage)))))
+                .andExpect(status().isCreated()).andReturn());
+
+        assertThat(proposal.path("status").asText()).isEqualTo("PENDING");
+        assertThat(proposal.path("operations").get(0).path("type").asText()).isEqualTo("classifier.create");
+        verify(provider).draft(anyString(), eq("Pasá esta foto al diagrama"), anyString(), eq("image/jpeg"));
+        assertThat(classifierNames(owner, projectId)).doesNotContain("Paciente");
+    }
+
+    @Test
+    void aMessageWithoutAPhotoOrFromAnotherSessionIsRefusedWithoutCallingTheModel() throws Exception {
+        String owner = username("owner");
+        UUID projectId = createProject(owner);
+        UUID sessionId = createSession(owner, projectId);
+        UUID otherSession = createSession(owner, projectId);
+        String plain = postMessage(owner, projectId, sessionId, "sin foto", null);
+        String foreign = postPhotoMessage(owner, projectId, otherSession);
+
+        for (String messageId : new String[] {plain, foreign, UUID.randomUUID().toString()}) {
+            MvcResult result = mockMvc.perform(authorizedAs(owner,
+                            post("/projects/{p}/sessions/{s}/proposals", projectId, sessionId)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(Map.of("utterance", "desde la foto",
+                                            "attachmentMessageId", messageId)))))
+                    .andExpect(status().isUnprocessableEntity()).andReturn();
+            assertThat(json(result).path("code").asText()).isEqualTo("NO_IMAGE");
+        }
+        verify(provider, never()).draft(anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    void aViewerCannotProposeFromAPhoto() throws Exception {
+        String owner = username("owner");
+        String viewer = username("viewer");
+        UUID projectId = createProject(owner);
+        bearer(viewer);
+        addMembership(viewer, projectId, ProjectMemberRole.VIEWER);
+        UUID sessionId = createSession(owner, projectId);
+        String photoMessage = postPhotoMessage(owner, projectId, sessionId);
+
+        mockMvc.perform(authorizedAs(viewer, post("/projects/{p}/sessions/{s}/proposals", projectId, sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("utterance", "desde la foto",
+                                "attachmentMessageId", photoMessage)))))
+                .andExpect(status().isForbidden());
+        verify(provider, never()).draft(anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    void aTextOnlyProposalStillUsesTheTextDraftOnly() throws Exception {
+        String owner = username("owner");
+        UUID projectId = createProject(owner);
+        UUID sessionId = createSession(owner, projectId);
+        when(provider.draft(anyString(), anyString())).thenReturn(CREATE_PATIENT_PLAN);
+
+        propose(owner, projectId, sessionId, "Agregá la clase Paciente");
+
+        verify(provider).draft(anyString(), eq("Agregá la clase Paciente"));
+        verify(provider, never()).draft(anyString(), anyString(), any(), any());
+    }
+
+    private String postPhotoMessage(String username, UUID projectId, UUID sessionId) throws Exception {
+        byte[] jpeg = new byte[103];
+        jpeg[0] = (byte) 0xFF;
+        jpeg[1] = (byte) 0xD8;
+        jpeg[2] = (byte) 0xFF;
+        MvcResult upload = mockMvc.perform(authorizedAs(username,
+                        multipart("/projects/{p}/sessions/{s}/attachments", projectId, sessionId)
+                                .file(new MockMultipartFile("file", "foto.jpg", "application/octet-stream", jpeg))))
+                .andExpect(status().isCreated()).andReturn();
+        return postMessage(username, projectId, sessionId, "mirá la foto",
+                json(upload).path("attachmentId").asText());
+    }
+
+    private String postMessage(String username, UUID projectId, UUID sessionId, String body,
+            String attachmentId) throws Exception {
+        Map<String, Object> payload = attachmentId == null ? Map.of("body", body)
+                : Map.of("body", body, "attachmentIds", java.util.List.of(attachmentId));
+        return json(mockMvc.perform(authorizedAs(username,
+                        post("/projects/{p}/sessions/{s}/messages", projectId, sessionId)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(payload))))
+                .andExpect(status().isCreated()).andReturn()).path("id").asText();
     }
 
     private JsonNode propose(String username, UUID projectId, UUID sessionId, String utterance) throws Exception {
