@@ -23,18 +23,22 @@ sin red y se levanta con su propia base PostgreSQL.
 | Incremento 1 — modelo y editor visual | **Cerrado** — [acta](docs/puds/cierre/03-cierre-incremento-1.md). Los tres defectos de presentación que su §3 nombra están **corregidos** |
 | Incremento 2 — generación, exportación y despliegue | **Cerrado, con límites declarados** — [acta](docs/puds/cierre/04-cierre-incremento-2.md) |
 | Unidad de despliegue desde el editor | **Cerrada** — [documento](docs/puds/generacion/04-despliegue-desde-el-editor.md): botón, operador en la máquina y dirección para el teléfono |
-| Incrementos 3 y siguientes (colaboración, XMI, IA, móvil) | Pendientes |
+| Incremento 3 — colaboración en vivo e intercambio XMI con EA | **Cerrado** — [acta](docs/puds/cierre/05-cierre-incremento-3.md) |
+| Incremento 4 — IA textual | **Cerrado**, con una quema de revisión pendiente por infraestructura — [acta](docs/puds/cierre/06-cierre-incremento-4.md) |
+| Guía de la app — tour y chat de ayuda | **Cerrada** — [acta](docs/puds/cierre/07-cierre-guia-asistente-app.md) |
+| IA colaborativa, foto a diagrama y XMI asistido | **Integrada en `main`** (PR #35): la IA dice a quién atiende, propone cambios desde una foto adjunta y ayuda a resolver los problemas de una importación XMI antes de importar |
+| Notación UML 2.5 completa del editor | **Integrada en `main`** (PR #36): visibilidad `+ - # ~`, multiplicidad con rango, estereotipos de lista fija, notas, atributos estáticos y derivados, `{ordered}` y `{unique}`; ver el manual de uso (`docs/3`, secciones 3 y 4) |
 
 ### Qué está verificado hoy
 
 | Superficie | Evidencia |
 | --- | --- |
-| Backend | `mvn -o -B verify` = **387 pruebas**, 0 fallos, sin red |
+| Backend | Suite completa del 2026-11-11 sobre la rama de la notación: **882 pruebas**, 2 omitidas, 0 fallos tras corregir la única falla que apareció (el lector XMI contaba la palabra clave de EA de una enumeración como estereotipo perdido). Las correcciones posteriores se verificaron solo con clases focalizadas. Antes: `mvn -o -B verify` = 387 pruebas, sin red |
 | Validación semántica UML 2.5 | `GET /projects/{id}/model/validation` = 6 reglas a nivel modelo (ciclos de generalización/realización, auto-generalización, validez de ends, multiplicidad RANGE incompleta, nombres de miembros únicos, tipos resolvibles); 4 pruebas de integración con Postgres; suite completa 387/0 en `feat/validacion-uml-semantica` |
 | Arnés del corte visible | `python tools/acceptance/acceptance.py` = **33 pasos OK**, 0 fallos, con teardown verificado |
 | Arnés de generación | `python tools/generation-acceptance/acceptance_generation.py` = **69 aserciones**, 0 fallos, con teardown verificado |
 | Arnés de despliegue | `python tools/generation-acceptance/acceptance_deployment.py` = **32 aserciones**, 0 fallos: ordena por la API, deja que el operador despliegue, comprueba `health` **desde la dirección de red**, hace el CRUD contra ese backend, ordena detener y verifica que no quedó nada |
-| Editor web | `npm run lint` = 0 errores, `npm test` = **371 pruebas** pasando (4 skipped), `npm run build` en verde |
+| Editor web | Suite completa del 2026-11-11 (`npx vitest run`): **917 pruebas** pasando, 4 omitidas, 88 archivos; `tsc --noEmit` limpio. Antes: `npm test` = 371 pruebas pasando, `npm run build` en verde |
 | Menú contextual + multiplicidad por extremo | Click derecho en clase/relación/lienzo abre menú estilo EA (items sin soporte deshabilitados con razón); submenú Multiplicidad con `1`, `0..1`, `1..*`, `0..*` y dispatch `relationship.update` con payload completo byte-preservado; el extremo (A/B) se preselecciona por etiqueta clickeable o por cercanía al click en la línea. Cobertura: 73 tests de lógica pura + markup (convención sin jsdom) |
 | Voz para el asistente de IA | Botón mic en el panel del asistente (Web Speech API, `es-AR`): dictado en vivo con interim como hint `aria-live`, transcript final anexado al texto sin auto-envío, botón oculto en navegadores sin soporte. Cobertura: máquina de estados pura + hook + markup; `npm test` = **438 passed / 4 skipped**, lint, tsc y `npm run build` en verde |
 | Corte visible del Incremento 1 | Crear proyecto, dos clases, atributo, operación, relación, mover, recargar y encontrar lo mismo **con la misma disposición** |

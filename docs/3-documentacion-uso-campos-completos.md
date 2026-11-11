@@ -100,6 +100,29 @@ La generación, descarga, verificación disponible e implementación del backend
 *Figura. Clase `Autor` con los atributos `nombre` y `nacionalidad` y las acciones `Add attribute` y
 `Add operation` visibles en la caja del clasificador.*
 
+### Notación UML de clasificadores y miembros
+
+Todo se edita en el panel de propiedades del elemento seleccionado y se dibuja en la caja según UML 2.5:
+
+| Qué | Dónde se elige | Cómo se dibuja |
+| --- | --- | --- |
+| **Visibilidad** | Lista de visibilidad: público, privado, **Protegido (#)** y **Paquete (~)** | `+`, `-`, `#`, `~` antes del nombre del miembro |
+| **Multiplicidad con rango** | Opción **Rango** de la multiplicidad, con los campos **Mínimo** y **Máximo** (máximo vacío = sin límite) | `2..5`, `2..*`, o `3` cuando mínimo y máximo coinciden |
+| **Estático** | Casilla **Estático** del atributo | La fila del atributo va subrayada |
+| **Derivado** | Casilla **Derivado** del atributo | Barra antes del nombre: `/edad: int` |
+| **Estereotipo** | Lista **Estereotipo**, con la opción *(ninguno)*; no se escribe texto libre | `«entity»` sobre el nombre de la clase, o antes del miembro |
+
+Las listas de estereotipos son fijas, para que nadie tenga que conocer el nombre exacto:
+
+- **Clases** (solo clase y clase abstracta): `entity`, `boundary`, `control`, `service`, `utility`, `type`,
+  `auxiliary`, `focus`, `implementation_class`, `metaclass` y `signal`. Las interfaces y las enumeraciones ya
+  llevan su propia etiqueta, y los paquetes no admiten estereotipo.
+- **Operaciones:** `create`, `destroy` y `query`.
+- **Atributos** (convenciones de modelado, no estándar de UML): `id`, `unique` y `readonly`.
+
+Un elemento lleva **un solo** estereotipo. Una regla de rango se rechaza si el máximo es menor que el mínimo o
+si el mínimo es negativo, y el modelo no cambia.
+
 ---
 
 ## 4. Crear y editar relaciones UML
@@ -118,6 +141,29 @@ La generación, descarga, verificación disponible e implementación del backend
 
 *Figura. Relación creada entre `Libro` y `Autor` a partir de la instrucción *"relaciona Libro con
 Autor"*; el lienzo muestra la asociación y el panel de operaciones la registra.*
+
+### Propiedades de los extremos y notas
+
+- **Extremos.** En el panel de propiedades de la relación, cada extremo tiene además las casillas
+  **Ordenado** y **Único**. Se dibujan junto a la multiplicidad: `items 0..* {ordered} {unique}`. La
+  multiplicidad de cada extremo admite también un **Rango** (`2..5`).
+- **Importación de EA.** Al importar un XMI, **Ordenado** se lee del archivo, pero **Único** no: UML define
+  `true` como valor por defecto y Enterprise Architect lo escribe en todos los extremos, así que leerlo
+  marcaría `{unique}` en todas las relaciones. Sí se escribe al exportar cuando está marcado.
+- **Notas.** El botón **Nota** de la barra de herramientas crea una nota; si hay una clase o relación
+  seleccionada, nace ya enlazada a ella. Una nota se dibuja como un rectángulo de esquina doblada con
+  su texto, y se une con **líneas punteadas** a los elementos que anota. Puede anotar **cero, uno o
+  varios** elementos (clases y relaciones). En su panel de propiedades se edita el texto (hasta 2000
+  caracteres), se ve la lista **Anota a** con la acción **Quitar**, se agregan enlaces con **Vincular a…**
+  y se elimina la nota. Si se borra un elemento anotado, la nota se conserva y pierde solo ese enlace.
+  En XMI se exporta como `ownedComment` con sus `annotatedElement`; al importar, las notas llegan sin
+  posición en el lienzo.
+
+> **Alcance de la notación.** El editor cubre clases, clases abstractas, interfaces, enumeraciones y
+> paquetes, las seis relaciones UML, clase de asociación, visibilidad, rangos, estereotipos, notas,
+> miembros estáticos y derivados, y `{ordered}`/`{unique}`. No cubre calificadores, asociaciones n-arias,
+> clases plantilla, clases anidadas ni `readOnly`/`isQuery`/`redefines`. El generador de código sigue
+> aceptando solo visibilidad pública y privada y rechaza la protegida, la de paquete y los rangos.
 
 ---
 

@@ -8,7 +8,7 @@
 
 Este archivo es el punto de entrada breve. La información canónica está separada para que cada flujo pueda leerse y revisarse sin recorrer un único documento largo.
 
-**Estado:** captura, análisis y línea base inicial de Diseño (D0–D6) documentados y cerrados para el umbral C1; la implementación por ciclos C1→C2→C3 y los flujos PUDS posteriores quedan pendientes explícitos.
+**Estado:** captura, análisis y línea base de Diseño (D0–D6) documentados. La implementación avanzó por incrementos 0 a 4 y la guía de la app, cuyas actas de cierre están en [`puds/cierre/`](puds/cierre/); el estado vigente de cada incremento y las pruebas medidas están en el [README](../README.md#estado-actual). La notación UML del editor se documenta en el [manual de uso](3-documentacion-uso-campos-completos.md), secciones 3 y 4.
 
 ## Orden recomendado de lectura
 
@@ -50,6 +50,6 @@ Q9 continúa abierta hasta el Ciclo 3; Q3 continúa como tarea de prueba.
 
 ## Flujos posteriores: pendientes explícitos
 
-La implementación, integración, pruebas completas, despliegue, documentación de usuario y cierre de PUDS no se completan en estos documentos. Solo podrán iniciarse después de cerrar la línea base y aprobar los resultados de captura y análisis.
+Este esqueleto cubre captura, análisis y diseño. La implementación, las pruebas, el despliegue y la documentación de usuario se documentan en sus propios archivos: las actas de [`puds/cierre/`](puds/cierre/), [`2.4`](2.4-implementacion-campos-completos.md), [`2.5`](2.5-pruebas-campos-completos.md) y el [manual de uso](3-documentacion-uso-campos-completos.md).
 
 > **Compatibilidad:** este archivo conserva la ruta original como índice para que cualquier referencia existente siga llegando a una página de navegación; los documentos canónicos enlazan entre sí para la navegación detallada.
