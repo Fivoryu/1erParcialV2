@@ -339,6 +339,11 @@ public final class XmiReader {
             if (written.isEmpty()) {
                 return null;
             }
+            // EA marks an interface or enumeration with its own kind keyword as the stereotype; that
+            // is the classifier kind we already model, not an applied stereotype, so it is no loss.
+            if (!Stereotypes.classifierMayCarryOne(kind) && written.equalsIgnoreCase(kind.name())) {
+                return null;
+            }
             String canonical = Stereotypes.canonical(ClassifierStereotype.class, written);
             if (canonical == null || !Stereotypes.classifierMayCarryOne(kind)) {
                 loss("unsupported_classifier_stereotype", 1);
