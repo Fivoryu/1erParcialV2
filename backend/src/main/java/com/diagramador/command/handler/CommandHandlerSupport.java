@@ -19,6 +19,7 @@ import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
 import com.diagramador.domain.UmlConstraint;
 import com.diagramador.domain.UmlModel;
+import com.diagramador.domain.UmlNote;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.persistence.ClassifierRepository;
@@ -27,6 +28,7 @@ import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.TypeReferenceRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
+import com.diagramador.persistence.UmlNoteRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import java.util.HashSet;
@@ -51,12 +53,13 @@ public class CommandHandlerSupport {
     private final OperationParameterRepository parameterRepository;
     private final TypeReferenceRepository typeReferenceRepository;
     private final UmlConstraintRepository constraintRepository;
+    private final UmlNoteRepository noteRepository;
 
     public CommandHandlerSupport(ObjectMapper objectMapper, ClassifierRepository classifierRepository,
             DiagramViewRepository viewRepository, UmlRelationshipRepository relationshipRepository,
             UmlAttributeRepository attributeRepository, UmlOperationRepository operationRepository,
             OperationParameterRepository parameterRepository, TypeReferenceRepository typeReferenceRepository,
-            UmlConstraintRepository constraintRepository) {
+            UmlConstraintRepository constraintRepository, UmlNoteRepository noteRepository) {
         this.objectMapper = objectMapper;
         this.classifierRepository = classifierRepository;
         this.viewRepository = viewRepository;
@@ -66,6 +69,7 @@ public class CommandHandlerSupport {
         this.parameterRepository = parameterRepository;
         this.typeReferenceRepository = typeReferenceRepository;
         this.constraintRepository = constraintRepository;
+        this.noteRepository = noteRepository;
     }
 
     public JsonNode payload(CommandHandler.Context context, Set<String> allowed) {
@@ -449,6 +453,45 @@ public class CommandHandlerSupport {
         return constraint;
     }
 
+    public UmlNote note(CommandHandler.Context context) {
+        return note(context.model(), targetId(context, "note"));
+    }
+
+    public UmlNote note(UmlModel model, UUID id) {
+        UmlNote note = noteRepository.findById(id).orElse(null);
+        if (note == null || !note.getModel().getId().equals(model.getId())) {
+            precondition("Note " + id + " does not belong to model " + model.getId());
+        }
+        return note;
+    }
+
+    /** A note body: a non-blank string of at most {@link UmlNote#MAX_BODY_LENGTH} characters. */
+    public String noteBody(JsonNode payload, String field) {
+        String body = text(payload, field);
+        if (body.length() > UmlNote.MAX_BODY_LENGTH) {
+            invalid("Payload field '" + field + "' must be at most " + UmlNote.MAX_BODY_LENGTH + " characters");
+        }
+        return body;
+    }
+
+    /**
+     * What an annotated element id names in the model: a classifier or a relationship. Anything else is a failed
+     * precondition (the element is not there), like every other reference to a missing element.
+     */
+    public TargetType annotatedElementType(UmlModel model, UUID id) {
+        Classifier classifier = classifierRepository.findById(id).orElse(null);
+        if (classifier != null && classifier.getModel().getId().equals(model.getId())) {
+            return TargetType.CLASSIFIER;
+        }
+        UmlRelationship relationship = relationshipRepository.findById(id).orElse(null);
+        if (relationship != null && relationship.getModel().getId().equals(model.getId())) {
+            return TargetType.RELATIONSHIP;
+        }
+        precondition("Annotated element " + id + " is neither a classifier nor a relationship of model "
+                + model.getId());
+        return null;
+    }
+
     public Classifier namespace(UmlModel model, UUID namespaceId) {
         if (namespaceId == null) {
             return null;
@@ -659,6 +702,28 @@ public class CommandHandlerSupport {
                 .setParameter("ownerId", ownerId)
                 .setParameter("expression", expression)
                 .setParameter("severity", severity)
+                .executeUpdate();
+    }
+
+    public void insertNote(CommandHandler.Context context, UUID id, String body) {
+        context.entityManager().createNativeQuery("""
+                INSERT INTO diagrammer.uml_note (note_id, model_id, body, created_at)
+                VALUES (CAST(:id AS uuid), CAST(:modelId AS uuid), :body, now())
+                """)
+                .setParameter("id", id)
+                .setParameter("modelId", context.model().getId())
+                .setParameter("body", body)
+                .executeUpdate();
+    }
+
+    public void insertNoteLink(CommandHandler.Context context, UUID noteId, TargetType targetType, UUID targetId) {
+        context.entityManager().createNativeQuery("""
+                INSERT INTO diagrammer.uml_note_link (note_id, target_type, target_id)
+                VALUES (CAST(:noteId AS uuid), :targetType, CAST(:targetId AS uuid))
+                """)
+                .setParameter("noteId", noteId)
+                .setParameter("targetType", targetType.name())
+                .setParameter("targetId", targetId)
                 .executeUpdate();
     }
 

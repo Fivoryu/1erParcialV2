@@ -20,6 +20,7 @@ import com.diagramador.persistence.OperationParameterRepository;
 import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
+import com.diagramador.persistence.UmlRelationshipRepository;
 import com.diagramador.persistence.UmlModelRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -54,14 +55,17 @@ public class UndoService {
     private final RelationshipEndRepository relationshipEndRepository;
     private final ObjectMapper objectMapper;
     private final ClassifierRepository classifierRepository;
+    private final UmlRelationshipRepository relationshipRepository;
 
     public UndoService(UmlModelRepository modelRepository, UndoLogRepository undoLogRepository,
             ProjectAuthorizationService projectAuthorizationService, CurrentUserContext currentUserContext,
             CommandService commandService, UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, OperationParameterRepository parameterRepository,
             UmlConstraintRepository constraintRepository, RelationshipEndRepository relationshipEndRepository,
-            ObjectMapper objectMapper, ClassifierRepository classifierRepository) {
+            ObjectMapper objectMapper, ClassifierRepository classifierRepository,
+            UmlRelationshipRepository relationshipRepository) {
         this.classifierRepository = classifierRepository;
+        this.relationshipRepository = relationshipRepository;
         this.modelRepository = modelRepository;
         this.undoLogRepository = undoLogRepository;
         this.projectAuthorizationService = projectAuthorizationService;
@@ -161,6 +165,14 @@ public class UndoService {
             case "relationship.create" -> inverseOfRelationshipCreate(entry, payload, modelId, projectId,
                     baseRevision);
             case "relationship.delete" -> inverseOfRelationshipDelete(entry, modelId, projectId, baseRevision);
+            case "note.create" -> inverseOfNoteCreate(entry, payload, modelId, projectId, baseRevision);
+            case "note.update" -> inverseOfSnapshotUpdate(entry, "note.update", "body", originalTargets,
+                    baseRevision, modelId, projectId);
+            case "note.delete" -> inverseOfNoteDelete(entry, modelId, projectId, baseRevision);
+            case "note.link" -> inverseOfNoteLink(entry, payload, "note.unlink", originalTargets, modelId, projectId,
+                    baseRevision);
+            case "note.unlink" -> inverseOfNoteLink(entry, payload, "note.link", originalTargets, modelId, projectId,
+                    baseRevision);
             default -> Inverse.rejected("NOT_UNDOABLE",
                     "La operación " + entry.getType() + " no tiene inverso declarado.");
         };
@@ -235,6 +247,51 @@ public class UndoService {
         return Inverse.of(new OperationEnvelope(UUID.randomUUID(), "attribute.add", author(), projectId,
                 modelId, baseRevision, List.of(new Target("classifier", classifierId)), List.of(), payload,
                 CommandOrigin.UNDO, entry.getCommand().getCommandId(), UUID.randomUUID().toString()));
+    }
+
+    private Inverse inverseOfNoteCreate(UndoLogEntry entry, JsonNode payload, UUID modelId, UUID projectId,
+            long baseRevision) {
+        // A note created without a client id has no recorded id to delete again.
+        if (!payload.hasNonNull("id")) {
+            return Inverse.rejected("NOT_UNDOABLE", "note.create sin id no tiene inverso declarado.");
+        }
+        return Inverse.of(new OperationEnvelope(UUID.randomUUID(), "note.delete", author(), projectId, modelId,
+                baseRevision, List.of(new Target("note", uuid(payload.path("id")))), List.of(), Map.of(),
+                CommandOrigin.UNDO, entry.getCommand().getCommandId(), UUID.randomUUID().toString()));
+    }
+
+    private Inverse inverseOfNoteDelete(UndoLogEntry entry, UUID modelId, UUID projectId, long baseRevision) {
+        JsonNode snapshot = firstTargetSnapshot(entry);
+        if (snapshot.isMissingNode() || snapshot.path("body").isMissingNode()) {
+            return Inverse.rejected("NOT_UNDOABLE", "El valor previo no fue capturado para note.delete.");
+        }
+        // Only the elements still in the model come back: another editor may have deleted one since.
+        List<String> annotated = new ArrayList<>();
+        for (JsonNode link : snapshot.path("annotatedElements")) {
+            UUID targetId = uuid(link.path("targetId"));
+            boolean present = "RELATIONSHIP".equals(link.path("targetType").asText())
+                    ? relationshipRepository.existsById(targetId) : classifierRepository.existsById(targetId);
+            if (present) {
+                annotated.add(targetId.toString());
+            }
+        }
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("id", snapshot.path("id").asText());
+        payload.put("body", snapshot.path("body").asText());
+        payload.put("annotatedElementIds", annotated);
+        return Inverse.of(new OperationEnvelope(UUID.randomUUID(), "note.create", author(), projectId, modelId,
+                baseRevision, List.of(), List.of(), payload, CommandOrigin.UNDO, entry.getCommand().getCommandId(),
+                UUID.randomUUID().toString()));
+    }
+
+    private Inverse inverseOfNoteLink(UndoLogEntry entry, JsonNode payload, String inverseType,
+            List<Target> originalTargets, UUID modelId, UUID projectId, long baseRevision) {
+        Map<String, Object> inversePayload = new java.util.LinkedHashMap<>();
+        inversePayload.put("targetType", payload.path("targetType").asText());
+        inversePayload.put("targetId", payload.path("targetId").asText());
+        return Inverse.of(new OperationEnvelope(UUID.randomUUID(), inverseType, author(), projectId, modelId,
+                baseRevision, originalTargets, List.of(), inversePayload, CommandOrigin.UNDO,
+                entry.getCommand().getCommandId(), UUID.randomUUID().toString()));
     }
 
     private Inverse inverseOfRelationshipCreate(UndoLogEntry entry, JsonNode payload, UUID modelId, UUID projectId,

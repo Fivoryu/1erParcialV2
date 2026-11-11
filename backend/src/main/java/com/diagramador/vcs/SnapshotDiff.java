@@ -17,7 +17,8 @@ import java.util.UUID;
 final class SnapshotDiff {
 
     private static final List<String> TYPE_ORDER = List.of("CLASSIFIER", "ATTRIBUTE", "OPERATION", "PARAMETER",
-            "CONSTRAINT", "RELATIONSHIP", "RELATIONSHIP_END", "VIEW", "GEOMETRY", "CONNECTOR_PATH", "VIEW_STYLE");
+            "CONSTRAINT", "RELATIONSHIP", "RELATIONSHIP_END", "VIEW", "GEOMETRY", "CONNECTOR_PATH", "VIEW_STYLE", "NOTE",
+            "NOTE_LINK");
 
     private SnapshotDiff() {
     }
@@ -130,6 +131,7 @@ final class SnapshotDiff {
             case "RELATIONSHIP_END" -> "RELATIONSHIP:" + fields.get("relationshipId");
             case "GEOMETRY", "CONNECTOR_PATH" -> "VIEW:" + fields.get("viewId");
             case "CONSTRAINT" -> fields.get("ownerType") + ":" + fields.get("ownerId");
+            case "NOTE_LINK" -> "NOTE:" + fields.get("noteId");
             default -> null;
         };
         return ownerKey == null ? null : nameById(ownerKey, primary, fallback);

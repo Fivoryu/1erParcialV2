@@ -47,6 +47,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -224,6 +225,61 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
         assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(stereotyped);
         assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
                 .isEqualTo(snapshotService.toJson(snapshot));
+    }
+
+    @Test
+    void notesRoundTripThroughASnapshotAndChangeTheStateHashOnlyWhenPresent() {
+        Fixture fixture = createRichModel();
+        String plain = snapshotService.stateHash(fixture.model());
+        SnapshotModel base = snapshotService.capture(fixture.model());
+        UUID relationshipId = base.relationships().get(0).id();
+        UUID noteId = UUID.randomUUID();
+        SnapshotModel withNote = new SnapshotModel(base.views(), base.classifiers(), base.relationships(),
+                base.viewStyle(), List.of(new com.diagramador.api.ModelResource.NoteResource(noteId,
+                        "line one\nline two", List.of(
+                                new com.diagramador.api.ModelResource.NoteLinkResource(TargetType.CLASSIFIER,
+                                        fixture.mutableClassifierId()),
+                                new com.diagramador.api.ModelResource.NoteLinkResource(TargetType.RELATIONSHIP,
+                                        relationshipId)))));
+
+        snapshotService.materialize(fixture.model(), withNote);
+
+        String noted = snapshotService.stateHash(fixture.model());
+        assertThat(noted).isNotEqualTo(plain);
+        assertThat(stateHasher.hash(withNote)).isEqualTo(noted);
+        assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
+                .isEqualTo(snapshotService.toJson(withNote));
+        assertThat(snapshotService.fromJson(snapshotService.toJson(withNote)).notes()).isEqualTo(withNote.notes());
+
+        ObjectNode legacy = ((ObjectNode) snapshotService.toJson(base)).deepCopy();
+        legacy.remove("notes");
+        assertThat(snapshotService.fromJson(legacy).notes()).as("an old snapshot has no notes").isEmpty();
+
+        snapshotService.materialize(fixture.model(), base);
+        assertThat(snapshotService.capture(fixture.model()).notes()).isEmpty();
+        assertThat(snapshotService.stateHash(fixture.model())).as("no note, the hash it always had").isEqualTo(plain);
+    }
+
+    @Test
+    void aSnapshotWithANoteLinkToAnAbsentElementOrADuplicateLinkIsRejected() {
+        Fixture fixture = createRichModel();
+        SnapshotModel base = snapshotService.capture(fixture.model());
+        com.diagramador.api.ModelResource.NoteLinkResource known = new com.diagramador.api.ModelResource.NoteLinkResource(
+                TargetType.CLASSIFIER, fixture.mutableClassifierId());
+        SnapshotModel dangling = new SnapshotModel(base.views(), base.classifiers(), base.relationships(),
+                base.viewStyle(), List.of(new com.diagramador.api.ModelResource.NoteResource(UUID.randomUUID(), "n",
+                        List.of(new com.diagramador.api.ModelResource.NoteLinkResource(TargetType.CLASSIFIER,
+                                UUID.randomUUID())))));
+        SnapshotModel duplicated = new SnapshotModel(base.views(), base.classifiers(), base.relationships(),
+                base.viewStyle(), List.of(new com.diagramador.api.ModelResource.NoteResource(UUID.randomUUID(), "n",
+                        List.of(known, known))));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> snapshotService.materialize(fixture.model(), dangling))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("absent from the snapshot");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> snapshotService.materialize(fixture.model(), duplicated))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("twice");
+        assertThat(snapshotService.capture(fixture.model()).notes()).isEmpty();
     }
 
     private void setStereotypes(Fixture fixture, String classifier, String attribute, String operation) {

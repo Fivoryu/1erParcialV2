@@ -16,7 +16,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
-/** Upserts classifier rectangles or replaces relationship paths in one shared diagram view. */
+/** Upserts classifier or note rectangles or replaces relationship paths in one shared diagram view. */
 @Component
 public class GeometrySetHandler implements CommandHandler.AddAction {
 
@@ -47,14 +47,17 @@ public class GeometrySetHandler implements CommandHandler.AddAction {
         JsonNode payload = support.payload(context, FIELDS);
         support.requireFields(payload, "targetType", "viewId", "targetId");
         TargetType targetType = targetType(payload);
-        rejectUnknownFields(payload, targetType == TargetType.CLASSIFIER ? CLASSIFIER_FIELDS : RELATIONSHIP_FIELDS);
+        rejectUnknownFields(payload, targetType == TargetType.RELATIONSHIP ? RELATIONSHIP_FIELDS : CLASSIFIER_FIELDS);
 
         UUID viewId = support.uuid(payload, "viewId");
         UUID targetId = support.uuid(payload, "targetId");
         DiagramView view = support.diagramView(context.model(), viewId);
         if (targetType == TargetType.CLASSIFIER) {
             support.classifier(context.model(), targetId);
-            upsertClassifierGeometry(payload, view, targetId);
+            upsertRectangleGeometry(payload, view, TargetType.CLASSIFIER, targetId);
+        } else if (targetType == TargetType.NOTE) {
+            support.note(context.model(), targetId);
+            upsertRectangleGeometry(payload, view, TargetType.NOTE, targetId);
         } else {
             UmlRelationship relationship = support.relationship(context.model(), targetId);
             replaceRelationshipPaths(payload, view, relationship);
@@ -67,15 +70,17 @@ public class GeometrySetHandler implements CommandHandler.AddAction {
         return switch (value.toUpperCase(java.util.Locale.ROOT)) {
             case "CLASSIFIER" -> TargetType.CLASSIFIER;
             case "RELATIONSHIP" -> TargetType.RELATIONSHIP;
+            case "NOTE" -> TargetType.NOTE;
             default -> {
                 support.invalid("Unsupported geometry targetType '" + value
-                        + "'; supported values are CLASSIFIER and RELATIONSHIP");
+                        + "'; supported values are CLASSIFIER, RELATIONSHIP and NOTE");
                 yield null;
             }
         };
     }
 
-    private void upsertClassifierGeometry(JsonNode payload, DiagramView view, UUID targetId) {
+    private void upsertRectangleGeometry(JsonNode payload, DiagramView view, TargetType rectangleType,
+            UUID targetId) {
         support.requireFields(payload, "x", "y", "w", "h");
         int x = support.integer(payload, "x");
         int y = support.integer(payload, "y");
@@ -86,7 +91,7 @@ public class GeometrySetHandler implements CommandHandler.AddAction {
         }
 
         ElementGeometry geometry = geometryRepository.findByViewId(view.getId()).stream()
-                .filter(candidate -> candidate.getTargetType() == TargetType.CLASSIFIER
+                .filter(candidate -> candidate.getTargetType() == rectangleType
                         && candidate.getTargetId().equals(targetId))
                 .findFirst()
                 .orElse(null);
@@ -94,7 +99,7 @@ public class GeometrySetHandler implements CommandHandler.AddAction {
                 ? support.integer(payload, "zOrder")
                 : geometry == null ? 0 : geometry.getZOrder();
         if (geometry == null) {
-            geometry = ElementGeometry.create(view, TargetType.CLASSIFIER, targetId, x, y, w, h, zOrder);
+            geometry = ElementGeometry.create(view, rectangleType, targetId, x, y, w, h, zOrder);
         } else {
             geometry.setX(x);
             geometry.setY(y);

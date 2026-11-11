@@ -98,6 +98,7 @@ public class ProjectApiService {
     private final ViewStyleRepository viewStyleRepository;
     private final com.diagramador.command.CommandService commandService;
     private final com.diagramador.undo.UndoCaptureService undoCaptureService;
+    private final NoteResourceAssembler noteResources;
 
     public ProjectApiService(ProjectRepository projectRepository, ModelCommandRepository modelCommandRepository,
             UmlModelRepository modelRepository,
@@ -111,8 +112,9 @@ public class ProjectApiService {
             ProjectMemberRepository projectMemberRepository, CurrentUserContext currentUserContext,
             ProjectAuthorizationService projectAuthorizationService,
             com.diagramador.command.CommandService commandService,
-            com.diagramador.undo.UndoCaptureService undoCaptureService) {
+            com.diagramador.undo.UndoCaptureService undoCaptureService, NoteResourceAssembler noteResources) {
         this.projectRepository = projectRepository;
+        this.noteResources = noteResources;
         this.modelCommandRepository = modelCommandRepository;
         this.projectMemberRepository = projectMemberRepository;
         this.currentUserContext = currentUserContext;
@@ -290,7 +292,7 @@ public class ProjectApiService {
                                 routeAdjustment(style))))
                 .toList();
         return withEffectiveStores(new ModelResource(model.getId(), projectId, model.getCurrentRevision(), versionId,
-                views, classifiers, relationships, viewStyles));
+                views, classifiers, relationships, viewStyles, noteResources.forModel(model.getId())));
     }
 
     /** Fills each class with the store the generator will use and why, so every consumer reads one decision. */
@@ -303,7 +305,7 @@ public class ProjectApiService {
                         : classifier)
                 .toList();
         return new ModelResource(model.id(), model.projectId(), model.revision(), model.versionId(), model.views(),
-                classifiers, model.relationships(), model.viewStyle());
+                classifiers, model.relationships(), model.viewStyle(), model.notes());
     }
 
     /** ROR-02: null-safe read of the persisted frame-relative orthogonal adjustment. */

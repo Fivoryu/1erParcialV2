@@ -249,6 +249,12 @@ public class VcsRepoQueryService {
                 return Optional.of(new ChangeOwner("RELATIONSHIP", relationship.id()));
             }
         }
+        if (targetType == TargetType.NOTE) {
+            return snapshot.notes().stream()
+                    .filter(note -> targetId.equals(note.id()))
+                    .map(note -> new ChangeOwner("NOTE", note.id()))
+                    .findFirst();
+        }
         if (targetType == TargetType.DIAGRAM_VIEW) {
             return snapshot.views().stream()
                     .filter(view -> targetId.equals(view.id()))

@@ -10,13 +10,21 @@ public record SnapshotModel(
         List<SnapshotView> views,
         List<ModelResource.ClassifierResource> classifiers,
         List<ModelResource.RelationshipResource> relationships,
-        List<SnapshotViewStyle> viewStyle) {
+        List<SnapshotViewStyle> viewStyle,
+        List<ModelResource.NoteResource> notes) {
+
+    /** Pre-notes shape: no notes, as old snapshots without the field read. */
+    public SnapshotModel(List<SnapshotView> views, List<ModelResource.ClassifierResource> classifiers,
+            List<ModelResource.RelationshipResource> relationships, List<SnapshotViewStyle> viewStyle) {
+        this(views, classifiers, relationships, viewStyle, List.of());
+    }
 
     public SnapshotModel {
         views = views == null ? List.of() : List.copyOf(views);
         classifiers = classifiers == null ? List.of() : List.copyOf(classifiers);
         relationships = relationships == null ? List.of() : List.copyOf(relationships);
         viewStyle = viewStyle == null ? List.of() : List.copyOf(viewStyle);
+        notes = notes == null ? List.of() : List.copyOf(notes);
     }
 
     public record SnapshotView(UUID id, String name, boolean isDefault, String viewKind,

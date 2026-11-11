@@ -3,8 +3,11 @@ package com.diagramador.vcs;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.diagramador.api.ModelResource.ClassifierResource;
+import com.diagramador.api.ModelResource.NoteLinkResource;
+import com.diagramador.api.ModelResource.NoteResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.TargetType;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -235,6 +238,98 @@ class VcsMergeDiffTest {
 
         assertThat(result.conflicts()).singleElement()
                 .satisfies(conflict -> assertThat(conflict.field()).isEqualTo("stereotype"));
+    }
+
+    private static final UUID NOTE_ID = UUID.fromString("40000000-0000-0000-0000-000000000001");
+    private static final UUID OTHER_NOTE_ID = UUID.fromString("40000000-0000-0000-0000-000000000002");
+    private static final UUID OTHER_CLASSIFIER_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
+
+    @Test
+    void notesAddedOnBothSidesAreBothKept() {
+        SnapshotModel base = noted(List.of(classifier(CLASSIFIER_ID, "Order", ClassifierKind.CLASS)), List.of());
+        SnapshotModel source = noted(base.classifiers(), List.of(note(NOTE_ID, "ours", CLASSIFIER_ID)));
+        SnapshotModel target = noted(base.classifiers(), List.of(note(OTHER_NOTE_ID, "theirs")));
+
+        MergeDiff.Result result = MergeDiff.merge(base, source, target);
+
+        assertThat(result.conflicts()).isEmpty();
+        assertThat(result.mergedSnapshot().notes()).containsExactly(note(NOTE_ID, "ours", CLASSIFIER_ID),
+                note(OTHER_NOTE_ID, "theirs"));
+    }
+
+    @Test
+    void aBodyChangeOnOneSideAndALinkOnTheOtherMergeWithoutConflict() {
+        List<ClassifierResource> classifiers = List.of(classifier(CLASSIFIER_ID, "Order", ClassifierKind.CLASS),
+                classifier(OTHER_CLASSIFIER_ID, "Customer", ClassifierKind.CLASS));
+        SnapshotModel base = noted(classifiers, List.of(note(NOTE_ID, "body", CLASSIFIER_ID)));
+        SnapshotModel source = noted(classifiers, List.of(note(NOTE_ID, "edited", CLASSIFIER_ID)));
+        SnapshotModel target = noted(classifiers,
+                List.of(note(NOTE_ID, "body", CLASSIFIER_ID, OTHER_CLASSIFIER_ID)));
+
+        MergeDiff.Result result = MergeDiff.merge(base, source, target);
+
+        assertThat(result.conflicts()).isEmpty();
+        assertThat(result.mergedSnapshot().notes())
+                .containsExactly(note(NOTE_ID, "edited", CLASSIFIER_ID, OTHER_CLASSIFIER_ID));
+    }
+
+    @Test
+    void divergentBodiesOfTheSameNoteAreAFieldConflict() {
+        List<ClassifierResource> classifiers = List.of(classifier(CLASSIFIER_ID, "Order", ClassifierKind.CLASS));
+        MergeDiff.Result result = MergeDiff.merge(
+                noted(classifiers, List.of(note(NOTE_ID, "base"))),
+                noted(classifiers, List.of(note(NOTE_ID, "ours"))),
+                noted(classifiers, List.of(note(NOTE_ID, "theirs"))));
+
+        assertThat(result.conflicts()).singleElement().satisfies(conflict -> {
+            assertThat(conflict.kind()).isEqualTo("FIELD_CONFLICT");
+            assertThat(conflict.targetType()).isEqualTo("NOTE");
+            assertThat(conflict.targetId()).isEqualTo(NOTE_ID);
+            assertThat(conflict.field()).isEqualTo("body");
+            assertThat(conflict.sourceValue()).isEqualTo("ours");
+            assertThat(conflict.targetValue()).isEqualTo("theirs");
+        });
+    }
+
+    @Test
+    void aLinkToAClassifierDeletedOnTheOtherSideDoesNotSurviveTheMerge() {
+        ClassifierResource order = classifier(CLASSIFIER_ID, "Order", ClassifierKind.CLASS);
+        ClassifierResource customer = classifier(OTHER_CLASSIFIER_ID, "Customer", ClassifierKind.CLASS);
+        SnapshotModel base = noted(List.of(order, customer), List.of(note(NOTE_ID, "n")));
+        SnapshotModel source = noted(List.of(customer), List.of(note(NOTE_ID, "n")));
+        // The other branch annotates the very class this branch deleted.
+        SnapshotModel target = noted(List.of(order, customer), List.of(note(NOTE_ID, "n", CLASSIFIER_ID)));
+
+        MergeDiff.Result result = MergeDiff.merge(base, source, target);
+
+        assertThat(result.conflicts()).isEmpty();
+        assertThat(result.mergedSnapshot().classifiers()).extracting(ClassifierResource::id)
+                .containsExactly(OTHER_CLASSIFIER_ID);
+        assertThat(result.mergedSnapshot().notes()).containsExactly(note(NOTE_ID, "n"));
+    }
+
+    @Test
+    void theCommitDiffListsANoteAndItsLinkByTheirNames() {
+        ClassifierResource order = classifier(CLASSIFIER_ID, "Order", ClassifierKind.CLASS);
+        SnapshotModel before = noted(List.of(order), List.of());
+        SnapshotModel after = noted(List.of(order), List.of(note(NOTE_ID, "Check the totals", CLASSIFIER_ID)));
+
+        var changes = SnapshotDiff.between(before, after);
+
+        assertThat(changes).extracting(VcsResources.ElementChange::targetType).containsExactly("NOTE", "NOTE_LINK");
+        assertThat(changes.get(0).changeKind()).isEqualTo("ADDED");
+        assertThat(changes.get(0).targetName()).isEqualTo("Check the totals");
+        assertThat(changes.get(1).targetName()).isEqualTo("Order");
+        assertThat(changes.get(1).ownerName()).isEqualTo("Check the totals");
+    }
+
+    private static SnapshotModel noted(List<ClassifierResource> classifiers, List<NoteResource> notes) {
+        return new SnapshotModel(List.of(), classifiers, List.of(), List.of(), notes);
+    }
+
+    private static NoteResource note(UUID id, String body, UUID... classifierIds) {
+        return new NoteResource(id, body, java.util.Arrays.stream(classifierIds)
+                .map(classifierId -> new NoteLinkResource(TargetType.CLASSIFIER, classifierId)).toList());
     }
 
     private static SnapshotModel model(ClassifierResource... classifiers) {

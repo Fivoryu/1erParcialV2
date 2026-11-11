@@ -2,6 +2,7 @@ package com.diagramador.command;
 
 import com.diagramador.api.ModelResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
+import com.diagramador.api.NoteResourceAssembler;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ConnectorPath;
 import com.diagramador.domain.DiagramView;
@@ -53,13 +54,14 @@ public class ModelStateHasher {
     private final ElementGeometryRepository geometryRepository;
     private final ConnectorPathRepository connectorPathRepository;
     private final ViewStyleRepository viewStyleRepository;
+    private final NoteResourceAssembler noteResources;
 
     public ModelStateHasher(ClassifierRepository classifierRepository, UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, OperationParameterRepository parameterRepository,
             UmlRelationshipRepository relationshipRepository, RelationshipEndRepository relationshipEndRepository,
             UmlConstraintRepository constraintRepository, DiagramViewRepository viewRepository,
             ElementGeometryRepository geometryRepository, ConnectorPathRepository connectorPathRepository,
-            ViewStyleRepository viewStyleRepository) {
+            ViewStyleRepository viewStyleRepository, NoteResourceAssembler noteResources) {
         this.classifierRepository = classifierRepository;
         this.attributeRepository = attributeRepository;
         this.operationRepository = operationRepository;
@@ -71,6 +73,7 @@ public class ModelStateHasher {
         this.geometryRepository = geometryRepository;
         this.connectorPathRepository = connectorPathRepository;
         this.viewStyleRepository = viewStyleRepository;
+        this.noteResources = noteResources;
     }
 
     @Transactional(readOnly = true)
@@ -171,6 +174,8 @@ public class ModelStateHasher {
                         field("strokeWidth", style.getStrokeWidth()), field("dashed", style.isDashed()),
                         field("routeAdjustment", style.getRouteAdjustment())))
                 .forEach(lines::add);
+        // Notes come last and only when there are any, so a model without notes keeps the hash it had before.
+        noteLines(noteResources.forModel(modelId), lines);
 
         String canonicalProjection = String.join("\n", lines);
         return sha256(canonicalProjection);
@@ -268,7 +273,27 @@ public class ModelStateHasher {
                         field("strokeWidth", style.strokeWidth()), field("dashed", style.dashed()),
                         field("routeAdjustment", style.routeAdjustment())))
                 .forEach(lines::add);
+        noteLines(snapshot.notes(), lines);
         return sha256(String.join("\n", lines));
+    }
+
+    /** One line per note and per annotated element, ordered by id; nothing at all for a model without notes. */
+    private static void noteLines(List<ModelResource.NoteResource> notes, List<String> lines) {
+        notes.stream().sorted(Comparator.comparing(note -> note.id().toString()))
+                .map(note -> line("notes", note.id(), field("body", escapeBody(note.body()))))
+                .forEach(lines::add);
+        notes.stream().sorted(Comparator.comparing(note -> note.id().toString()))
+                .forEach(note -> note.annotatedElements().stream()
+                        .sorted(Comparator.comparing((ModelResource.NoteLinkResource link) -> link.targetType().name())
+                                .thenComparing(link -> link.targetId().toString()))
+                        .map(link -> line("noteLinks", note.id(), field("targetType", link.targetType()),
+                                field("targetId", link.targetId())))
+                        .forEach(lines::add));
+    }
+
+    /** A body may span lines; escaping keeps one note on one projection line. */
+    private static String escapeBody(String body) {
+        return body == null ? null : body.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n");
     }
 
     private UUID ownerId(List<ModelResource.ClassifierResource> classifiers, UUID attributeId) {

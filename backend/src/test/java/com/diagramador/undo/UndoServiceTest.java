@@ -70,6 +70,7 @@ class UndoServiceTest {
     private final RelationshipEndRepository relationshipEndRepository;
     private final CurrentUserContext currentUserContext;
     private final TransactionTemplate transactionTemplate;
+    private final com.diagramador.api.NoteResourceAssembler noteResources;
 
     @Autowired
     UndoServiceTest(ProjectApiService projectApiService, UndoService undoService,
@@ -79,7 +80,8 @@ class UndoServiceTest {
             ClassifierRepository classifierRepository, UmlAttributeRepository attributeRepository,
             UmlOperationRepository operationRepository, UmlRelationshipRepository relationshipRepository,
             RelationshipEndRepository relationshipEndRepository, CurrentUserContext currentUserContext,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate, com.diagramador.api.NoteResourceAssembler noteResources) {
+        this.noteResources = noteResources;
         this.projectApiService = projectApiService;
         this.undoService = undoService;
         this.undoLogRepository = undoLogRepository;
@@ -547,6 +549,75 @@ class UndoServiceTest {
                 .findByModel_IdOrderByCreatedAtAscIdAsc(fixture.model().getId());
         assertThat(entries).isNotEmpty();
         return entries.get(entries.size() - 1);
+    }
+
+    @Test
+    void undoAndRedoCoverNoteCreateUpdateLinkUnlinkAndDelete() {
+        Fixture fixture = fixture("undo-notes");
+        UUID first = createClassifier(fixture, 0, "Order");
+        UUID second = createClassifier(fixture, 1, "Customer");
+        UUID noteId = UUID.randomUUID();
+        List<Target> note = List.of(new Target("note", noteId));
+        assertAccepted(command(fixture, "note.create", 2, Map.of("id", noteId, "body", "one",
+                "annotatedElementIds", List.of(first.toString())), List.of()));
+        assertAccepted(command(fixture, "note.update", 3, Map.of("body", "two"), note));
+        assertAccepted(command(fixture, "note.link", 4, Map.of("targetType", "CLASSIFIER", "targetId", second), note));
+        assertAccepted(command(fixture, "note.unlink", 5, Map.of("targetType", "CLASSIFIER", "targetId", first), note));
+        assertAccepted(command(fixture, "note.delete", 6, Map.of(), note));
+        assertThat(notesOf(fixture)).isEmpty();
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture)).singleElement().satisfies(restored -> {
+            assertThat(restored.id()).isEqualTo(noteId);
+            assertThat(restored.body()).isEqualTo("two");
+            assertThat(restored.annotatedElements()).extracting(link -> link.targetId()).containsExactly(second);
+        });
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture).get(0).annotatedElements()).extracting(link -> link.targetId())
+                .containsExactlyInAnyOrder(first, second);
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture).get(0).annotatedElements()).extracting(link -> link.targetId())
+                .containsExactly(first);
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture).get(0).body()).isEqualTo("one");
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture)).as("undoing the creation deletes the note").isEmpty();
+
+        assertThat(undoService.redo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(notesOf(fixture)).singleElement().satisfies(redone -> {
+            assertThat(redone.body()).isEqualTo("one");
+            assertThat(redone.annotatedElements()).extracting(link -> link.targetId()).containsExactly(first);
+        });
+    }
+
+    @Test
+    void undoingANoteDeleteSkipsAnnotatedElementsThatAreGoneByThen() {
+        Fixture fixture = fixture("undo-notes-gone");
+        UUID first = createClassifier(fixture, 0, "Order");
+        UUID second = createClassifier(fixture, 1, "Customer");
+        UUID noteId = UUID.randomUUID();
+        assertAccepted(command(fixture, "note.create", 2, Map.of("id", noteId, "body", "n",
+                "annotatedElementIds", List.of(first.toString(), second.toString())), List.of()));
+        assertAccepted(command(fixture, "note.delete", 3, Map.of(), List.of(new Target("note", noteId))));
+        // Another editor deletes the second class after the note was deleted.
+        currentUserContext.set(new CurrentUser(fixture.secondEditor().getId(), fixture.secondEditor().getUsername(),
+                "Editor2"));
+        assertAccepted(command(fixture, "classifier.delete", 4, Map.of(),
+                List.of(new Target("classifier", second)), List.of(new Precondition("cascade_count", 1, null))));
+        currentUserContext.set(new CurrentUser(fixture.author().getId(), fixture.author().getUsername(), "Author"));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+
+        assertThat(notesOf(fixture)).singleElement().satisfies(restored -> assertThat(restored.annotatedElements())
+                .extracting(link -> link.targetId()).containsExactly(first));
+    }
+
+    private List<com.diagramador.api.ModelResource.NoteResource> notesOf(Fixture fixture) {
+        return noteResources.forModel(fixture.model().getId());
     }
 
     private UUID createClassifier(Fixture fixture, long revision, String name) {

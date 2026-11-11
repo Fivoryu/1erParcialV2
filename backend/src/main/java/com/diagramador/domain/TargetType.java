@@ -11,5 +11,6 @@ public enum TargetType {
     RELATIONSHIP,
     RELATIONSHIP_END,
     CONSTRAINT,
-    DIAGRAM_VIEW
+    DIAGRAM_VIEW,
+    NOTE
 }

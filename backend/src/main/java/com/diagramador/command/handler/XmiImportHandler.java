@@ -27,6 +27,7 @@ import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
 import com.diagramador.domain.UmlConstraint;
 import com.diagramador.domain.UmlModel;
+import com.diagramador.domain.UmlNote;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.domain.XmiExchange;
@@ -40,6 +41,7 @@ import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.TypeReferenceRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
+import com.diagramador.persistence.UmlNoteRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import com.diagramador.persistence.XmiExchangeRepository;
@@ -83,6 +85,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
     private final EntityManager entityManager;
     private final XmiExchangeRepository exchangeRepository;
     private final XmiLossItemRepository lossItemRepository;
+    private final UmlNoteRepository noteRepository;
 
     public XmiImportHandler(ObjectMapper objectMapper, ClassifierRepository classifierRepository,
             UmlAttributeRepository attributeRepository, UmlOperationRepository operationRepository,
@@ -91,7 +94,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             RelationshipEndRepository relationshipEndRepository, DiagramViewRepository viewRepository,
             ElementGeometryRepository geometryRepository, ConnectorPathRepository pathRepository,
             EntityManager entityManager, XmiExchangeRepository exchangeRepository,
-            XmiLossItemRepository lossItemRepository) {
+            XmiLossItemRepository lossItemRepository, UmlNoteRepository noteRepository) {
         this.objectMapper = objectMapper;
         this.classifierRepository = classifierRepository;
         this.attributeRepository = attributeRepository;
@@ -107,6 +110,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         this.entityManager = entityManager;
         this.exchangeRepository = exchangeRepository;
         this.lossItemRepository = lossItemRepository;
+        this.noteRepository = noteRepository;
     }
 
     @Override
@@ -146,6 +150,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             persistAttributesAndOperations(context.model(), reading.model(), classifiers, typeReferences);
             stage = "relationship insertion";
             persistRelationships(context.model(), reading.model(), classifiers, typeReferences);
+            stage = "note insertion";
+            persistNotes(context, reading.model(), classifiers);
             stage = "diagram insertion";
             persistViews(context, reading.model(), classifiers, mode);
             stage = "exchange and loss recording";
@@ -206,6 +212,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         Map<UUID, UUID> pathIds = scopedIds(source.views().stream()
                 .flatMap(view -> view.connectorPath().stream()).map(ModelResource.ConnectorPathResource::id).toList(),
                 target.getId());
+        Map<UUID, UUID> noteIds = scopedIds(source.notes().stream().map(ModelResource.NoteResource::id).toList(),
+                target.getId());
 
         List<ModelResource.ClassifierResource> classifiers = source.classifiers().stream().map(classifier -> {
             List<ModelResource.AttributeResource> attributes = classifier.attributes().stream().map(attribute ->
@@ -257,8 +265,14 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             return new ModelResource.ViewResource(mapped(viewIds, view.id()), view.name(), view.isDefault(),
                     geometry, paths);
         }).toList();
+        List<ModelResource.NoteResource> notes = source.notes().stream().map(note ->
+                new ModelResource.NoteResource(mapped(noteIds, note.id()), note.body(),
+                        note.annotatedElements().stream().map(link -> new ModelResource.NoteLinkResource(
+                                link.targetType(), link.targetType() == TargetType.CLASSIFIER
+                                        ? mapped(classifierIds, link.targetId())
+                                        : mapped(relationshipIds, link.targetId()))).toList())).toList();
         ModelResource scoped = new ModelResource(source.id(), source.projectId(), source.revision(), source.versionId(),
-                views, classifiers, relationships);
+                views, classifiers, relationships, List.of(), notes);
         Map<UUID, String> documentation = new LinkedHashMap<>();
         reading.documentation().forEach((id, text) -> documentation.put(mapped(classifierIds, id), text));
         List<XmiReadingResult.Diagram> diagrams = reading.diagrams().stream().map(diagram -> {
@@ -482,6 +496,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 }
             });
         }
+        model.notes().forEach(note -> unavailable(noteRepository.existsById(note.id()), note.id(), "note"));
         ModelResource.ViewResource view = model.views().get(0);
         unavailable(viewRepository.existsById(view.id()), view.id(), "diagram view");
         view.elementGeometry().forEach(item -> unavailable(geometryRepository.existsById(item.id()), item.id(), "geometry"));
@@ -514,7 +529,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         }
         return new ExistingRows(classifiers, attributes, operations, parameters,
                 typeReferenceRepository.findByModelId(model.getId()), constraintRepository.findByModelId(model.getId()),
-                relationships, ends, viewRepository.findByModelId(model.getId()));
+                relationships, ends, viewRepository.findByModelId(model.getId()),
+                noteRepository.findByModelId(model.getId()));
     }
 
     private List<DeletedTarget> deletedTargets(ExistingRows oldRows, XmiReadingResult reading) {
@@ -543,6 +559,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                     targets.add(new DeletedTarget(TargetType.CONSTRAINT, item.id())));
         }
         model.views().forEach(view -> targets.add(new DeletedTarget(TargetType.DIAGRAM_VIEW, view.id())));
+        model.notes().forEach(note -> targets.add(new DeletedTarget(TargetType.NOTE, note.id())));
         return targets;
     }
 
@@ -559,6 +576,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         operationRepository.deleteAll(rows.operations());
         typeReferenceRepository.deleteAll(rows.typeReferences());
         viewRepository.deleteAll(rows.views());
+        noteRepository.deleteAll(rows.notes());
         classifierRepository.deleteAll(rows.classifiers());
     }
 
@@ -823,6 +841,39 @@ public class XmiImportHandler implements CommandHandler.AddAction {
         }
     }
 
+    /** Notes come after classifiers and relationships; a link whose element was not imported is dropped. */
+    private void persistNotes(Context context, ModelResource imported, Map<UUID, Classifier> classifiers) {
+        Set<UUID> relationshipIds = new HashSet<>();
+        imported.relationships().forEach(relationship -> relationshipIds.add(relationship.id()));
+        for (ModelResource.NoteResource note : imported.notes()) {
+            entityManager.createNativeQuery("""
+                    INSERT INTO diagrammer.uml_note (note_id, model_id, body, created_at)
+                    VALUES (CAST(:id AS uuid), CAST(:modelId AS uuid), :body, now())
+                    """)
+                    .setParameter("id", note.id())
+                    .setParameter("modelId", context.model().getId())
+                    .setParameter("body", note.body())
+                    .executeUpdate();
+            Set<ModelResource.NoteLinkResource> inserted = new LinkedHashSet<>();
+            for (ModelResource.NoteLinkResource link : note.annotatedElements()) {
+                boolean present = link.targetType() == TargetType.CLASSIFIER
+                        ? classifiers.containsKey(link.targetId())
+                        : link.targetType() == TargetType.RELATIONSHIP && relationshipIds.contains(link.targetId());
+                if (!present || !inserted.add(link)) {
+                    continue;
+                }
+                entityManager.createNativeQuery("""
+                        INSERT INTO diagrammer.uml_note_link (note_id, target_type, target_id)
+                        VALUES (CAST(:noteId AS uuid), :targetType, CAST(:targetId AS uuid))
+                        """)
+                        .setParameter("noteId", note.id())
+                        .setParameter("targetType", link.targetType().name())
+                        .setParameter("targetId", link.targetId())
+                        .executeUpdate();
+            }
+        }
+    }
+
     private void persistViews(Context context, ModelResource imported, Map<UUID, Classifier> classifiers,
             XmiImportMode mode) {
         ModelResource.ViewResource resource = imported.views().get(0);
@@ -900,7 +951,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
     private record ExistingRows(List<Classifier> classifiers, List<UmlAttribute> attributes,
             List<UmlOperation> operations, List<OperationParameter> parameters, List<TypeReference> typeReferences,
             List<UmlConstraint> constraints, List<UmlRelationship> relationships, List<RelationshipEnd> ends,
-            List<DiagramView> views) {
+            List<DiagramView> views, List<UmlNote> notes) {
 
         private List<DeletedTarget> targets() {
             Set<DeletedTarget> targets = new LinkedHashSet<>();
@@ -912,6 +963,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
             relationships.forEach(item -> targets.add(new DeletedTarget(TargetType.RELATIONSHIP, item.getId())));
             ends.forEach(item -> targets.add(new DeletedTarget(TargetType.RELATIONSHIP_END, item.getId())));
             views.forEach(item -> targets.add(new DeletedTarget(TargetType.DIAGRAM_VIEW, item.getId())));
+            notes.forEach(item -> targets.add(new DeletedTarget(TargetType.NOTE, item.getId())));
             return List.copyOf(targets);
         }
     }

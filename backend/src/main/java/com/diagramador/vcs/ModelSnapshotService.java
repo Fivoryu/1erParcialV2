@@ -7,6 +7,9 @@ import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConnectorPathResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
 import com.diagramador.api.ModelResource.GeometryResource;
+import com.diagramador.api.ModelResource.NoteLinkResource;
+import com.diagramador.api.ModelResource.NoteResource;
+import com.diagramador.api.NoteResourceAssembler;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
@@ -27,6 +30,7 @@ import com.diagramador.domain.TypeReference;
 import com.diagramador.domain.UmlAttribute;
 import com.diagramador.domain.UmlConstraint;
 import com.diagramador.domain.UmlModel;
+import com.diagramador.domain.UmlNote;
 import com.diagramador.domain.UmlOperation;
 import com.diagramador.domain.UmlRelationship;
 import com.diagramador.persistence.ClassifierRepository;
@@ -38,6 +42,7 @@ import com.diagramador.persistence.RelationshipEndRepository;
 import com.diagramador.persistence.TypeReferenceRepository;
 import com.diagramador.persistence.UmlAttributeRepository;
 import com.diagramador.persistence.UmlConstraintRepository;
+import com.diagramador.persistence.UmlNoteRepository;
 import com.diagramador.persistence.UmlOperationRepository;
 import com.diagramador.persistence.UmlRelationshipRepository;
 import com.diagramador.persistence.ViewStyle;
@@ -81,6 +86,8 @@ public class ModelSnapshotService {
     private final ElementGeometryRepository geometryRepository;
     private final ConnectorPathRepository connectorPathRepository;
     private final ViewStyleRepository viewStyleRepository;
+    private final NoteResourceAssembler noteResources;
+    private final UmlNoteRepository noteRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -98,7 +105,8 @@ public class ModelSnapshotService {
             DiagramViewRepository viewRepository,
             ElementGeometryRepository geometryRepository,
             ConnectorPathRepository connectorPathRepository,
-            ViewStyleRepository viewStyleRepository) {
+            ViewStyleRepository viewStyleRepository, NoteResourceAssembler noteResources,
+            UmlNoteRepository noteRepository) {
         this.stateHasher = stateHasher;
         this.objectMapper = objectMapper;
         this.classifierRepository = classifierRepository;
@@ -113,6 +121,8 @@ public class ModelSnapshotService {
         this.geometryRepository = geometryRepository;
         this.connectorPathRepository = connectorPathRepository;
         this.viewStyleRepository = viewStyleRepository;
+        this.noteResources = noteResources;
+        this.noteRepository = noteRepository;
     }
 
     @Transactional(readOnly = true)
@@ -154,7 +164,7 @@ public class ModelSnapshotService {
                                 style.getRouting(), style.getCornerRadius(), style.getStrokeWidth(), style.isDashed(),
                                 style.getRouteAdjustment())))
                 .toList();
-        return new SnapshotModel(views, classifiers, relationships, viewStyle);
+        return new SnapshotModel(views, classifiers, relationships, viewStyle, noteResources.forModel(modelId));
     }
 
     @Transactional(readOnly = true)
@@ -193,6 +203,7 @@ public class ModelSnapshotService {
                 TypeReference::getId);
         Map<UUID, UmlConstraint> existingConstraints = indexById(constraintRepository.findByModelId(modelId),
                 UmlConstraint::getId);
+        Map<UUID, UmlNote> existingNotes = indexById(noteRepository.findByModelId(modelId), UmlNote::getId);
 
         List<UmlAttribute> currentAttributes = new ArrayList<>();
         List<UmlOperation> currentOperations = new ArrayList<>();
@@ -349,6 +360,24 @@ public class ModelSnapshotService {
             upsertConstraint(modelId, slot);
         }
         deleteMissing(constraintRepository, existingConstraints, index.constraints.keySet());
+        flushAndClear();
+
+        // Notes: rows first, then every link of the model is rewritten from the snapshot (links have no foreign key
+        // to their element, and a note removed below takes its links with it by cascade).
+        for (NoteResource resource : sortedById(index.notes.values(), NoteResource::id)) {
+            upsertNote(modelId, resource);
+        }
+        entityManager.createNativeQuery("""
+                DELETE FROM diagrammer.uml_note_link
+                WHERE note_id IN (SELECT note_id FROM diagrammer.uml_note WHERE model_id = :modelId)
+                """).setParameter("modelId", modelId).executeUpdate();
+        for (NoteResource resource : sortedById(index.notes.values(), NoteResource::id)) {
+            for (NoteLinkResource link : resource.annotatedElements()) {
+                insertNoteLink(resource.id(), link);
+            }
+        }
+        flushAndClear();
+        deleteMissing(noteRepository, existingNotes, index.notes.keySet());
         flushAndClear();
 
         for (SnapshotModel.SnapshotView resource : sortedById(index.views.values(), SnapshotModel.SnapshotView::id)) {
@@ -757,6 +786,31 @@ public class ModelSnapshotService {
                 .executeUpdate();
     }
 
+    private void upsertNote(UUID modelId, NoteResource resource) {
+        entityManager.createNativeQuery("""
+                INSERT INTO diagrammer.uml_note (note_id, model_id, body)
+                VALUES (:id, :modelId, :body)
+                ON CONFLICT (note_id) DO UPDATE SET
+                    model_id = EXCLUDED.model_id,
+                    body = EXCLUDED.body
+                """)
+                .setParameter("id", resource.id())
+                .setParameter("modelId", modelId)
+                .setParameter("body", resource.body())
+                .executeUpdate();
+    }
+
+    private void insertNoteLink(UUID noteId, NoteLinkResource link) {
+        entityManager.createNativeQuery("""
+                INSERT INTO diagrammer.uml_note_link (note_id, target_type, target_id)
+                VALUES (:noteId, :targetType, :targetId)
+                """)
+                .setParameter("noteId", noteId)
+                .setParameter("targetType", link.targetType().name())
+                .setParameter("targetId", link.targetId())
+                .executeUpdate();
+    }
+
     private void upsertView(UUID modelId, SnapshotModel.SnapshotView resource) {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.diagram_view (view_id, model_id, name, view_kind, is_default)
@@ -907,6 +961,9 @@ public class ModelSnapshotService {
                         new ConstraintSlot(TargetType.RELATIONSHIP, relationship.id(), constraint), "constraint");
             }
         }
+        for (NoteResource note : snapshot.notes()) {
+            putUnique(index.notes, note.id(), note, "note");
+        }
         for (SnapshotModel.SnapshotViewStyle style : snapshot.viewStyle()) {
             StyleKey key = new StyleKey(style.viewId(), style.targetId());
             if (index.styles.putIfAbsent(key, style) != null) {
@@ -961,6 +1018,20 @@ public class ModelSnapshotService {
         for (SnapshotModel.SnapshotViewStyle style : index.styles.values()) {
             if (!viewIds.contains(style.viewId())) {
                 throw new IllegalArgumentException("View style references a view absent from the snapshot");
+            }
+        }
+        for (NoteResource note : index.notes.values()) {
+            Set<NoteLinkResource> seen = new HashSet<>();
+            for (NoteLinkResource link : note.annotatedElements()) {
+                boolean exists = link.targetType() == TargetType.CLASSIFIER ? classifierIds.contains(link.targetId())
+                        : link.targetType() == TargetType.RELATIONSHIP && relationshipIds.contains(link.targetId());
+                if (!exists) {
+                    throw new IllegalArgumentException("Note " + note.id()
+                            + " annotates an element absent from the snapshot");
+                }
+                if (!seen.add(link)) {
+                    throw new IllegalArgumentException("Note " + note.id() + " lists an annotated element twice");
+                }
             }
         }
         for (ConstraintSlot constraint : index.constraints.values()) {
@@ -1122,6 +1193,7 @@ public class ModelSnapshotService {
         private final Map<UUID, ParameterSlot> parameters = new LinkedHashMap<>();
         private final Map<UUID, EndSlot> ends = new LinkedHashMap<>();
         private final Map<UUID, ConstraintSlot> constraints = new LinkedHashMap<>();
+        private final Map<UUID, NoteResource> notes = new LinkedHashMap<>();
         private final Map<UUID, GeometrySlot> geometries = new LinkedHashMap<>();
         private final Map<UUID, PathSlot> paths = new LinkedHashMap<>();
         private final Map<StyleKey, SnapshotModel.SnapshotViewStyle> styles = new LinkedHashMap<>();

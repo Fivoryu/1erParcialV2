@@ -5,6 +5,8 @@ import com.diagramador.api.ModelResource.AttributeResource;
 import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
 import com.diagramador.api.ModelResource.GeometryResource;
+import com.diagramador.api.ModelResource.NoteLinkResource;
+import com.diagramador.api.ModelResource.NoteResource;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
@@ -109,6 +111,7 @@ public final class XmiSemanticEmitter {
             appendClassifier(document, model, classifier, context);
         }
         appendRelationships(document, model, snapshot.relationships(), context);
+        appendNotes(document, model, snapshot.notes(), context);
         appendPrimitiveTypes(document, model, context);
         appendExtension(document, root, snapshot, context);
         return document;
@@ -264,6 +267,49 @@ public final class XmiSemanticEmitter {
                 context.loss("constraint_severity");
             }
         }
+    }
+
+    /**
+     * Notes are UML comments owned by the model: {@code body} holds the text and each annotated element is an
+     * {@code annotatedElement} idref to its emitted id. A link to an element that was not emitted (an unresolved
+     * namespace, a relationship dropped with its own loss) is left out and counted, so no idref ever dangles.
+     */
+    private void appendNotes(Document document, Element model, List<NoteResource> notes, Context context) {
+        List<NoteResource> sorted = notes.stream().sorted(Comparator.comparing(NoteResource::id)).toList();
+        for (NoteResource note : sorted) {
+            Element comment = document.createElementNS(UML_NAMESPACE, "ownedComment");
+            setXmiAttribute(comment, "type", "uml:Comment");
+            setXmiAttribute(comment, "id", context.registerId(XmiIdCodec.classifierId(note.id())));
+            comment.setAttribute("body", Objects.requireNonNull(note.body(), "note.body"));
+            List<NoteLinkResource> links = note.annotatedElements().stream()
+                    .sorted(Comparator.comparing((NoteLinkResource link) -> link.targetType().name())
+                            .thenComparing(NoteLinkResource::targetId))
+                    .toList();
+            for (NoteLinkResource link : links) {
+                String target = annotatedElementXmiId(link, context);
+                if (target == null) {
+                    context.loss("unresolved_note_reference");
+                    continue;
+                }
+                Element annotated = document.createElementNS(UML_NAMESPACE, "annotatedElement");
+                setXmiAttribute(annotated, "idref", target);
+                comment.appendChild(annotated);
+            }
+            model.appendChild(comment);
+        }
+    }
+
+    private String annotatedElementXmiId(NoteLinkResource link, Context context) {
+        if (link.targetType() == TargetType.CLASSIFIER) {
+            ClassifierResource classifier = context.classifierById.get(link.targetId());
+            return classifier == null || !context.emittableClassifierIds.contains(classifier.id()) ? null
+                    : classifierXmiId(classifier);
+        }
+        if (link.targetType() == TargetType.RELATIONSHIP) {
+            String id = XmiIdCodec.classifierId(link.targetId());
+            return context.ids.contains(id) ? id : null;
+        }
+        return null;
     }
 
     private void appendRelationships(Document document, Element model, List<RelationshipResource> relationships,

@@ -18,12 +18,20 @@ public record ModelResource(
         List<ViewResource> views,
         List<ClassifierResource> classifiers,
         List<RelationshipResource> relationships,
-        @JsonProperty("view_style") List<ViewStyleResource> viewStyle) {
+        @JsonProperty("view_style") List<ViewStyleResource> viewStyle,
+        List<NoteResource> notes) {
 
     /** Legacy shape used by the XMI emitter/reader path: styles stay out of the exchange. */
     public ModelResource(UUID id, UUID projectId, long revision, UUID versionId, List<ViewResource> views,
             List<ClassifierResource> classifiers, List<RelationshipResource> relationships) {
-        this(id, projectId, revision, versionId, views, classifiers, relationships, List.of());
+        this(id, projectId, revision, versionId, views, classifiers, relationships, List.of(), List.of());
+    }
+
+    /** Pre-notes shape: no notes, as old snapshots without the field read. */
+    public ModelResource(UUID id, UUID projectId, long revision, UUID versionId, List<ViewResource> views,
+            List<ClassifierResource> classifiers, List<RelationshipResource> relationships,
+            List<ViewStyleResource> viewStyle) {
+        this(id, projectId, revision, versionId, views, classifiers, relationships, viewStyle, List.of());
     }
 
     public ModelResource {
@@ -31,6 +39,19 @@ public record ModelResource(
         classifiers = classifiers == null ? List.of() : List.copyOf(classifiers);
         relationships = relationships == null ? List.of() : List.copyOf(relationships);
         viewStyle = viewStyle == null ? List.of() : List.copyOf(viewStyle);
+        notes = notes == null ? List.of() : List.copyOf(notes);
+    }
+
+    /** UML Comment: free text annotating zero or more classifiers or relationships of the model. */
+    public record NoteResource(UUID id, String body, List<NoteLinkResource> annotatedElements) {
+
+        public NoteResource {
+            annotatedElements = annotatedElements == null ? List.of() : List.copyOf(annotatedElements);
+        }
+    }
+
+    /** One annotated element of a note; {@code targetType} is CLASSIFIER or RELATIONSHIP. */
+    public record NoteLinkResource(TargetType targetType, UUID targetId) {
     }
 
     public record ViewResource(

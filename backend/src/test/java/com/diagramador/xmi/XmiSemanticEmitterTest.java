@@ -9,6 +9,8 @@ import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConnectorPathResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
 import com.diagramador.api.ModelResource.GeometryResource;
+import com.diagramador.api.ModelResource.NoteLinkResource;
+import com.diagramador.api.ModelResource.NoteResource;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
@@ -990,6 +992,99 @@ class XmiSemanticEmitterTest {
                 List.of(end(id(911), id(900), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 1),
                         end(id(912), id(901), null, MultiplicityKind.EXACTLY_ONE, "none", (short) 2)), List.of());
         return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(client, supplier), List.of(dependency));
+    }
+
+    @Test
+    void notesAreEmittedAsOwnedCommentsWithAnnotatedElementIdrefsAndReadBack() throws Exception {
+        ModelResource model = notedModel(List.of(
+                new NoteResource(id(950), "Audit trail\nsecond line & <more>", List.of(
+                        new NoteLinkResource(TargetType.CLASSIFIER, id(900)),
+                        new NoteLinkResource(TargetType.RELATIONSHIP, id(910)))),
+                new NoteResource(id(951), "Standalone", List.of())));
+
+        XmiEmissionResult result = emitter.emit(model);
+        Document document = parse(result.document());
+
+        NodeList comments = document.getElementsByTagNameNS(UML_NAMESPACE, "ownedComment");
+        assertThat(comments.getLength()).isEqualTo(2);
+        Element audit = byId(document, XmiIdCodec.classifierId(id(950)));
+        assertThat(audit.getParentNode().getLocalName()).isEqualTo("Model");
+        assertThat(audit.getAttributeNS(XMI_NAMESPACE, "type")).isEqualTo("uml:Comment");
+        assertThat(audit.getAttribute("body")).isEqualTo("Audit trail\nsecond line & <more>");
+        NodeList annotated = audit.getElementsByTagNameNS(UML_NAMESPACE, "annotatedElement");
+        assertThat(annotated.getLength()).isEqualTo(2);
+        assertThat(((Element) annotated.item(0)).getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(XmiIdCodec.classifierId(id(900)));
+        assertThat(((Element) annotated.item(1)).getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(XmiIdCodec.classifierId(id(910)));
+        assertThat(byId(document, XmiIdCodec.classifierId(id(951)))
+                .getElementsByTagNameNS(UML_NAMESPACE, "annotatedElement").getLength()).isZero();
+        assertThat(result.losses()).noneMatch(loss -> loss.name().contains("note"));
+
+        XmiReadingResult read = new XmiReader().read(result.document().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(read.model().notes()).containsExactlyInAnyOrder(
+                new NoteResource(id(950), "Audit trail\nsecond line & <more>", List.of(
+                        new NoteLinkResource(TargetType.CLASSIFIER, id(900)),
+                        new NoteLinkResource(TargetType.RELATIONSHIP, id(910)))),
+                new NoteResource(id(951), "Standalone", List.of()));
+        assertThat(read.losses()).noneMatch(loss -> loss.name().contains("note"));
+    }
+
+    @Test
+    void aModelWithoutNotesEmitsNoComment() throws Exception {
+        String document = emitter.emit(notedModel(List.of())).document();
+
+        assertThat(document).doesNotContain("ownedComment");
+        assertThat(new XmiReader().read(document.getBytes(java.nio.charset.StandardCharsets.UTF_8)).model().notes())
+                .isEmpty();
+    }
+
+    @Test
+    void aNoteLinkToAnElementThatIsNotEmittedIsDroppedWithALossEntryOnEmission() throws Exception {
+        ModelResource model = notedModel(List.of(new NoteResource(id(950), "n", List.of(
+                new NoteLinkResource(TargetType.CLASSIFIER, id(900)),
+                new NoteLinkResource(TargetType.CLASSIFIER, id(998)),
+                new NoteLinkResource(TargetType.RELATIONSHIP, id(999))))));
+
+        XmiEmissionResult result = emitter.emit(model);
+        Document document = parse(result.document());
+
+        NodeList annotated = byId(document, XmiIdCodec.classifierId(id(950)))
+                .getElementsByTagNameNS(UML_NAMESPACE, "annotatedElement");
+        assertThat(annotated.getLength()).isEqualTo(1);
+        assertThat(((Element) annotated.item(0)).getAttributeNS(XMI_NAMESPACE, "idref"))
+                .isEqualTo(XmiIdCodec.classifierId(id(900)));
+        assertThat(result.losses()).anySatisfy(loss -> {
+            assertThat(loss.name()).isEqualTo("unresolved_note_reference");
+            assertThat(loss.count()).isEqualTo(2);
+        });
+    }
+
+    @Test
+    void theReaderDropsUnknownNoteReferencesAndEmptyBodiesWithLossEntries() throws Exception {
+        String emitted = emitter.emit(notedModel(List.of(
+                new NoteResource(id(950), "kept", List.of(new NoteLinkResource(TargetType.CLASSIFIER, id(900)))),
+                new NoteResource(id(951), "blank-me", List.of())))).document();
+        String document = emitted
+                .replace("</ownedComment>", "<annotatedElement xmi:idref=\"EAID_00000000_0000_0000_0000_000000000777\"/>"
+                        + "</ownedComment>")
+                .replace("body=\"blank-me\"", "body=\"   \"");
+
+        XmiReadingResult read = new XmiReader().read(document.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(read.model().notes()).singleElement().satisfies(note -> {
+            assertThat(note.id()).isEqualTo(id(950));
+            assertThat(note.body()).isEqualTo("kept");
+            assertThat(note.annotatedElements()).containsExactly(new NoteLinkResource(TargetType.CLASSIFIER, id(900)));
+        });
+        assertThat(read.losses()).extracting(XmiReadingResult.Loss::name)
+                .contains("unresolved_note_reference", "empty_note");
+    }
+
+    private static ModelResource notedModel(List<NoteResource> notes) {
+        ModelResource base = stereotypedDependencyModel(null);
+        return new ModelResource(base.id(), base.projectId(), base.revision(), base.versionId(), List.of(),
+                base.classifiers(), base.relationships(), List.of(), notes);
     }
 
     private static ModelResource associationClassModel(UUID associationClassId) {

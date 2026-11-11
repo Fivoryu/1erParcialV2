@@ -6,6 +6,8 @@ import com.diagramador.api.ModelResource.ClassifierResource;
 import com.diagramador.api.ModelResource.ConnectorPathResource;
 import com.diagramador.api.ModelResource.ConstraintResource;
 import com.diagramador.api.ModelResource.GeometryResource;
+import com.diagramador.api.ModelResource.NoteLinkResource;
+import com.diagramador.api.ModelResource.NoteResource;
 import com.diagramador.api.ModelResource.OperationResource;
 import com.diagramador.api.ModelResource.ParameterResource;
 import com.diagramador.api.ModelResource.RelationshipEndResource;
@@ -75,6 +77,7 @@ public final class XmiReader {
         List<ClassifierResource> classifiers = new ArrayList<>();
         context.readClassifiers(modelElement, null, classifiers);
         List<RelationshipResource> relationships = context.readRelationships();
+        List<NoteResource> notes = context.readNotes(classifiers, relationships);
         List<XmiReadingResult.Diagram> diagrams = context.readDiagrams();
         List<ViewResource> views = context.views();
         long revision = context.revision();
@@ -82,7 +85,7 @@ public final class XmiReader {
         UUID projectId = namedUuid("project:" + modelId);
         UUID versionId = namedUuid("version:" + modelId + ":" + revision);
         ModelResource model = new ModelResource(modelId, projectId, revision, versionId, views,
-                classifiers, relationships);
+                classifiers, relationships, List.of(), notes);
         return context.result(model, diagrams);
     }
 
@@ -353,6 +356,55 @@ public final class XmiReader {
                 }
                 result.add(new ConstraintResource(id(rule, "constraint:" + result.size()), expression, null));
                 loss("constraint_severity_not_representable", 1);
+            }
+            return result;
+        }
+
+        /**
+         * UML comments (EA notes): an {@code ownedComment} with its text in {@code body} and the elements it
+         * annotates as {@code annotatedElement} idrefs. A reference to anything that is not a classifier or a
+         * relationship of the document is dropped with a loss entry, as is an empty body; a longer body is cut.
+         */
+        private List<NoteResource> readNotes(List<ClassifierResource> classifiers,
+                List<RelationshipResource> relationships) {
+            Set<UUID> classifierIds = new LinkedHashSet<>();
+            classifiers.forEach(classifier -> classifierIds.add(classifier.id()));
+            Set<UUID> relationshipIds = new LinkedHashSet<>();
+            relationships.forEach(relationship -> relationshipIds.add(relationship.id()));
+            List<NoteResource> result = new ArrayList<>();
+            Set<UUID> seen = new LinkedHashSet<>();
+            for (Element comment : descendants(model, "ownedComment")) {
+                String type = xmi(comment, "type");
+                if (!type.isEmpty() && !"uml:Comment".equals(type)) {
+                    continue;
+                }
+                String body = comment.hasAttribute("body") ? comment.getAttribute("body")
+                        : child(comment, "body") == null ? "" : child(comment, "body").getTextContent();
+                if (body == null || body.isBlank()) {
+                    loss("empty_note", 1);
+                    continue;
+                }
+                if (body.length() > 2000) {
+                    body = body.substring(0, 2000);
+                    loss("note_body_truncated", 1);
+                }
+                UUID id = id(comment, "note:" + result.size());
+                if (!seen.add(id)) {
+                    loss("duplicate_note", 1);
+                    continue;
+                }
+                Set<NoteLinkResource> links = new LinkedHashSet<>();
+                for (Element reference : children(comment, "annotatedElement")) {
+                    UUID target = uuid(xmi(reference, "idref"));
+                    if (classifierIds.contains(target)) {
+                        links.add(new NoteLinkResource(TargetType.CLASSIFIER, target));
+                    } else if (relationshipIds.contains(target)) {
+                        links.add(new NoteLinkResource(TargetType.RELATIONSHIP, target));
+                    } else {
+                        loss("unresolved_note_reference", 1);
+                    }
+                }
+                result.add(new NoteResource(id, body, List.copyOf(links)));
             }
             return result;
         }
