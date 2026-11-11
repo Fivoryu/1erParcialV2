@@ -196,6 +196,8 @@ export function pasteClipboard(
             defaultValue: attribute.defaultValue,
             ordinal: attribute.ordinal,
             ...(attribute.stereotype ? { stereotype: attribute.stereotype } : {}),
+            ...(attribute.isStatic ? { isStatic: true } : {}),
+            ...(attribute.isDerived ? { isDerived: true } : {}),
           },
       });
     }
@@ -257,6 +259,8 @@ export function pasteClipboard(
       multiplicity: from.multiplicity,
       ...rangeBounds(from),
       navigability: from.navigability,
+      ...(from.isOrdered ? { isOrdered: true } : {}),
+      ...(from.isUnique ? { isUnique: true } : {}),
     });
     const associationClassCopy = original.associationClassId ? copies.get(original.associationClassId) : undefined;
     const id = createdId(dispatch({

@@ -120,7 +120,12 @@ export function endLabelsApplyTo(kind: string): boolean {
  */
 export function formatRelationshipEndLabel(end: RelationshipEndResource): string {
   const role = end.role?.trim() ?? '';
-  return [role, formatMultiplicity(end.multiplicity, end)].filter(Boolean).join(' ');
+  return [role, formatMultiplicity(end.multiplicity, end), formatEndProperties(end)].filter(Boolean).join(' ');
+}
+
+/** UML end properties, in the order `{ordered, unique}` would list them; nothing when neither is set. */
+export function formatEndProperties(end: { isOrdered?: boolean; isUnique?: boolean }): string {
+  return [end.isOrdered ? '{ordered}' : '', end.isUnique ? '{unique}' : ''].filter(Boolean).join(' ');
 }
 
 export function formatVisibility(visibility: string): string {
@@ -159,7 +164,8 @@ export function formatAttribute(attribute: AttributeResource): string {
   const type = formatType(attribute.type);
   const bounds = formatBounds(attribute.multiplicity, ' [', attribute);
   const defaultValue = attribute.defaultValue === null ? '' : ` = ${attribute.defaultValue}`;
-  return `${memberStereotypePrefix(attribute.stereotype)}${formatVisibility(attribute.visibility)} ${attribute.name}${type}${bounds}${defaultValue}`;
+  const derived = attribute.isDerived ? '/' : '';
+  return `${memberStereotypePrefix(attribute.stereotype)}${formatVisibility(attribute.visibility)} ${derived}${attribute.name}${type}${bounds}${defaultValue}`;
 }
 
 function formatParameter(parameter: ParameterResource): string {
@@ -178,6 +184,10 @@ export function formatOperation(operation: OperationResource): string {
 
 export function operationNameIsAbstract(operation: OperationResource): boolean {
   return operation.isAbstract;
+}
+
+export function attributeIsStatic(attribute: AttributeResource): boolean {
+  return attribute.isStatic === true;
 }
 
 export function operationIsStatic(operation: OperationResource): boolean {

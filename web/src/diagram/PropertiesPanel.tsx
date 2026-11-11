@@ -73,6 +73,16 @@ const MULTIPLICITIES = [
 ] as const;
 
 /** The multiplicity choice being edited: the kind plus the text of the two RANGE bound inputs. */
+/** The ordered/unique flags of one relationship end while the form is being edited. */
+interface EndFlagsDraft {
+  isOrdered: boolean;
+  isUnique: boolean;
+}
+
+function endFlagsDraft(end: { isOrdered?: boolean; isUnique?: boolean } | undefined): EndFlagsDraft {
+  return { isOrdered: end?.isOrdered ?? false, isUnique: end?.isUnique ?? false };
+}
+
 interface MultiplicityDraft {
   kind: string;
   lower: string;
@@ -774,6 +784,8 @@ function RelationshipProperties({
   const [sourceRole, setSourceRole] = useState(sourceEnd?.role ?? '');
   const [sourceMultiplicity, setSourceMultiplicity] = useState(multiplicityDraft(sourceEnd));
   const [sourceNavigability, setSourceNavigability] = useState(sourceEnd?.navigability ?? 'UNSPECIFIED');
+  const [sourceFlags, setSourceFlags] = useState(endFlagsDraft(sourceEnd));
+  const [targetFlags, setTargetFlags] = useState(endFlagsDraft(targetEnd));
   const [targetRole, setTargetRole] = useState(targetEnd?.role ?? '');
   const [targetMultiplicity, setTargetMultiplicity] = useState(multiplicityDraft(targetEnd));
   const [targetNavigability, setTargetNavigability] = useState(targetEnd?.navigability ?? 'UNSPECIFIED');
@@ -822,6 +834,8 @@ function RelationshipProperties({
     setSourceRole(sourceEnd?.role ?? '');
     setSourceMultiplicity(multiplicityDraft(sourceEnd));
     setSourceNavigability(sourceEnd?.navigability ?? 'UNSPECIFIED');
+    setSourceFlags(endFlagsDraft(sourceEnd));
+    setTargetFlags(endFlagsDraft(targetEnd));
     setTargetRole(targetEnd?.role ?? '');
     setTargetMultiplicity(multiplicityDraft(targetEnd));
     setTargetNavigability(targetEnd?.navigability ?? 'UNSPECIFIED');
@@ -836,6 +850,10 @@ function RelationshipProperties({
     sourceEnd?.lowerBound,
     sourceEnd?.upperBound,
     sourceEnd?.navigability,
+    sourceEnd?.isOrdered,
+    sourceEnd?.isUnique,
+    targetEnd?.isOrdered,
+    targetEnd?.isUnique,
     targetEnd?.role,
     targetEnd?.multiplicity,
     targetEnd?.lowerBound,
@@ -860,12 +878,16 @@ function RelationshipProperties({
         multiplicity: sourceMultiplicity.kind,
         ...rangeBoundsPayload(sourceMultiplicity.kind, sourceMultiplicity.lower, sourceMultiplicity.upper),
         navigability: sourceNavigability,
+        isOrdered: sourceFlags.isOrdered,
+        isUnique: sourceFlags.isUnique,
       },
       target: {
         role: targetRole.trim() || null,
         multiplicity: targetMultiplicity.kind,
         ...rangeBoundsPayload(targetMultiplicity.kind, targetMultiplicity.lower, targetMultiplicity.upper),
         navigability: targetNavigability,
+        isOrdered: targetFlags.isOrdered,
+        isUnique: targetFlags.isUnique,
       },
     }));
   }
@@ -879,6 +901,8 @@ function RelationshipProperties({
     setMultiplicity: (value: MultiplicityDraft) => void,
     navigability: string,
     setNavigability: (value: string) => void,
+    flags: EndFlagsDraft,
+    setFlags: (value: EndFlagsDraft) => void,
   ) {
     const title = side === 'source' ? 'Extremo de origen' : 'Extremo de destino';
     const prefix = `relationship-${side}`;
@@ -892,6 +916,24 @@ function RelationshipProperties({
         <select id={`${prefix}-navigability`} onChange={(event) => setNavigability(event.target.value)} value={navigability}>
           {NAVIGABILITY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
+        <label className="property-check">
+          <input
+            checked={flags.isOrdered}
+            id={`${prefix}-ordered`}
+            onChange={(event) => setFlags({ ...flags, isOrdered: event.target.checked })}
+            type="checkbox"
+          />
+          <span>Ordenado</span>
+        </label>
+        <label className="property-check">
+          <input
+            checked={flags.isUnique}
+            id={`${prefix}-unique`}
+            onChange={(event) => setFlags({ ...flags, isUnique: event.target.checked })}
+            type="checkbox"
+          />
+          <span>Único</span>
+        </label>
       </fieldset>
     );
   }
@@ -950,9 +992,9 @@ function RelationshipProperties({
           </>
         )}
         {endFields('source', sourceClassifier?.name, sourceRole, setSourceRole, sourceMultiplicity,
-          setSourceMultiplicity, sourceNavigability, setSourceNavigability)}
+          setSourceMultiplicity, sourceNavigability, setSourceNavigability, sourceFlags, setSourceFlags)}
         {endFields('target', targetClassifier?.name, targetRole, setTargetRole, targetMultiplicity,
-          setTargetMultiplicity, targetNavigability, setTargetNavigability)}
+          setTargetMultiplicity, targetNavigability, setTargetNavigability, targetFlags, setTargetFlags)}
         <button className="button button-primary button-compact" disabled={endsInvalid} type="submit">Guardar relación</button>
       </form>
     </section>
@@ -1040,14 +1082,18 @@ function AttributeProperties({
   const [multiplicity, setMultiplicity] = useState(multiplicityDraft(attribute));
   const [defaultValue, setDefaultValue] = useState(attribute.defaultValue ?? '');
   const [stereotype, setStereotype] = useState(attribute.stereotype ?? '');
+  const [isStatic, setIsStatic] = useState(attribute.isStatic ?? false);
+  const [isDerived, setIsDerived] = useState(attribute.isDerived ?? false);
 
   useEffect(() => {
+    setIsStatic(attribute.isStatic ?? false);
+    setIsDerived(attribute.isDerived ?? false);
     setType(attribute.type ?? '');
     setVisibility(attribute.visibility);
     setMultiplicity(multiplicityDraft(attribute));
     setDefaultValue(attribute.defaultValue ?? '');
     setStereotype(attribute.stereotype ?? '');
-  }, [attribute.stereotype, attribute.id, attribute.type, attribute.visibility, attribute.multiplicity,
+  }, [attribute.stereotype, attribute.isStatic, attribute.isDerived, attribute.id, attribute.type, attribute.visibility, attribute.multiplicity,
     attribute.lowerBound, attribute.upperBound, attribute.defaultValue]);
 
   const multiplicityInvalid = multiplicityError(multiplicity) !== null;
@@ -1068,6 +1114,8 @@ function AttributeProperties({
         ...rangeBoundsPayload(multiplicity.kind, multiplicity.lower, multiplicity.upper),
         defaultValue: defaultValue === '' ? null : defaultValue,
         ...stereotypeChange(attribute.stereotype, stereotype),
+        isStatic,
+        isDerived,
       },
     });
   }
@@ -1113,6 +1161,15 @@ function AttributeProperties({
 
         <label className="field-label" htmlFor="attribute-default">Valor predeterminado</label>
         <input id="attribute-default" onChange={(event) => setDefaultValue(event.target.value)} value={defaultValue} />
+
+        <label className="property-check">
+          <input checked={isStatic} onChange={(event) => setIsStatic(event.target.checked)} type="checkbox" />
+          <span>Estático</span>
+        </label>
+        <label className="property-check">
+          <input checked={isDerived} onChange={(event) => setIsDerived(event.target.checked)} type="checkbox" />
+          <span>Derivado</span>
+        </label>
         <button className="button button-primary button-compact" disabled={multiplicityInvalid} type="submit">Guardar atributo</button>
       </form>
     </>

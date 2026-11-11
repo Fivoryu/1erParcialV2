@@ -321,6 +321,9 @@ export interface RelationshipEndValues {
   lowerBound?: number | null;
   upperBound?: number | null;
   navigability: string;
+  /** Left out, the end keeps its flag. */
+  isOrdered?: boolean;
+  isUnique?: boolean;
 }
 
 export function buildRelationshipUpdateRequest(
@@ -630,6 +633,8 @@ function addAttribute(model: ModelResource, envelope: OperationEnvelope, classif
     lowerBound: payloadBound(envelope.payload.lowerBound) ?? null,
     upperBound: payloadBound(envelope.payload.upperBound) ?? null,
     defaultValue: payloadString(envelope, 'defaultValue'),
+    isStatic: payloadBoolean(envelope, 'isStatic') ?? false,
+    isDerived: payloadBoolean(envelope, 'isDerived') ?? false,
     typeReferenceId: null,
     type: resolveTypeName(model, envelope.payload.type),
     ordinal: typeof envelope.payload.ordinal === 'number' ? envelope.payload.ordinal : 0,
@@ -792,6 +797,8 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
                 ...(typeof update.role === 'string' || update.role === null ? { role: update.role } : {}),
                 ...(typeof update.multiplicity === 'string' ? { multiplicity: update.multiplicity } : {}),
                 ...boundsUpdate(update),
+                ...(typeof update.isOrdered === 'boolean' ? { isOrdered: update.isOrdered } : {}),
+                ...(typeof update.isUnique === 'boolean' ? { isUnique: update.isUnique } : {}),
                 ...(typeof update.navigability === 'string' ? { navigability: update.navigability } : {}),
               };
             }),
@@ -899,6 +906,8 @@ export function applyOptimisticCommand(model: ModelResource, envelope: Operation
             multiplicity: payloadString(envelope, 'multiplicity') ?? attribute.multiplicity,
             ...boundsUpdate(envelope.payload),
             ...stereotypeUpdate(envelope.payload),
+            isStatic: payloadBoolean(envelope, 'isStatic') ?? attribute.isStatic ?? false,
+            isDerived: payloadBoolean(envelope, 'isDerived') ?? attribute.isDerived ?? false,
             defaultValue: Object.hasOwn(envelope.payload, 'defaultValue')
               ? payloadString(envelope, 'defaultValue')
               : attribute.defaultValue,

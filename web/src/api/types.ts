@@ -432,6 +432,9 @@ export interface AttributeResource {
   type: string | null;
   ordinal: number;
   stereotype?: string | null;
+  /** UML static (underlined) and derived (`/name`) attribute flags; absent on older snapshots, read as false. */
+  isStatic?: boolean;
+  isDerived?: boolean;
 }
 
 export interface OperationResource {
@@ -487,6 +490,9 @@ export interface RelationshipEndResource {
   navigability: string;
   aggregationKind: string;
   ordinal: number;
+  /** End properties shown as `{ordered}` / `{unique}`; absent on older snapshots, read as false. */
+  isOrdered?: boolean;
+  isUnique?: boolean;
 }
 
 export type ErrorCode =

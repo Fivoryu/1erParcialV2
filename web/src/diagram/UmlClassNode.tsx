@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Handle, NodeResizer, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { ClassifierResource } from '../api/types';
-import { formatAttribute, formatOperation, formatStereotype, operationIsStatic, operationNameIsAbstract, orderedAttributes, orderedOperations } from './uml-format';
+import { attributeIsStatic, formatAttribute, formatOperation, formatStereotype, operationIsStatic, operationNameIsAbstract, orderedAttributes, orderedOperations } from './uml-format';
 import { classifierAcceptsStereotype } from './commands';
 import type { CanvasSelection } from './selection';
 import { StoreBadge } from './StoreBadge';
@@ -218,7 +218,10 @@ export function UmlClassCard({ classifier, onSelectElement, onRenameClassifier, 
               elementId: attribute.id,
             };
             return (
-              <div className="uml-member-row" key={attribute.id}>
+              <div
+                className={`uml-member-row${attributeIsStatic(attribute) ? ' uml-member--static' : ''}`}
+                key={attribute.id}
+              >
                 <EditableText
                   ariaLabel={`Editar atributo ${attribute.name}`}
                   className="uml-member-text"
