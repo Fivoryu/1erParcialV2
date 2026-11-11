@@ -633,7 +633,8 @@ class XmiSemanticEmitterTest {
         assertThat(attributes).extracting(AttributeResource::isDerived).containsExactly(true, false);
         List<RelationshipEndResource> ends = read.model().relationships().get(0).ends();
         assertThat(ends).extracting(RelationshipEndResource::isOrdered).containsExactly(true, false);
-        assertThat(ends).extracting(RelationshipEndResource::isUnique).containsExactly(false, true);
+        // isUnique is written but not read back: UML defaults it to true and EA writes it on every end.
+        assertThat(ends).extracting(RelationshipEndResource::isUnique).containsExactly(false, false);
         assertThat(read.losses()).isEmpty();
     }
 

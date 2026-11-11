@@ -163,6 +163,9 @@ class XmiReaderTest {
                         RelationshipKind.COMPOSITION.name(), RelationshipKind.GENERALIZATION.name(),
                         RelationshipKind.INTERFACE_REALIZATION.name(), RelationshipKind.DEPENDENCY.name());
         assertThat(model.views()).hasSize(1);
+        // EA writes isUnique="true" (the UML default) on every ownedEnd; that must not mark {unique} on any end.
+        assertThat(model.relationships().stream().flatMap(r -> r.ends().stream()))
+                .noneMatch(ModelResource.RelationshipEndResource::isUnique);
 
         assertThat(result.diagrams()).hasSize(1);
         var diagram = result.diagrams().get(0);

@@ -185,6 +185,19 @@ class DomainModelIRMapperTest {
     }
 
     @Test
+    void blocksARangeEndWithMultiplicityCombinationBecauseItIsOutsideTheV1Profile() {
+        DomainModelIR ir = mapper.map(relationshipSnapshot(RelationshipKind.ASSOCIATION,
+                MultiplicityKind.EXACTLY_ONE, MultiplicityKind.RANGE,
+                NavigationKind.NAVIGABLE, NavigationKind.NAVIGABLE, false));
+
+        assertThat(ir.diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("UNSUPPORTED_MULTIPLICITY_COMBINATION");
+            assertThat(diagnostic.message()).contains("RANGE");
+            assertThat(diagnostic.blocking()).isTrue();
+        });
+    }
+
+    @Test
     void blocksManyToManyWithMultiplicityCombination() {
         DomainModelIR ir = mapper.map(relationshipSnapshot(RelationshipKind.ASSOCIATION,
                 MultiplicityKind.ONE_OR_MANY, MultiplicityKind.ZERO_OR_MANY,

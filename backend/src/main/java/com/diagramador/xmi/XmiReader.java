@@ -523,7 +523,9 @@ public final class XmiReader {
                         endMultiplicity == null ? null : endMultiplicity.lowerBound(),
                         endMultiplicity == null ? null : endMultiplicity.upperBound(),
                         Boolean.parseBoolean(end.getAttribute("isOrdered")),
-                        Boolean.parseBoolean(end.getAttribute("isUnique"))));
+                        // UML's own default for Property.isUnique is true and EA writes it on every
+                        // end, so reading it would mark {unique} on every imported end.
+                        false));
             }
             List<RelationshipEndResource> result = new ArrayList<>();
             Set<SemanticEnd> used = new LinkedHashSet<>();

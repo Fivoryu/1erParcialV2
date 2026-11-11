@@ -676,19 +676,13 @@ public final class DomainModelIRMapper {
         return null;
     }
 
-    /** A RANGE is to-one when its upper bound is exactly 1 (the bounds validation guarantees upper >= 1). */
+    /** A RANGE end stays outside the V1 generation profile: it is neither to-one nor to-many. */
     private boolean isToOne(MultiplicityKind multiplicity, Integer upperBound) {
-        if (multiplicity == MultiplicityKind.RANGE) {
-            return upperBound != null && upperBound <= 1;
-        }
         return multiplicity == MultiplicityKind.EXACTLY_ONE || multiplicity == MultiplicityKind.ZERO_OR_ONE;
     }
 
-    /** A RANGE is to-many when its upper bound is unbounded (null) or above 1. */
+    /** A RANGE end stays outside the V1 generation profile: it is neither to-one nor to-many. */
     private boolean isToMany(MultiplicityKind multiplicity, Integer upperBound) {
-        if (multiplicity == MultiplicityKind.RANGE) {
-            return upperBound == null || upperBound > 1;
-        }
         return multiplicity == MultiplicityKind.ONE_OR_MANY || multiplicity == MultiplicityKind.ZERO_OR_MANY;
     }
 
