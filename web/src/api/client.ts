@@ -43,6 +43,8 @@ import type {
   XmiExportResource,
   XmiPreviewRequest,
   XmiPreviewResource,
+  XmiSuggestRequest,
+  XmiSuggestionResource,
 } from './types';
 import type { EditingLeaseEnvelope, EditingLeaseRequest } from './types';
 import { clearSession, getAuthorizationHeaderValue } from './session';
@@ -177,6 +179,7 @@ export interface ApiClient {
   getGenerationReadiness(projectId: Uuid, versionId: Uuid): Promise<GenerationReadinessResource>;
   previewXmi(projectId: Uuid, request: XmiPreviewRequest): Promise<XmiPreviewResource>;
   importXmi(projectId: Uuid, request: XmiImportRequest): Promise<XmiImportResource>;
+  suggestXmiResolutions(projectId: Uuid, request: XmiSuggestRequest): Promise<XmiSuggestionResource>;
   exportXmi(projectId: Uuid): Promise<XmiExportResource>;
   reportProjectPresenceTouch(projectId: Uuid, targetElementId: Uuid | null): Promise<void>;
   reportProjectCursorPosition(projectId: Uuid, x: number, y: number): Promise<void>;
@@ -544,6 +547,12 @@ export function createApiClient(
     importXmi(projectId, request) {
       return postJson<XmiImportResource>(
         `/projects/${encodeURIComponent(projectId)}/xmi/import`,
+        request,
+      );
+    },
+    suggestXmiResolutions(projectId, request) {
+      return postJson<XmiSuggestionResource>(
+        `/projects/${encodeURIComponent(projectId)}/xmi/suggest-resolutions`,
         request,
       );
     },

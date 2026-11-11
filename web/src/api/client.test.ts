@@ -759,3 +759,25 @@ describe('XMI export API client', () => {
     });
   });
 });
+
+describe('XMI suggest-resolutions client', () => {
+  it('posts the file, checksum and mode and returns the suggestion', async () => {
+    const suggestion = {
+      resolutions: [{ subject: 'a', action: 'RENAME', newName: 'A (2)' }],
+      source: 'RULES',
+      explanation: 'Se renombró por regla.',
+    };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(suggestion), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    );
+    const client = createApiClient('https://diagram.test', fetcher);
+    const request = { fileBase64: 'PHhtaT7p', checksum: 'c'.repeat(64), mode: 'AGREGAR' as const };
+
+    await expect(client.suggestXmiResolutions('p1', request)).resolves.toEqual(suggestion);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://diagram.test/projects/p1/xmi/suggest-resolutions',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(request) }),
+    );
+  });
+});
