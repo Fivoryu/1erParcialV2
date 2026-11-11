@@ -255,6 +255,57 @@ class UndoServiceTest {
     }
 
     @Test
+    void undoOfClassifierStereotypeSetRestoresThePreviousStereotypeIncludingNone() {
+        Fixture fixture = fixture("undo-set-stereotype");
+        UUID classifierId = createClassifier(fixture, 0, "Order");
+        assertAccepted(command(fixture, "classifier.stereotype.set", 1, Map.of("stereotype", "ENTITY"),
+                List.of(new Target("classifier", classifierId))));
+        assertAccepted(command(fixture, "classifier.stereotype.set", 2, Map.of("stereotype", "SERVICE"),
+                List.of(new Target("classifier", classifierId))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(classifierRepository.findById(classifierId).orElseThrow().getStereotype()).isEqualTo("ENTITY");
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(classifierRepository.findById(classifierId).orElseThrow().getStereotype()).isNull();
+
+        assertThat(undoService.redo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(classifierRepository.findById(classifierId).orElseThrow().getStereotype()).isEqualTo("ENTITY");
+    }
+
+    @Test
+    void undoRestoresTheStereotypeOfAnUpdatedAndOfARemovedAttribute() {
+        Fixture fixture = fixture("undo-attribute-stereotype");
+        UUID classifierId = createClassifier(fixture, 0, "Order");
+        UUID attributeId = UUID.randomUUID();
+        assertAccepted(command(fixture, "attribute.add", 1,
+                Map.of("id", attributeId, "name", "code", "type", Map.of("primitiveName", "String"),
+                        "stereotype", "ID"),
+                List.of(new Target("classifier", classifierId))));
+        assertAccepted(command(fixture, "attribute.update", 2, Map.of("stereotype", "UNIQUE"),
+                List.of(new Target("attribute", attributeId))));
+        assertAccepted(command(fixture, "attribute.update", 3, Map.of("name", "renamed"),
+                List.of(new Target("attribute", attributeId))));
+        assertAccepted(command(fixture, "attribute.update", 4, java.util.Collections.singletonMap("stereotype", null),
+                List.of(new Target("attribute", attributeId))));
+
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow().getStereotype()).isEqualTo("UNIQUE");
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow()).satisfies(attribute -> {
+            assertThat(attribute.getName()).isEqualTo("code");
+            assertThat(attribute.getStereotype()).as("renaming did not touch it").isEqualTo("UNIQUE");
+        });
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow().getStereotype()).isEqualTo("ID");
+
+        assertAccepted(command(fixture, "attribute.remove", 8, Map.of(),
+                List.of(new Target("attribute", attributeId))));
+        assertThat(undoService.undo(fixture.project().getId()).status()).isEqualTo("ACCEPTED");
+        assertThat(attributeRepository.findById(attributeId).orElseThrow().getStereotype()).isEqualTo("ID");
+    }
+
+    @Test
     void undoOfRelationshipCreateAppliesTheInverseDelete() {
         Fixture fixture = fixture("undo-relationship-create");
         UUID sourceId = createClassifier(fixture, 0, "Order");

@@ -2,6 +2,7 @@ package com.diagramador.command.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.AttributeStereotype;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.UmlAttribute;
@@ -12,7 +13,7 @@ import org.springframework.stereotype.Component;
 public class AttributeUpdateHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("name", "type", "visibility", "multiplicity", "lowerBound", "upperBound", "defaultValue",
-            "isStatic", "isAbstract");
+            "isStatic", "isAbstract", "stereotype");
 
     private final CommandHandlerSupport support;
 
@@ -63,6 +64,9 @@ public class AttributeUpdateHandler implements CommandHandler.AddAction {
         }
         if (payload.has("defaultValue")) {
             attribute.setDefaultValue(support.optionalText(payload, "defaultValue"));
+        }
+        if (payload.has("stereotype")) {
+            attribute.setStereotype(support.stereotype(payload, "stereotype", AttributeStereotype.class));
         }
         return Outcome.none();
     }

@@ -197,6 +197,46 @@ class VcsMergeDiffTest {
                 .containsExactly("2..5", "null..null");
     }
 
+    @Test
+    void stereotypesSurviveAMergeAndAnOldSnapshotReadsThemAsNull() {
+        com.diagramador.api.ModelResource.AttributeResource tagged = new com.diagramador.api.ModelResource.AttributeResource(
+                UUID.fromString("40000000-0000-0000-0000-000000000011"), "code", "ATTRIBUTE", "PUBLIC",
+                com.diagramador.domain.MultiplicityKind.EXACTLY_ONE, null, null, "String", 0, null, null, "ID");
+        com.diagramador.api.ModelResource.OperationResource query = new com.diagramador.api.ModelResource.OperationResource(
+                UUID.fromString("50000000-0000-0000-0000-000000000011"), "load", "PUBLIC", false, false, null, null, 0,
+                List.of(), "QUERY");
+        ClassifierResource stereotyped = new ClassifierResource(CLASSIFIER_ID, "Order", ClassifierKind.CLASS, false,
+                null, List.of(tagged), List.of(query), List.of(), null, null, null, "ENTITY");
+        ClassifierResource base = new ClassifierResource(CLASSIFIER_ID, "Order", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+
+        MergeDiff.Result result = MergeDiff.merge(model(base), model(stereotyped), model(base));
+
+        assertThat(result.conflicts()).isEmpty();
+        ClassifierResource merged = result.mergedSnapshot().classifiers().get(0);
+        assertThat(merged.stereotype()).isEqualTo("ENTITY");
+        assertThat(merged.attributes()).singleElement()
+                .satisfies(attribute -> assertThat(attribute.stereotype()).isEqualTo("ID"));
+        assertThat(merged.operations()).singleElement()
+                .satisfies(operation -> assertThat(operation.stereotype()).isEqualTo("QUERY"));
+        assertThat(base.stereotype()).as("a snapshot written before stereotypes read null").isNull();
+    }
+
+    @Test
+    void divergentStereotypesOfTheSameClassifierAreAFieldConflict() {
+        ClassifierResource base = new ClassifierResource(CLASSIFIER_ID, "Order", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of());
+        ClassifierResource ours = new ClassifierResource(CLASSIFIER_ID, "Order", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of(), null, null, null, "ENTITY");
+        ClassifierResource theirs = new ClassifierResource(CLASSIFIER_ID, "Order", ClassifierKind.CLASS, false, null,
+                List.of(), List.of(), List.of(), null, null, null, "SERVICE");
+
+        MergeDiff.Result result = MergeDiff.merge(model(base), model(ours), model(theirs));
+
+        assertThat(result.conflicts()).singleElement()
+                .satisfies(conflict -> assertThat(conflict.field()).isEqualTo("stereotype"));
+    }
+
     private static SnapshotModel model(ClassifierResource... classifiers) {
         return new SnapshotModel(List.of(), List.of(classifiers), List.of(), List.of());
     }

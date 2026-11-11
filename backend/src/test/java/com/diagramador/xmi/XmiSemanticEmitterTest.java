@@ -608,6 +608,72 @@ class XmiSemanticEmitterTest {
                 .singleElement().satisfies(relationship -> assertThat(relationship.stereotype()).isNull());
     }
 
+    private static ModelResource memberStereotypeModel(String classStereotype, String attributeStereotype,
+            String operationStereotype, ClassifierKind kind) {
+        AttributeResource attribute = new AttributeResource(id(611), "code", "ATTRIBUTE", "PUBLIC",
+                MultiplicityKind.EXACTLY_ONE, null, id(612), "String", 0, null, null, attributeStereotype);
+        OperationResource operation = new OperationResource(id(613), "load", "PUBLIC", false, false, null, null, 0,
+                List.of(), operationStereotype);
+        ClassifierResource owner = new ClassifierResource(id(610), "Stereotyped", kind, false, null,
+                List.of(attribute), List.of(operation), List.of(), null, null, null, classStereotype);
+        return new ModelResource(id(1), id(2), 3, id(3), List.of(), List.of(owner), List.of());
+    }
+
+    @Test
+    void classifierAttributeAndOperationStereotypesRoundTripEvenWhenNoViewPlacesTheClass() throws Exception {
+        String document = emitter.emit(memberStereotypeModel("IMPLEMENTATION_CLASS", "READONLY", "QUERY",
+                ClassifierKind.CLASS)).document();
+        Element elementProperties = findDirectNoNamespace(find(parse(document), null, "element"), "properties");
+        assertThat(elementProperties.getAttribute("stereotype")).isEqualTo("implementation_class");
+
+        XmiReadingResult read = new XmiReader().read(document.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        ClassifierResource classifier = read.model().classifiers().get(0);
+        assertThat(classifier.stereotype()).isEqualTo("IMPLEMENTATION_CLASS");
+        assertThat(classifier.attributes()).singleElement()
+                .satisfies(attribute -> assertThat(attribute.stereotype()).isEqualTo("READONLY"));
+        assertThat(classifier.operations()).singleElement()
+                .satisfies(operation -> assertThat(operation.stereotype()).isEqualTo("QUERY"));
+        assertThat(read.losses()).extracting(XmiReadingResult.Loss::name)
+                .noneMatch(name -> name.contains("stereotype"));
+    }
+
+    @Test
+    void aModelWithoutStereotypesEmitsNoStereotypeAndReadsBackWithoutOne() {
+        String document = emitter.emit(memberStereotypeModel(null, null, null, ClassifierKind.CLASS)).document();
+
+        assertThat(document).doesNotContain("stereotype");
+        ClassifierResource classifier = new XmiReader().read(document.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                .model().classifiers().get(0);
+        assertThat(classifier.stereotype()).isNull();
+        assertThat(classifier.attributes().get(0).stereotype()).isNull();
+        assertThat(classifier.operations().get(0).stereotype()).isNull();
+    }
+
+    @Test
+    void unknownStereotypesAndOnesOnAnInterfaceAreDroppedOnReadWithALossEntry() {
+        String unknown = emitter.emit(memberStereotypeModel("ENTITY", "ID", "CREATE", ClassifierKind.CLASS)).document()
+                .replace("stereotype=\"entity\"", "stereotype=\"teleport\"")
+                .replace("stereotype=\"id\"", "stereotype=\"teleport\"")
+                .replace("stereotype=\"create\"", "stereotype=\"teleport\"");
+        XmiReadingResult read = new XmiReader().read(unknown.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        ClassifierResource classifier = read.model().classifiers().get(0);
+        assertThat(classifier.stereotype()).isNull();
+        assertThat(classifier.attributes().get(0).stereotype()).isNull();
+        assertThat(classifier.operations().get(0).stereotype()).isNull();
+        assertThat(read.losses()).extracting(XmiReadingResult.Loss::name).contains(
+                "unsupported_classifier_stereotype", "unsupported_attribute_stereotype",
+                "unsupported_operation_stereotype");
+
+        String onInterface = emitter.emit(memberStereotypeModel("ENTITY", null, null, ClassifierKind.INTERFACE))
+                .document();
+        XmiReadingResult interfaceRead = new XmiReader().read(onInterface.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(interfaceRead.model().classifiers().get(0).stereotype()).isNull();
+        assertThat(interfaceRead.losses()).extracting(XmiReadingResult.Loss::name)
+                .contains("unsupported_classifier_stereotype");
+    }
+
     @Test
     void aStereotypeThatIsNotAUmlDependencyStereotypeIsDroppedOnReadInsteadOfCorruptingTheModel() {
         String document = emitter.emit(stereotypedDependencyModel("USE")).document()

@@ -103,25 +103,27 @@ public class ModelStateHasher {
         }
 
         classifiers.stream().sorted(byId(Classifier::getId))
-                .map(classifier -> withStore(line("classifiers", classifier.getId(),
+                .map(classifier -> withStereotype(withStore(line("classifiers", classifier.getId(),
                         field("namespaceId", id(classifier.getNamespace())), field("kind", classifier.getKind()),
                         field("name", classifier.getName()), field("isAbstract", classifier.isAbstract())),
-                        classifier.getStoreOverride()))
+                        classifier.getStoreOverride()), classifier.getStereotype()))
                 .forEach(lines::add);
         attributes.stream().sorted(byId(UmlAttribute::getId))
-                .map(attribute -> withBounds(line("attributes", attribute.getId(),
+                .map(attribute -> withStereotype(withBounds(line("attributes", attribute.getId(),
                         field("classifierId", id(attribute.getClassifier())),
                         field("typeReferenceId", id(attribute.getTypeReference())), field("name", attribute.getName()),
                         field("kind", attribute.getKind()), field("visibility", attribute.getVisibility()),
                         field("multiplicity", attribute.getMultiplicity()), field("defaultValue", attribute.getDefaultValue()),
-                        field("ordinal", attribute.getOrdinal())), attribute.getLowerBound(), attribute.getUpperBound()))
+                        field("ordinal", attribute.getOrdinal())), attribute.getLowerBound(), attribute.getUpperBound()),
+                        attribute.getStereotype()))
                 .forEach(lines::add);
         operations.stream().sorted(byId(UmlOperation::getId))
-                .map(operation -> line("operations", operation.getId(),
+                .map(operation -> withStereotype(line("operations", operation.getId(),
                         field("classifierId", id(operation.getClassifier())), field("name", operation.getName()),
                         field("returnTypeReferenceId", id(operation.getReturnTypeReference())),
                         field("visibility", operation.getVisibility()), field("isAbstract", operation.isAbstract()),
-                        field("isStatic", operation.isStatic()), field("ordinal", operation.getOrdinal())))
+                        field("isStatic", operation.isStatic()), field("ordinal", operation.getOrdinal())),
+                        operation.getStereotype()))
                 .forEach(lines::add);
         parameters.stream().sorted(byId(OperationParameter::getId))
                 .map(parameter -> line("parameters", parameter.getId(),
@@ -180,27 +182,29 @@ public class ModelStateHasher {
         List<ModelResource.ClassifierResource> classifiers = snapshot.classifiers().stream()
                 .sorted(Comparator.comparing(value -> value.id().toString())).toList();
         classifiers.stream()
-                .map(classifier -> withStore(line("classifiers", classifier.id(),
+                .map(classifier -> withStereotype(withStore(line("classifiers", classifier.id(),
                         field("namespaceId", classifier.namespaceId()), field("kind", classifier.kind()),
                         field("name", classifier.name()), field("isAbstract", classifier.isAbstract())),
-                        classifier.storeOverride()))
+                        classifier.storeOverride()), classifier.stereotype()))
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.attributes().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
-                .map(attribute -> withBounds(line("attributes", attribute.id(),
+                .map(attribute -> withStereotype(withBounds(line("attributes", attribute.id(),
                         field("classifierId", ownerId(classifiers, attribute.id())),
                         field("typeReferenceId", attribute.typeReferenceId()), field("name", attribute.name()),
                         field("kind", attribute.kind()), field("visibility", attribute.visibility()),
                         field("multiplicity", attribute.multiplicity()), field("defaultValue", attribute.defaultValue()),
-                        field("ordinal", attribute.ordinal())), attribute.lowerBound(), attribute.upperBound()))
+                        field("ordinal", attribute.ordinal())), attribute.lowerBound(), attribute.upperBound()),
+                        attribute.stereotype()))
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.operations().stream())
                 .sorted(Comparator.comparing(value -> value.id().toString()))
-                .map(operation -> line("operations", operation.id(),
+                .map(operation -> withStereotype(line("operations", operation.id(),
                         field("classifierId", ownerIdForOperation(classifiers, operation.id())),
                         field("name", operation.name()), field("returnTypeReferenceId", operation.returnTypeReferenceId()),
                         field("visibility", operation.visibility()), field("isAbstract", operation.isAbstract()),
-                        field("isStatic", operation.isStatic()), field("ordinal", operation.ordinal())))
+                        field("isStatic", operation.isStatic()), field("ordinal", operation.ordinal())),
+                        operation.stereotype()))
                 .forEach(lines::add);
         classifiers.stream().flatMap(classifier -> classifier.operations().stream())
                 .flatMap(operation -> operation.parameters().stream())
@@ -337,7 +341,7 @@ public class ModelStateHasher {
         return storeOverride == null ? line : line + "|" + field("storeOverride", storeOverride);
     }
 
-    /** Appended only when set, so a relationship without a stereotype keeps the hash it had before the field existed. */
+    /** Appended only when set, so an element without a stereotype keeps the hash it had before the field existed. */
     private static String withStereotype(String line, String stereotype) {
         return stereotype == null ? line : line + "|" + field("stereotype", stereotype);
     }

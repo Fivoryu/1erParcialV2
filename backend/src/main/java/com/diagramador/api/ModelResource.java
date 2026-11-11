@@ -100,7 +100,8 @@ public record ModelResource(
             List<ConstraintResource> constraints,
             @JsonInclude(JsonInclude.Include.NON_NULL) PersistenceStore storeOverride,
             @JsonInclude(JsonInclude.Include.NON_NULL) PersistenceStore store,
-            @JsonInclude(JsonInclude.Include.NON_NULL) String storeReason) {
+            @JsonInclude(JsonInclude.Include.NON_NULL) String storeReason,
+            String stereotype) {
 
         public ClassifierResource {
             attributes = attributes == null ? List.of() : List.copyOf(attributes);
@@ -112,13 +113,22 @@ public record ModelResource(
         public ClassifierResource(UUID id, String name, ClassifierKind kind, boolean isAbstract, UUID namespaceId,
                 List<AttributeResource> attributes, List<OperationResource> operations,
                 List<ConstraintResource> constraints) {
-            this(id, name, kind, isAbstract, namespaceId, attributes, operations, constraints, null, null, null);
+            this(id, name, kind, isAbstract, namespaceId, attributes, operations, constraints, null, null, null, null);
+        }
+
+        /** Pre-stereotype shape: no stereotype (null), as old snapshots without the field read. */
+        public ClassifierResource(UUID id, String name, ClassifierKind kind, boolean isAbstract, UUID namespaceId,
+                List<AttributeResource> attributes, List<OperationResource> operations,
+                List<ConstraintResource> constraints, PersistenceStore storeOverride, PersistenceStore store,
+                String storeReason) {
+            this(id, name, kind, isAbstract, namespaceId, attributes, operations, constraints, storeOverride, store,
+                    storeReason, null);
         }
 
         /** The same classifier carrying the effective store and the reason the classifier gave for it. */
         public ClassifierResource withStore(PersistenceStore effectiveStore, String reason) {
             return new ClassifierResource(id, name, kind, isAbstract, namespaceId, attributes, operations,
-                    constraints, storeOverride, effectiveStore, reason);
+                    constraints, storeOverride, effectiveStore, reason, stereotype);
         }
     }
 
@@ -133,11 +143,21 @@ public record ModelResource(
             String type,
             int ordinal,
             Integer lowerBound,
-            Integer upperBound) {
+            Integer upperBound,
+            String stereotype) {
         /** Pre-RANGE shape: bounds absent (null), as old snapshots without the fields read. */
         public AttributeResource(UUID id, String name, String kind, String visibility, MultiplicityKind multiplicity,
                 String defaultValue, UUID typeReferenceId, String type, int ordinal) {
-            this(id, name, kind, visibility, multiplicity, defaultValue, typeReferenceId, type, ordinal, null, null);
+            this(id, name, kind, visibility, multiplicity, defaultValue, typeReferenceId, type, ordinal, null, null,
+                    null);
+        }
+
+        /** Pre-stereotype shape: no stereotype (null), as old snapshots without the field read. */
+        public AttributeResource(UUID id, String name, String kind, String visibility, MultiplicityKind multiplicity,
+                String defaultValue, UUID typeReferenceId, String type, int ordinal, Integer lowerBound,
+                Integer upperBound) {
+            this(id, name, kind, visibility, multiplicity, defaultValue, typeReferenceId, type, ordinal, lowerBound,
+                    upperBound, null);
         }
     }
 
@@ -150,10 +170,18 @@ public record ModelResource(
             UUID returnTypeReferenceId,
             String returnType,
             int ordinal,
-            List<ParameterResource> parameters) {
+            List<ParameterResource> parameters,
+            String stereotype) {
 
         public OperationResource {
             parameters = parameters == null ? List.of() : List.copyOf(parameters);
+        }
+
+        /** Pre-stereotype shape: no stereotype (null), as old snapshots without the field read. */
+        public OperationResource(UUID id, String name, String visibility, boolean isAbstract, boolean isStatic,
+                UUID returnTypeReferenceId, String returnType, int ordinal, List<ParameterResource> parameters) {
+            this(id, name, visibility, isAbstract, isStatic, returnTypeReferenceId, returnType, ordinal, parameters,
+                    null);
         }
     }
 

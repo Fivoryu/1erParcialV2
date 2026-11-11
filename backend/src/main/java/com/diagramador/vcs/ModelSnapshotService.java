@@ -429,7 +429,7 @@ public class ModelSnapshotService {
         UUID namespaceId = classifier.getNamespace() == null ? null : classifier.getNamespace().getId();
         return new ClassifierResource(classifier.getId(), classifier.getName(), classifier.getKind(),
                 classifier.isAbstract(), namespaceId, attributes, operations, constraintResources,
-                classifier.getStoreOverride(), null, null);
+                classifier.getStoreOverride(), null, null, classifier.getStereotype());
     }
 
     private ModelResource.AttributeResource attributeResource(UmlAttribute attribute) {
@@ -437,7 +437,7 @@ public class ModelSnapshotService {
         return new ModelResource.AttributeResource(attribute.getId(), attribute.getName(), attribute.getKind(),
                 attribute.getVisibility(), attribute.getMultiplicity(), attribute.getDefaultValue(),
                 typeReference == null ? null : typeReference.getId(), typeName(typeReference), attribute.getOrdinal(),
-                attribute.getLowerBound(), attribute.getUpperBound());
+                attribute.getLowerBound(), attribute.getUpperBound(), attribute.getStereotype());
     }
 
     private OperationResource operationResource(UmlOperation operation) {
@@ -449,7 +449,7 @@ public class ModelSnapshotService {
                 .toList();
         return new OperationResource(operation.getId(), operation.getName(), operation.getVisibility(),
                 operation.isAbstract(), operation.isStatic(), returnType == null ? null : returnType.getId(),
-                typeName(returnType), operation.getOrdinal(), parameters);
+                typeName(returnType), operation.getOrdinal(), parameters, operation.getStereotype());
     }
 
     private ParameterResource parameterResource(OperationParameter parameter) {
@@ -538,16 +538,17 @@ public class ModelSnapshotService {
     private void upsertClassifier(UUID modelId, ClassifierResource resource, UUID namespaceId) {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.classifier
-                    (classifier_id, model_id, namespace_id, kind, name, is_abstract, store_override)
+                    (classifier_id, model_id, namespace_id, kind, name, is_abstract, store_override, stereotype)
                 VALUES (:id, :modelId, :namespaceId, CAST(:kind AS diagrammer.classifier_kind), :name, :isAbstract,
-                    :storeOverride)
+                    :storeOverride, :stereotype)
                 ON CONFLICT (classifier_id) DO UPDATE SET
                     model_id = EXCLUDED.model_id,
                     namespace_id = EXCLUDED.namespace_id,
                     kind = EXCLUDED.kind,
                     name = EXCLUDED.name,
                     is_abstract = EXCLUDED.is_abstract,
-                    store_override = EXCLUDED.store_override
+                    store_override = EXCLUDED.store_override,
+                    stereotype = EXCLUDED.stereotype
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("modelId", modelId)
@@ -556,6 +557,7 @@ public class ModelSnapshotService {
                 .setParameter("name", resource.name())
                 .setParameter("isAbstract", resource.isAbstract())
                 .setParameter("storeOverride", resource.storeOverride() == null ? null : resource.storeOverride().name())
+                .setParameter("stereotype", resource.stereotype())
                 .executeUpdate();
     }
 
@@ -589,10 +591,10 @@ public class ModelSnapshotService {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.uml_attribute
                     (attribute_id, classifier_id, type_reference_id, name, kind, visibility,
-                     multiplicity, lower_bound, upper_bound, default_value, ordinal)
+                     multiplicity, lower_bound, upper_bound, default_value, ordinal, stereotype)
                 VALUES (:id, :classifierId, :typeReferenceId, :name, :kind, :visibility,
                         CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
-                        :defaultValue, :ordinal)
+                        :defaultValue, :ordinal, :stereotype)
                 ON CONFLICT (attribute_id) DO UPDATE SET
                     classifier_id = EXCLUDED.classifier_id,
                     type_reference_id = EXCLUDED.type_reference_id,
@@ -603,7 +605,8 @@ public class ModelSnapshotService {
                     lower_bound = EXCLUDED.lower_bound,
                     upper_bound = EXCLUDED.upper_bound,
                     default_value = EXCLUDED.default_value,
-                    ordinal = EXCLUDED.ordinal
+                    ordinal = EXCLUDED.ordinal,
+                    stereotype = EXCLUDED.stereotype
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("classifierId", slot.classifierId())
@@ -617,6 +620,7 @@ public class ModelSnapshotService {
                         ? resource.upperBound() : null)
                 .setParameter("defaultValue", resource.defaultValue())
                 .setParameter("ordinal", resource.ordinal())
+                .setParameter("stereotype", resource.stereotype())
                 .executeUpdate();
     }
 
@@ -625,8 +629,9 @@ public class ModelSnapshotService {
         entityManager.createNativeQuery("""
                 INSERT INTO diagrammer.uml_operation
                     (operation_id, classifier_id, name, return_type_reference_id, visibility,
-                     is_abstract, is_static, ordinal)
-                VALUES (:id, :classifierId, :name, :returnTypeId, :visibility, :isAbstract, :isStatic, :ordinal)
+                     is_abstract, is_static, ordinal, stereotype)
+                VALUES (:id, :classifierId, :name, :returnTypeId, :visibility, :isAbstract, :isStatic, :ordinal,
+                        :stereotype)
                 ON CONFLICT (operation_id) DO UPDATE SET
                     classifier_id = EXCLUDED.classifier_id,
                     name = EXCLUDED.name,
@@ -634,7 +639,8 @@ public class ModelSnapshotService {
                     visibility = EXCLUDED.visibility,
                     is_abstract = EXCLUDED.is_abstract,
                     is_static = EXCLUDED.is_static,
-                    ordinal = EXCLUDED.ordinal
+                    ordinal = EXCLUDED.ordinal,
+                    stereotype = EXCLUDED.stereotype
                 """)
                 .setParameter("id", resource.id())
                 .setParameter("classifierId", slot.classifierId())
@@ -644,6 +650,7 @@ public class ModelSnapshotService {
                 .setParameter("isAbstract", resource.isAbstract())
                 .setParameter("isStatic", resource.isStatic())
                 .setParameter("ordinal", resource.ordinal())
+                .setParameter("stereotype", resource.stereotype())
                 .executeUpdate();
     }
 

@@ -380,7 +380,7 @@ public class ProjectApiService {
         UUID namespaceId = classifier.getNamespace() == null ? null : classifier.getNamespace().getId();
         return new ClassifierResource(classifier.getId(), classifier.getName(), classifier.getKind(),
                 classifier.isAbstract(), namespaceId, attributes, operations, constraintResources,
-                classifier.getStoreOverride(), null, null);
+                classifier.getStoreOverride(), null, null, classifier.getStereotype());
     }
 
     private AttributeResource attributeResource(UmlAttribute attribute) {
@@ -388,7 +388,7 @@ public class ProjectApiService {
         return new AttributeResource(attribute.getId(), attribute.getName(), attribute.getKind(),
                 attribute.getVisibility(), attribute.getMultiplicity(), attribute.getDefaultValue(),
                 typeReference == null ? null : typeReference.getId(), typeName(typeReference), attribute.getOrdinal(),
-                attribute.getLowerBound(), attribute.getUpperBound());
+                attribute.getLowerBound(), attribute.getUpperBound(), attribute.getStereotype());
     }
 
     private OperationResource operationResource(UmlOperation operation) {
@@ -400,7 +400,7 @@ public class ProjectApiService {
                 .toList();
         return new OperationResource(operation.getId(), operation.getName(), operation.getVisibility(),
                 operation.isAbstract(), operation.isStatic(), returnType == null ? null : returnType.getId(),
-                typeName(returnType), operation.getOrdinal(), parameters);
+                typeName(returnType), operation.getOrdinal(), parameters, operation.getStereotype());
     }
 
     private ParameterResource parameterResource(OperationParameter parameter) {

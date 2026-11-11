@@ -7,7 +7,9 @@ import com.diagramador.command.CommandValidationException;
 import com.diagramador.command.ErrorCode;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.ClassifierStereotype;
 import com.diagramador.domain.DependencyStereotype;
+import com.diagramador.domain.Stereotypes;
 import com.diagramador.domain.DiagramView;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.OperationParameter;
@@ -287,6 +289,31 @@ public class CommandHandlerSupport {
     }
 
     /**
+     * The stereotype of an element from an optional payload field: absent or null means none; otherwise it has to be
+     * a constant of {@code list} (ClassifierStereotype, AttributeStereotype or OperationStereotype), case ignored.
+     */
+    public <E extends Enum<E>> String stereotype(JsonNode payload, String field, Class<E> list) {
+        if (!payload.has(field) || payload.get(field).isNull()) {
+            return null;
+        }
+        String value = text(payload, field);
+        String canonical = Stereotypes.canonical(list, value);
+        if (canonical == null) {
+            invalid("Unsupported stereotype '" + value + "'");
+        }
+        return canonical;
+    }
+
+    /** A classifier stereotype from an optional payload field; only a class (plain or abstract) may carry one. */
+    public String classifierStereotype(JsonNode payload, String field, ClassifierKind kind) {
+        String stereotype = stereotype(payload, field, ClassifierStereotype.class);
+        if (stereotype != null && !Stereotypes.classifierMayCarryOne(kind)) {
+            invalid("Payload field '" + field + "' applies only to classes, not to " + kind.name());
+        }
+        return stereotype;
+    }
+
+    /**
      * The association class of a relationship from an optional payload field: absent or null means none. Only an
      * association (plain, aggregation or composition) has one; it has to be a class of the same model, not one of
      * the association's own ends, and not already the association class of another relationship.
@@ -522,12 +549,12 @@ public class CommandHandlerSupport {
     }
 
     public void insertClassifier(CommandHandler.Context context, UUID id, Classifier namespace, ClassifierKind kind,
-            String name, boolean isAbstract) {
+            String name, boolean isAbstract, String stereotype) {
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.classifier
-                    (classifier_id, model_id, namespace_id, kind, name, is_abstract, created_at)
+                    (classifier_id, model_id, namespace_id, kind, name, is_abstract, stereotype, created_at)
                 VALUES (CAST(:id AS uuid), CAST(:modelId AS uuid), CAST(:namespaceId AS uuid),
-                    CAST(:kind AS diagrammer.classifier_kind), :name, :isAbstract, now())
+                    CAST(:kind AS diagrammer.classifier_kind), :name, :isAbstract, :stereotype, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("modelId", context.model().getId())
@@ -535,6 +562,7 @@ public class CommandHandlerSupport {
                 .setParameter("kind", kind.name())
                 .setParameter("name", name)
                 .setParameter("isAbstract", isAbstract)
+                .setParameter("stereotype", stereotype)
                 .executeUpdate();
     }
 
@@ -553,15 +581,15 @@ public class CommandHandlerSupport {
 
     public void insertAttribute(CommandHandler.Context context, UUID id, Classifier classifier,
             TypeReference type, String name, String visibility, Multiplicity multiplicity, String defaultValue,
-            int ordinal) {
+            int ordinal, String stereotype) {
         String kind = classifier.getKind() == ClassifierKind.ENUMERATION ? "LITERAL" : "ATTRIBUTE";
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.uml_attribute
                     (attribute_id, classifier_id, type_reference_id, name, kind, visibility, multiplicity,
-                     lower_bound, upper_bound, default_value, ordinal, created_at)
+                     lower_bound, upper_bound, default_value, ordinal, stereotype, created_at)
                 VALUES (CAST(:id AS uuid), CAST(:classifierId AS uuid), CAST(:typeReferenceId AS uuid), :name,
                     :kind, :visibility, CAST(:multiplicity AS diagrammer.multiplicity_kind),
-                    :lowerBound, :upperBound, :defaultValue, :ordinal, now())
+                    :lowerBound, :upperBound, :defaultValue, :ordinal, :stereotype, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("classifierId", classifier.getId())
@@ -574,17 +602,19 @@ public class CommandHandlerSupport {
                 .setParameter("upperBound", multiplicity.upperBound())
                 .setParameter("defaultValue", defaultValue)
                 .setParameter("ordinal", ordinal)
+                .setParameter("stereotype", stereotype)
                 .executeUpdate();
     }
 
     public void insertOperation(CommandHandler.Context context, UUID id, Classifier classifier, String name,
-            TypeReference returnType, String visibility, boolean isAbstract, boolean isStatic, int ordinal) {
+            TypeReference returnType, String visibility, boolean isAbstract, boolean isStatic, int ordinal,
+            String stereotype) {
         context.entityManager().createNativeQuery("""
                 INSERT INTO diagrammer.uml_operation
                     (operation_id, classifier_id, name, return_type_reference_id, visibility, is_abstract,
-                     is_static, ordinal, created_at)
+                     is_static, ordinal, stereotype, created_at)
                 VALUES (CAST(:id AS uuid), CAST(:classifierId AS uuid), :name, CAST(:returnTypeId AS uuid),
-                    :visibility, :isAbstract, :isStatic, :ordinal, now())
+                    :visibility, :isAbstract, :isStatic, :ordinal, :stereotype, now())
                 """)
                 .setParameter("id", id)
                 .setParameter("classifierId", classifier.getId())
@@ -594,6 +624,7 @@ public class CommandHandlerSupport {
                 .setParameter("isAbstract", isAbstract)
                 .setParameter("isStatic", isStatic)
                 .setParameter("ordinal", ordinal)
+                .setParameter("stereotype", stereotype)
                 .executeUpdate();
     }
 

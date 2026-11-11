@@ -322,7 +322,8 @@ public final class MergeDiff {
         for (ClassifierResource classifier : snapshot.classifiers()) {
             Map<String, Object> fields = fields(
                     "name", classifier.name(), "kind", classifier.kind(), "isAbstract", classifier.isAbstract(),
-                    "namespaceId", classifier.namespaceId(), "storeOverride", classifier.storeOverride());
+                    "namespaceId", classifier.namespaceId(), "storeOverride", classifier.storeOverride(),
+                    "stereotype", classifier.stereotype());
             add(elements, element("CLASSIFIER", classifier.id(), classifier.name(), null, fields));
             for (AttributeResource attribute : classifier.attributes()) {
                 Map<String, Object> childFields = fields(
@@ -330,7 +331,8 @@ public final class MergeDiff {
                         "visibility", attribute.visibility(), "multiplicity", attribute.multiplicity(),
                         "defaultValue", attribute.defaultValue(), "typeReferenceId", attribute.typeReferenceId(),
                         "type", attribute.type(), "ordinal", attribute.ordinal(),
-                        "lowerBound", attribute.lowerBound(), "upperBound", attribute.upperBound());
+                        "lowerBound", attribute.lowerBound(), "upperBound", attribute.upperBound(),
+                        "stereotype", attribute.stereotype());
                 add(elements, element("ATTRIBUTE", attribute.id(), attribute.name(), classifier.id(), childFields));
             }
             for (OperationResource operation : classifier.operations()) {
@@ -338,7 +340,7 @@ public final class MergeDiff {
                         "classifierId", classifier.id(), "name", operation.name(), "visibility", operation.visibility(),
                         "isAbstract", operation.isAbstract(), "isStatic", operation.isStatic(),
                         "returnTypeReferenceId", operation.returnTypeReferenceId(), "returnType", operation.returnType(),
-                        "ordinal", operation.ordinal());
+                        "ordinal", operation.ordinal(), "stereotype", operation.stereotype());
                 add(elements, element("OPERATION", operation.id(), operation.name(), classifier.id(), childFields));
                 for (ParameterResource parameter : operation.parameters()) {
                     Map<String, Object> parameterFields = fields(
@@ -459,7 +461,8 @@ public final class MergeDiff {
             return new ClassifierResource(classifierId, string(classifier.fields(), "name"),
                     (ClassifierKind) classifier.fields().get("kind"), bool(classifier.fields(), "isAbstract"),
                     uuid(classifier.fields(), "namespaceId"), attributes, operations, constraints,
-                    (PersistenceStore) classifier.fields().get("storeOverride"), null, null);
+                    (PersistenceStore) classifier.fields().get("storeOverride"), null, null,
+                    string(classifier.fields(), "stereotype"));
         }).toList();
 
         List<RelationshipResource> mergedRelationships = relationships.stream().map(relationship -> {
@@ -508,7 +511,8 @@ public final class MergeDiff {
         return new AttributeResource(element.targetId(), string(fields, "name"), string(fields, "kind"),
                 string(fields, "visibility"), (com.diagramador.domain.MultiplicityKind) fields.get("multiplicity"),
                 string(fields, "defaultValue"), uuid(fields, "typeReferenceId"), string(fields, "type"),
-                number(fields, "ordinal"), nullableNumber(fields, "lowerBound"), nullableNumber(fields, "upperBound"));
+                number(fields, "ordinal"), nullableNumber(fields, "lowerBound"), nullableNumber(fields, "upperBound"),
+                string(fields, "stereotype"));
     }
 
     private static OperationResource operationResource(Element element, Map<ElementKey, Element> elements) {
@@ -518,7 +522,7 @@ public final class MergeDiff {
                 .map(MergeDiff::parameterResource).toList();
         return new OperationResource(element.targetId(), string(fields, "name"), string(fields, "visibility"),
                 bool(fields, "isAbstract"), bool(fields, "isStatic"), uuid(fields, "returnTypeReferenceId"),
-                string(fields, "returnType"), number(fields, "ordinal"), parameters);
+                string(fields, "returnType"), number(fields, "ordinal"), parameters, string(fields, "stereotype"));
     }
 
     private static ParameterResource parameterResource(Element element) {

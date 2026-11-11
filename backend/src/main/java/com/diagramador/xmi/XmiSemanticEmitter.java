@@ -530,16 +530,14 @@ public final class XmiSemanticEmitter {
                     context.loss("extension_unresolved_placement");
                     continue;
                 }
-                selectedIds.add(classifier.id());
-                UUID namespaceId = classifier.namespaceId();
-                while (namespaceId != null) {
-                    ClassifierResource namespace = context.classifierById.get(namespaceId);
-                    if (namespace == null || namespace.kind() != ClassifierKind.PACKAGE) {
-                        break;
-                    }
-                    selectedIds.add(namespace.id());
-                    namespaceId = namespace.namespaceId();
-                }
+                selectWithPackages(classifier, selectedIds, context);
+            }
+        }
+        // A stereotype lives only in the extension, so a stereotyped class gets its element even when no view
+        // places it; otherwise the export would drop the stereotype without saying so.
+        for (ClassifierResource classifier : context.classifierById.values()) {
+            if (context.emittableClassifierIds.contains(classifier.id()) && carriesStereotype(classifier)) {
+                selectWithPackages(classifier, selectedIds, context);
             }
         }
         return selectedIds.stream()
@@ -549,6 +547,42 @@ public final class XmiSemanticEmitter {
                         .thenComparing(ClassifierResource::name, Comparator.nullsFirst(String::compareTo))
                         .thenComparing(ClassifierResource::id))
                 .toList();
+    }
+
+    private static void selectWithPackages(ClassifierResource classifier, Set<UUID> selectedIds, Context context) {
+        selectedIds.add(classifier.id());
+        UUID namespaceId = classifier.namespaceId();
+        while (namespaceId != null) {
+            ClassifierResource namespace = context.classifierById.get(namespaceId);
+            if (namespace == null || namespace.kind() != ClassifierKind.PACKAGE) {
+                break;
+            }
+            selectedIds.add(namespace.id());
+            namespaceId = namespace.namespaceId();
+        }
+    }
+
+    private static boolean carriesStereotype(ClassifierResource classifier) {
+        return isPresent(classifier.stereotype())
+                || classifier.attributes().stream().anyMatch(attribute -> isPresent(attribute.stereotype()))
+                || classifier.operations().stream().anyMatch(operation -> isPresent(operation.stereotype()));
+    }
+
+    private static boolean isPresent(String stereotype) {
+        return stereotype != null && !stereotype.isBlank();
+    }
+
+    /** The vendor `stereotype` form Enterprise Architect writes: the lower-case name of the fixed list entry. */
+    private static String extensionStereotype(String stereotype) {
+        return stereotype.toLowerCase(Locale.ROOT);
+    }
+
+    private static void appendExtensionStereotype(Document document, Element owner, String stereotype) {
+        if (isPresent(stereotype)) {
+            Element element = document.createElement("stereotype");
+            element.setAttribute("stereotype", extensionStereotype(stereotype));
+            owner.appendChild(element);
+        }
     }
 
     private void appendExtensionConnectors(Document document, Element connectors, ModelResource snapshot,
@@ -868,6 +902,9 @@ public final class XmiSemanticEmitter {
             properties.setAttribute("isAbstract", Boolean.toString(classifier.isAbstract()
                     || classifier.kind() == ClassifierKind.ABSTRACT_CLASS));
         }
+        if (isPresent(classifier.stereotype())) {
+            properties.setAttribute("stereotype", extensionStereotype(classifier.stereotype()));
+        }
         element.appendChild(properties);
 
         if (!classifier.attributes().isEmpty()) {
@@ -875,6 +912,19 @@ public final class XmiSemanticEmitter {
             element.appendChild(attributes);
             for (AttributeResource attribute : orderedAttributes(classifier)) {
                 appendExtensionAttribute(document, attributes, attribute, context);
+            }
+        }
+        List<OperationResource> stereotypedOperations = orderedOperations(classifier).stream()
+                .filter(operation -> isPresent(operation.stereotype())).toList();
+        if (!stereotypedOperations.isEmpty()) {
+            Element operations = document.createElement("operations");
+            element.appendChild(operations);
+            for (OperationResource operation : stereotypedOperations) {
+                Element extensionOperation = document.createElement("operation");
+                setXmiAttribute(extensionOperation, "idref", XmiIdCodec.classifierId(operation.id()));
+                extensionOperation.setAttribute("name", Objects.requireNonNull(operation.name(), "operation.name"));
+                appendExtensionStereotype(document, extensionOperation, operation.stereotype());
+                operations.appendChild(extensionOperation);
             }
         }
     }
@@ -898,6 +948,7 @@ public final class XmiSemanticEmitter {
         Element containment = document.createElement("containment");
         containment.setAttribute("position", Integer.toString(attribute.ordinal()));
         element.appendChild(containment);
+        appendExtensionStereotype(document, element, attribute.stereotype());
         context.loss("attribute_layout_position_approximation");
         context.loss("attribute_layout_containment_kind");
 

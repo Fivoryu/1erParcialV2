@@ -149,6 +149,8 @@ public class UndoService {
                     originalTargets, baseRevision, modelId, projectId);
             case "classifier.setStore" -> inverseOfSnapshotUpdate(entry, "classifier.setStore", "store",
                     originalTargets, baseRevision, modelId, projectId);
+            case "classifier.stereotype.set" -> inverseOfSnapshotUpdate(entry, "classifier.stereotype.set",
+                    "stereotype", originalTargets, baseRevision, modelId, projectId);
             case "attribute.add" -> Inverse.of(new OperationEnvelope(UUID.randomUUID(), "attribute.remove",
                     author(), projectId, modelId, baseRevision,
                     List.of(new Target("attribute", uuid(payload.path("id")))), List.of(), Map.of(),
@@ -195,6 +197,11 @@ public class UndoService {
                 }
             }
             restoreRangeBounds(snapshot, payload);
+            // Only when the update touched it: the previous stereotype comes back, "none" as an explicit null.
+            if (entry.getCommand().getCanonicalEnvelope().path("payload").has("stereotype")) {
+                payload.put("stereotype", snapshot.path("stereotype").isTextual()
+                        ? snapshot.path("stereotype").asText() : null);
+            }
             if (payload.isEmpty()) {
                 return Inverse.rejected("NOT_UNDOABLE", "El valor previo no fue capturado para " + entry.getType()
                         + ".");
@@ -216,7 +223,8 @@ public class UndoService {
         }
         Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("id", snapshot.path("id").asText());
-        for (String field : List.of("name", "type", "visibility", "multiplicity", "defaultValue", "ordinal")) {
+        for (String field : List.of("name", "type", "visibility", "multiplicity", "defaultValue", "ordinal",
+                "stereotype")) {
             JsonNode value = snapshot.path(field);
             if (!value.isMissingNode() && !value.isNull()) {
                 payload.put(field, objectMapper.convertValue(value, Object.class));

@@ -14,7 +14,11 @@ import com.diagramador.domain.ExchangeStatus;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.OperationParameter;
+import com.diagramador.domain.AttributeStereotype;
+import com.diagramador.domain.ClassifierStereotype;
 import com.diagramador.domain.DependencyStereotype;
+import com.diagramador.domain.OperationStereotype;
+import com.diagramador.domain.Stereotypes;
 import com.diagramador.domain.RelationshipEnd;
 import com.diagramador.domain.RelationshipKind;
 import com.diagramador.domain.SeverityKind;
@@ -208,7 +212,7 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                     new ModelResource.AttributeResource(mapped(attributeIds, attribute.id()), attribute.name(),
                             attribute.kind(), attribute.visibility(), attribute.multiplicity(), attribute.defaultValue(),
                             mapped(classifierIds, attribute.typeReferenceId()), attribute.type(), attribute.ordinal(),
-                            attribute.lowerBound(), attribute.upperBound()))
+                            attribute.lowerBound(), attribute.upperBound(), attribute.stereotype()))
                     .toList();
             List<ModelResource.OperationResource> operations = classifier.operations().stream().map(operation -> {
                 List<ModelResource.ParameterResource> parameters = operation.parameters().stream().map(parameter ->
@@ -218,14 +222,14 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 return new ModelResource.OperationResource(mapped(operationIds, operation.id()), operation.name(),
                         operation.visibility(), operation.isAbstract(), operation.isStatic(),
                         mapped(classifierIds, operation.returnTypeReferenceId()), operation.returnType(),
-                        operation.ordinal(), parameters);
+                        operation.ordinal(), parameters, operation.stereotype());
             }).toList();
             List<ModelResource.ConstraintResource> constraints = classifier.constraints().stream().map(constraint ->
                     new ModelResource.ConstraintResource(mapped(constraintIds, constraint.id()),
                             constraint.expression(), constraint.severity())).toList();
             return new ModelResource.ClassifierResource(mapped(classifierIds, classifier.id()), classifier.name(),
                     classifier.kind(), classifier.isAbstract(), mapped(classifierIds, classifier.namespaceId()),
-                    attributes, operations, constraints);
+                    attributes, operations, constraints, null, null, null, classifier.stereotype());
         }).toList();
         List<ModelResource.RelationshipResource> relationships = source.relationships().stream().map(relationship -> {
             List<ModelResource.RelationshipEndResource> ends = relationship.ends().stream().map(end ->
@@ -576,8 +580,9 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         || (kind == ClassifierKind.CLASS && resource.isAbstract());
                 entityManager.createNativeQuery("""
                         INSERT INTO diagrammer.classifier
-                            (classifier_id, model_id, namespace_id, kind, name, is_abstract)
-                        VALUES (:id, :modelId, :namespaceId, CAST(:kind AS diagrammer.classifier_kind), :name, :abstract)
+                            (classifier_id, model_id, namespace_id, kind, name, is_abstract, stereotype)
+                        VALUES (:id, :modelId, :namespaceId, CAST(:kind AS diagrammer.classifier_kind), :name, :abstract,
+                                :stereotype)
                         """)
                         .setParameter("id", resource.id())
                         .setParameter("modelId", model.getId())
@@ -585,6 +590,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         .setParameter("kind", isAbstract ? ClassifierKind.ABSTRACT_CLASS.name() : kind.name())
                         .setParameter("name", resource.name())
                         .setParameter("abstract", isAbstract)
+                        .setParameter("stereotype", Stereotypes.classifierMayCarryOne(kind)
+                                ? Stereotypes.canonical(ClassifierStereotype.class, resource.stereotype()) : null)
                         .executeUpdate();
                 Classifier classifier = classifierRepository.findById(resource.id())
                         .orElseThrow(() -> new IllegalStateException("Imported classifier could not be reloaded"));
@@ -611,10 +618,10 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 entityManager.createNativeQuery("""
                         INSERT INTO diagrammer.uml_attribute
                             (attribute_id, classifier_id, type_reference_id, name, kind, visibility,
-                             multiplicity, lower_bound, upper_bound, default_value, ordinal)
+                             multiplicity, lower_bound, upper_bound, default_value, ordinal, stereotype)
                         VALUES (:id, :classifierId, :typeId, :name, :kind, :visibility,
                                 CAST(:multiplicity AS diagrammer.multiplicity_kind), :lowerBound, :upperBound,
-                                :defaultValue, :ordinal)
+                                :defaultValue, :ordinal, :stereotype)
                         """)
                         .setParameter("id", resource.id())
                         .setParameter("classifierId", classifier.getId())
@@ -627,6 +634,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         .setParameter("upperBound", rangeUpper(multiplicity, resource.upperBound()))
                         .setParameter("defaultValue", resource.defaultValue())
                         .setParameter("ordinal", resource.ordinal())
+                        .setParameter("stereotype", Stereotypes.canonical(AttributeStereotype.class,
+                                resource.stereotype()))
                         .executeUpdate();
             }
             for (ModelResource.OperationResource resource : classifierResource.operations()) {
@@ -635,9 +644,9 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                 entityManager.createNativeQuery("""
                         INSERT INTO diagrammer.uml_operation
                             (operation_id, classifier_id, name, return_type_reference_id, visibility,
-                             is_abstract, is_static, ordinal)
+                             is_abstract, is_static, ordinal, stereotype)
                         VALUES (:id, :classifierId, :name, :returnTypeId, :visibility,
-                                :abstract, :static, :ordinal)
+                                :abstract, :static, :ordinal, :stereotype)
                         """)
                         .setParameter("id", resource.id())
                         .setParameter("classifierId", classifier.getId())
@@ -647,6 +656,8 @@ public class XmiImportHandler implements CommandHandler.AddAction {
                         .setParameter("abstract", resource.isAbstract())
                         .setParameter("static", resource.isStatic())
                         .setParameter("ordinal", resource.ordinal())
+                        .setParameter("stereotype", Stereotypes.canonical(OperationStereotype.class,
+                                resource.stereotype()))
                         .executeUpdate();
                 UmlOperation operation = operationRepository.findById(resource.id())
                         .orElseThrow(() -> new IllegalStateException("Imported operation could not be reloaded"));

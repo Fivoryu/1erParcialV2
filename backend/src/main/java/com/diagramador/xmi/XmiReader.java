@@ -12,7 +12,11 @@ import com.diagramador.api.ModelResource.RelationshipEndResource;
 import com.diagramador.api.ModelResource.RelationshipResource;
 import com.diagramador.api.ModelResource.ViewResource;
 import com.diagramador.domain.ClassifierKind;
+import com.diagramador.domain.AttributeStereotype;
+import com.diagramador.domain.ClassifierStereotype;
 import com.diagramador.domain.DependencyStereotype;
+import com.diagramador.domain.OperationStereotype;
+import com.diagramador.domain.Stereotypes;
 import com.diagramador.domain.MultiplicityKind;
 import com.diagramador.domain.NavigationKind;
 import com.diagramador.domain.RelationshipKind;
@@ -216,16 +220,17 @@ public final class XmiReader {
                 String id = xmi(element, "id");
                 UUID classifierId = id(element, "classifier:" + namespaceId + ":" + anonymous++ + ":"
                         + element.getAttribute("name"));
+                Element extensionElement = extensionElements.get(id);
                 List<AttributeResource> attributes = readAttributes(element, kind == ClassifierKind.ENUMERATION,
-                        classifierId);
-                List<OperationResource> operations = readOperations(element, classifierId);
+                        classifierId, extensionElement);
+                List<OperationResource> operations = readOperations(element, classifierId, extensionElement);
                 List<ConstraintResource> constraints = readConstraints(element);
+                Element properties = child(extensionElement, "properties");
                 output.add(new ClassifierResource(classifierId, element.getAttribute("name"), kind,
                         Boolean.parseBoolean(element.getAttribute("isAbstract")), namespaceId,
-                        attributes, operations, constraints));
+                        attributes, operations, constraints, null, null, null,
+                        classifierStereotype(properties, kind)));
 
-                Element extensionElement = extensionElements.get(id);
-                Element properties = child(extensionElement, "properties");
                 String note = properties == null ? "" : properties.getAttribute("documentation");
                 if (!note.isBlank()) {
                     documentation.put(classifierId, note);
@@ -234,8 +239,10 @@ public final class XmiReader {
             }
         }
 
-        private List<AttributeResource> readAttributes(Element owner, boolean enumeration, UUID ownerId) {
+        private List<AttributeResource> readAttributes(Element owner, boolean enumeration, UUID ownerId,
+                Element extensionElement) {
             List<AttributeResource> result = new ArrayList<>();
+            Map<String, String> stereotypes = memberStereotypes(extensionElement, "attributes", "attribute");
             int ordinal = 0;
             for (Element attribute : children(owner, "ownedAttribute")) {
                 UUID id = id(attribute, "attribute:" + ownerId + ":" + ordinal);
@@ -245,13 +252,16 @@ public final class XmiReader {
                 result.add(new AttributeResource(id, attribute.getAttribute("name"),
                         enumeration ? "LITERAL" : "ATTRIBUTE", visibility(attribute.getAttribute("visibility")),
                         multiplicity.kind(), defaultValue == null ? null : defaultValue.getAttribute("value"),
-                        type.id(), type.name(), ordinal++, multiplicity.lowerBound(), multiplicity.upperBound()));
+                        type.id(), type.name(), ordinal++, multiplicity.lowerBound(), multiplicity.upperBound(),
+                        memberStereotype(stereotypes.get(xmi(attribute, "id")), AttributeStereotype.class,
+                                "unsupported_attribute_stereotype")));
             }
             return result;
         }
 
-        private List<OperationResource> readOperations(Element owner, UUID ownerId) {
+        private List<OperationResource> readOperations(Element owner, UUID ownerId, Element extensionElement) {
             List<OperationResource> result = new ArrayList<>();
+            Map<String, String> stereotypes = memberStereotypes(extensionElement, "operations", "operation");
             int operationOrdinal = 0;
             for (Element operation : children(owner, "ownedOperation")) {
                 List<ParameterResource> parameters = new ArrayList<>();
@@ -286,9 +296,50 @@ public final class XmiReader {
                         visibility(operation.getAttribute("visibility")),
                         Boolean.parseBoolean(operation.getAttribute("isAbstract")),
                         Boolean.parseBoolean(operation.getAttribute("isStatic")), returnId, returnName,
-                        operationOrdinal++, parameters));
+                        operationOrdinal++, parameters,
+                        memberStereotype(stereotypes.get(xmi(operation, "id")), OperationStereotype.class,
+                                "unsupported_operation_stereotype")));
             }
             return result;
+        }
+
+        /** The `stereotype` of every member the extension lists under {@code container}, keyed by XMI id. */
+        private Map<String, String> memberStereotypes(Element extensionElement, String container, String memberName) {
+            Map<String, String> result = new HashMap<>();
+            for (Element member : children(child(extensionElement, container), memberName)) {
+                Element stereotype = child(member, "stereotype");
+                String written = stereotype == null ? "" : stereotype.getAttribute("stereotype").trim();
+                if (!written.isEmpty()) {
+                    result.put(xmi(member, "idref"), written);
+                }
+            }
+            return result;
+        }
+
+        /** An attribute or operation stereotype from the fixed list; an unknown name is dropped with a loss entry. */
+        private <E extends Enum<E>> String memberStereotype(String written, Class<E> list, String lossName) {
+            if (written == null) {
+                return null;
+            }
+            String canonical = Stereotypes.canonical(list, written);
+            if (canonical == null) {
+                loss(lossName, 1);
+            }
+            return canonical;
+        }
+
+        /** The classifier stereotype of the extension properties; unknown names and non-class kinds are dropped. */
+        private String classifierStereotype(Element properties, ClassifierKind kind) {
+            String written = properties == null ? "" : properties.getAttribute("stereotype").trim();
+            if (written.isEmpty()) {
+                return null;
+            }
+            String canonical = Stereotypes.canonical(ClassifierStereotype.class, written);
+            if (canonical == null || !Stereotypes.classifierMayCarryOne(kind)) {
+                loss("unsupported_classifier_stereotype", 1);
+                return null;
+            }
+            return canonical;
         }
 
         private List<ConstraintResource> readConstraints(Element owner) {

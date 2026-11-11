@@ -2,6 +2,7 @@ package com.diagramador.command.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.diagramador.command.CommandHandler;
+import com.diagramador.domain.AttributeStereotype;
 import com.diagramador.domain.Classifier;
 import com.diagramador.domain.ClassifierKind;
 import com.diagramador.domain.MultiplicityKind;
@@ -16,7 +17,7 @@ import org.springframework.stereotype.Component;
 public class AttributeAddHandler implements CommandHandler.AddAction {
 
     private static final Set<String> FIELDS = Set.of("id", "name", "type", "visibility", "multiplicity", "lowerBound", "upperBound",
-            "defaultValue", "ordinal", "isStatic", "isAbstract");
+            "defaultValue", "ordinal", "isStatic", "isAbstract", "stereotype");
 
     private final CommandHandlerSupport support;
     private final UmlAttributeRepository attributeRepository;
@@ -56,7 +57,8 @@ public class AttributeAddHandler implements CommandHandler.AddAction {
         int ordinal = support.ordinalOrNext(payload, "ordinal",
                 attributeRepository.findByClassifierId(classifier.getId()).stream().map(UmlAttribute::getOrdinal).toList());
         support.insertAttribute(context, id, classifier, type, name, visibility, multiplicity,
-                support.optionalText(payload, "defaultValue"), ordinal);
+                support.optionalText(payload, "defaultValue"), ordinal,
+                support.stereotype(payload, "stereotype", AttributeStereotype.class));
         return Outcome.none();
     }
 

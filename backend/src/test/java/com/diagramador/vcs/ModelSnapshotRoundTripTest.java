@@ -196,6 +196,49 @@ class ModelSnapshotRoundTripTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void memberAndClassifierStereotypesChangeTheStateHashOnlyWhenSetAndRoundTripThroughASnapshot() {
+        Fixture fixture = createRichModel();
+        String plain = snapshotService.stateHash(fixture.model());
+
+        setStereotypes(fixture, "ENTITY", "ID", "QUERY");
+        String stereotyped = snapshotService.stateHash(fixture.model());
+        SnapshotModel snapshot = snapshotService.capture(fixture.model());
+
+        assertThat(stereotyped).isNotEqualTo(plain);
+        assertThat(stateHasher.hash(snapshot)).isEqualTo(stereotyped);
+        assertThat(snapshot.classifiers()).filteredOn(classifier -> classifier.id().equals(fixture.mutableClassifierId()))
+                .singleElement().satisfies(classifier -> {
+                    assertThat(classifier.stereotype()).isEqualTo("ENTITY");
+                    assertThat(classifier.attributes()).extracting(attribute -> attribute.stereotype())
+                            .containsOnly("ID");
+                    assertThat(classifier.operations()).extracting(operation -> operation.stereotype())
+                            .containsOnly("QUERY");
+                });
+
+        setStereotypes(fixture, null, null, null);
+        assertThat(snapshotService.stateHash(fixture.model())).as("no stereotype, the hash it always had")
+                .isEqualTo(plain);
+
+        snapshotService.materialize(fixture.model(), snapshot);
+
+        assertThat(snapshotService.stateHash(fixture.model())).isEqualTo(stereotyped);
+        assertThat(snapshotService.toJson(snapshotService.capture(fixture.model())))
+                .isEqualTo(snapshotService.toJson(snapshot));
+    }
+
+    private void setStereotypes(Fixture fixture, String classifier, String attribute, String operation) {
+        transactionTemplate.executeWithoutResult(status -> {
+            classifierRepository.findById(fixture.mutableClassifierId()).orElseThrow().setStereotype(classifier);
+            attributeRepository.findAll().stream()
+                    .filter(candidate -> candidate.getClassifier().getId().equals(fixture.mutableClassifierId()))
+                    .forEach(candidate -> candidate.setStereotype(attribute));
+            operationRepository.findAll().stream()
+                    .filter(candidate -> candidate.getClassifier().getId().equals(fixture.mutableClassifierId()))
+                    .forEach(candidate -> candidate.setStereotype(operation));
+        });
+    }
+
+    @Test
     void restoresTheEarlierStateAfterModelRowsAreMutated() {
         Fixture fixture = createRichModel();
         SnapshotModel earlier = snapshotService.capture(fixture.model());

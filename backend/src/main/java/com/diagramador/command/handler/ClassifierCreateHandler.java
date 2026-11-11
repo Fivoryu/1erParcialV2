@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ClassifierCreateHandler implements CommandHandler.AddAction {
 
-    private static final Set<String> FIELDS = Set.of("id", "name", "kind", "namespaceId");
+    private static final Set<String> FIELDS = Set.of("id", "name", "kind", "namespaceId", "stereotype");
 
     private final CommandHandlerSupport support;
     private final ClassifierRepository classifierRepository;
@@ -37,7 +37,8 @@ public class ClassifierCreateHandler implements CommandHandler.AddAction {
         Classifier namespace = support.namespace(context.model(), support.optionalUuid(payload, "namespaceId"));
         support.ensureClassifierNameAvailable(context.model(), namespace, name, null);
         boolean isAbstract = kind == ClassifierKind.ABSTRACT_CLASS;
-        support.insertClassifier(context, id, namespace, kind, name, isAbstract);
+        String stereotype = support.classifierStereotype(payload, "stereotype", kind);
+        support.insertClassifier(context, id, namespace, kind, name, isAbstract, stereotype);
         return Outcome.none();
     }
 }
