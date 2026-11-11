@@ -40,6 +40,20 @@ class AssistantPlanServiceTest {
     }
 
     @Test
+    void anImagePlanRequestUsesTheImageDraftAndATextOnlyOneNeverDoes() {
+        AiAssistantProvider provider = mock(AiAssistantProvider.class);
+        when(provider.draft(anyString(), eq(UTTERANCE), eq("QUJD"), eq("image/png")))
+                .thenReturn("{\"intent\":\"explain\",\"operations\":[],\"explanation\":\"ok\"}");
+        AssistantPlanService service = service(provider);
+
+        AssistantPlanResponse response = service.plan(PROJECT_ID,
+                new AssistantPlanRequest(UTTERANCE, 7L, null), "QUJD", "image/png");
+
+        assertThat(response.intent()).isEqualTo("EXPLAIN");
+        verify(provider, never()).draft(anyString(), anyString());
+    }
+
+    @Test
     void extractsFencedJsonAndBuildsTheFixtureContextShape() throws Exception {
         AiAssistantProvider provider = mock(AiAssistantProvider.class);
         when(provider.draft(anyString(), eq(UTTERANCE))).thenReturn("Texto previo\n```json\n"

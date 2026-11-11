@@ -74,6 +74,8 @@ export interface ChatPanelProps {
   suggestBusy?: boolean;
   proposalNotice?: string | null;
   onSuggest?: (utterance: string) => void | boolean | Promise<void | boolean>;
+  /** Sends the attached photos with the text and asks for a suggestion drawn from them; false keeps the draft. */
+  onSuggestFromPhoto?: (utterance: string, images: File[]) => void | boolean | Promise<void | boolean>;
   onAcceptProposal?: (proposalId: Uuid) => void;
   onRejectProposal?: (proposalId: Uuid) => void;
 }
@@ -219,6 +221,7 @@ export default function ChatPanel({
   suggestBusy = false,
   proposalNotice = null,
   onSuggest,
+  onSuggestFromPhoto,
   onAcceptProposal,
   onRejectProposal,
 }: ChatPanelProps) {
@@ -290,6 +293,28 @@ export default function ChatPanel({
     }
   }
 
+  async function handleSuggestFromPhoto(): Promise<void> {
+    const utterance = draft.trim();
+    const images = selectedImages;
+    if (images.length === 0 || !onSuggestFromPhoto) {
+      return;
+    }
+    let result: void | boolean;
+    try {
+      result = await onSuggestFromPhoto(utterance, images);
+    } catch {
+      result = false;
+    }
+    // Like "Sugerir cambio", the text and the photos are only spent once a suggestion was shared.
+    if (result !== false) {
+      setSelectedImages([]);
+      if (draftRef.current.trim() === utterance) {
+        draftRef.current = '';
+        onDraftChange('');
+      }
+    }
+  }
+
   function handleFileChange(files: FileList | null): void {
     const selection = limitChatAttachments(Array.from(files ?? []));
     setSelectedImages(selection.selected);
@@ -353,7 +378,7 @@ export default function ChatPanel({
 
           {aiStatus && (
             <p className={`chat-ai-status chat-ai-status--${aiStatus.state.toLowerCase()}`} role="status">
-              Solicitud de IA {aiStateLabel(aiStatus)}
+              Solicitud de IA{aiStatus.requestedByDisplayName ? ` de ${aiStatus.requestedByDisplayName}` : ''} {aiStateLabel(aiStatus)}
               {aiStatus.reason ? `: ${aiStatus.reason}` : ''}
             </p>
           )}
@@ -474,6 +499,7 @@ export default function ChatPanel({
               id="chat-image-attachments"
               type="file"
               accept="image/jpeg,image/png,image/webp"
+              capture="environment"
               multiple
               onChange={(event) => {
                 handleFileChange(event.currentTarget.files);
@@ -498,6 +524,17 @@ export default function ChatPanel({
                 onClick={() => void handleSuggest()}
               >
                 {suggestBusy ? 'Preparando sugerencia…' : 'Sugerir cambio'}
+              </button>
+            )}
+            {onSuggestFromPhoto && canDecideProposals && (
+              <button
+                className="button button-secondary chat-suggest-from-photo"
+                type="button"
+                disabled={busy || suggestBusy || selectedImages.length === 0 || !activeSessionId}
+                title="Adjunta una foto de un diagrama de clases y pide a la IA que lo pase al diagrama como sugerencia. Nada cambiará hasta que una persona editora lo acepte."
+                onClick={() => void handleSuggestFromPhoto()}
+              >
+                {suggestBusy ? 'Preparando sugerencia…' : 'Proponer desde la foto'}
               </button>
             )}
             <button

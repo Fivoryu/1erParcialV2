@@ -45,6 +45,13 @@ public class AssistantPlanService {
 
     @Transactional(readOnly = true)
     public AssistantPlanResponse plan(java.util.UUID projectId, AssistantPlanRequest request) {
+        return plan(projectId, request, null, null);
+    }
+
+    /** Same plan, optionally from a photo of a class diagram (base64 and MIME type). */
+    @Transactional(readOnly = true)
+    public AssistantPlanResponse plan(java.util.UUID projectId, AssistantPlanRequest request,
+            String imageBase64, String imageMime) {
         // getModel preserves the existing 404/member authorization and snapshot-loading path.
         ModelResource model = projectApiService.getModel(projectId);
         projectAuthorizationService.requireEditor(projectId);
@@ -56,7 +63,9 @@ public class AssistantPlanService {
         String contextJson = contextRenderer.renderDiagramOnly(model);
         String rawDraft;
         try {
-            rawDraft = provider.draft(contextJson, request.utterance());
+            rawDraft = imageBase64 == null
+                    ? provider.draft(contextJson, request.utterance())
+                    : provider.draft(contextJson, request.utterance(), imageBase64, imageMime);
         } catch (IllegalStateException exception) {
             return rejected("PROVIDER_DISABLED", "El asistente de IA no está habilitado.");
         }

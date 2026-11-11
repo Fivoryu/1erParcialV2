@@ -70,6 +70,8 @@ describe('proposalErrorMessage', () => {
     const decided = new ApiTransportError('PROPOSAL_DECIDED', 'decided', [], null, 409);
     expect(proposalErrorMessage(disabled, fallback)).toBe(PROVIDER_DISABLED_MESSAGE);
     expect(proposalErrorMessage(none, fallback)).toBe('Which class do you mean?');
+    const noImage = new ApiTransportError('NO_IMAGE', 'no photo', [], null, 422);
+    expect(proposalErrorMessage(noImage, fallback)).toBe('Ese mensaje no tiene una foto para convertir en sugerencia.');
     expect(proposalErrorMessage(decided, fallback)).toBe('Otra persona editora ya decidió sobre esta sugerencia.');
     expect(proposalErrorMessage(new Error('boom'), fallback)).toBe('fallback');
   });

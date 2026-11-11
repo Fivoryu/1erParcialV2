@@ -15,6 +15,11 @@ describe('localizedErrorMessage', () => {
       .toBe('Confirma o descarta los cambios pendientes antes de cambiar de rama.');
   });
 
+  it('translates the missing photo of a suggestion from a photo', () => {
+    expect(localizedErrorMessage('NO_IMAGE', 'That message has no photo to turn into a suggestion.'))
+      .toBe('Ese mensaje no tiene una foto para convertir en sugerencia.');
+  });
+
   it('translates the merge approval codes', () => {
     expect(localizedErrorMessage('APPROVAL_REQUIRED', 'Another editor or owner must approve this merge request before it can be merged.'))
       .toBe('Necesita la aprobación de otro integrante antes de fusionarse.');

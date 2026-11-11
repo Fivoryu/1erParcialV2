@@ -142,7 +142,12 @@ export interface ApiClient {
   ): Promise<ChatMessageResource>;
   askAi(projectId: Uuid, sessionId: Uuid, messageId: Uuid): Promise<AskAiResponse>;
   listProposals(projectId: Uuid, sessionId: Uuid): Promise<ChatProposalResource[]>;
-  proposeChange(projectId: Uuid, sessionId: Uuid, utterance: string): Promise<ChatProposalResource>;
+  proposeChange(
+    projectId: Uuid,
+    sessionId: Uuid,
+    utterance: string,
+    attachmentMessageId?: Uuid,
+  ): Promise<ChatProposalResource>;
   acceptProposal(projectId: Uuid, sessionId: Uuid, proposalId: Uuid): Promise<ChatProposalResource>;
   rejectProposal(projectId: Uuid, sessionId: Uuid, proposalId: Uuid): Promise<ChatProposalResource>;
   deleteSessionHistory(projectId: Uuid, sessionId: Uuid): Promise<DeletedSessionHistoryResource>;
@@ -400,8 +405,11 @@ export function createApiClient(
     listProposals(projectId, sessionId) {
       return requestJson<ChatProposalResource[]>(`${proposalsPath(projectId, sessionId)}`);
     },
-    proposeChange(projectId, sessionId, utterance) {
-      return postJson<ChatProposalResource>(proposalsPath(projectId, sessionId), { utterance });
+    proposeChange(projectId, sessionId, utterance, attachmentMessageId) {
+      return postJson<ChatProposalResource>(
+        proposalsPath(projectId, sessionId),
+        attachmentMessageId ? { utterance, attachmentMessageId } : { utterance },
+      );
     },
     acceptProposal(projectId, sessionId, proposalId) {
       return requestJson<ChatProposalResource>(

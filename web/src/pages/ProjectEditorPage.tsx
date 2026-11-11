@@ -969,7 +969,7 @@ export default function ProjectEditorPage() {
     }
   }
 
-  async function suggestChange(utterance: string): Promise<boolean> {
+  async function suggestChange(utterance: string, photos: File[] = []): Promise<boolean> {
     const sessionId = chatSessionId;
     if (!projectId || !sessionId || suggestBusy) {
       return false;
@@ -977,7 +977,22 @@ export default function ProjectEditorPage() {
     setProposalNotice(null);
     setSuggestBusy(true);
     try {
-      const proposal = await api.proposeChange(projectId, sessionId, utterance);
+      let attachmentMessageId: Uuid | undefined;
+      if (photos.length > 0) {
+        // The photo travels as a chat message first, so the whole team sees what the AI was given.
+        const uploaded = await Promise.all(photos.map((file) => api.uploadAttachment(projectId, sessionId, file)));
+        const message = await api.postSessionMessage(
+          projectId,
+          sessionId,
+          utterance.trim() || 'Foto de un diagrama de clases',
+          uploaded.map((attachment) => attachment.attachmentId),
+        );
+        attachmentMessageId = message.id;
+        if (chatSessionIdRef.current === sessionId) {
+          setChatHistory((current) => appendMessageToSession(current, message, chatSessionIdRef.current));
+        }
+      }
+      const proposal = await api.proposeChange(projectId, sessionId, utterance, attachmentMessageId);
       if (chatSessionIdRef.current === sessionId) {
         setChatProposals((current) => upsertProposal(current, proposal, sessionId));
       }
@@ -1398,6 +1413,7 @@ export default function ProjectEditorPage() {
                 onAskAi={(messageId) => askAi(messageId)}
                 onRejectProposal={(proposalId) => void decideProposal(proposalId, 'reject')}
                 onSuggest={(utterance) => suggestChange(utterance)}
+                onSuggestFromPhoto={(utterance, images) => suggestChange(utterance, images)}
                 onSend={(body, images) => sendMessage(body, images)}
                 onSessionChange={changeChatSession}
                 sessionActionBusy={chatSessionActionBusy}
